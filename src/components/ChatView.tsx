@@ -11,13 +11,18 @@ interface Props {
   onBack: () => void
 }
 
+const PAGE_SIZE = 30
+
 export default function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [syncing, setSyncing] = useState(true)
   const [sending, setSending] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const messagesRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const client = getClient()
 
@@ -32,7 +37,6 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       if (room_?.roomId !== roomId) return
       if (event.getType() !== 'm.room.message') return
       setMessages((prev) => {
-        // dedupe by eventId
         const id = event.getId() ?? ''
         if (prev.some((m) => m.eventId === id)) return prev
         return [...prev, eventToMessage(event, userId)]
@@ -43,10 +47,68 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     return () => { client.off(sdk.RoomEvent.Timeline, onEvent) }
   }, [roomId, userId, client])
 
-  // Scroll to bottom on new messages
+  // Scroll to bottom only on initial load and own messages
+  const isFirstLoad = useRef(true)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (isFirstLoad.current && messages.length > 0) {
+      bottomRef.current?.scrollIntoView()
+      isFirstLoad.current = false
+    }
   }, [messages])
+
+  // Reset on room change
+  useEffect(() => {
+    isFirstLoad.current = true
+    setHasMore(true)
+    setMessages([])
+    setSyncing(true)
+  }, [roomId])
+
+  // Scroll to bottom when own message is sent
+  const scrollToBottom = useCallback(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
+
+  // Load older messages
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return
+    const room = client.getRoom(roomId)
+    if (!room) return
+
+    const container = messagesRef.current
+    const prevScrollHeight = container?.scrollHeight ?? 0
+
+    setLoadingMore(true)
+    try {
+      const result = await client.scrollback(room, PAGE_SIZE)
+      const allEvents = result.getLiveTimeline().getEvents()
+      const msgs = eventsToMessages(allEvents, userId)
+      setMessages(msgs)
+
+      // If we got fewer than PAGE_SIZE new messages, we've reached the start
+      if (result.oldState.paginationToken === null) {
+        setHasMore(false)
+      }
+
+      // Restore scroll position after prepend
+      requestAnimationFrame(() => {
+        if (container) {
+          container.scrollTop = container.scrollHeight - prevScrollHeight
+        }
+      })
+    } catch {
+      setHasMore(false)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [client, roomId, userId, loadingMore, hasMore])
+
+  // Trigger load more when scrolled to top
+  function handleScroll(e: React.UIEvent<HTMLDivElement>) {
+    if (e.currentTarget.scrollTop < 80 && !loadingMore && hasMore) {
+      loadMore()
+    }
+  }
 
   // Auto-grow textarea
   useEffect(() => {
@@ -74,11 +136,12 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     setSending(true)
     try {
       await client.sendTextMessage(roomId, text)
+      scrollToBottom()
     } finally {
       setSending(false)
       textareaRef.current?.focus()
     }
-  }, [client, roomId, sending])
+  }, [client, roomId, sending, scrollToBottom])
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -95,16 +158,35 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
         {syncing && <span className="syncing">syncing…</span>}
       </div>
 
-      <div className="messages">
-        {messages.map((msg) => (
-          <div key={msg.eventId} className={`message ${msg.isOwnMessage ? 'own' : 'other'}`}>
-            {!msg.isOwnMessage && (
-              <div className="sender">{shortName(msg.sender)}</div>
-            )}
-            <div className="bubble">{msg.body}</div>
-            <div className="timestamp">{formatTime(msg.timestamp)}</div>
+      <div className="messages" ref={messagesRef} onScroll={handleScroll}>
+        {hasMore && (
+          <div className="load-more">
+            {loadingMore
+              ? <span className="loading-dots"><span /><span /><span /></span>
+              : <button onClick={loadMore}>Load older messages</button>
+            }
           </div>
-        ))}
+        )}
+
+        {messages.map((msg, i) => {
+          const showDateDivider = i === 0 || !sameDay(messages[i - 1].timestamp, msg.timestamp)
+          return (
+            <div key={msg.eventId}>
+              {showDateDivider && (
+                <div className="date-divider">
+                  <span>{formatDate(msg.timestamp)}</span>
+                </div>
+              )}
+              <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}`}>
+                {!msg.isOwnMessage && (
+                  <div className="sender">{shortName(msg.sender)}</div>
+                )}
+                <div className="bubble">{msg.body}</div>
+                <div className="timestamp">{formatTime(msg.timestamp)}</div>
+              </div>
+            </div>
+          )
+        })}
         <div ref={bottomRef} />
       </div>
 
@@ -163,21 +245,26 @@ function eventsToMessages(events: sdk.MatrixEvent[], userId: string): Message[] 
 }
 
 function shortName(userId: string): string {
-  // @name:homeserver → name
   return userId.replace(/^@/, '').split(':')[0]
 }
 
-function formatTime(ts: number): string {
+function sameDay(a: number, b: number): boolean {
+  const da = new Date(a), db = new Date(b)
+  return da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+}
+
+function formatDate(ts: number): string {
   const d = new Date(ts)
   const now = new Date()
-  const isToday =
-    d.getDate() === now.getDate() &&
-    d.getMonth() === now.getMonth() &&
-    d.getFullYear() === now.getFullYear()
+  const diff = now.getTime() - d.getTime()
+  const days = Math.floor(diff / 86400000)
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  return d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
+}
 
-  if (isToday) {
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  }
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
-    ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+function formatTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }

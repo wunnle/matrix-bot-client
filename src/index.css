@@ -467,6 +467,70 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   padding: 0 4px;
 }
 
+/* Date divider */
+.date-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.date-divider::before,
+.date-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Load more */
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+}
+
+.load-more button {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.load-more button:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Loading dots */
+.loading-dots {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.loading-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: bounce 1.2s infinite;
+}
+
+.loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
 /* ─────────────────────────────
    Pills & Autocomplete
 ───────────────────────────── */

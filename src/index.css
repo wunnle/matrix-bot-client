@@ -148,7 +148,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   border-radius: 8px;
   padding: 10px 12px;
   color: var(--text);
-  font: 15px/1 system-ui, sans-serif;
+  font: 16px/1 system-ui, sans-serif;
   outline: none;
   transition: border-color 0.15s;
 }
@@ -539,7 +539,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   border-radius: 10px;
   padding: 10px 12px;
   color: var(--text);
-  font: 14px/1.5 system-ui, sans-serif;
+  font: 16px/1.5 system-ui, sans-serif;
   resize: none;
   outline: none;
   transition: border-color 0.15s;

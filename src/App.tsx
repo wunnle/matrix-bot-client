@@ -1,22 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { loadAuth, clearAuth } from './lib/auth'
 import { destroyClient } from './lib/matrix'
 import type { AuthState } from './types'
 import LoginScreen from './components/LoginScreen'
-import RoomList from './components/RoomList'
-import ChatView from './components/ChatView'
-import ConnectionBanner from './components/ConnectionBanner'
+import RoomsLayout from './components/RoomsLayout'
 import './App.css'
-
-interface ActiveRoom {
-  roomId: string
-  roomName: string
-}
 
 export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null)
   const [ready, setReady] = useState(false)
-  const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
     const stored = loadAuth()
@@ -26,50 +20,33 @@ export default function App() {
 
   function handleLogin(a: AuthState) {
     setAuth(a)
+    navigate('/rooms')
   }
 
   function handleSignOut() {
     destroyClient()
     clearAuth()
     setAuth(null)
-    setActiveRoom(null)
+    navigate('/')
   }
 
   if (!ready) return null
 
-  if (!auth) {
-    return <LoginScreen onLogin={handleLogin} />
-  }
-
   return (
-    <div className={`layout ${activeRoom ? 'room-open' : ''}`}>
-      <ConnectionBanner />
-      <div className="layout-body">
-        <aside className="sidebar">
-          <RoomList
-            auth={auth}
-            activeRoomId={activeRoom?.roomId ?? null}
-            onSelectRoom={(roomId, roomName) => setActiveRoom({ roomId, roomName })}
-            onSignOut={handleSignOut}
-          />
-        </aside>
-
-        <main className="main">
-          {activeRoom ? (
-            <ChatView
-              roomId={activeRoom.roomId}
-              roomName={activeRoom.roomName}
-              userId={auth.userId}
-              onBack={() => setActiveRoom(null)}
-            />
-          ) : (
-            <div className="empty-state">
-              <div className="empty-icon">💬</div>
-              <p>Select a room to start chatting</p>
-            </div>
-          )}
-        </main>
-      </div>
-    </div>
+    <Routes>
+      <Route
+        path="/"
+        element={auth ? <Navigate to="/rooms" replace /> : <LoginScreen onLogin={handleLogin} />}
+      />
+      <Route
+        path="/rooms"
+        element={auth ? <RoomsLayout auth={auth} onSignOut={handleSignOut} /> : <Navigate to="/" replace />}
+      />
+      <Route
+        path="/rooms/:roomId"
+        element={auth ? <RoomsLayout auth={auth} onSignOut={handleSignOut} /> : <Navigate to="/" replace />}
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   )
 }

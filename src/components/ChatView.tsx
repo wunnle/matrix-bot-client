@@ -21,6 +21,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const [sending, setSending] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
+  const [typingUsers, setTypingUsers] = useState<string[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -43,8 +44,27 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       })
     }
 
+    // Send read receipt when opening room
+    client.sendReadReceipt(room.getLiveTimeline().getEvents().at(-1) ?? null)
+      .catch(() => {})
+
     client.on(sdk.RoomEvent.Timeline, onEvent)
     return () => { client.off(sdk.RoomEvent.Timeline, onEvent) }
+  }, [roomId, userId, client])
+
+  // Typing indicators
+  useEffect(() => {
+    const onTyping = (_event: sdk.MatrixEvent, member: sdk.RoomMember) => {
+      if (member.roomId !== roomId) return
+      const room = client.getRoom(roomId)
+      if (!room) return
+      const typing = room.getMembersWithMembership('join')
+        .filter((m) => m.typing && m.userId !== userId)
+        .map((m) => m.userId.replace(/^@/, '').split(':')[0])
+      setTypingUsers(typing)
+    }
+    client.on(sdk.RoomMemberEvent.Typing, onTyping)
+    return () => { client.off(sdk.RoomMemberEvent.Typing, onTyping) }
   }, [roomId, userId, client])
 
   // Scroll to bottom only on initial load and own messages
@@ -189,6 +209,15 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
         })}
         <div ref={bottomRef} />
       </div>
+
+      {typingUsers.length > 0 && (
+        <div className="typing-indicator">
+          <span className="typing-dots"><span /><span /><span /></span>
+          <span className="typing-label">
+            {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing
+          </span>
+        </div>
+      )}
 
       {config?.pills && config.pills.length > 0 && (
         <div className="pills">

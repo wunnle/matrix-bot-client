@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
+import * as sdk from 'matrix-js-sdk'
 import type { AuthState } from '../types'
-import { fetchJoinedRooms, type RoomSummary } from '../lib/matrix'
+import { fetchJoinedRooms, getClient, type RoomSummary } from '../lib/matrix'
 
 interface Props {
   auth: AuthState
@@ -16,10 +17,44 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut }
 
   useEffect(() => {
     fetchJoinedRooms(auth)
-      .then(setRooms)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false))
+      .then((r) => { setRooms(r); setLoading(false) })
+      .catch((e) => { setError(e.message); setLoading(false) })
   }, [auth])
+
+  // Keep room list live: re-sort and update unread on new messages
+  useEffect(() => {
+    if (loading) return
+    let client: ReturnType<typeof getClient>
+    try { client = getClient() } catch { return }
+
+    const onEvent = (_event: sdk.MatrixEvent, room: sdk.Room | undefined) => {
+      if (!room) return
+      setRooms((prev) => {
+        const updated = prev.map((r) =>
+          r.roomId === room.roomId
+            ? {
+                ...r,
+                lastMessage: getLastMessage(room),
+                lastTs: getLastTs(room),
+                unreadCount: r.roomId === activeRoomId ? 0 : room.getUnreadNotificationCount(),
+              }
+            : r
+        )
+        return [...updated].sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0))
+      })
+    }
+
+    client.on(sdk.RoomEvent.Timeline, onEvent)
+    return () => { client.off(sdk.RoomEvent.Timeline, onEvent) }
+  }, [loading, activeRoomId])
+
+  // Clear unread when active room changes
+  useEffect(() => {
+    if (!activeRoomId) return
+    setRooms((prev) =>
+      prev.map((r) => r.roomId === activeRoomId ? { ...r, unreadCount: 0 } : r)
+    )
+  }, [activeRoomId])
 
   return (
     <div className="room-list">
@@ -53,7 +88,14 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut }
             >
               <div className="room-avatar">{roomInitial(room.name)}</div>
               <div className="room-info">
-                <div className="room-name">{room.name}</div>
+                <div className="room-name-row">
+                  <div className="room-name">{room.name}</div>
+                  {room.unreadCount > 0 && (
+                    <span className="unread-badge">
+                      {room.unreadCount > 99 ? '99+' : room.unreadCount}
+                    </span>
+                  )}
+                </div>
                 {room.lastMessage && (
                   <div className="room-preview">{room.lastMessage}</div>
                 )}
@@ -71,6 +113,16 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut }
       </div>
     </div>
   )
+}
+
+function getLastMessage(room: sdk.Room): string | undefined {
+  const events = room.getLiveTimeline().getEvents()
+  return [...events].reverse().find((e) => e.getType() === 'm.room.message')?.getContent()?.body
+}
+
+function getLastTs(room: sdk.Room): number | undefined {
+  const events = room.getLiveTimeline().getEvents()
+  return [...events].reverse().find((e) => e.getType() === 'm.room.message')?.getTs()
 }
 
 function roomInitial(name: string): string {

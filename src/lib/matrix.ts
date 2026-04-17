@@ -30,6 +30,7 @@ export interface RoomSummary {
   name: string
   lastMessage?: string
   lastTs?: number
+  unreadCount: number
 }
 
 export async function fetchJoinedRooms(auth: AuthState): Promise<RoomSummary[]> {
@@ -49,6 +50,7 @@ export async function fetchJoinedRooms(auth: AuthState): Promise<RoomSummary[]> 
             name: room.name,
             lastMessage: last?.getContent()?.body,
             lastTs: last?.getTs(),
+            unreadCount: room.getUnreadNotificationCount(),
           }
         })
         rooms.sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0))

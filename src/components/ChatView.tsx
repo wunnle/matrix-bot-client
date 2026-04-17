@@ -52,6 +52,10 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     // Re-render message when decryption completes late
     const onDecrypted = (event: sdk.MatrixEvent) => {
       if (event.getRoomId() !== roomId) return
+      if (event.isDecryptionFailure()) {
+        // Try to fetch missing keys from key backup
+        client.getCrypto()?.checkKeyBackupAndEnable().catch(() => {})
+      }
       setMessages((prev) =>
         prev.map((m) =>
           m.eventId === (event.getId() ?? '') ? eventToMessage(event, userId) : m

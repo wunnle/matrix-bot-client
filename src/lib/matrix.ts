@@ -49,11 +49,25 @@ function getRooms(c: sdk.MatrixClient): RoomSummary[] {
     .sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0))
 }
 
+// Derive a stable 32-byte key from userId+deviceId stored in localStorage
+async function getCryptoStorageKey(userId: string, deviceId: string): Promise<Uint8Array> {
+  const storageKey = `crypto_key_${userId}_${deviceId}`
+  const existing = localStorage.getItem(storageKey)
+  if (existing) {
+    return new Uint8Array(JSON.parse(existing))
+  }
+  const key = crypto.getRandomValues(new Uint8Array(32))
+  localStorage.setItem(storageKey, JSON.stringify(Array.from(key)))
+  return key
+}
+
 export async function fetchJoinedRooms(auth: AuthState): Promise<RoomSummary[]> {
   const c = createClient(auth)
 
-  // Initialize E2EE
-  await c.initRustCrypto()
+  // Initialize E2EE — storageKey ties crypto identity to this user/device
+  await c.initRustCrypto({
+    storageKey: await getCryptoStorageKey(auth.userId, auth.deviceId),
+  })
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Sync timed out')), 30000)
@@ -62,6 +76,8 @@ export async function fetchJoinedRooms(auth: AuthState): Promise<RoomSummary[]> 
       if (state === 'PREPARED' || state === 'SYNCING') {
         clearTimeout(timeout)
         c.off(sdk.ClientEvent.Sync, onSync)
+        // Enable key backup so missing room keys can be fetched
+        c.getCrypto()?.checkKeyBackupAndEnable().catch(() => {})
         resolve(getRooms(c))
       } else if (state === 'ERROR') {
         clearTimeout(timeout)

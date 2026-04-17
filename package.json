@@ -13,7 +13,7 @@
     "matrix-js-sdk": "^41.3.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "vite-plugin-pwa": "^1.2.0",
+    "vite-plugin-pwa": "0.21.0",
     "workbox-window": "^7.4.0"
   },
   "devDependencies": {

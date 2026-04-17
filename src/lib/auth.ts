@@ -1,4 +1,4 @@
-import { AuthState } from '../types'
+import type { AuthState } from '../types'
 
 const AUTH_KEY = 'matrix_auth'
 

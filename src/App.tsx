@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { loadAuth, clearAuth } from './lib/auth'
-import { AuthState } from './types'
+import type { AuthState } from './types'
 import LoginScreen from './components/LoginScreen'
 import './App.css'
 

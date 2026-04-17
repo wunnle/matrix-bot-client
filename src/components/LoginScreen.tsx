@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { matrixLogin, saveAuth } from '../lib/auth'
-import { AuthState } from '../types'
+import type { AuthState } from '../types'
 
 interface Props {
   onLogin: (auth: AuthState) => void

@@ -8,17 +8,18 @@ interface Props {
   activeRoomId: string | null
   onSelectRoom: (roomId: string, roomName: string) => void
   onSignOut: () => void
+  onReady: () => void
 }
 
-export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut }: Props) {
+export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, onReady }: Props) {
   const [rooms, setRooms] = useState<RoomSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
     fetchJoinedRooms(auth)
-      .then((r) => { setRooms(r); setLoading(false) })
-      .catch((e) => { setError(e.message); setLoading(false) })
+      .then((r) => { setRooms(r); setLoading(false); onReady() })
+      .catch((e) => { setError(e.message); setLoading(false); onReady() })
   }, [auth])
 
   // Keep room list live: re-sort and update unread on new messages

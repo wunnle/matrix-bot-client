@@ -14,6 +14,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   const { roomId } = useParams<{ roomId: string }>()
   const navigate = useNavigate()
   const [roomNames, setRoomNames] = useState<Record<string, string>>({})
+  const [ready, setReady] = useState(false)
 
   const activeRoomId = roomId ? decodeURIComponent(roomId) : null
 
@@ -36,11 +37,18 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
             activeRoomId={activeRoomId}
             onSelectRoom={handleSelectRoom}
             onSignOut={onSignOut}
+            onReady={() => setReady(true)}
           />
         </aside>
 
         <main className="main">
-          {activeRoomId ? (
+          {!ready ? (
+            <div className="empty-state">
+              <div className="loading-dots">
+                <span /><span /><span />
+              </div>
+            </div>
+          ) : activeRoomId ? (
             <ChatView
               key={activeRoomId}
               roomId={activeRoomId}

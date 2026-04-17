@@ -685,6 +685,13 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   color: var(--accent);
 }
 
+.send-error {
+  font-size: 13px;
+  color: var(--danger);
+  padding: 6px 16px;
+  flex-shrink: 0;
+}
+
 /* ─────────────────────────────
    Input Row
 ───────────────────────────── */

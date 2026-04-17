@@ -21,6 +21,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
   const [typingUsers, setTypingUsers] = useState<string[]>([])
+  const [sendError, setSendError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -156,6 +157,10 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     try {
       await client.sendTextMessage(roomId, text)
       scrollToBottom()
+    } catch (err: any) {
+      setInput(text) // restore input so message isn't lost
+      setSendError(err?.message ?? 'Failed to send')
+      setTimeout(() => setSendError(''), 4000)
     } finally {
       setSending(false)
       textareaRef.current?.focus()
@@ -253,6 +258,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
           ))}
         </ul>
       )}
+
+      {sendError && <div className="send-error">{sendError}</div>}
 
       <div className="input-row">
         <textarea

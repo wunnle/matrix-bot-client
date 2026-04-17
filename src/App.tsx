@@ -7,63 +7,65 @@ import RoomList from './components/RoomList'
 import ChatView from './components/ChatView'
 import './App.css'
 
-type View =
-  | { screen: 'login' }
-  | { screen: 'rooms' }
-  | { screen: 'chat'; roomId: string; roomName: string }
+interface ActiveRoom {
+  roomId: string
+  roomName: string
+}
 
 export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null)
-  const [view, setView] = useState<View>({ screen: 'login' })
   const [ready, setReady] = useState(false)
+  const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(null)
 
   useEffect(() => {
     const stored = loadAuth()
-    if (stored) {
-      setAuth(stored)
-      setView({ screen: 'rooms' })
-    }
+    if (stored) setAuth(stored)
     setReady(true)
   }, [])
 
   function handleLogin(a: AuthState) {
     setAuth(a)
-    setView({ screen: 'rooms' })
   }
 
   function handleSignOut() {
     destroyClient()
     clearAuth()
     setAuth(null)
-    setView({ screen: 'login' })
+    setActiveRoom(null)
   }
 
   if (!ready) return null
 
-  if (view.screen === 'login' || !auth) {
+  if (!auth) {
     return <LoginScreen onLogin={handleLogin} />
   }
 
-  if (view.screen === 'rooms') {
-    return (
-      <RoomList
-        auth={auth}
-        onSelectRoom={(roomId, roomName) => setView({ screen: 'chat', roomId, roomName })}
-        onSignOut={handleSignOut}
-      />
-    )
-  }
+  return (
+    <div className={`layout ${activeRoom ? 'room-open' : ''}`}>
+      <aside className="sidebar">
+        <RoomList
+          auth={auth}
+          activeRoomId={activeRoom?.roomId ?? null}
+          onSelectRoom={(roomId, roomName) => setActiveRoom({ roomId, roomName })}
+          onSignOut={handleSignOut}
+        />
+      </aside>
 
-  if (view.screen === 'chat') {
-    return (
-      <ChatView
-        roomId={view.roomId}
-        roomName={view.roomName}
-        userId={auth.userId}
-        onBack={() => setView({ screen: 'rooms' })}
-      />
-    )
-  }
-
-  return null
+      <main className="main">
+        {activeRoom ? (
+          <ChatView
+            roomId={activeRoom.roomId}
+            roomName={activeRoom.roomName}
+            userId={auth.userId}
+            onBack={() => setActiveRoom(null)}
+          />
+        ) : (
+          <div className="empty-state">
+            <div className="empty-icon">💬</div>
+            <p>Select a room to start chatting</p>
+          </div>
+        )}
+      </main>
+    </div>
+  )
 }

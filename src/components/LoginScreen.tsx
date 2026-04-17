@@ -30,7 +30,11 @@ export default function LoginScreen({ onLogin }: Props) {
 
   return (
     <div className="login-screen">
-      <h1>Matrix Bot Client</h1>
+      <div className="login-logo">
+        <span className="logo-icon">◈</span>
+        <h1>BotClient</h1>
+        <p>A lightweight Matrix client for bots</p>
+      </div>
       <form onSubmit={handleSubmit}>
         <label>
           Homeserver

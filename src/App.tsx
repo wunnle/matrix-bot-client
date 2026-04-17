@@ -5,6 +5,7 @@ import type { AuthState } from './types'
 import LoginScreen from './components/LoginScreen'
 import RoomList from './components/RoomList'
 import ChatView from './components/ChatView'
+import ConnectionBanner from './components/ConnectionBanner'
 import './App.css'
 
 interface ActiveRoom {
@@ -42,30 +43,33 @@ export default function App() {
 
   return (
     <div className={`layout ${activeRoom ? 'room-open' : ''}`}>
-      <aside className="sidebar">
-        <RoomList
-          auth={auth}
-          activeRoomId={activeRoom?.roomId ?? null}
-          onSelectRoom={(roomId, roomName) => setActiveRoom({ roomId, roomName })}
-          onSignOut={handleSignOut}
-        />
-      </aside>
-
-      <main className="main">
-        {activeRoom ? (
-          <ChatView
-            roomId={activeRoom.roomId}
-            roomName={activeRoom.roomName}
-            userId={auth.userId}
-            onBack={() => setActiveRoom(null)}
+      <ConnectionBanner />
+      <div className="layout-body">
+        <aside className="sidebar">
+          <RoomList
+            auth={auth}
+            activeRoomId={activeRoom?.roomId ?? null}
+            onSelectRoom={(roomId, roomName) => setActiveRoom({ roomId, roomName })}
+            onSignOut={handleSignOut}
           />
-        ) : (
-          <div className="empty-state">
-            <div className="empty-icon">💬</div>
-            <p>Select a room to start chatting</p>
-          </div>
-        )}
-      </main>
+        </aside>
+
+        <main className="main">
+          {activeRoom ? (
+            <ChatView
+              roomId={activeRoom.roomId}
+              roomName={activeRoom.roomName}
+              userId={auth.userId}
+              onBack={() => setActiveRoom(null)}
+            />
+          ) : (
+            <div className="empty-state">
+              <div className="empty-icon">💬</div>
+              <p>Select a room to start chatting</p>
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   )
 }

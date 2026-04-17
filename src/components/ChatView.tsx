@@ -17,7 +17,6 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
-  const [syncing, setSyncing] = useState(true)
   const [sending, setSending] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
@@ -25,6 +24,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const bottomRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const touchStartX = useRef<number | null>(null)
+  const touchStartY = useRef<number | null>(null)
   const client = getClient()
 
   useEffect(() => {
@@ -32,7 +33,6 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     if (!room) return
 
     setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId))
-    setSyncing(false)
 
     const onEvent = (event: sdk.MatrixEvent, room_: sdk.Room | undefined) => {
       if (room_?.roomId !== roomId) return
@@ -81,7 +81,6 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     isFirstLoad.current = true
     setHasMore(true)
     setMessages([])
-    setSyncing(true)
   }, [roomId])
 
   // Scroll to bottom when own message is sent
@@ -170,12 +169,28 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     }
   }
 
+  function handleTouchStart(e: React.TouchEvent) {
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    if (touchStartX.current === null || touchStartY.current === null) return
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    const dy = Math.abs(e.changedTouches[0].clientY - touchStartY.current)
+    // Right swipe from left edge: dx > 60px, not too vertical, started within 40px of left edge
+    if (dx > 60 && dy < 80 && touchStartX.current < 40) {
+      onBack()
+    }
+    touchStartX.current = null
+    touchStartY.current = null
+  }
+
   return (
-    <div className="chat-view">
+    <div className="chat-view" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <div className="chat-header">
         <button className="back" onClick={onBack}>←</button>
         <span className="chat-title">{roomName}</span>
-        {syncing && <span className="syncing">syncing…</span>}
       </div>
 
       <div className="messages" ref={messagesRef} onScroll={handleScroll}>

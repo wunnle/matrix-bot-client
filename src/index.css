@@ -42,8 +42,53 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .layout {
   display: flex;
+  flex-direction: column;
   height: 100dvh;
   overflow: hidden;
+}
+
+.layout-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Connection banner */
+.connection-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  flex-shrink: 0;
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+
+.banner-connecting  { background: #2a2a1a; color: #c8b86a; }
+.banner-reconnecting { background: #2a1e1a; color: #e0956a; }
+.banner-error       { background: #2a1a1a; color: #e06a6a; }
+
+.banner-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: pulse 1.5s infinite;
+}
+
+.banner-connecting  .banner-dot { background: #c8b86a; }
+.banner-reconnecting .banner-dot { background: #e0956a; }
+.banner-error       .banner-dot { background: #e06a6a; animation: none; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 .sidebar {
@@ -66,12 +111,16 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 /* Mobile: sidebar full-width, hidden when room open */
 @media (max-width: 640px) {
+  .layout-body {
+    position: relative;
+  }
+
   .sidebar {
     width: 100%;
     position: absolute;
     inset: 0;
     z-index: 10;
-    transition: transform 0.2s ease;
+    transition: transform 0.25s ease;
   }
 
   .layout.room-open .sidebar {

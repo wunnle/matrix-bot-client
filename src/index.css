@@ -221,6 +221,12 @@ button {
   font-weight: 600;
   font-size: 16px;
   color: var(--text);
+  flex: 1;
+}
+
+.syncing {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .messages {
@@ -273,6 +279,13 @@ button {
   background: var(--other-bubble);
   border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
+}
+
+.timestamp {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  padding: 0 4px;
 }
 
 /* ── Pills ── */

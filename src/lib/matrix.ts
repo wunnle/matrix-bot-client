@@ -1,4 +1,5 @@
 import * as sdk from 'matrix-js-sdk'
+import { IndexedDBCryptoStore } from 'matrix-js-sdk/lib/crypto/store/indexeddb-crypto-store'
 import type { AuthState } from '../types'
 
 let client: sdk.MatrixClient | null = null
@@ -14,6 +15,7 @@ export function createClient(auth: AuthState): sdk.MatrixClient {
     accessToken: auth.accessToken,
     userId: auth.userId,
     deviceId: auth.deviceId,
+    cryptoStore: new IndexedDBCryptoStore(indexedDB, 'matrix-js-sdk:crypto'),
   })
   return client
 }
@@ -51,6 +53,9 @@ function getRooms(c: sdk.MatrixClient): RoomSummary[] {
 
 export async function fetchJoinedRooms(auth: AuthState): Promise<RoomSummary[]> {
   const c = createClient(auth)
+
+  // Initialize E2EE
+  await c.initRustCrypto()
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Sync timed out')), 30000)

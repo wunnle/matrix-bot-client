@@ -14,6 +14,7 @@ export interface Message {
   body: string
   timestamp: number
   isOwnMessage: boolean
+  isDecryptionFailure?: boolean
 }
 
 export interface AuthState {

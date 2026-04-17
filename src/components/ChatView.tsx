@@ -49,8 +49,22 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     client.sendReadReceipt(room.getLiveTimeline().getEvents().at(-1) ?? null)
       .catch(() => {})
 
+    // Re-render message when decryption completes late
+    const onDecrypted = (event: sdk.MatrixEvent) => {
+      if (event.getRoomId() !== roomId) return
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.eventId === (event.getId() ?? '') ? eventToMessage(event, userId) : m
+        )
+      )
+    }
+
+    client.on(sdk.MatrixEventEvent.Decrypted, onDecrypted)
     client.on(sdk.RoomEvent.Timeline, onEvent)
-    return () => { client.off(sdk.RoomEvent.Timeline, onEvent) }
+    return () => {
+      client.off(sdk.RoomEvent.Timeline, onEvent)
+      client.off(sdk.MatrixEventEvent.Decrypted, onDecrypted)
+    }
   }, [roomId, userId, client])
 
   // Typing indicators
@@ -221,7 +235,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                 {!msg.isOwnMessage && (
                   <div className="sender">{shortName(msg.sender)}</div>
                 )}
-                <div className="bubble">{msg.body}</div>
+                <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}>{msg.body}</div>
                 <div className="timestamp">{formatTime(msg.timestamp)}</div>
               </div>
             </div>
@@ -280,18 +294,27 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
 }
 
 function eventToMessage(event: sdk.MatrixEvent, userId: string): Message {
+  const isFailure = event.isDecryptionFailure()
+  const isEncrypted = event.getType() === 'm.room.encrypted'
+  let body = event.getContent()?.body ?? ''
+
+  if (isFailure || (isEncrypted && !body)) {
+    body = '🔒 Unable to decrypt'
+  }
+
   return {
     eventId: event.getId() ?? event.getTs().toString(),
     sender: event.getSender() ?? '',
-    body: event.getContent()?.body ?? '',
+    body,
     timestamp: event.getTs(),
     isOwnMessage: event.getSender() === userId,
+    isDecryptionFailure: isFailure,
   }
 }
 
 function eventsToMessages(events: sdk.MatrixEvent[], userId: string): Message[] {
   return events
-    .filter((e) => e.getType() === 'm.room.message')
+    .filter((e) => e.getType() === 'm.room.message' || e.getType() === 'm.room.encrypted' || e.isDecryptionFailure())
     .map((e) => eventToMessage(e, userId))
 }
 

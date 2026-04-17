@@ -530,6 +530,12 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   border-bottom-left-radius: 4px;
 }
 
+.bubble-failed {
+  color: var(--text-muted) !important;
+  font-style: italic;
+  font-size: 13px;
+}
+
 .timestamp {
   font-size: 11px;
   color: var(--text-faint);

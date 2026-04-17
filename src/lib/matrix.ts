@@ -1,5 +1,4 @@
 import * as sdk from 'matrix-js-sdk'
-import { IndexedDBCryptoStore } from 'matrix-js-sdk/lib/crypto/store/indexeddb-crypto-store'
 import type { AuthState } from '../types'
 
 let client: sdk.MatrixClient | null = null
@@ -15,7 +14,6 @@ export function createClient(auth: AuthState): sdk.MatrixClient {
     accessToken: auth.accessToken,
     userId: auth.userId,
     deviceId: auth.deviceId,
-    cryptoStore: new IndexedDBCryptoStore(indexedDB, 'matrix-js-sdk:crypto'),
   })
   return client
 }

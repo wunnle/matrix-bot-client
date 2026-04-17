@@ -33,29 +33,41 @@ export interface RoomSummary {
   unreadCount: number
 }
 
-export async function fetchJoinedRooms(auth: AuthState): Promise<RoomSummary[]> {
-  const c = createClient(auth)
-  await c.startClient({ lazyLoadMembers: true })
-
-  return new Promise((resolve) => {
-    c.once(sdk.ClientEvent.Sync, (state) => {
-      if (state === 'PREPARED') {
-        const rooms = c.getRooms().map((room) => {
-          const timeline = room.getLiveTimeline().getEvents()
-          const last = [...timeline].reverse().find(
-            (e) => e.getType() === 'm.room.message'
-          )
-          return {
-            roomId: room.roomId,
-            name: room.name,
-            lastMessage: last?.getContent()?.body,
-            lastTs: last?.getTs(),
-            unreadCount: room.getUnreadNotificationCount(),
-          }
-        })
-        rooms.sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0))
-        resolve(rooms)
+function getRooms(c: sdk.MatrixClient): RoomSummary[] {
+  return c.getRooms()
+    .map((room) => {
+      const timeline = room.getLiveTimeline().getEvents()
+      const last = [...timeline].reverse().find((e) => e.getType() === 'm.room.message')
+      return {
+        roomId: room.roomId,
+        name: room.name,
+        lastMessage: last?.getContent()?.body,
+        lastTs: last?.getTs(),
+        unreadCount: room.getUnreadNotificationCount(),
       }
     })
+    .sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0))
+}
+
+export async function fetchJoinedRooms(auth: AuthState): Promise<RoomSummary[]> {
+  const c = createClient(auth)
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Sync timed out')), 30000)
+
+    const onSync = (state: string) => {
+      if (state === 'PREPARED' || state === 'SYNCING') {
+        clearTimeout(timeout)
+        c.off(sdk.ClientEvent.Sync, onSync)
+        resolve(getRooms(c))
+      } else if (state === 'ERROR') {
+        clearTimeout(timeout)
+        c.off(sdk.ClientEvent.Sync, onSync)
+        reject(new Error('Sync failed'))
+      }
+    }
+
+    c.on(sdk.ClientEvent.Sync, onSync)
+    c.startClient({ lazyLoadMembers: true })
   })
 }

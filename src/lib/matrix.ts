@@ -64,10 +64,14 @@ async function getCryptoStorageKey(userId: string, deviceId: string): Promise<Ui
 export async function fetchJoinedRooms(auth: AuthState): Promise<RoomSummary[]> {
   const c = createClient(auth)
 
-  // Initialize E2EE — storageKey ties crypto identity to this user/device
-  await c.initRustCrypto({
-    storageKey: await getCryptoStorageKey(auth.userId, auth.deviceId),
-  })
+  // Initialize E2EE (handles both encrypted and plaintext rooms)
+  try {
+    await c.initRustCrypto({
+      storageKey: await getCryptoStorageKey(auth.userId, auth.deviceId),
+    })
+  } catch {
+    // Non-fatal — plaintext rooms will still work
+  }
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Sync timed out')), 30000)

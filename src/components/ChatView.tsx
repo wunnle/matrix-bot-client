@@ -307,7 +307,11 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                           return (
                             <>
                               <div className={`bot-text ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}>
-                                {msg.imageUrl ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" /> : text}
+                                {msg.imageUrl
+                                  ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" />
+                                  : msg.formattedBody
+                                    ? <span dangerouslySetInnerHTML={{ __html: msg.formattedBody }} />
+                                    : text}
                               </div>
                               {actions.length > 0 && (
                                 <div className="action-buttons">
@@ -427,10 +431,16 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, client: sdk.Matr
     body = content.body ?? ''
   }
 
+  let formattedBody: string | undefined
+  if (!isFailure && content?.format === 'org.matrix.custom.html' && content?.formatted_body) {
+    formattedBody = sanitizeHtml(content.formatted_body)
+  }
+
   return {
     eventId: event.getId() ?? event.getTs().toString(),
     sender: event.getSender() ?? '',
     body,
+    formattedBody,
     imageUrl,
     timestamp: event.getTs(),
     isOwnMessage: event.getSender() === userId,
@@ -442,6 +452,35 @@ function eventsToMessages(events: sdk.MatrixEvent[], userId: string, client: sdk
   return events
     .filter((e) => e.getType() === 'm.room.message' || e.getType() === 'm.room.encrypted' || e.isDecryptionFailure())
     .map((e) => eventToMessage(e, userId, client))
+}
+
+const ALLOWED_TAGS = /^(p|br|strong|b|em|i|u|s|del|code|pre|ul|ol|li|blockquote|h[1-6]|a|span)$/i
+const ALLOWED_ATTRS: Record<string, string[]> = { a: ['href', 'target', 'rel'] }
+
+function sanitizeHtml(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  function clean(node: Node) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as Element
+      if (!ALLOWED_TAGS.test(el.tagName)) {
+        el.replaceWith(...Array.from(el.childNodes))
+        return
+      }
+      const allowed = ALLOWED_ATTRS[el.tagName.toLowerCase()] ?? []
+      for (const attr of Array.from(el.attributes)) {
+        if (!allowed.includes(attr.name)) el.removeAttribute(attr.name)
+      }
+      if (el.tagName.toLowerCase() === 'a') {
+        const href = el.getAttribute('href') ?? ''
+        if (href.startsWith('javascript:')) el.removeAttribute('href')
+        el.setAttribute('target', '_blank')
+        el.setAttribute('rel', 'noopener noreferrer')
+      }
+      Array.from(el.childNodes).forEach(clean)
+    }
+  }
+  Array.from(doc.body.childNodes).forEach(clean)
+  return doc.body.innerHTML
 }
 
 function shortName(userId: string): string {

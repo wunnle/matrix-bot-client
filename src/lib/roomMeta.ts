@@ -3,7 +3,8 @@
 
 import type { MatrixClient } from 'matrix-js-sdk'
 
-const ACCOUNT_DATA_TYPE = 'com.matrix-pwa.room-pills'
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ACCOUNT_DATA_TYPE = 'com.matrix-pwa.room-pills' as any
 
 interface PillsStore {
   [roomId: string]: string[]

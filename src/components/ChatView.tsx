@@ -124,12 +124,14 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       requestAnimationFrame(() => requestAnimationFrame(() => bottomRef.current?.scrollIntoView()))
       return
     }
-    const container = messagesRef.current
-    if (!container) return
-    const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
-    if (distFromBottom < 180) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const container = messagesRef.current
+      if (!container) return
+      const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+      if (distFromBottom < 180) {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }
+    }))
   }, [messages])
 
   // Reset on room change

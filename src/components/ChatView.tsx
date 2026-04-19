@@ -117,7 +117,18 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     isFirstLoad.current = true
     setHasMore(true)
     setMessages([])
+  }, [roomId])
+
+  // Load pills and keep them in sync with account data updates
+  useEffect(() => {
     loadPills(client, roomId).then(setPills)
+    const onAccountData = (event: sdk.MatrixEvent) => {
+      if (event.getType() === 'com.matrix-pwa.room-pills') {
+        loadPills(client, roomId).then(setPills)
+      }
+    }
+    client.on(sdk.ClientEvent.AccountData, onAccountData)
+    return () => { client.off(sdk.ClientEvent.AccountData, onAccountData) }
   }, [roomId, client])
 
   // Scroll to bottom when own message is sent

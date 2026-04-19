@@ -120,8 +120,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   useEffect(() => {
     if (messages.length === 0) return
     if (isFirstLoad.current) {
-      bottomRef.current?.scrollIntoView()
       isFirstLoad.current = false
+      requestAnimationFrame(() => bottomRef.current?.scrollIntoView())
       return
     }
     const container = messagesRef.current

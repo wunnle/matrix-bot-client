@@ -740,35 +740,11 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   }
 }
 
-/* Typing indicator */
-.typing-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 4px 6px;
-}
-
-.typing-dots {
-  display: flex;
-  gap: 3px;
-  align-items: center;
-}
-
-.typing-dots span {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  animation: bounce 1.2s infinite;
-}
-
-.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
-.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
-
-.typing-label {
-  font-size: 12px;
+.thinking-indicator {
+  font-size: 13px;
   color: var(--text-muted);
   font-style: italic;
+  padding: 4px 0 8px;
 }
 
 /* Pills & Autocomplete */

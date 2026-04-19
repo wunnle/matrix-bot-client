@@ -325,19 +325,16 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
               </div>
             )
           })}
+          {typingUsers.length > 0 && (
+            <div className="thinking-indicator">
+              {(() => { const bot = getRoomBotName(roomId, userId, client); return bot ?? typingUsers[0] })()}  is thinking…
+            </div>
+          )}
           <div ref={bottomRef} />
         </div>
       </div>
 
       <div className="chat-footer">
-        {typingUsers.length > 0 && (
-          <div className="typing-indicator">
-            <span className="typing-dots"><span /><span /><span /></span>
-            <span className="typing-label">
-              {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing
-            </span>
-          </div>
-        )}
 
         <div className="pills">
           {pills.map((pill) => (

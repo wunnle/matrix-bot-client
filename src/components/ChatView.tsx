@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import { getClient } from '../lib/matrix'
+import { parseTopic } from '../lib/roomMeta'
+import RoomEditor from './RoomEditor'
 import type { Message, RoomConfig } from '../types'
 
 interface Props {
@@ -13,10 +15,18 @@ interface Props {
 
 const PAGE_SIZE = 30
 
+function getRoomPills(roomId: string, client: sdk.MatrixClient): string[] {
+  const room = client.getRoom(roomId)
+  const raw = (room?.currentState.getStateEvents('m.room.topic', '')?.getContent()?.topic as string) ?? ''
+  return parseTopic(raw).meta.pills
+}
+
 export default function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
+  const [showEditor, setShowEditor] = useState(false)
+  const [pills, setPills] = useState(() => getRoomPills(roomId, client))
   const [sending, setSending] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
@@ -154,7 +164,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
 
   // Autocomplete
   useEffect(() => {
-    const all = [...(config?.pills ?? []), ...(config?.suggestions ?? [])]
+    const all = [...pills, ...(config?.suggestions ?? [])]
     if (input.trim().length < 2 || !all.length) {
       setSuggestions([])
       return
@@ -210,7 +220,10 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       <div className="chat-header">
         <button className="back" onClick={onBack}>←</button>
         <span className="chat-title">{roomName}</span>
+        <button className="header-action" onClick={() => setShowEditor(true)} title="Room settings">⚙︎</button>
       </div>
+
+      {showEditor && <RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); setPills(getRoomPills(roomId, client)) }} />}
 
       <div className="messages" ref={messagesRef} onScroll={handleScroll}>
         <div className="messages-inner">
@@ -262,9 +275,9 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
           </div>
         )}
 
-        {config?.pills && config.pills.length > 0 && (
+        {pills.length > 0 && (
           <div className="pills">
-            {config.pills.map((pill) => (
+            {pills.map((pill) => (
               <button key={pill} className="pill" onClick={() => sendMessage(pill)}>
                 {pill}
               </button>

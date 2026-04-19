@@ -683,7 +683,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .pills {
   display: flex;
   gap: 6px;
-  padding: 8px 0 4px;
+  padding: 4px 0 8px;
   flex-wrap: wrap;
 }
 
@@ -691,8 +691,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   background: var(--bg-surface);
   border: 1px solid var(--border);
   color: var(--text-muted);
-  border-radius: 99px;
-  padding: 5px 13px;
+  border-radius: 14px;
+  padding: 7px 14px;
   font-size: 13px;
   transition: all 0.15s;
 }

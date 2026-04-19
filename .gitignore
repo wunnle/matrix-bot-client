@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+scripts/.env
+scripts/.pingpong-store-*
 
 # Editor directories and files
 .vscode/*

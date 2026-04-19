@@ -568,7 +568,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   padding: 2px 0;
 }
 
-.bot-text span { white-space: normal; }
+.bot-text.bot-text-rich { white-space: normal; }
 .bot-text p { margin-bottom: 0.5em; }
 .bot-text p:last-child { margin-bottom: 0; }
 .bot-text ul, .bot-text ol { padding-left: 1.4em; margin-bottom: 0.5em; }

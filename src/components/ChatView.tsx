@@ -306,7 +306,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                           const { text, actions } = parseActions(msg.body)
                           return (
                             <>
-                              <div className={`bot-text ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}>
+                              <div className={`bot-text ${msg.formattedBody ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}>
                                 {msg.imageUrl
                                   ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" />
                                   : msg.formattedBody

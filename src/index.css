@@ -707,10 +707,10 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .input-row {
   display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
-  margin-top: 8px;
   background: var(--bg);
   flex-shrink: 0;
 }
@@ -719,13 +719,14 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   flex: 1;
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 22px;
+  padding: 11px 16px;
   color: var(--text);
-  font: 16px/1.5 system-ui, sans-serif;
+  font: 16px/1.4 system-ui, sans-serif;
   outline: none;
   transition: border-color 0.15s;
   min-width: 0;
+  height: 44px;
 }
 
 .input-row input[type="text"]:focus { border-color: var(--accent); }
@@ -735,15 +736,18 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .input-row button {
   background: var(--accent);
   color: #fff;
-  border-radius: 10px;
-  padding: 0 18px;
+  border-radius: 22px;
+  padding: 0 20px;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 15px;
   transition: background 0.15s;
-  align-self: flex-end;
-  height: 40px;
+  height: 44px;
   flex-shrink: 0;
 }
 
 .input-row button:hover { background: var(--accent-hover); }
 .input-row button:disabled { opacity: 0.4; cursor: default; }
+
+@media (max-width: 640px) {
+  .input-row button { display: none; }
+}

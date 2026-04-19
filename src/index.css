@@ -522,7 +522,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .messages-inner {
   max-width: 760px;
   margin: 0 auto;
-  padding: 16px 16px 8px;
+  padding: 16px 16px 36px;
   display: flex;
   flex-direction: column;
   gap: 4px;

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import { getClient } from '../lib/matrix'
-import { parseTopic } from '../lib/roomMeta'
+import { loadPills } from '../lib/roomMeta'
 import RoomEditor from './RoomEditor'
 import type { Message, RoomConfig } from '../types'
 
@@ -15,11 +15,6 @@ interface Props {
 
 const PAGE_SIZE = 30
 
-function getRoomPills(roomId: string, client: sdk.MatrixClient): string[] {
-  const room = client.getRoom(roomId)
-  const raw = (room?.currentState.getStateEvents('m.room.topic', '')?.getContent()?.topic as string) ?? ''
-  return parseTopic(raw).meta.pills
-}
 
 export default function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -57,6 +52,14 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
         if (prev.some((m) => m.eventId === id)) return prev
         return [...prev, eventToMessage(event, userId, client)]
       })
+      // Auto-scroll only if already near the bottom
+      const container = messagesRef.current
+      if (container) {
+        const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+        if (distFromBottom < 120) {
+          requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }))
+        }
+      }
     }
 
     // Send read receipt when opening room
@@ -114,7 +117,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     isFirstLoad.current = true
     setHasMore(true)
     setMessages([])
-    setPills(getRoomPills(roomId, client))
+    loadPills(client, roomId).then(setPills)
   }, [roomId, client])
 
   // Scroll to bottom when own message is sent
@@ -224,7 +227,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
         <button className="header-action" onClick={() => setShowEditor(true)} title="Room settings">⚙︎</button>
       </div>
 
-      {showEditor && <RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); setPills(getRoomPills(roomId, client)) }} />}
+      {showEditor && <RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} />}
 
       <div className="messages" ref={messagesRef} onScroll={handleScroll}>
         <div className="messages-inner">

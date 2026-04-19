@@ -797,12 +797,11 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-editor-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
   z-index: 100;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding: 0 0 env(safe-area-inset-bottom);
   animation: fadeIn 0.15s ease;
 }
 
@@ -814,12 +813,14 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-editor {
   background: var(--bg-surface);
   border: 1px solid var(--border);
+  border-top: none;
   border-radius: 20px 20px 0 0;
   width: 100%;
-  max-width: 640px;
+  max-width: 560px;
   display: flex;
   flex-direction: column;
-  animation: slideUp 0.2s ease;
+  padding-bottom: env(safe-area-inset-bottom);
+  animation: slideUp 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes slideUp {
@@ -827,118 +828,133 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   to   { transform: translateY(0); }
 }
 
+/* drag handle */
+.room-editor::before {
+  content: '';
+  display: block;
+  width: 36px;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--border);
+  margin: 12px auto 0;
+  flex-shrink: 0;
+}
+
 .room-editor-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 20px 14px;
-  border-bottom: 1px solid var(--border);
+  padding: 16px 20px 12px;
 }
 
 .room-editor-title {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--text);
 }
 
 .room-editor-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-active);
   color: var(--text-muted);
-  font-size: 16px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: color 0.15s;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
 }
-.room-editor-close:hover { color: var(--text); }
+.room-editor-close:hover { background: var(--bg-hover); color: var(--text); }
 
 .room-editor-body {
-  padding: 20px;
+  padding: 4px 20px 20px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
-.editor-label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.editor-section-label {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
+  margin-bottom: -8px;
 }
-
-.editor-textarea {
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
-  color: var(--text);
-  font: 15px/1.5 system-ui, sans-serif;
-  resize: none;
-  outline: none;
-  transition: border-color 0.15s;
-}
-.editor-textarea:focus { border-color: var(--accent); }
 
 .editor-pills {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  min-height: 32px;
+  min-height: 36px;
+  align-items: center;
 }
 
 .editor-pill {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: var(--accent-dim);
-  border: 1px solid var(--accent);
-  color: var(--accent);
+  gap: 5px;
+  background: var(--bg-active);
+  color: var(--text);
   border-radius: 99px;
-  padding: 5px 10px 5px 14px;
+  padding: 6px 8px 6px 14px;
   font-size: 14px;
+  font-weight: 500;
+  border: 1px solid var(--border);
 }
 
 .editor-pill button {
-  color: var(--accent);
-  font-size: 11px;
-  opacity: 0.7;
-  transition: opacity 0.15s;
-  line-height: 1;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
 }
-.editor-pill button:hover { opacity: 1; }
+.editor-pill button:hover { background: var(--danger); color: #fff; }
 
 .editor-pill-input {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 4px 4px 4px 14px;
+  transition: border-color 0.15s;
 }
+.editor-pill-input:focus-within { border-color: var(--accent); }
 
 .editor-pill-input input {
   flex: 1;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 9px 12px;
+  background: transparent;
+  border: none;
+  padding: 7px 0;
   color: var(--text);
   font: 15px/1 system-ui, sans-serif;
   outline: none;
-  transition: border-color 0.15s;
+  min-width: 0;
 }
-.editor-pill-input input:focus { border-color: var(--accent); }
+.editor-pill-input input::placeholder { color: var(--text-faint); }
 
 .editor-pill-input button {
-  background: var(--bg-active);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 9px;
   padding: 0 16px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
+  height: 34px;
+  flex-shrink: 0;
   transition: background 0.15s;
 }
-.editor-pill-input button:hover:not(:disabled) { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
-.editor-pill-input button:disabled { opacity: 0.4; }
+.editor-pill-input button:hover:not(:disabled) { background: var(--accent-hover); }
+.editor-pill-input button:disabled { opacity: 0.35; }
 
 .editor-error {
   font-size: 13px;
@@ -948,7 +964,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-editor-footer {
   display: flex;
   gap: 10px;
-  padding: 16px 20px;
+  padding: 14px 20px;
   border-top: 1px solid var(--border);
   justify-content: flex-end;
 }

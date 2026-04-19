@@ -1,27 +1,24 @@
-// Room meta is stored as a JSON block at the end of the room topic,
-// separated by a magic delimiter so the human-readable topic is preserved.
+// Pills are stored in Matrix account data under this event type,
+// so no room permissions are required and they sync across devices.
 
-const DELIMITER = '\n\n<!--pills'
+import type { MatrixClient } from 'matrix-js-sdk'
 
-export interface RoomMeta {
-  pills: string[]
+const ACCOUNT_DATA_TYPE = 'com.matrix-pwa.room-pills'
+
+interface PillsStore {
+  [roomId: string]: string[]
 }
 
-export function parseTopic(raw: string | undefined): { topic: string; meta: RoomMeta } {
-  if (!raw) return { topic: '', meta: { pills: [] } }
-  const idx = raw.indexOf(DELIMITER)
-  if (idx === -1) return { topic: raw, meta: { pills: [] } }
-  const topic = raw.slice(0, idx)
+export async function loadPills(client: MatrixClient, roomId: string): Promise<string[]> {
   try {
-    const json = raw.slice(idx + DELIMITER.length).replace(/-->$/, '').trim()
-    const meta = JSON.parse(json) as RoomMeta
-    return { topic, meta }
+    const data = client.getAccountData(ACCOUNT_DATA_TYPE)?.getContent<PillsStore>() ?? {}
+    return data[roomId] ?? []
   } catch {
-    return { topic, meta: { pills: [] } }
+    return []
   }
 }
 
-export function encodeTopic(topic: string, meta: RoomMeta): string {
-  if (!meta.pills.length) return topic
-  return `${topic}${DELIMITER}${JSON.stringify(meta)}-->`
+export async function savePills(client: MatrixClient, roomId: string, pills: string[]): Promise<void> {
+  const existing = client.getAccountData(ACCOUNT_DATA_TYPE)?.getContent<PillsStore>() ?? {}
+  await client.setAccountData(ACCOUNT_DATA_TYPE, { ...existing, [roomId]: pills })
 }

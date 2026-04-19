@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { getClient } from '../lib/matrix'
-import { parseTopic, encodeTopic } from '../lib/roomMeta'
+import { loadPills, savePills } from '../lib/roomMeta'
 
 interface Props {
   roomId: string
@@ -9,19 +9,16 @@ interface Props {
 
 export default function RoomEditor({ roomId, onClose }: Props) {
   const client = getClient()
-  const room = client.getRoom(roomId)
-
-  const rawTopic = (room?.currentState.getStateEvents('m.room.topic', '')?.getContent()?.topic as string) ?? ''
-  const { topic: initialTopic, meta: initialMeta } = parseTopic(rawTopic)
-
-  const [topic, setTopic] = useState(initialTopic)
-  const [pills, setPills] = useState<string[]>(initialMeta.pills)
+  const [pills, setPills] = useState<string[]>([])
   const [newPill, setNewPill] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { inputRef.current?.focus() }, [])
+  useEffect(() => {
+    loadPills(client, roomId).then(setPills)
+    inputRef.current?.focus()
+  }, [client, roomId])
 
   function addPill() {
     const val = newPill.trim()
@@ -35,7 +32,7 @@ export default function RoomEditor({ roomId, onClose }: Props) {
     setPills((p) => p.filter((x) => x !== pill))
   }
 
-  function handlePillKeyDown(e: React.KeyboardEvent) {
+  function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter') { e.preventDefault(); addPill() }
   }
 
@@ -43,8 +40,7 @@ export default function RoomEditor({ roomId, onClose }: Props) {
     setSaving(true)
     setError('')
     try {
-      const encoded = encodeTopic(topic, { pills })
-      await client.setRoomTopic(roomId, encoded)
+      await savePills(client, roomId, pills)
       onClose()
     } catch (e: any) {
       setError(e?.message ?? 'Failed to save')
@@ -62,20 +58,7 @@ export default function RoomEditor({ roomId, onClose }: Props) {
         </div>
 
         <div className="room-editor-body">
-          <label className="editor-label">
-            Topic
-            <textarea
-              className="editor-textarea"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="Room topic…"
-              rows={2}
-            />
-          </label>
-
-          <label className="editor-label">
-            Quick-reply pills
-          </label>
+          <div className="editor-section-label">Quick-reply pills</div>
 
           <div className="editor-pills">
             {pills.map((pill) => (
@@ -84,6 +67,7 @@ export default function RoomEditor({ roomId, onClose }: Props) {
                 <button onClick={() => removePill(pill)}>✕</button>
               </span>
             ))}
+            {pills.length === 0 && <span style={{ fontSize: 13, color: 'var(--text-faint)' }}>No pills yet</span>}
           </div>
 
           <div className="editor-pill-input">
@@ -92,7 +76,7 @@ export default function RoomEditor({ roomId, onClose }: Props) {
               type="text"
               value={newPill}
               onChange={(e) => setNewPill(e.target.value)}
-              onKeyDown={handlePillKeyDown}
+              onKeyDown={handleKeyDown}
               placeholder="Add pill…"
               enterKeyHint="done"
             />

@@ -484,7 +484,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding: 16px;
+  padding: 12px 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;

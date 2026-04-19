@@ -21,5 +21,5 @@ export async function loadPills(client: MatrixClient, roomId: string): Promise<s
 
 export async function savePills(client: MatrixClient, roomId: string, pills: string[]): Promise<void> {
   const existing = client.getAccountData(ACCOUNT_DATA_TYPE)?.getContent<PillsStore>() ?? {}
-  await client.setAccountData(ACCOUNT_DATA_TYPE, { ...existing, [roomId]: pills })
+  await client.setAccountData(ACCOUNT_DATA_TYPE, { ...existing, [roomId]: pills } as any)
 }

@@ -280,6 +280,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
 
           {messages.map((msg, i) => {
             const showDateDivider = i === 0 || !sameDay(messages[i - 1].timestamp, msg.timestamp)
+            const isLastMessage = i === messages.length - 1
             return (
               <div key={msg.eventId}>
                 {showDateDivider && (
@@ -309,7 +310,12 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                               {actions.length > 0 && (
                                 <div className="action-buttons">
                                   {actions.map((action) => (
-                                    <button key={action} className="action-btn" onClick={() => sendMessage(action)}>
+                                    <button
+                                      key={action}
+                                      className={`action-btn ${!isLastMessage ? 'action-btn-stale' : ''}`}
+                                      onClick={() => isLastMessage && sendMessage(action)}
+                                      disabled={!isLastMessage}
+                                    >
                                       {action}
                                     </button>
                                   ))}

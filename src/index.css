@@ -610,7 +610,13 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   transition: all 0.15s;
 }
 
-.action-btn:hover {
+.action-btn-stale {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
+.action-btn:not(.action-btn-stale):hover {
   background: var(--accent-dim);
   border-color: var(--accent);
   color: var(--accent);

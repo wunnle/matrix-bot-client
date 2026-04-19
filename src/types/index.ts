@@ -12,6 +12,7 @@ export interface Message {
   eventId: string
   sender: string
   body: string
+  formattedBody?: string
   imageUrl?: string
   timestamp: number
   isOwnMessage: boolean

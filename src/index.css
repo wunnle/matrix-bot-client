@@ -540,6 +540,21 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   border-radius: 18px 18px 18px 4px;
 }
 
+.bubble-image {
+  padding: 4px;
+  background: transparent !important;
+  border: none !important;
+}
+
+.msg-image {
+  display: block;
+  max-width: 260px;
+  max-height: 320px;
+  width: 100%;
+  border-radius: 14px;
+  object-fit: cover;
+}
+
 .bubble-failed {
   color: var(--text-muted) !important;
   font-style: italic;

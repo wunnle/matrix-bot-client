@@ -35,7 +35,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
 
     // Pre-load recent history then set messages
     client.scrollback(room, PAGE_SIZE).catch(() => {}).finally(() => {
-      setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId))
+      setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, client))
     })
 
     const onEvent = (event: sdk.MatrixEvent, room_: sdk.Room | undefined) => {
@@ -45,7 +45,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       setMessages((prev) => {
         const id = event.getId() ?? ''
         if (prev.some((m) => m.eventId === id)) return prev
-        return [...prev, eventToMessage(event, userId)]
+        return [...prev, eventToMessage(event, userId, client)]
       })
     }
 
@@ -62,7 +62,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       }
       setMessages((prev) =>
         prev.map((m) =>
-          m.eventId === (event.getId() ?? '') ? eventToMessage(event, userId) : m
+          m.eventId === (event.getId() ?? '') ? eventToMessage(event, userId, client) : m
         )
       )
     }
@@ -124,7 +124,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     try {
       const result = await client.scrollback(room, PAGE_SIZE)
       const allEvents = result.getLiveTimeline().getEvents()
-      const msgs = eventsToMessages(allEvents, userId)
+      const msgs = eventsToMessages(allEvents, userId, client)
       setMessages(msgs)
 
       // If we got fewer than PAGE_SIZE new messages, we've reached the start
@@ -237,7 +237,11 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                     {!msg.isOwnMessage && (
                       <div className="sender">{shortName(msg.sender)}</div>
                     )}
-                    <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}>{msg.body}</div>
+                    <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.imageUrl ? 'bubble-image' : ''}`}>
+                    {msg.imageUrl
+                      ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" />
+                      : msg.body}
+                  </div>
                     <div className="timestamp">{formatTime(msg.timestamp)}</div>
                   </div>
                 </div>
@@ -301,29 +305,35 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   )
 }
 
-function eventToMessage(event: sdk.MatrixEvent, userId: string): Message {
+function eventToMessage(event: sdk.MatrixEvent, userId: string, client: sdk.MatrixClient): Message {
   const isFailure = event.isDecryptionFailure()
   const isEncrypted = event.getType() === 'm.room.encrypted'
-  let body = event.getContent()?.body ?? ''
+  const content = event.getContent()
+  let body = content?.body ?? ''
+  let imageUrl: string | undefined
 
   if (isFailure || (isEncrypted && !body)) {
     body = '🔒 Unable to decrypt'
+  } else if (content?.msgtype === 'm.image' && content?.url) {
+    imageUrl = client.mxcUrlToHttp(content.url) ?? undefined
+    body = content.body ?? ''
   }
 
   return {
     eventId: event.getId() ?? event.getTs().toString(),
     sender: event.getSender() ?? '',
     body,
+    imageUrl,
     timestamp: event.getTs(),
     isOwnMessage: event.getSender() === userId,
     isDecryptionFailure: isFailure,
   }
 }
 
-function eventsToMessages(events: sdk.MatrixEvent[], userId: string): Message[] {
+function eventsToMessages(events: sdk.MatrixEvent[], userId: string, client: sdk.MatrixClient): Message[] {
   return events
     .filter((e) => e.getType() === 'm.room.message' || e.getType() === 'm.room.encrypted' || e.isDecryptionFailure())
-    .map((e) => eventToMessage(e, userId))
+    .map((e) => eventToMessage(e, userId, client))
 }
 
 function shortName(userId: string): string {

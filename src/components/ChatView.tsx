@@ -229,11 +229,13 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                 </div>
               )}
               <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}`}>
-                {!msg.isOwnMessage && (
-                  <div className="sender">{shortName(msg.sender)}</div>
-                )}
-                <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}>{msg.body}</div>
-                <div className="timestamp">{formatTime(msg.timestamp)}</div>
+                <div className="message-body">
+                  {!msg.isOwnMessage && (
+                    <div className="sender">{shortName(msg.sender)}</div>
+                  )}
+                  <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}>{msg.body}</div>
+                  <div className="timestamp">{formatTime(msg.timestamp)}</div>
+                </div>
               </div>
             </div>
           )

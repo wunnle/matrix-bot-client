@@ -492,19 +492,20 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .message {
   display: flex;
+  width: 100%;
+}
+
+.message.own { justify-content: flex-end; }
+.message.other { justify-content: flex-start; }
+
+.message-body {
+  display: flex;
   flex-direction: column;
-  max-width: 72%;
+  max-width: 75%;
 }
 
-.message.own {
-  align-self: flex-end;
-  align-items: flex-end;
-}
-
-.message.other {
-  align-self: flex-start;
-  align-items: flex-start;
-}
+.message.own .message-body { align-items: flex-end; }
+.message.other .message-body { align-items: flex-start; }
 
 .sender {
   font-size: 11px;

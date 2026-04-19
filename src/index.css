@@ -550,6 +550,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   max-width: 78%;
 }
 
+.message.other .message-body { max-width: 100%; }
+
 .message.own .message-body { align-items: flex-end; }
 .message.other .message-body { align-items: flex-start; }
 

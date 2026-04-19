@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import { getClient } from '../lib/matrix'
-import { loadPills } from '../lib/roomMeta'
+import { loadPills, savePills } from '../lib/roomMeta'
 import RoomEditor from './RoomEditor'
 import type { Message, RoomConfig } from '../types'
 
@@ -22,6 +22,9 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [showEditor, setShowEditor] = useState(false)
   const [pills, setPills] = useState<string[]>([])
+  const [addingPill, setAddingPill] = useState(false)
+  const [newPillInput, setNewPillInput] = useState('')
+  const newPillRef = useRef<HTMLInputElement>(null)
   const [sending, setSending] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
@@ -290,15 +293,42 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
           </div>
         )}
 
-        {pills.length > 0 && (
-          <div className="pills">
-            {pills.map((pill) => (
-              <button key={pill} className="pill" onClick={() => sendMessage(pill)}>
-                {pill}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="pills">
+          {pills.map((pill) => (
+            <button key={pill} className="pill" onClick={() => sendMessage(pill)}>
+              {pill}
+            </button>
+          ))}
+          {addingPill ? (
+            <input
+              ref={newPillRef}
+              className="pill pill-input"
+              value={newPillInput}
+              onChange={(e) => setNewPillInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  const val = newPillInput.trim()
+                  if (val && !pills.includes(val)) {
+                    const next = [...pills, val]
+                    setPills(next)
+                    savePills(client, roomId, next)
+                  }
+                  setNewPillInput('')
+                  setAddingPill(false)
+                }
+                if (e.key === 'Escape') { setAddingPill(false); setNewPillInput('') }
+              }}
+              onBlur={() => { setAddingPill(false); setNewPillInput('') }}
+              placeholder="New reply…"
+              enterKeyHint="done"
+            />
+          ) : (
+            <button className="pill pill-add" onClick={() => { setAddingPill(true); setTimeout(() => newPillRef.current?.focus(), 0) }}>
+              +
+            </button>
+          )}
+        </div>
 
         {suggestions.length > 0 && (
           <ul className="autocomplete">

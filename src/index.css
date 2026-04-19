@@ -703,6 +703,27 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   color: var(--accent);
 }
 
+.pill-add {
+  color: var(--text-faint);
+  font-size: 18px;
+  padding: 4px 11px;
+  line-height: 1;
+}
+.pill-add:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.pill-input {
+  outline: none;
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--bg-input);
+  width: 110px;
+  font: 13px/1 system-ui, sans-serif;
+}
+
 .autocomplete {
   list-style: none;
   background: var(--bg-surface);

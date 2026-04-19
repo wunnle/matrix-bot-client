@@ -37,7 +37,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
 
     const onEvent = (event: sdk.MatrixEvent, room_: sdk.Room | undefined) => {
       if (room_?.roomId !== roomId) return
-      if (event.getType() !== 'm.room.message') return
+      const type = event.getType()
+      if (type !== 'm.room.message' && type !== 'm.room.encrypted') return
       setMessages((prev) => {
         const id = event.getId() ?? ''
         if (prev.some((m) => m.eventId === id)) return prev
@@ -285,6 +286,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={() => setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 300)}
           placeholder="Message…"
           rows={1}
           disabled={sending}

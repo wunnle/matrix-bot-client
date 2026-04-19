@@ -122,16 +122,25 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     setMessages([])
   }, [roomId])
 
-  // Load pills and keep them in sync with account data updates
+  // Load pills — retry on sync (account data may not be in-memory until first SYNCING)
   useEffect(() => {
-    loadPills(client, roomId).then(setPills)
+    let cancelled = false
+    const load = () => loadPills(client, roomId).then(p => { if (!cancelled) setPills(p) })
+
+    load()
+
+    const onSync = (state: string) => { if (state === 'SYNCING') load() }
     const onAccountData = (event: sdk.MatrixEvent) => {
-      if (event.getType() === 'com.matrix-pwa.room-pills') {
-        loadPills(client, roomId).then(setPills)
-      }
+      if (event.getType() === 'com.matrix-pwa.room-pills') load()
     }
+
+    client.on(sdk.ClientEvent.Sync, onSync)
     client.on(sdk.ClientEvent.AccountData, onAccountData)
-    return () => { client.off(sdk.ClientEvent.AccountData, onAccountData) }
+    return () => {
+      cancelled = true
+      client.off(sdk.ClientEvent.Sync, onSync)
+      client.off(sdk.ClientEvent.AccountData, onAccountData)
+    }
   }, [roomId, client])
 
   // Scroll to bottom when own message is sent

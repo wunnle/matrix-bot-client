@@ -33,7 +33,10 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     const room = client.getRoom(roomId)
     if (!room) return
 
-    setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId))
+    // Pre-load recent history then set messages
+    client.scrollback(room, PAGE_SIZE).catch(() => {}).finally(() => {
+      setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId))
+    })
 
     const onEvent = (event: sdk.MatrixEvent, room_: sdk.Room | undefined) => {
       if (room_?.roomId !== roomId) return

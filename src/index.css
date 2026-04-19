@@ -688,7 +688,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .pills {
   display: flex;
   gap: 6px;
-  padding: 4px 0 8px;
+  padding: 4px 0 12px;
   flex-wrap: wrap;
 }
 
@@ -696,7 +696,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   background: var(--bg-surface);
   border: 1px solid var(--border);
   color: var(--text-muted);
-  border-radius: 14px;
+  border-radius: 8px;
   padding: 7px 14px;
   font-size: 13px;
   transition: all 0.15s;
@@ -710,9 +710,10 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .pill-add {
   color: var(--text-faint);
-  font-size: 18px;
-  padding: 4px 11px;
+  font-size: 16px;
+  padding: 5px 11px;
   line-height: 1;
+  border-radius: 8px;
 }
 .pill-add:hover {
   color: var(--accent);
@@ -725,6 +726,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   border-color: var(--accent);
   color: var(--text);
   background: var(--bg-input);
+  border-radius: 8px;
   width: 110px;
   font: 13px/1 system-ui, sans-serif;
 }

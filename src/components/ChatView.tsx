@@ -55,14 +55,6 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
         if (prev.some((m) => m.eventId === id)) return prev
         return [...prev, eventToMessage(event, userId, client)]
       })
-      // Auto-scroll only if already near the bottom
-      const container = messagesRef.current
-      if (container) {
-        const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
-        if (distFromBottom < 120) {
-          requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }))
-        }
-      }
     }
 
     // Send read receipt when opening room
@@ -106,12 +98,20 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     return () => { client.off(sdk.RoomMemberEvent.Typing, onTyping) }
   }, [roomId, userId, client])
 
-  // Scroll to bottom only on initial load and own messages
+  // Scroll to bottom on initial load, own messages, and incoming when already near bottom
   const isFirstLoad = useRef(true)
   useEffect(() => {
-    if (isFirstLoad.current && messages.length > 0) {
+    if (messages.length === 0) return
+    if (isFirstLoad.current) {
       bottomRef.current?.scrollIntoView()
       isFirstLoad.current = false
+      return
+    }
+    const container = messagesRef.current
+    if (!container) return
+    const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    if (distFromBottom < 180) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [messages])
 
@@ -207,7 +207,6 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     setSending(true)
     try {
       await client.sendTextMessage(roomId, text)
-      scrollToBottom()
     } catch (err: any) {
       setInput(text) // restore input so message isn't lost
       setSendError(err?.message ?? 'Failed to send')

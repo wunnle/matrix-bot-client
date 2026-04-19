@@ -165,15 +165,34 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   const sender = event.getSender()
   log(`[${room?.name ?? room?.roomId}] ${sender}: ${body}`)
 
-  let reply
-  if (body.trim() === '!actionable') {
-    reply = 'Sure, what would you like to do? [Confirm] [Cancel] [Remind me later]'
-  } else {
-    reply = `echo: ${body}`
-  }
+  const delay = 800 + Math.random() * 1200
+  await client.sendTyping(room.roomId, true, delay + 500)
+  await new Promise((r) => setTimeout(r, delay))
+  await client.sendTyping(room.roomId, false)
 
   try {
-    await client.sendTextMessage(room.roomId, reply)
+    if (body.trim() === '!actionable') {
+      await client.sendTextMessage(room.roomId,
+        'Sure, what would you like to do? [Confirm] [Cancel] [Remind me later]'
+      )
+    } else if (body.trim() === '!rich') {
+      await client.sendMessage(room.roomId, {
+        msgtype: 'm.text',
+        body: 'Rich message example:\n\n• Item one\n• Item two\n• Item three\n\nBold text, italic text, and inline code.\n\nconst greet = (name) => `Hello, ${name}!`\nconsole.log(greet("world"))',
+        format: 'org.matrix.custom.html',
+        formatted_body: `<p><strong>Rich message example:</strong></p>
+<ul>
+  <li>Item one</li>
+  <li>Item two</li>
+  <li>Item three</li>
+</ul>
+<p><strong>Bold text</strong>, <em>italic text</em>, and <code>inline code</code>.</p>
+<pre><code>const greet = (name) =&gt; \`Hello, \${name}!\`
+console.log(greet("world"))</code></pre>`,
+      })
+    } else {
+      await client.sendTextMessage(room.roomId, `echo: ${body}`)
+    }
   } catch (e) {
     log(`Send failed: ${e.message}`)
   }

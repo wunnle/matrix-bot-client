@@ -293,12 +293,9 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                 <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}`}>
                   <div className="message-body">
                     {msg.isOwnMessage ? (
-                      <>
-                        <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.imageUrl ? 'bubble-image' : ''}`}>
-                          {msg.imageUrl ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" /> : msg.body}
-                        </div>
-                        <div className="timestamp">{formatTime(msg.timestamp)}</div>
-                      </>
+                      <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.imageUrl ? 'bubble-image' : ''}`}>
+                        {msg.imageUrl ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" /> : msg.body}
+                      </div>
                     ) : (
                       <>
                         {(() => {
@@ -324,7 +321,6 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                             </>
                           )
                         })()}
-                        <div className="timestamp">{formatTime(msg.timestamp)}</div>
                       </>
                     )}
                   </div>

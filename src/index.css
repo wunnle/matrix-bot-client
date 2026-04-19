@@ -725,6 +725,12 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   margin-right: auto;
 }
 
+@media (min-width: 641px) {
+  .chat-footer > * {
+    max-width: 560px;
+  }
+}
+
 /* Typing indicator */
 .typing-indicator {
   display: flex;

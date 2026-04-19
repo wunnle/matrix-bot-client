@@ -16,6 +16,15 @@ interface Props {
 const PAGE_SIZE = 30
 
 
+function parseActions(body: string): { text: string; actions: string[] } {
+  const actions: string[] = []
+  const text = body.replace(/\[([^\]]{1,40})\]/g, (_, label) => {
+    actions.push(label.trim())
+    return ''
+  }).trim()
+  return { text, actions }
+}
+
 function getRoomBotName(roomId: string, userId: string, client: sdk.MatrixClient): string | null {
   const room = client.getRoom(roomId)
   if (!room) return null
@@ -293,9 +302,25 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                       </>
                     ) : (
                       <>
-                        <div className={`bot-text ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}>
-                          {msg.imageUrl ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" /> : msg.body}
-                        </div>
+                        {(() => {
+                          const { text, actions } = parseActions(msg.body)
+                          return (
+                            <>
+                              <div className={`bot-text ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}>
+                                {msg.imageUrl ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" /> : text}
+                              </div>
+                              {actions.length > 0 && (
+                                <div className="action-buttons">
+                                  {actions.map((action) => (
+                                    <button key={action} className="action-btn" onClick={() => sendMessage(action)}>
+                                      {action}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          )
+                        })()}
                         <div className="timestamp">{formatTime(msg.timestamp)}</div>
                       </>
                     )}

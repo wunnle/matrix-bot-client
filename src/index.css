@@ -516,6 +516,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  mask-image: linear-gradient(to bottom, transparent 0%, black 18%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 18%);
 }
 
 /* Centered content column */

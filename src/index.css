@@ -516,7 +516,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .bubble {
   padding: 9px 13px;
   border-radius: 16px;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.5;
   word-break: break-word;
   white-space: pre-wrap;

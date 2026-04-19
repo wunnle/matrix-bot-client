@@ -4,6 +4,7 @@ import type { AuthState } from '../types'
 import RoomList from './RoomList'
 import ChatView from './ChatView'
 import ConnectionBanner from './ConnectionBanner'
+import { getClient } from '../lib/matrix'
 
 interface Props {
   auth: AuthState
@@ -17,6 +18,14 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   const [ready, setReady] = useState(false)
 
   const activeRoomId = roomId ? decodeURIComponent(roomId) : null
+
+  function getRoomName(id: string): string {
+    try {
+      return getClient().getRoom(id)?.name ?? roomNames[id] ?? id
+    } catch {
+      return roomNames[id] ?? id
+    }
+  }
 
   function handleSelectRoom(id: string, name: string) {
     setRoomNames((prev) => ({ ...prev, [id]: name }))
@@ -52,7 +61,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
             <ChatView
               key={activeRoomId}
               roomId={activeRoomId}
-              roomName={roomNames[activeRoomId] ?? activeRoomId}
+              roomName={getRoomName(activeRoomId)}
               userId={auth.userId}
               onBack={handleBack}
             />

@@ -576,19 +576,19 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 .action-btn {
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  background: transparent;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
   border-radius: 8px;
-  padding: 6px 14px;
-  font-size: 14px;
-  font-weight: 500;
-  transition: background 0.15s, color 0.15s;
+  padding: 7px 14px;
+  font-size: 13px;
+  transition: all 0.15s;
 }
 
 .action-btn:hover {
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .message.own .bubble {

@@ -16,6 +16,14 @@ interface Props {
 const PAGE_SIZE = 30
 
 
+function getRoomBotName(roomId: string, userId: string, client: sdk.MatrixClient): string | null {
+  const room = client.getRoom(roomId)
+  if (!room) return null
+  const others = room.getMembersWithMembership('join').filter(m => m.userId !== userId)
+  if (others.length !== 1) return null
+  return others[0].name ?? shortName(others[0].userId)
+}
+
 export default function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -245,7 +253,10 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     <div className="chat-view" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <div className="chat-header">
         <button className="back" onClick={onBack}>←</button>
-        <span className="chat-title">{roomName}</span>
+        <div className="chat-header-info">
+          <span className="chat-title">{roomName}</span>
+          {(() => { const bot = getRoomBotName(roomId, userId, client); return bot && <span className="chat-subtitle">{bot}</span> })()}
+        </div>
         <button className="header-action" onClick={() => setShowEditor(true)} title="Room settings">⚙︎</button>
       </div>
 
@@ -273,15 +284,21 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                 )}
                 <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}`}>
                   <div className="message-body">
-                    {!msg.isOwnMessage && (
-                      <div className="sender">{shortName(msg.sender)}</div>
+                    {msg.isOwnMessage ? (
+                      <>
+                        <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.imageUrl ? 'bubble-image' : ''}`}>
+                          {msg.imageUrl ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" /> : msg.body}
+                        </div>
+                        <div className="timestamp">{formatTime(msg.timestamp)}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className={`bot-text ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}>
+                          {msg.imageUrl ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" /> : msg.body}
+                        </div>
+                        <div className="timestamp">{formatTime(msg.timestamp)}</div>
+                      </>
                     )}
-                    <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.imageUrl ? 'bubble-image' : ''}`}>
-                    {msg.imageUrl
-                      ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" />
-                      : msg.body}
-                  </div>
-                    <div className="timestamp">{formatTime(msg.timestamp)}</div>
                   </div>
                 </div>
               </div>

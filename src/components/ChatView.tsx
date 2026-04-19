@@ -126,6 +126,13 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     }))
   }, [messages])
 
+  // Scroll when thinking indicator appears
+  useEffect(() => {
+    if (typingUsers.length > 0) {
+      requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }))
+    }
+  }, [typingUsers])
+
   // Reset on room change
   useEffect(() => {
     isFirstLoad.current = true

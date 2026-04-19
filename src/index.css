@@ -741,8 +741,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 .thinking-indicator {
-  font-size: 13px;
-  color: var(--text-muted);
+  font-size: 15px;
+  color: var(--text-faint);
   font-style: italic;
   padding: 4px 0 8px;
 }

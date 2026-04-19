@@ -519,6 +519,14 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   gap: 4px;
 }
 
+@media (min-width: 641px) {
+  .messages-inner {
+    max-width: 560px;
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
 .message {
   display: flex;
   width: 100%;

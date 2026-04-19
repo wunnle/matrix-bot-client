@@ -780,6 +780,10 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   color: var(--accent);
 }
 
+@media (hover: none) {
+  .pill:focus { background: var(--bg-surface); border-color: var(--border); color: var(--text-muted); outline: none; }
+}
+
 .pill-add {
   color: var(--text-faint);
   font-size: 16px;

@@ -715,7 +715,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   flex-shrink: 0;
 }
 
-.input-row textarea {
+.input-row input[type="text"] {
   flex: 1;
   background: var(--bg-input);
   border: 1px solid var(--border);
@@ -723,17 +723,14 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   padding: 10px 12px;
   color: var(--text);
   font: 16px/1.5 system-ui, sans-serif;
-  resize: none;
   outline: none;
   transition: border-color 0.15s;
-  max-height: 120px;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  min-width: 0;
 }
 
-.input-row textarea:focus { border-color: var(--accent); }
-.input-row textarea::placeholder { color: var(--text-faint); }
-.input-row textarea:disabled { opacity: 0.5; }
+.input-row input[type="text"]:focus { border-color: var(--accent); }
+.input-row input[type="text"]::placeholder { color: var(--text-faint); }
+.input-row input[type="text"]:disabled { opacity: 0.5; }
 
 .input-row button {
   background: var(--accent);

@@ -24,7 +24,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const [sendError, setSendError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const textareaRef = useRef<HTMLInputElement>(null)
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
   const client = getClient()
@@ -148,14 +148,6 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       loadMore()
     }
   }
-
-  // Auto-grow textarea
-  useEffect(() => {
-    const ta = textareaRef.current
-    if (!ta) return
-    ta.style.height = 'auto'
-    ta.style.height = Math.min(ta.scrollHeight, 120) + 'px'
-  }, [input])
 
   // Autocomplete
   useEffect(() => {
@@ -281,15 +273,16 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       {sendError && <div className="send-error">{sendError}</div>}
 
       <div className="input-row">
-        <textarea
-          ref={textareaRef}
+        <input
+          ref={textareaRef as React.RefObject<HTMLInputElement>}
+          type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 300)}
           placeholder="Message…"
-          rows={1}
           disabled={sending}
+          enterKeyHint="send"
         />
         <button onClick={() => sendMessage(input)} disabled={sending || !input.trim()}>
           {sending ? '…' : 'Send'}

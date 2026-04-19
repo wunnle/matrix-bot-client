@@ -26,7 +26,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [showEditor, setShowEditor] = useState(false)
-  const [pills, setPills] = useState(() => getRoomPills(roomId, client))
+  const [pills, setPills] = useState<string[]>([])
   const [sending, setSending] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
@@ -114,7 +114,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     isFirstLoad.current = true
     setHasMore(true)
     setMessages([])
-  }, [roomId])
+    setPills(getRoomPills(roomId, client))
+  }, [roomId, client])
 
   // Scroll to bottom when own message is sent
   const scrollToBottom = useCallback(() => {

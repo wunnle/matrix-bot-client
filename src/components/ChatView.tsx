@@ -261,12 +261,14 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   return (
     <div className="chat-view" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <div className="chat-header">
-        <button className="back" onClick={onBack}>←</button>
-        <div className="chat-header-info">
-          <span className="chat-title">{roomName}</span>
-          {(() => { const bot = getRoomBotName(roomId, userId, client); return bot && <span className="chat-subtitle">{bot}</span> })()}
+        <div className="chat-header-inner">
+          <button className="back" onClick={onBack}>←</button>
+          <div className="chat-header-info">
+            <span className="chat-title">{roomName}</span>
+            {(() => { const bot = getRoomBotName(roomId, userId, client); return bot && <span className="chat-subtitle">{bot}</span> })()}
+          </div>
+          <button className="header-action" onClick={() => setShowEditor(true)} title="Room settings">⚙︎</button>
         </div>
-        <button className="header-action" onClick={() => setShowEditor(true)} title="Room settings">⚙︎</button>
       </div>
 
       {showEditor && <RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} />}

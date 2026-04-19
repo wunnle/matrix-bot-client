@@ -445,14 +445,23 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 .chat-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
   padding: 11px 20px;
   padding-top: calc(11px + env(safe-area-inset-top));
   border-bottom: 1px solid var(--border);
   background: var(--bg);
   flex-shrink: 0;
+}
+
+.chat-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+@media (min-width: 641px) {
+  .chat-header-inner { max-width: 560px; }
 }
 
 .chat-header-info {

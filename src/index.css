@@ -522,7 +522,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .messages-inner {
   max-width: 760px;
   margin: 0 auto;
-  padding: 16px 16px 36px;
+  padding: 16px 16px 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -744,7 +744,14 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-size: 15px;
   color: var(--text-faint);
   font-style: italic;
-  padding: 4px 0 8px;
+  padding: 6px 16px;
+  max-width: 760px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+@media (min-width: 641px) {
+  .thinking-indicator { max-width: 560px; }
 }
 
 /* Pills & Autocomplete */

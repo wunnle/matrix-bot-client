@@ -126,13 +126,6 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     }))
   }, [messages])
 
-  // Scroll when thinking indicator appears
-  useEffect(() => {
-    if (typingUsers.length > 0) {
-      requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }))
-    }
-  }, [typingUsers])
-
   // Reset on room change
   useEffect(() => {
     isFirstLoad.current = true
@@ -332,14 +325,15 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
               </div>
             )
           })}
-          {typingUsers.length > 0 && (
-            <div className="thinking-indicator">
-              {(() => { const bot = getRoomBotName(roomId, userId, client); return bot ?? typingUsers[0] })()}  is thinking…
-            </div>
-          )}
           <div ref={bottomRef} />
         </div>
       </div>
+
+      {typingUsers.length > 0 && (
+        <div className="thinking-indicator">
+          {(() => { const bot = getRoomBotName(roomId, userId, client); return bot ?? typingUsers[0] })()}  is thinking…
+        </div>
+      )}
 
       <div className="chat-footer">
 

@@ -355,13 +355,16 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                       <>
                         {(() => {
                           const { text, actions } = parseActions(msg.body)
+                          const cleanHtml = msg.formattedBody
+                            ? msg.formattedBody.replace(/\[\[([^\]]{1,40})\]\]/g, '').trim()
+                            : undefined
                           return (
                             <>
-                              <div className={`bot-text ${msg.formattedBody ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}>
+                              <div className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}>
                                 {msg.imageUrl
                                   ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" />
-                                  : msg.formattedBody
-                                    ? <span dangerouslySetInnerHTML={{ __html: msg.formattedBody }} />
+                                  : cleanHtml
+                                    ? <span dangerouslySetInnerHTML={{ __html: cleanHtml }} />
                                     : text}
                               </div>
                               {actions.length > 0 && (

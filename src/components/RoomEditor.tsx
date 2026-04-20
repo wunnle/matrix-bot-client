@@ -5,9 +5,10 @@ import { loadPills, savePills } from '../lib/roomMeta'
 interface Props {
   roomId: string
   onClose: () => void
+  onLeave: () => void
 }
 
-export default function RoomEditor({ roomId, onClose }: Props) {
+export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
   const client = getClient()
   const [pills, setPills] = useState<string[]>([])
   const [newPill, setNewPill] = useState('')
@@ -97,6 +98,23 @@ export default function RoomEditor({ roomId, onClose }: Props) {
           <div className="editor-section-label" style={{ marginTop: 24 }}>Troubleshooting</div>
           <button className="editor-btn-cancel" onClick={resetEncryption} style={{ width: '100%' }}>
             Reset encryption session
+          </button>
+
+          <div className="editor-section-label" style={{ marginTop: 24 }}>Danger zone</div>
+          <button
+            className="editor-btn-danger"
+            style={{ width: '100%' }}
+            onClick={async () => {
+              if (!confirm('Leave this room?')) return
+              try {
+                await getClient().leave(roomId)
+                onLeave()
+              } catch (e: any) {
+                setError(e?.message ?? 'Failed to leave room')
+              }
+            }}
+          >
+            Leave room
           </button>
         </div>
 

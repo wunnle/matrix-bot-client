@@ -38,6 +38,10 @@ export interface RoomSummary {
 
 function getRooms(c: sdk.MatrixClient): RoomSummary[] {
   return c.getRooms()
+    .filter((room) => {
+      const createEvent = room.currentState.getStateEvents('m.room.create', '')
+      return createEvent?.getContent()?.type !== 'm.space'
+    })
     .map((room) => {
       const timeline = room.getLiveTimeline().getEvents()
       const last = [...timeline].reverse().find((e) => e.getType() === 'm.room.message')

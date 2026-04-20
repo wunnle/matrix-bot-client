@@ -419,7 +419,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
         </div>
       </div>
 
-      {showEditor && <RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} />}
+      {showEditor && <RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} onLeave={() => { setShowEditor(false); onBack() }} />}
 
       <div className="messages" ref={messagesRef} onScroll={handleScroll}>
         <div className="messages-inner">

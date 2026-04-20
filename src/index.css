@@ -1183,3 +1183,14 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 .editor-btn-save:hover { background: var(--accent-hover); }
 .editor-btn-save:disabled { opacity: 0.5; cursor: default; }
+
+.editor-btn-danger {
+  color: #f87171;
+  padding: 9px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  transition: background 0.15s;
+}
+.editor-btn-danger:hover { background: rgba(248, 113, 113, 0.1); }

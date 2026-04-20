@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import { getClient } from '../lib/matrix'
 import { loadPills, savePills } from '../lib/roomMeta'
+import { resolveMediaUrl } from '../lib/mediaUrl'
 import RoomEditor from './RoomEditor'
 import type { Message, RoomConfig } from '../types'
 
@@ -33,15 +34,13 @@ function parseActions(body: string): { text: string; actions: string[] } {
   return { text, actions }
 }
 
-function getRoomBot(roomId: string, userId: string, client: sdk.MatrixClient): { name: string; avatarUrl: string | null } | null {
+function getRoomBotMeta(roomId: string, userId: string, client: sdk.MatrixClient): { name: string; mxcUrl: string | null } | null {
   const room = client.getRoom(roomId)
   if (!room) return null
   const others = room.getMembersWithMembership('join').filter(m => m.userId !== userId)
   if (others.length === 0) return null
   const m = others[0]
-  const mxc = m.getMxcAvatarUrl()
-  const avatarUrl = mxc ? client.mxcUrlToHttp(mxc, 80, 80, 'crop') : null
-  return { name: m.name ?? shortName(m.userId), avatarUrl }
+  return { name: m.name ?? shortName(m.userId), mxcUrl: m.getMxcAvatarUrl() ?? null }
 }
 
 export default function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
@@ -140,7 +139,12 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   useEffect(() => {
     const room = client.getRoom(roomId)
     if (!room) return
-    const update = () => setBot(getRoomBot(roomId, userId, client))
+    const update = async () => {
+      const meta = getRoomBotMeta(roomId, userId, client)
+      if (!meta) { setBot(null); return }
+      const avatarUrl = meta.mxcUrl ? await resolveMediaUrl(client, meta.mxcUrl, 80, 80, 'crop') : null
+      setBot({ name: meta.name, avatarUrl })
+    }
     update()
     room.loadMembersIfNeeded().then(update).catch(() => {})
     const onMember = (_e: sdk.MatrixEvent, member: sdk.RoomMember) => {
@@ -153,6 +157,24 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       client.off(sdk.RoomMemberEvent.Name, onMember)
     }
   }, [roomId, userId, client])
+
+  // Resolve mxc image URLs to authenticated blob URLs
+  useEffect(() => {
+    const unresolved = messages.filter(m => m.imageMxc && !m.imageUrl)
+    if (unresolved.length === 0) return
+    let cancelled = false
+    Promise.all(unresolved.map(async (m) => {
+      const url = await resolveMediaUrl(client, m.imageMxc!)
+      return { eventId: m.eventId, url }
+    })).then(results => {
+      if (cancelled) return
+      setMessages(prev => prev.map(m => {
+        const r = results.find(r => r.eventId === m.eventId)
+        return r?.url ? { ...m, imageUrl: r.url } : m
+      }))
+    })
+    return () => { cancelled = true }
+  }, [messages, client])
 
   // Typing indicators
   useEffect(() => {
@@ -504,7 +526,6 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, client: sdk.Matr
   if (isFailure || (isEncrypted && !body)) {
     body = '🔒 Unable to decrypt'
   } else if (content?.msgtype === 'm.image' && content?.url) {
-    imageUrl = client.mxcUrlToHttp(content.url) ?? undefined
     body = content.body ?? ''
   }
 
@@ -530,12 +551,15 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, client: sdk.Matr
     }
   }
 
+  const imageMxc = content?.msgtype === 'm.image' && content?.url ? content.url : undefined
+
   return {
     eventId: event.getId() ?? event.getTs().toString(),
     sender: event.getSender() ?? '',
     body,
     formattedBody,
     imageUrl,
+    imageMxc,
     timestamp: event.getTs(),
     isOwnMessage,
     isDecryptionFailure: isFailure,

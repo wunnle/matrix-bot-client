@@ -14,6 +14,7 @@ export interface Message {
   body: string
   formattedBody?: string
   imageUrl?: string
+  imageMxc?: string
   timestamp: number
   isOwnMessage: boolean
   isDecryptionFailure?: boolean

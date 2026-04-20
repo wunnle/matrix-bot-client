@@ -68,7 +68,13 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
         </div>
 
         <div className="room-editor-body">
-          <div className="editor-section-label">Quick-reply pills</div>
+          <div className="editor-section-label">Room ID</div>
+          <div className="editor-room-id">
+            <span>{roomId}</span>
+            <button onClick={() => navigator.clipboard.writeText(roomId)} title="Copy">⎘</button>
+          </div>
+
+          <div className="editor-section-label" style={{ marginTop: 20 }}>Quick-reply pills</div>
 
           <div className="editor-pills">
             {pills.map((pill) => (

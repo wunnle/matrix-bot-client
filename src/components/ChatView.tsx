@@ -1,5 +1,21 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as sdk from 'matrix-js-sdk'
+import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  horizontalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { getClient } from '../lib/matrix'
 import { loadPills, savePills } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
@@ -43,12 +59,52 @@ function getRoomBotMeta(roomId: string, userId: string, client: sdk.MatrixClient
   return { name: m.name ?? shortName(m.userId), mxcUrl: m.getMxcAvatarUrl() ?? null }
 }
 
+function SortablePill({ pill, onActivate }: { pill: string; onActivate: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: pill })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    touchAction: 'none',
+  }
+  const paramIdx = pill.indexOf('<>')
+  const hasParam = paramIdx !== -1
+  const label = hasParam ? pill.replace('<>', '…') : pill
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`pill${hasParam ? ' pill-param' : ''}`}
+      onClick={onActivate}
+    >
+      {label}
+    </button>
+  )
+}
+
 export default function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [showEditor, setShowEditor] = useState(false)
   const [pills, setPills] = useState<string[]>([])
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+  )
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    setPills(prev => {
+      const oldIndex = prev.indexOf(active.id as string)
+      const newIndex = prev.indexOf(over.id as string)
+      const next = arrayMove(prev, oldIndex, newIndex)
+      savePills(getClient(), roomId, next)
+      return next
+    })
+  }, [roomId])
   const lastActions = (() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (!messages[i].isOwnMessage) return parseActions(messages[i].body).actions
@@ -438,24 +494,23 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
               {action}
             </button>
           ))}
-          {pills.map((pill) => {
-            const paramIdx = pill.indexOf('<>')
-            const hasParam = paramIdx !== -1
-            const label = hasParam ? pill.replace('<>', '…') : pill
-            const handleClick = () => {
-              if (hasParam) {
-                textareaRef.current?.focus()
-                setInput(pill.slice(0, paramIdx))
-              } else {
-                sendMessage(pill)
-              }
-            }
-            return (
-              <button key={pill} className={`pill${hasParam ? ' pill-param' : ''}`} onClick={handleClick}>
-                {label}
-              </button>
-            )
-          })}
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={pills} strategy={horizontalListSortingStrategy}>
+              {pills.map((pill) => {
+                const paramIdx = pill.indexOf('<>')
+                const hasParam = paramIdx !== -1
+                const onActivate = () => {
+                  if (hasParam) {
+                    textareaRef.current?.focus()
+                    setInput(pill.slice(0, paramIdx))
+                  } else {
+                    sendMessage(pill)
+                  }
+                }
+                return <SortablePill key={pill} pill={pill} onActivate={onActivate} />
+              })}
+            </SortableContext>
+          </DndContext>
           {addingPill ? (
             <input
               ref={newPillRef}

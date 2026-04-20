@@ -88,10 +88,10 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
 
       <div className="room-list-body">
         {loading && (
-          <div className="skeleton-list">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="skeleton-item">
-                <div className="skeleton-line wide" />
+          <div className="room-grid">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="skeleton-card">
+                <div className="skeleton-avatar" />
                 <div className="skeleton-line narrow" />
               </div>
             ))}
@@ -99,32 +99,27 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
         )}
         {error && <p className="error">{error}</p>}
 
-        <ul>
+        <div className="room-grid">
           {rooms.map((room) => (
-            <li
+            <button
               key={room.roomId}
-              className={room.roomId === activeRoomId ? 'active' : ''}
+              className={`room-card${room.roomId === activeRoomId ? ' active' : ''}`}
               onClick={() => onSelectRoom(room.roomId, room.name)}
             >
-              {roomAvatars[room.roomId]
-                ? <img className="room-avatar" src={roomAvatars[room.roomId]} alt="" />
-                : <div className="room-avatar">{roomInitial(room.name)}</div>}
-              <div className="room-info">
-                <div className="room-name-row">
-                  <div className="room-name">{room.name}</div>
-                  {room.unreadCount > 0 && (
-                    <span className="unread-badge">
-                      {room.unreadCount > 99 ? '99+' : room.unreadCount}
-                    </span>
-                  )}
-                </div>
-                {room.lastMessage && (
-                  <div className="room-preview">{room.lastMessage}</div>
+              <div className="room-card-avatar">
+                {roomAvatars[room.roomId]
+                  ? <img src={roomAvatars[room.roomId]} alt="" />
+                  : <span>{roomInitial(room.name)}</span>}
+                {room.unreadCount > 0 && (
+                  <span className="room-card-badge">
+                    {room.unreadCount > 99 ? '99+' : room.unreadCount}
+                  </span>
                 )}
               </div>
-            </li>
+              <div className="room-card-name">{room.name}</div>
+            </button>
           ))}
-        </ul>
+        </div>
       </div>
 
       <div className="sidebar-footer">

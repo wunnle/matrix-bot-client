@@ -277,94 +277,102 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   overscroll-behavior: contain;
 }
 
-.room-list ul { list-style: none; padding: 6px 0; }
-
-.room-list li {
-  display: flex;
-  align-items: center;
+.room-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
-  padding: 9px 12px;
-  cursor: pointer;
-  border-radius: 8px;
-  margin: 1px 6px;
-  transition: background 0.1s;
+  padding: 12px;
 }
 
-.room-list li:hover { background: var(--bg-hover); }
-.room-list li.active { background: var(--accent-dim); }
-.room-list li.active .room-name { color: var(--accent); }
+.room-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 10px 6px;
+  border-radius: 14px;
+  transition: background 0.1s;
+  width: 100%;
+}
 
-.room-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+.room-card:hover { background: var(--bg-hover); }
+.room-card.active { background: var(--accent-dim); }
+.room-card.active .room-card-name { color: var(--accent); }
+
+.room-card-avatar {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  border-radius: 18px;
   background: var(--bg-active);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 22px;
+  font-weight: 700;
   color: var(--text-muted);
-  flex-shrink: 0;
+  overflow: visible;
+}
+
+.room-card-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 18px;
   object-fit: cover;
 }
 
-.room-list li.active .room-avatar {
+.room-card.active .room-card-avatar {
   background: var(--accent-dim);
   color: var(--accent);
 }
 
-.room-info { overflow: hidden; flex: 1; }
-
-.room-name-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.unread-badge {
+.room-card-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
   background: var(--accent);
   color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  min-width: 18px;
-  height: 18px;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
   border-radius: 99px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 5px;
-  flex-shrink: 0;
+  padding: 0 4px;
 }
 
-.room-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.room-preview {
+.room-card-name {
   font-size: 12px;
+  font-weight: 500;
   color: var(--text-muted);
+  text-align: center;
+  width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-top: 1px;
 }
 
 /* Skeleton loading */
-.skeleton-list { padding: 8px 6px; }
-
-.skeleton-item {
+.skeleton-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  margin: 1px 0;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 6px;
+}
+
+.skeleton-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 18px;
+  background: linear-gradient(90deg, var(--bg-active) 25%, var(--bg-hover) 50%, var(--bg-active) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
 }
 
 .skeleton-line {

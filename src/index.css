@@ -791,8 +791,11 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   display: flex;
   gap: 6px;
   padding: 4px 0 12px;
-  flex-wrap: wrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
+.pills::-webkit-scrollbar { display: none; }
 
 .pill {
   background: var(--bg-surface);
@@ -802,6 +805,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   padding: 7px 14px;
   font-size: 13px;
   transition: all 0.15s;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .pill:hover {
@@ -812,6 +817,16 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 @media (hover: none) {
   .pill:focus { background: var(--bg-surface); border-color: var(--border); color: var(--text-muted); outline: none; }
+}
+
+.pill-action {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+  flex-shrink: 0;
+}
+.pill-action:hover {
+  opacity: 0.8;
 }
 
 .pill-add {

@@ -42,6 +42,12 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [showEditor, setShowEditor] = useState(false)
   const [pills, setPills] = useState<string[]>([])
+  const lastActions = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (!messages[i].isOwnMessage) return parseActions(messages[i].body).actions
+    }
+    return []
+  })()
   const [addingPill, setAddingPill] = useState(false)
   const [newPillInput, setNewPillInput] = useState('')
   const newPillRef = useRef<HTMLInputElement>(null)
@@ -332,7 +338,6 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
 
           {messages.map((msg, i) => {
             const showDateDivider = i === 0 || !sameDay(messages[i - 1].timestamp, msg.timestamp)
-            const isLastMessage = i === messages.length - 1
             return (
               <div key={msg.eventId}>
                 {showDateDivider && (
@@ -354,7 +359,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                     ) : (
                       <>
                         {(() => {
-                          const { text, actions } = parseActions(msg.body)
+                          const { text } = parseActions(msg.body)
                           const cleanHtml = msg.formattedBody
                             ? msg.formattedBody.replace(/\[\[([^\]]{1,40})\]\]/g, '').trim()
                             : undefined
@@ -367,20 +372,6 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                                     ? <span dangerouslySetInnerHTML={{ __html: cleanHtml }} />
                                     : text}
                               </div>
-                              {actions.length > 0 && (
-                                <div className="action-buttons">
-                                  {actions.map((action) => (
-                                    <button
-                                      key={action}
-                                      className={`action-btn ${!isLastMessage ? 'action-btn-stale' : ''}`}
-                                      onClick={() => isLastMessage && sendMessage(action)}
-                                      disabled={!isLastMessage}
-                                    >
-                                      {action}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
                             </>
                           )
                         })()}
@@ -398,6 +389,11 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       <div className="chat-footer">
 
         <div className="pills">
+          {lastActions.map((action) => (
+            <button key={`action-${action}`} className="pill pill-action" onClick={() => sendMessage(action)}>
+              {action}
+            </button>
+          ))}
           {pills.map((pill) => (
             <button key={pill} className="pill" onClick={() => sendMessage(pill)}>
               {pill}

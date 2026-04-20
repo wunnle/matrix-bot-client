@@ -616,14 +616,16 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .bot-text a:hover { text-decoration: underline; }
 
 .msg-status {
-  display: block;
-  text-align: right;
-  font-size: 10px;
-  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
   color: rgba(255,255,255,0.35);
-  line-height: 1;
+  vertical-align: middle;
   user-select: none;
-  letter-spacing: 0.5px;
+}
+.msg-status .material-icons {
+  font-size: 14px;
+  line-height: 1;
 }
 .msg-status-read {
   color: var(--accent);

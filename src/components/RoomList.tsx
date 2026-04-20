@@ -17,11 +17,7 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
   const [rooms, setRooms] = useState<RoomSummary[]>(cached ?? [])
   const [loading, setLoading] = useState(cached === null)
   const [error, setError] = useState('')
-  const AVATARS_KEY = `construct:avatars:${auth.userId}`
-  const cachedAvatars: Record<string, string> = (() => {
-    try { return JSON.parse(localStorage.getItem(AVATARS_KEY) ?? '{}') } catch { return {} }
-  })()
-  const [roomAvatars, setRoomAvatars] = useState<Record<string, string>>(cachedAvatars)
+  const [roomAvatars, setRoomAvatars] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (cached !== null) onReady()
@@ -43,11 +39,7 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
     })).then(results => {
       const updates: Record<string, string> = {}
       results.forEach(r => { if (r.url) updates[r.roomId] = r.url })
-      if (Object.keys(updates).length > 0) setRoomAvatars(prev => {
-        const next = { ...prev, ...updates }
-        try { localStorage.setItem(AVATARS_KEY, JSON.stringify(next)) } catch {}
-        return next
-      })
+      if (Object.keys(updates).length > 0) setRoomAvatars(prev => ({ ...prev, ...updates }))
     })
   }, [rooms])
 

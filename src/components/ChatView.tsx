@@ -98,13 +98,17 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
 
     const onReceipt = (_event: sdk.MatrixEvent, room_: sdk.Room) => {
       if (room_.roomId !== roomId) return
+      const otherMembers = room_.getMembers()
+        .filter((m: sdk.RoomMember) => m.userId !== userId && m.membership === 'join')
       setMessages((prev) => prev.map((m) => {
-        if (!m.isOwnMessage) return m
-        const event = room_.findEventById(m.eventId)
-        if (!event) return m
-        const receipts = room_.getReceiptsForEvent(event)
-        const isRead = receipts.some((r: any) => r.userId !== userId)
-        return isRead !== m.isRead ? { ...m, isRead } : m
+        if (!m.isOwnMessage || m.isRead) return m
+        const isRead = otherMembers.some((member: sdk.RoomMember) => {
+          const readUpTo = room_.getEventReadUpTo(member.userId)
+          if (!readUpTo) return false
+          const readEvent = room_.findEventById(readUpTo)
+          return readEvent ? readEvent.getTs() >= m.timestamp : false
+        })
+        return isRead ? { ...m, isRead } : m
       }))
     }
 
@@ -482,8 +486,15 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, client: sdk.Matr
   if (isOwnMessage) {
     const room = client.getRoom(event.getRoomId() ?? '')
     if (room) {
-      const receipts = room.getReceiptsForEvent(event)
-      isRead = receipts.some((r: any) => r.userId !== userId)
+      const eventTs = event.getTs()
+      isRead = room.getMembers()
+        .filter((m: sdk.RoomMember) => m.userId !== userId && m.membership === 'join')
+        .some((m: sdk.RoomMember) => {
+          const readUpTo = room.getEventReadUpTo(m.userId)
+          if (!readUpTo) return false
+          const readEvent = room.findEventById(readUpTo)
+          return readEvent ? readEvent.getTs() >= eventTs : false
+        })
     }
   }
 

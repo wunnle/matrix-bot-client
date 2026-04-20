@@ -193,13 +193,17 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
 
   // Scroll to bottom on initial load, own messages, and incoming when already near bottom
   const isFirstLoad = useRef(true)
+  const lastScrolledCount = useRef(0)
   useEffect(() => {
     if (messages.length === 0) return
+    if (messages.length === lastScrolledCount.current) return  // only image URLs changed, skip
     if (isFirstLoad.current) {
       isFirstLoad.current = false
+      lastScrolledCount.current = messages.length
       requestAnimationFrame(() => requestAnimationFrame(() => bottomRef.current?.scrollIntoView()))
       return
     }
+    lastScrolledCount.current = messages.length
     requestAnimationFrame(() => requestAnimationFrame(() => {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     }))
@@ -208,6 +212,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   // Reset on room change
   useEffect(() => {
     isFirstLoad.current = true
+    lastScrolledCount.current = 0
     setHasMore(true)
     setMessages([])
   }, [roomId])

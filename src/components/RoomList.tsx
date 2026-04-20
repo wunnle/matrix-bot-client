@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import * as sdk from 'matrix-js-sdk'
+import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
+import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
-import { fetchJoinedRooms, getCachedRooms, getClient, type RoomSummary } from '../lib/matrix'
+import { fetchJoinedRooms, getCachedRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, type RoomSummary } from '../lib/matrix'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 
 interface Props {
@@ -12,17 +15,63 @@ interface Props {
   onReady: () => void
 }
 
+function SortableRoomCard({ room, isActive, avatar, onSelect }: {
+  room: RoomSummary
+  isActive: boolean
+  avatar?: string
+  onSelect: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: room.roomId })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : undefined,
+  }
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`room-card${isActive ? ' active' : ''}`}
+      onClick={onSelect}
+    >
+      <div className="room-card-avatar">
+        {avatar ? <img src={avatar} alt="" /> : <span>{roomInitial(room.name)}</span>}
+        {room.unreadCount > 0 && (
+          <span className="room-card-badge">
+            {room.unreadCount > 99 ? '99+' : room.unreadCount}
+          </span>
+        )}
+      </div>
+      <div className="room-card-name">{room.name}</div>
+    </button>
+  )
+}
+
 export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, onReady }: Props) {
   const cached = getCachedRooms(auth.userId)
-  const [rooms, setRooms] = useState<RoomSummary[]>(cached ?? [])
+  const savedOrder = getRoomOrder(auth.userId)
+  const initialRooms = cached ? (savedOrder ? applyRoomOrder(cached, savedOrder) : cached) : []
+  const [rooms, setRooms] = useState<RoomSummary[]>(initialRooms)
   const [loading, setLoading] = useState(cached === null)
   const [error, setError] = useState('')
   const [roomAvatars, setRoomAvatars] = useState<Record<string, string>>({})
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+  )
+
   useEffect(() => {
     if (cached !== null) onReady()
     fetchJoinedRooms(auth)
-      .then((r) => { setRooms(r); setLoading(false); if (cached === null) onReady() })
+      .then((r) => {
+        const order = getRoomOrder(auth.userId)
+        setRooms(order ? applyRoomOrder(r, order) : r)
+        setLoading(false)
+        if (cached === null) onReady()
+      })
       .catch((e) => { setError(e.message); setLoading(false); if (cached === null) onReady() })
   }, [auth])
 
@@ -43,7 +92,7 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
     })
   }, [rooms])
 
-  // Keep room list live: re-sort and update unread on new messages
+  // Update unread counts on new messages (no reorder)
   useEffect(() => {
     if (loading) return
     let client: ReturnType<typeof getClient>
@@ -51,19 +100,11 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
 
     const onEvent = (_event: sdk.MatrixEvent, room: sdk.Room | undefined) => {
       if (!room) return
-      setRooms((prev) => {
-        const updated = prev.map((r) =>
-          r.roomId === room.roomId
-            ? {
-                ...r,
-                lastMessage: getLastMessage(room),
-                lastTs: getLastTs(room),
-                unreadCount: r.roomId === activeRoomId ? 0 : room.getUnreadNotificationCount(),
-              }
-            : r
-        )
-        return [...updated].sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0))
-      })
+      setRooms((prev) => prev.map((r) =>
+        r.roomId === room.roomId
+          ? { ...r, unreadCount: r.roomId === activeRoomId ? 0 : room.getUnreadNotificationCount() }
+          : r
+      ))
     }
 
     client.on(sdk.RoomEvent.Timeline, onEvent)
@@ -77,6 +118,18 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
       prev.map((r) => r.roomId === activeRoomId ? { ...r, unreadCount: 0 } : r)
     )
   }, [activeRoomId])
+
+  function handleDragEnd(event: { active: { id: string | number }, over: { id: string | number } | null }) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    setRooms((prev) => {
+      const oldIndex = prev.findIndex(r => r.roomId === active.id)
+      const newIndex = prev.findIndex(r => r.roomId === over.id)
+      const next = arrayMove(prev, oldIndex, newIndex)
+      setRoomOrder(auth.userId, next.map(r => r.roomId))
+      return next
+    })
+  }
 
   return (
     <div className="room-list">
@@ -101,27 +154,21 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
         )}
         {error && <p className="error">{error}</p>}
 
-        <div className="room-grid">
-          {rooms.map((room) => (
-            <button
-              key={room.roomId}
-              className={`room-card${room.roomId === activeRoomId ? ' active' : ''}`}
-              onClick={() => onSelectRoom(room.roomId, room.name)}
-            >
-              <div className="room-card-avatar">
-                {roomAvatars[room.roomId]
-                  ? <img src={roomAvatars[room.roomId]} alt="" />
-                  : <span>{roomInitial(room.name)}</span>}
-                {room.unreadCount > 0 && (
-                  <span className="room-card-badge">
-                    {room.unreadCount > 99 ? '99+' : room.unreadCount}
-                  </span>
-                )}
-              </div>
-              <div className="room-card-name">{room.name}</div>
-            </button>
-          ))}
-        </div>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={rooms.map(r => r.roomId)} strategy={rectSortingStrategy}>
+            <div className="room-grid">
+              {rooms.map((room) => (
+                <SortableRoomCard
+                  key={room.roomId}
+                  room={room}
+                  isActive={room.roomId === activeRoomId}
+                  avatar={roomAvatars[room.roomId]}
+                  onSelect={() => onSelectRoom(room.roomId, room.name)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       </div>
 
       <div className="sidebar-footer">
@@ -134,15 +181,6 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
   )
 }
 
-function getLastMessage(room: sdk.Room): string | undefined {
-  const events = room.getLiveTimeline().getEvents()
-  return [...events].reverse().find((e) => e.getType() === 'm.room.message')?.getContent()?.body
-}
-
-function getLastTs(room: sdk.Room): number | undefined {
-  const events = room.getLiveTimeline().getEvents()
-  return [...events].reverse().find((e) => e.getType() === 'm.room.message')?.getTs()
-}
 
 function roomInitial(name: string): string {
   return name.trim()[0]?.toUpperCase() ?? '#'

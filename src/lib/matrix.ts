@@ -56,7 +56,7 @@ function getRooms(c: sdk.MatrixClient): RoomSummary[] {
         avatarMxc,
       }
     })
-    .sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0))
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 // Derive a stable 32-byte key deterministically from userId+deviceId.
@@ -118,6 +118,33 @@ async function doInit(auth: AuthState): Promise<RoomSummary[]> {
 
     c.on(sdk.ClientEvent.Sync, onSync)
     c.startClient({ lazyLoadMembers: true })
+  })
+}
+
+const ROOM_ORDER_KEY = (userId: string) => `construct:room-order:${userId}`
+
+export function getRoomOrder(userId: string): string[] | null {
+  try {
+    const raw = localStorage.getItem(ROOM_ORDER_KEY(userId))
+    return raw ? (JSON.parse(raw) as string[]) : null
+  } catch {
+    return null
+  }
+}
+
+export function setRoomOrder(userId: string, order: string[]) {
+  try {
+    localStorage.setItem(ROOM_ORDER_KEY(userId), JSON.stringify(order))
+  } catch {}
+}
+
+export function applyRoomOrder(rooms: RoomSummary[], order: string[]): RoomSummary[] {
+  const orderMap = new Map(order.map((id, i) => [id, i]))
+  return [...rooms].sort((a, b) => {
+    const ai = orderMap.get(a.roomId) ?? Infinity
+    const bi = orderMap.get(b.roomId) ?? Infinity
+    if (ai !== bi) return ai - bi
+    return a.name.localeCompare(b.name)
   })
 }
 

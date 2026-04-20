@@ -839,6 +839,10 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   .pill:focus { background: var(--bg-surface); border-color: var(--border); color: var(--text-muted); outline: none; }
 }
 
+.pill-param {
+  border-style: dashed;
+}
+
 .pill-action {
   border-color: var(--accent);
   color: var(--accent);

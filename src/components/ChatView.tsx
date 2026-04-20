@@ -411,11 +411,24 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
               {action}
             </button>
           ))}
-          {pills.map((pill) => (
-            <button key={pill} className="pill" onClick={() => sendMessage(pill)}>
-              {pill}
-            </button>
-          ))}
+          {pills.map((pill) => {
+            const paramIdx = pill.indexOf('<>')
+            const hasParam = paramIdx !== -1
+            const label = hasParam ? pill.replace('<>', '…') : pill
+            const handleClick = () => {
+              if (hasParam) {
+                setInput(pill.slice(0, paramIdx))
+                setTimeout(() => textareaRef.current?.focus(), 0)
+              } else {
+                sendMessage(pill)
+              }
+            }
+            return (
+              <button key={pill} className={`pill${hasParam ? ' pill-param' : ''}`} onClick={handleClick}>
+                {label}
+              </button>
+            )
+          })}
           {addingPill ? (
             <input
               ref={newPillRef}

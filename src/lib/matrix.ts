@@ -106,7 +106,9 @@ async function doInit(auth: AuthState): Promise<RoomSummary[]> {
         clearTimeout(timeout)
         c.off(sdk.ClientEvent.Sync, onSync)
         c.getCrypto()?.checkKeyBackupAndEnable().catch(() => {})
-        resolve(getRooms(c))
+        const rooms = getRooms(c)
+        setCachedRooms(auth.userId, rooms)
+        resolve(rooms)
       } else if (state === 'ERROR') {
         clearTimeout(timeout)
         c.off(sdk.ClientEvent.Sync, onSync)
@@ -117,6 +119,23 @@ async function doInit(auth: AuthState): Promise<RoomSummary[]> {
     c.on(sdk.ClientEvent.Sync, onSync)
     c.startClient({ lazyLoadMembers: true })
   })
+}
+
+const ROOMS_CACHE_KEY = (userId: string) => `construct:rooms:${userId}`
+
+export function getCachedRooms(userId: string): RoomSummary[] | null {
+  try {
+    const raw = localStorage.getItem(ROOMS_CACHE_KEY(userId))
+    return raw ? (JSON.parse(raw) as RoomSummary[]) : null
+  } catch {
+    return null
+  }
+}
+
+function setCachedRooms(userId: string, rooms: RoomSummary[]) {
+  try {
+    localStorage.setItem(ROOMS_CACHE_KEY(userId), JSON.stringify(rooms))
+  } catch {}
 }
 
 export function fetchJoinedRooms(auth: AuthState): Promise<RoomSummary[]> {

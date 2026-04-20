@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import type { AuthState } from '../types'
-import { fetchJoinedRooms, getClient, type RoomSummary } from '../lib/matrix'
+import { fetchJoinedRooms, getCachedRooms, getClient, type RoomSummary } from '../lib/matrix'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 
 interface Props {
@@ -13,15 +13,21 @@ interface Props {
 }
 
 export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, onReady }: Props) {
-  const [rooms, setRooms] = useState<RoomSummary[]>([])
-  const [loading, setLoading] = useState(true)
+  const cached = getCachedRooms(auth.userId)
+  const [rooms, setRooms] = useState<RoomSummary[]>(cached ?? [])
+  const [loading, setLoading] = useState(cached === null)
   const [error, setError] = useState('')
-  const [roomAvatars, setRoomAvatars] = useState<Record<string, string>>({})
+  const AVATARS_KEY = `construct:avatars:${auth.userId}`
+  const cachedAvatars: Record<string, string> = (() => {
+    try { return JSON.parse(localStorage.getItem(AVATARS_KEY) ?? '{}') } catch { return {} }
+  })()
+  const [roomAvatars, setRoomAvatars] = useState<Record<string, string>>(cachedAvatars)
 
   useEffect(() => {
+    if (cached !== null) onReady()
     fetchJoinedRooms(auth)
-      .then((r) => { setRooms(r); setLoading(false); onReady() })
-      .catch((e) => { setError(e.message); setLoading(false); onReady() })
+      .then((r) => { setRooms(r); setLoading(false); if (cached === null) onReady() })
+      .catch((e) => { setError(e.message); setLoading(false); if (cached === null) onReady() })
   }, [auth])
 
   // Resolve room avatars
@@ -37,7 +43,11 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
     })).then(results => {
       const updates: Record<string, string> = {}
       results.forEach(r => { if (r.url) updates[r.roomId] = r.url })
-      if (Object.keys(updates).length > 0) setRoomAvatars(prev => ({ ...prev, ...updates }))
+      if (Object.keys(updates).length > 0) setRoomAvatars(prev => {
+        const next = { ...prev, ...updates }
+        try { localStorage.setItem(AVATARS_KEY, JSON.stringify(next)) } catch {}
+        return next
+      })
     })
   }, [rooms])
 

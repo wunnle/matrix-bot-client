@@ -439,7 +439,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                 if (e.key === 'Enter') {
                   e.preventDefault()
                   const raw = newPillInput.trim()
-                  const val = raw.endsWith(':') ? raw + '<>' : raw
+                  const val = raw.endsWith(':') ? raw + ' <>' : raw
                   if (val && !pills.includes(val)) {
                     const next = [...pills, val]
                     setPills(next)

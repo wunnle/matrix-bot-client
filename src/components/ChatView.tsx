@@ -16,6 +16,14 @@ interface Props {
 const PAGE_SIZE = 30
 
 
+// Matches lines like: "📖 read_file: "/path..."" or "🔧 patch: "..." (×2)"
+const TOOL_PROGRESS_LINE = /^\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\(×\d+\))?|\.\.\.)\s*$/u
+
+function isToolProgressMessage(body: string): boolean {
+  const lines = body.split('\n').filter(l => l.trim() !== '')
+  return lines.length > 0 && lines.every(l => TOOL_PROGRESS_LINE.test(l.trim()))
+}
+
 function parseActions(body: string): { text: string; actions: string[] } {
   const actions: string[] = []
   const text = body.replace(/\[\[([^\]]{1,40})\]\]/g, (_, label) => {
@@ -359,6 +367,15 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                     ) : (
                       <>
                         {(() => {
+                          if (isToolProgressMessage(msg.body)) {
+                            return (
+                              <div className="tool-progress">
+                                {msg.body.split('\n').filter(l => l.trim()).map((line, i) => (
+                                  <div key={i} className="tool-progress-line">{line}</div>
+                                ))}
+                              </div>
+                            )
+                          }
                           const { text } = parseActions(msg.body)
                           const cleanHtml = msg.formattedBody
                             ? msg.formattedBody.replace(/\[\[([^\]]{1,40})\]\]/g, '').trim()

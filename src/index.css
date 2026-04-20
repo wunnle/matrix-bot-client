@@ -630,6 +630,24 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   color: rgba(255,255,255,0.55);
 }
 
+.tool-progress {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  opacity: 0.55;
+}
+
+.tool-progress-line {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .action-buttons {
   display: flex;
   flex-wrap: wrap;

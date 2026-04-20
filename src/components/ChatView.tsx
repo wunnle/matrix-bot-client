@@ -64,7 +64,9 @@ function SortablePill({ pill, onActivate }: { pill: string; onActivate: () => vo
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1,
+    opacity: isDragging ? 0.85 : 1,
+    scale: isDragging ? '1.08' : '1',
+    zIndex: isDragging ? 10 : undefined,
     touchAction: 'none',
   }
   const paramIdx = pill.indexOf('<>')
@@ -255,7 +257,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     if (isFirstLoad.current) {
       isFirstLoad.current = false
       lastScrolledCount.current = messages.length
-      requestAnimationFrame(() => requestAnimationFrame(() => bottomRef.current?.scrollIntoView()))
+      requestAnimationFrame(() => requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'instant' })))
       return
     }
     lastScrolledCount.current = messages.length

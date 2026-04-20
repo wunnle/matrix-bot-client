@@ -29,7 +29,7 @@ function getRoomBot(roomId: string, userId: string, client: sdk.MatrixClient): {
   const room = client.getRoom(roomId)
   if (!room) return null
   const others = room.getMembersWithMembership('join').filter(m => m.userId !== userId)
-  if (others.length !== 1) return null
+  if (others.length === 0) return null
   const m = others[0]
   const mxc = m.getMxcAvatarUrl()
   const avatarUrl = mxc ? client.mxcUrlToHttp(mxc, 80, 80, 'crop') : null

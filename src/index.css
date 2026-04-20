@@ -754,7 +754,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .chat-footer {
   flex-shrink: 0;
-  padding: 0 16px max(12px, env(safe-area-inset-bottom));
+  padding: 0 16px max(12px, calc(env(safe-area-inset-bottom) - 8px));
 }
 
 /* Inner wrapper centers footer content to match messages */
@@ -883,12 +883,12 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .input-row button {
   background: var(--accent);
   color: #fff;
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 0 18px;
   font-weight: 600;
   font-size: 15px;
   transition: background 0.15s;
-  height: 36px;
+  height: 38px;
   flex-shrink: 0;
 }
 

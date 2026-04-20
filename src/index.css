@@ -616,11 +616,10 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .bot-text a:hover { text-decoration: underline; }
 
 .msg-status {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 4px;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 3px;
   color: rgba(255,255,255,0.35);
-  vertical-align: middle;
   user-select: none;
 }
 .msg-status .material-icons {

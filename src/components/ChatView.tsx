@@ -252,13 +252,20 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   useEffect(() => {
     if (messages.length === 0) return
     if (messages.length === lastScrolledCount.current) return  // only image URLs changed, skip
+    const prevCount = lastScrolledCount.current
+    lastScrolledCount.current = messages.length
     if (isFirstLoad.current) {
       isFirstLoad.current = false
-      lastScrolledCount.current = messages.length
       requestAnimationFrame(() => requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'instant' })))
       return
     }
-    lastScrolledCount.current = messages.length
+    // Only smooth-scroll for new appended messages (not backfill prepends)
+    const newMessage = messages[messages.length - 1]
+    const isNewAppend = messages.length > prevCount
+    if (!isNewAppend) return
+    const container = messagesRef.current
+    const isNearBottom = container ? container.scrollHeight - container.scrollTop - container.clientHeight < 150 : true
+    if (!newMessage?.isOwnMessage && !isNearBottom) return
     requestAnimationFrame(() => requestAnimationFrame(() => {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     }))

@@ -18,7 +18,7 @@ const PAGE_SIZE = 30
 
 function parseActions(body: string): { text: string; actions: string[] } {
   const actions: string[] = []
-  const text = body.replace(/\[([^\]]{1,40})\]/g, (_, label) => {
+  const text = body.replace(/\[\[([^\]]{1,40})\]\]/g, (_, label) => {
     actions.push(label.trim())
     return ''
   }).trim()

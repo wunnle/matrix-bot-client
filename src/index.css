@@ -572,7 +572,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   max-width: 78%;
 }
 
-.message.other .message-body { max-width: 100%; }
+.message.other .message-body { max-width: 100%; min-width: 0; overflow: hidden; }
 
 .message.own .message-body { align-items: flex-end; }
 .message.other .message-body { align-items: flex-start; }
@@ -593,6 +593,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 .bot-text {
+  min-width: 0;
   font-size: 15px;
   line-height: 1.6;
   color: var(--text);
@@ -636,6 +637,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   background: var(--bg-surface);
   border: 1px solid var(--border);
   opacity: 0.55;
+  overflow: hidden;
 }
 
 .tool-progress-line {
@@ -643,9 +645,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.6;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .action-buttons {

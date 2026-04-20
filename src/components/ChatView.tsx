@@ -64,9 +64,7 @@ function SortablePill({ pill, onActivate }: { pill: string; onActivate: () => vo
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.85 : 1,
-    scale: isDragging ? '1.08' : '1',
-    zIndex: isDragging ? 10 : undefined,
+    opacity: isDragging ? 0.4 : 1,
     touchAction: 'none',
   }
   const paramIdx = pill.indexOf('<>')

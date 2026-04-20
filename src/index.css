@@ -900,9 +900,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 @media (max-width: 640px) {
   .input-row button {
     padding: 0;
-    width: 36px;
+    width: 38px;
     font-size: 18px;
-    border-radius: 50%;
+    border-radius: 14px;
   }
   .send-btn-label { display: none; }
   .send-btn-icon { display: inline; }

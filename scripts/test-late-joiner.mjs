@@ -121,7 +121,7 @@ const loginRes = await fetch(`${envUpdated.HOMESERVER}/_matrix/client/v3/login`,
     type: 'm.login.password',
     identifier: { type: 'm.id.user', user: envUpdated.USER_ID },
     password: envUpdated.PASSWORD,
-    initial_device_display_name: 'matrix-pwa late-joiner-A2',
+    initial_device_display_name: 'construct late-joiner-A2',
   }),
 })
 if (!loginRes.ok) throw new Error(`A2 login failed: ${loginRes.status}`)

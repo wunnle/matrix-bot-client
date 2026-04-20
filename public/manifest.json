@@ -1,7 +1,7 @@
 {
-  "name": "Matrix Bot Client",
-  "short_name": "BotClient",
-  "description": "Lightweight Matrix PWA for bot interactions",
+  "name": "Construct",
+  "short_name": "Construct",
+  "description": "A Matrix client for talking to bots",
   "theme_color": "#1a1a2e",
   "background_color": "#1a1a2e",
   "display": "standalone",

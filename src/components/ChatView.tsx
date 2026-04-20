@@ -242,7 +242,11 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     setSuggestions([])
     setSending(true)
     try {
-      await client.sendTextMessage(roomId, text)
+      await client.sendMessage(roomId, {
+        msgtype: 'm.text',
+        body: text,
+        'com.construct.capabilities': ['actionable'],
+      } as any)
     } catch (err: any) {
       setInput(text) // restore input so message isn't lost
       setSendError(err?.message ?? 'Failed to send')

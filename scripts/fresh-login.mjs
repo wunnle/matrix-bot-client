@@ -15,7 +15,7 @@ async function login(user, password, label) {
       type: 'm.login.password',
       identifier: { type: 'm.id.user', user },
       password,
-      initial_device_display_name: `matrix-pwa test (${label})`,
+      initial_device_display_name: `construct test (${label})`,
     }),
   })
   if (!res.ok) throw new Error(`login ${label} failed: ${res.status} ${await res.text()}`)

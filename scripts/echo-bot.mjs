@@ -38,7 +38,7 @@ async function login() {
       type: 'm.login.password',
       identifier: { type: 'm.id.user', user: USER_ID },
       password: PASSWORD,
-      initial_device_display_name: 'matrix-pwa echo-bot',
+      initial_device_display_name: 'construct echo-bot',
     }),
   })
   if (!res.ok) { console.error('Login failed:', await res.text()); process.exit(1) }

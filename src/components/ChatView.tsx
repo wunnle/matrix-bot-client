@@ -131,10 +131,9 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     const room = client.getRoom(roomId)
     if (!room) return
 
-    setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, client))
-    client.scrollback(room, 15).then(() => {
+    client.scrollback(room, 15).catch(() => {}).finally(() => {
       setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, client))
-    }).catch(() => {})
+    })
 
     const onEvent = (event: sdk.MatrixEvent, room_: sdk.Room | undefined) => {
       if (room_?.roomId !== roomId) return

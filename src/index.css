@@ -828,6 +828,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   transition: all 0.15s;
   flex-shrink: 0;
   white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .pill:hover {

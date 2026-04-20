@@ -96,11 +96,25 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       )
     }
 
+    const onReceipt = (_event: sdk.MatrixEvent, room_: sdk.Room) => {
+      if (room_.roomId !== roomId) return
+      setMessages((prev) => prev.map((m) => {
+        if (!m.isOwnMessage) return m
+        const event = room_.findEventById(m.eventId)
+        if (!event) return m
+        const receipts = room_.getReceiptsForEvent(event)
+        const isRead = receipts.some((r: any) => r.userId !== userId)
+        return isRead !== m.isRead ? { ...m, isRead } : m
+      }))
+    }
+
     client.on(sdk.MatrixEventEvent.Decrypted, onDecrypted)
     client.on(sdk.RoomEvent.Timeline, onEvent)
+    client.on(sdk.RoomEvent.Receipt, onReceipt)
     return () => {
       client.off(sdk.RoomEvent.Timeline, onEvent)
       client.off(sdk.MatrixEventEvent.Decrypted, onDecrypted)
+      client.off(sdk.RoomEvent.Receipt, onReceipt)
     }
   }, [roomId, userId, client])
 
@@ -327,6 +341,9 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                     {msg.isOwnMessage ? (
                       <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.imageUrl ? 'bubble-image' : ''}`}>
                         {msg.imageUrl ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" /> : msg.body}
+                        <span className={`msg-status ${msg.isRead ? 'msg-status-read' : ''}`}>
+                          {msg.isRead ? '✓✓' : '✓'}
+                        </span>
                       </div>
                     ) : (
                       <>
@@ -460,6 +477,16 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, client: sdk.Matr
     formattedBody = sanitizeHtml(content.formatted_body)
   }
 
+  const isOwnMessage = event.getSender() === userId
+  let isRead = false
+  if (isOwnMessage) {
+    const room = client.getRoom(event.getRoomId() ?? '')
+    if (room) {
+      const receipts = room.getReceiptsForEvent(event)
+      isRead = receipts.some((r: any) => r.userId !== userId)
+    }
+  }
+
   return {
     eventId: event.getId() ?? event.getTs().toString(),
     sender: event.getSender() ?? '',
@@ -467,8 +494,9 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, client: sdk.Matr
     formattedBody,
     imageUrl,
     timestamp: event.getTs(),
-    isOwnMessage: event.getSender() === userId,
+    isOwnMessage,
     isDecryptionFailure: isFailure,
+    isRead,
   }
 }
 

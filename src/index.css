@@ -615,6 +615,19 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .bot-text a { color: var(--accent); text-decoration: none; }
 .bot-text a:hover { text-decoration: underline; }
 
+.msg-status {
+  display: inline-block;
+  font-size: 11px;
+  margin-left: 5px;
+  color: rgba(255,255,255,0.4);
+  vertical-align: bottom;
+  line-height: 1;
+  user-select: none;
+}
+.msg-status-read {
+  color: var(--accent);
+}
+
 .action-buttons {
   display: flex;
   flex-wrap: wrap;

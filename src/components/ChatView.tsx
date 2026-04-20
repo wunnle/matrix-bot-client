@@ -343,12 +343,14 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                 <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}`}>
                   <div className="message-body">
                     {msg.isOwnMessage ? (
-                      <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.imageUrl ? 'bubble-image' : ''}`}>
-                        {msg.imageUrl ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" /> : msg.body}
-                      </div>
-                      <div className={`msg-status ${msg.isRead ? 'msg-status-read' : ''}`}>
-                        <span className="material-icons">{msg.isRead ? 'done_all' : 'done'}</span>
-                      </div>
+                      <>
+                        <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.imageUrl ? 'bubble-image' : ''}`}>
+                          {msg.imageUrl ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" /> : msg.body}
+                        </div>
+                        <div className={`msg-status ${msg.isRead ? 'msg-status-read' : ''}`}>
+                          <span className="material-icons">{msg.isRead ? 'done_all' : 'done'}</span>
+                        </div>
+                      </>
                     ) : (
                       <>
                         {(() => {

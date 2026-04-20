@@ -754,7 +754,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .chat-footer {
   flex-shrink: 0;
-  padding: 0 16px max(12px, calc(env(safe-area-inset-bottom) - 8px));
+  padding: 0 16px max(8px, calc(env(safe-area-inset-bottom) - 20px));
 }
 
 /* Inner wrapper centers footer content to match messages */
@@ -883,7 +883,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .input-row button {
   background: var(--accent);
   color: #fff;
-  border-radius: 14px;
+  border-radius: 8px;
   padding: 0 18px;
   font-weight: 600;
   font-size: 15px;
@@ -902,7 +902,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
     padding: 0;
     width: 38px;
     font-size: 18px;
-    border-radius: 14px;
+    border-radius: 8px;
   }
   .send-btn-label { display: none; }
   .send-btn-icon { display: inline; }

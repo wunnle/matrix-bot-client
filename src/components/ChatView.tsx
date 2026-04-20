@@ -49,6 +49,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
   const [typingUsers, setTypingUsers] = useState<string[]>([])
+  const [bot, setBot] = useState<{ name: string; avatarUrl: string | null } | null>(null)
   const [sendError, setSendError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
@@ -100,6 +101,24 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     return () => {
       client.off(sdk.RoomEvent.Timeline, onEvent)
       client.off(sdk.MatrixEventEvent.Decrypted, onDecrypted)
+    }
+  }, [roomId, userId, client])
+
+  // Compute bot info reactively — members may be lazy-loaded
+  useEffect(() => {
+    const room = client.getRoom(roomId)
+    if (!room) return
+    const update = () => setBot(getRoomBot(roomId, userId, client))
+    update()
+    room.loadMembersIfNeeded().then(update).catch(() => {})
+    const onMember = (_e: sdk.MatrixEvent, member: sdk.RoomMember) => {
+      if (member.roomId === roomId) update()
+    }
+    client.on(sdk.RoomMemberEvent.Membership, onMember)
+    client.on(sdk.RoomMemberEvent.Name, onMember)
+    return () => {
+      client.off(sdk.RoomMemberEvent.Membership, onMember)
+      client.off(sdk.RoomMemberEvent.Name, onMember)
     }
   }, [roomId, userId, client])
 
@@ -263,24 +282,15 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       <div className="chat-header">
         <div className="chat-header-inner">
           <button className="back" onClick={onBack}>←</button>
-          {(() => {
-            const bot = getRoomBot(roomId, userId, client)
-            const title = bot?.name ?? roomName
-            const subtitle = bot ? roomName : null
-            return (
-              <>
-                {bot?.avatarUrl
-                  ? <img className="chat-avatar" src={bot.avatarUrl} alt="" />
-                  : <div className="chat-avatar chat-avatar-fallback">{(bot?.name ?? roomName).slice(0, 1).toUpperCase()}</div>}
-                <div className="chat-header-info">
-                  <span className="chat-title">{title}</span>
-                  <span className="chat-subtitle">
-                    {typingUsers.length > 0 ? 'thinking…' : subtitle}
-                  </span>
-                </div>
-              </>
-            )
-          })()}
+          {bot?.avatarUrl
+            ? <img className="chat-avatar" src={bot.avatarUrl} alt="" />
+            : <div className="chat-avatar chat-avatar-fallback">{(bot?.name ?? roomName).slice(0, 1).toUpperCase()}</div>}
+          <div className="chat-header-info">
+            <span className="chat-title">{bot?.name ?? roomName}</span>
+            <span className="chat-subtitle">
+              {typingUsers.length > 0 ? 'thinking…' : (bot ? roomName : null)}
+            </span>
+          </div>
           <button className="header-action" onClick={() => setShowEditor(true)} title="Room settings">⚙︎</button>
         </div>
       </div>

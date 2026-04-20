@@ -25,35 +25,54 @@ function log(...args) {
   console.log(`[${new Date().toISOString().slice(11, 23)}][echo-bot]`, ...args)
 }
 
-// Always do a fresh login so we get a valid token (stored tokens may be stale)
-log(`Logging in as ${USER_ID}…`)
-const loginRes = await fetch(`${HOMESERVER}/_matrix/client/v3/login`, {
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({
-    type: 'm.login.password',
-    identifier: { type: 'm.id.user', user: USER_ID },
-    password: PASSWORD,
-    initial_device_display_name: 'matrix-pwa echo-bot',
-  }),
-})
-if (!loginRes.ok) {
-  console.error('Login failed:', await loginRes.text())
-  process.exit(1)
-}
-const { access_token, device_id } = await loginRes.json()
-log(`device: ${device_id}`)
+// Persist session so we keep the same device_id across restarts.
+// Otherwise every restart creates a new device, invalidating all megolm sessions.
+const SESSION_FILE = path.join(STORE_DIR, '.session.json')
 
-// Wipe store if it was created for a different device (do this BEFORE loadCache)
-const DEVICE_TAG_FILE = path.join(STORE_DIR, '.device')
-const storedDevice = fs.existsSync(DEVICE_TAG_FILE) ? fs.readFileSync(DEVICE_TAG_FILE, 'utf8').trim() : null
-if (storedDevice && storedDevice !== device_id) {
-  log(`Device changed (${storedDevice} → ${device_id}), wiping crypto store…`)
-  for (const f of fs.readdirSync(STORE_DIR)) {
-    if (f !== '.device') fs.rmSync(path.join(STORE_DIR, f), { recursive: true, force: true })
+async function login() {
+  log(`Logging in as ${USER_ID}…`)
+  const res = await fetch(`${HOMESERVER}/_matrix/client/v3/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      type: 'm.login.password',
+      identifier: { type: 'm.id.user', user: USER_ID },
+      password: PASSWORD,
+      initial_device_display_name: 'matrix-pwa echo-bot',
+    }),
+  })
+  if (!res.ok) { console.error('Login failed:', await res.text()); process.exit(1) }
+  const { access_token, device_id } = await res.json()
+  fs.writeFileSync(SESSION_FILE, JSON.stringify({ access_token, device_id }))
+  return { access_token, device_id }
+}
+
+async function tokenValid(access_token) {
+  const res = await fetch(`${HOMESERVER}/_matrix/client/v3/account/whoami`, {
+    headers: { authorization: `Bearer ${access_token}` },
+  })
+  return res.ok
+}
+
+let access_token, device_id
+if (fs.existsSync(SESSION_FILE)) {
+  const stored = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'))
+  if (await tokenValid(stored.access_token)) {
+    log(`Reusing stored session (device: ${stored.device_id})`)
+    access_token = stored.access_token
+    device_id = stored.device_id
+  } else {
+    log('Stored token invalid, re-logging in')
   }
 }
-fs.writeFileSync(DEVICE_TAG_FILE, device_id)
+if (!access_token) {
+  ;({ access_token, device_id } = await login())
+  log(`device: ${device_id}`)
+  // New device → wipe crypto store
+  for (const f of fs.readdirSync(STORE_DIR)) {
+    if (f !== '.session.json') fs.rmSync(path.join(STORE_DIR, f), { recursive: true, force: true })
+  }
+}
 
 process.chdir(STORE_DIR)
 const dbManagerMod = await import('node-indexeddb/dbManager')

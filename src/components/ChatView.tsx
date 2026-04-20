@@ -417,8 +417,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
             const label = hasParam ? pill.replace('<>', '…') : pill
             const handleClick = () => {
               if (hasParam) {
+                textareaRef.current?.focus()
                 setInput(pill.slice(0, paramIdx))
-                requestAnimationFrame(() => textareaRef.current?.focus())
               } else {
                 sendMessage(pill)
               }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import type { AuthState } from '../types'
 import { fetchJoinedRooms, getClient, type RoomSummary } from '../lib/matrix'
+import { resolveMediaUrl } from '../lib/mediaUrl'
 
 interface Props {
   auth: AuthState
@@ -15,12 +16,30 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
   const [rooms, setRooms] = useState<RoomSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [roomAvatars, setRoomAvatars] = useState<Record<string, string>>({})
 
   useEffect(() => {
     fetchJoinedRooms(auth)
       .then((r) => { setRooms(r); setLoading(false); onReady() })
       .catch((e) => { setError(e.message); setLoading(false); onReady() })
   }, [auth])
+
+  // Resolve room avatars
+  useEffect(() => {
+    if (rooms.length === 0) return
+    let client: ReturnType<typeof getClient>
+    try { client = getClient() } catch { return }
+    const unresolved = rooms.filter(r => r.avatarMxc && !roomAvatars[r.roomId])
+    if (unresolved.length === 0) return
+    Promise.all(unresolved.map(async r => {
+      const url = await resolveMediaUrl(client, r.avatarMxc!, 80, 80, 'crop')
+      return { roomId: r.roomId, url }
+    })).then(results => {
+      const updates: Record<string, string> = {}
+      results.forEach(r => { if (r.url) updates[r.roomId] = r.url })
+      if (Object.keys(updates).length > 0) setRoomAvatars(prev => ({ ...prev, ...updates }))
+    })
+  }, [rooms])
 
   // Keep room list live: re-sort and update unread on new messages
   useEffect(() => {
@@ -87,7 +106,9 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
               className={room.roomId === activeRoomId ? 'active' : ''}
               onClick={() => onSelectRoom(room.roomId, room.name)}
             >
-              <div className="room-avatar">{roomInitial(room.name)}</div>
+              {roomAvatars[room.roomId]
+                ? <img className="room-avatar" src={roomAvatars[room.roomId]} alt="" />
+                : <div className="room-avatar">{roomInitial(room.name)}</div>}
               <div className="room-info">
                 <div className="room-name-row">
                   <div className="room-name">{room.name}</div>

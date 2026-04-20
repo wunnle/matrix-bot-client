@@ -306,6 +306,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-weight: 600;
   color: var(--text-muted);
   flex-shrink: 0;
+  object-fit: cover;
 }
 
 .room-list li.active .room-avatar {

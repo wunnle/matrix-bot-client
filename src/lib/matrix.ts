@@ -33,6 +33,7 @@ export interface RoomSummary {
   lastMessage?: string
   lastTs?: number
   unreadCount: number
+  avatarMxc?: string
 }
 
 function getRooms(c: sdk.MatrixClient): RoomSummary[] {
@@ -40,12 +41,15 @@ function getRooms(c: sdk.MatrixClient): RoomSummary[] {
     .map((room) => {
       const timeline = room.getLiveTimeline().getEvents()
       const last = [...timeline].reverse().find((e) => e.getType() === 'm.room.message')
+      const avatarEvent = room.currentState.getStateEvents('m.room.avatar', '')
+      const avatarMxc = avatarEvent?.getContent()?.url ?? undefined
       return {
         roomId: room.roomId,
         name: room.name,
         lastMessage: last?.getContent()?.body,
         lastTs: last?.getTs(),
         unreadCount: room.getUnreadNotificationCount(),
+        avatarMxc,
       }
     })
     .sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0))

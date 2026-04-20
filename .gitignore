@@ -13,6 +13,11 @@ dist-ssr
 *.local
 scripts/.env
 scripts/.pingpong-store-*
+scripts/.echo-bot-store
+scripts/.late-joiner-*
+scripts/.multimsg-store-*
+scripts/.resume-store-*
+indexeddb
 
 # Editor directories and files
 .vscode/*

@@ -4,7 +4,7 @@ import type { AuthState } from '../types'
 import RoomList from './RoomList'
 import ChatView from './ChatView'
 import ConnectionBanner from './ConnectionBanner'
-import { getClient } from '../lib/matrix'
+import { getClient, getCachedRooms } from '../lib/matrix'
 
 interface Props {
   auth: AuthState
@@ -15,7 +15,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   const { roomId } = useParams<{ roomId: string }>()
   const navigate = useNavigate()
   const [roomNames, setRoomNames] = useState<Record<string, string>>({})
-  const [ready, setReady] = useState(false)
+  const [ready, setReady] = useState(() => getCachedRooms(auth.userId) !== null)
 
   const activeRoomId = roomId ? decodeURIComponent(roomId) : null
 

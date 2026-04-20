@@ -418,7 +418,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
             const handleClick = () => {
               if (hasParam) {
                 setInput(pill.slice(0, paramIdx))
-                setTimeout(() => textareaRef.current?.focus(), 0)
+                requestAnimationFrame(() => textareaRef.current?.focus())
               } else {
                 sendMessage(pill)
               }

@@ -17,7 +17,7 @@ const PAGE_SIZE = 30
 
 
 // Matches lines like: "📖 read_file: "/path..."" or "🔧 patch: "..." (×2)"
-const TOOL_PROGRESS_LINE = /^\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\(×\d+\))?|\.\.\.)\s*$/u
+const TOOL_PROGRESS_LINE = /^(?:\*\s*)?\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\(×\d+\))?|\.\.\.)\s*$/u
 
 function isToolProgressMessage(body: string): boolean {
   const lines = body.split('\n').filter(l => l.trim() !== '')

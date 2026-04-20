@@ -17,7 +17,6 @@ export default function RoomEditor({ roomId, onClose }: Props) {
 
   useEffect(() => {
     loadPills(client, roomId).then(setPills)
-    inputRef.current?.focus()
   }, [client, roomId])
 
   function addPill() {

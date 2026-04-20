@@ -25,12 +25,15 @@ function parseActions(body: string): { text: string; actions: string[] } {
   return { text, actions }
 }
 
-function getRoomBotName(roomId: string, userId: string, client: sdk.MatrixClient): string | null {
+function getRoomBot(roomId: string, userId: string, client: sdk.MatrixClient): { name: string; avatarUrl: string | null } | null {
   const room = client.getRoom(roomId)
   if (!room) return null
   const others = room.getMembersWithMembership('join').filter(m => m.userId !== userId)
   if (others.length !== 1) return null
-  return others[0].name ?? shortName(others[0].userId)
+  const m = others[0]
+  const mxc = m.getMxcAvatarUrl()
+  const avatarUrl = mxc ? client.mxcUrlToHttp(mxc, 80, 80, 'crop') : null
+  return { name: m.name ?? shortName(m.userId), avatarUrl }
 }
 
 export default function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
@@ -260,10 +263,24 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       <div className="chat-header">
         <div className="chat-header-inner">
           <button className="back" onClick={onBack}>←</button>
-          <div className="chat-header-info">
-            <span className="chat-title">{roomName}</span>
-            {(() => { const bot = getRoomBotName(roomId, userId, client); return bot && <span className="chat-subtitle">{bot}</span> })()}
-          </div>
+          {(() => {
+            const bot = getRoomBot(roomId, userId, client)
+            const title = bot?.name ?? roomName
+            const subtitle = bot ? roomName : null
+            return (
+              <>
+                {bot?.avatarUrl
+                  ? <img className="chat-avatar" src={bot.avatarUrl} alt="" />
+                  : <div className="chat-avatar chat-avatar-fallback">{(bot?.name ?? roomName).slice(0, 1).toUpperCase()}</div>}
+                <div className="chat-header-info">
+                  <span className="chat-title">{title}</span>
+                  <span className="chat-subtitle">
+                    {typingUsers.length > 0 ? 'thinking…' : subtitle}
+                  </span>
+                </div>
+              </>
+            )
+          })()}
           <button className="header-action" onClick={() => setShowEditor(true)} title="Room settings">⚙︎</button>
         </div>
       </div>
@@ -338,12 +355,6 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
         </div>
       </div>
 
-      {typingUsers.length > 0 && (
-        <div className="thinking-indicator">
-          {(() => { const bot = getRoomBotName(roomId, userId, client); return bot ?? typingUsers[0] })()}  is thinking…
-        </div>
-      )}
-
       <div className="chat-footer">
 
         <div className="pills">
@@ -407,8 +418,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
             disabled={sending}
             enterKeyHint="send"
           />
-          <button onClick={() => sendMessage(input)} disabled={sending || !input.trim()}>
-            {sending ? '…' : 'Send'}
+          <button className="send-btn" onClick={() => sendMessage(input)} disabled={sending || !input.trim()}>
+            {sending ? '…' : <><span className="send-btn-label">Send</span><span className="send-btn-icon">↑</span></>}
           </button>
         </div>
       </div>

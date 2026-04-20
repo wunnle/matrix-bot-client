@@ -464,6 +464,25 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   .chat-header-inner { max-width: 560px; }
 }
 
+.chat-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--bg-surface);
+  flex-shrink: 0;
+}
+
+.chat-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-active);
+}
+
 .chat-header-info {
   flex: 1;
   display: flex;
@@ -476,6 +495,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-size: 12px;
   color: var(--text-muted);
   white-space: nowrap;
+  min-height: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -734,7 +754,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .chat-footer {
   flex-shrink: 0;
-  padding: 0 16px calc(12px + env(safe-area-inset-bottom));
+  padding: 0 16px max(12px, env(safe-area-inset-bottom));
 }
 
 /* Inner wrapper centers footer content to match messages */
@@ -750,19 +770,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   }
 }
 
-.thinking-indicator {
-  font-size: 15px;
-  color: var(--text-faint);
-  font-style: italic;
-  padding: 6px 16px;
-  max-width: 760px;
-  margin: 0 auto;
-  width: 100%;
-}
-
-@media (min-width: 641px) {
-  .thinking-indicator { max-width: 560px; }
-}
 
 /* Pills & Autocomplete */
 .pills {
@@ -811,8 +818,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   color: var(--text);
   background: var(--bg-input);
   border-radius: 8px;
-  width: 110px;
-  font: 13px/1 system-ui, sans-serif;
+  width: 130px;
+  font: 16px/1 system-ui, sans-serif;
 }
 
 .autocomplete {
@@ -888,8 +895,17 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .input-row button:hover { background: var(--accent-hover); }
 .input-row button:disabled { opacity: 0.4; cursor: default; }
 
+.send-btn-icon { display: none; }
+
 @media (max-width: 640px) {
-  .input-row button { display: none; }
+  .input-row button {
+    padding: 0;
+    width: 36px;
+    font-size: 18px;
+    border-radius: 50%;
+  }
+  .send-btn-label { display: none; }
+  .send-btn-icon { display: inline; }
 }
 
 /* ─────────────────────────────

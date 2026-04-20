@@ -36,6 +36,16 @@ export default function RoomEditor({ roomId, onClose }: Props) {
     if (e.key === 'Enter') { e.preventDefault(); addPill() }
   }
 
+  async function resetEncryption() {
+    if (!confirm('Force a fresh encryption session for this room? Useful when bot replies stop arriving after a bot restart.')) return
+    try {
+      await client.getCrypto()?.forceDiscardSession(roomId)
+      alert('Session discarded. Send a message to trigger a fresh one.')
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to discard session')
+    }
+  }
+
   async function save() {
     setSaving(true)
     setError('')
@@ -84,6 +94,11 @@ export default function RoomEditor({ roomId, onClose }: Props) {
           </div>
 
           {error && <div className="editor-error">{error}</div>}
+
+          <div className="editor-section-label" style={{ marginTop: 24 }}>Troubleshooting</div>
+          <button className="editor-btn-cancel" onClick={resetEncryption} style={{ width: '100%' }}>
+            Reset encryption session
+          </button>
         </div>
 
         <div className="room-editor-footer">

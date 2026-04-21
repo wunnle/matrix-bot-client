@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import {
   DndContext,
@@ -107,12 +107,12 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     })
   }, [roomId])
 
-  const lastActions = (() => {
+  const lastActions = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (!messages[i].isOwnMessage) return parseActions(messages[i].body).actions
     }
     return []
-  })()
+  }, [messages])
   const [addingPill, setAddingPill] = useState(false)
   const [newPillInput, setNewPillInput] = useState('')
   const newPillRef = useRef<HTMLInputElement>(null)
@@ -131,7 +131,10 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const touchStartY = useRef<number | null>(null)
   const client = getClient()
 
-  const visibleMessages = messages.slice(renderStart, renderStart + RENDER_LIMIT)
+  const visibleMessages = useMemo(
+    () => messages.slice(renderStart, renderStart + RENDER_LIMIT),
+    [messages, renderStart],
+  )
 
   useEffect(() => {
     isFirstLoad.current = true

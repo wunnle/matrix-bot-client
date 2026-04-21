@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import type { AuthState } from '../types'
 import RoomList from './RoomList'
 import ChatView from './ChatView'
@@ -35,14 +35,16 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     }
   }
 
-  function handleSelectRoom(id: string, name: string) {
-    setRoomNames((prev) => ({ ...prev, [id]: name }))
+  const handleSelectRoom = useCallback((id: string, name: string) => {
+    setRoomNames((prev) => (prev[id] === name ? prev : { ...prev, [id]: name }))
     navigate(`/rooms/${encodeURIComponent(id)}`)
-  }
+  }, [navigate])
 
-  function handleBack() {
+  const handleBack = useCallback(() => {
     navigate('/rooms')
-  }
+  }, [navigate])
+
+  const handleReady = useCallback(() => setClientReady(true), [])
 
   return (
     <div className={`layout ${activeRoomId ? 'room-open' : ''}`}>
@@ -54,7 +56,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
             activeRoomId={activeRoomId}
             onSelectRoom={handleSelectRoom}
             onSignOut={onSignOut}
-            onReady={() => setClientReady(true)}
+            onReady={handleReady}
           />
         </aside>
 

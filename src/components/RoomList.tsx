@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
@@ -15,11 +15,11 @@ interface Props {
   onReady: () => void
 }
 
-function SortableRoomCard({ room, isActive, avatar, onSelect }: {
+const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar, onSelect }: {
   room: RoomSummary
   isActive: boolean
   avatar?: string
-  onSelect: () => void
+  onSelect: (roomId: string, name: string) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: room.roomId })
   const style = {
@@ -34,7 +34,7 @@ function SortableRoomCard({ room, isActive, avatar, onSelect }: {
       {...attributes}
       {...listeners}
       className={`room-card${isActive ? ' active' : ''}`}
-      onClick={onSelect}
+      onClick={() => onSelect(room.roomId, room.name)}
     >
       <div className="room-card-avatar">
         {avatar ? <img src={avatar} alt="" /> : <span>{roomInitial(room.name)}</span>}
@@ -47,7 +47,7 @@ function SortableRoomCard({ room, isActive, avatar, onSelect }: {
       <div className="room-card-name">{room.name}</div>
     </button>
   )
-}
+})
 
 export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, onReady }: Props) {
   const cached = getCachedRooms(auth.userId)
@@ -91,31 +91,50 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
     })
   }, [rooms])
 
+  // Keep active room in a ref so the timeline subscription below doesn't
+  // tear down and re-subscribe every time the active room changes.
+  const activeRoomIdRef = useRef(activeRoomId)
+  useEffect(() => { activeRoomIdRef.current = activeRoomId }, [activeRoomId])
+
   // Update unread counts on new messages (no reorder)
   useEffect(() => {
     if (loading) return
     let client: ReturnType<typeof getClient>
     try { client = getClient() } catch { return }
 
-    const onEvent = (_event: sdk.MatrixEvent, room: sdk.Room | undefined) => {
+    const onEvent = (event: sdk.MatrixEvent, room: sdk.Room | undefined) => {
       if (!room) return
-      setRooms((prev) => prev.map((r) =>
-        r.roomId === room.roomId
-          ? { ...r, unreadCount: r.roomId === activeRoomId ? 0 : room.getUnreadNotificationCount() }
-          : r
-      ))
+      const type = event.getType()
+      if (type !== 'm.room.message' && type !== 'm.room.encrypted') return
+      const newCount = room.roomId === activeRoomIdRef.current ? 0 : room.getUnreadNotificationCount()
+      setRooms((prev) => {
+        let changed = false
+        const next = prev.map((r) => {
+          if (r.roomId !== room.roomId) return r
+          if (r.unreadCount === newCount) return r
+          changed = true
+          return { ...r, unreadCount: newCount }
+        })
+        return changed ? next : prev
+      })
     }
 
     client.on(sdk.RoomEvent.Timeline, onEvent)
     return () => { client.off(sdk.RoomEvent.Timeline, onEvent) }
-  }, [loading, activeRoomId])
+  }, [loading])
 
   // Clear unread when active room changes
   useEffect(() => {
     if (!activeRoomId) return
-    setRooms((prev) =>
-      prev.map((r) => r.roomId === activeRoomId ? { ...r, unreadCount: 0 } : r)
-    )
+    setRooms((prev) => {
+      let changed = false
+      const next = prev.map((r) => {
+        if (r.roomId !== activeRoomId || r.unreadCount === 0) return r
+        changed = true
+        return { ...r, unreadCount: 0 }
+      })
+      return changed ? next : prev
+    })
   }, [activeRoomId])
 
   function handleDragEnd(event: { active: { id: string | number }, over: { id: string | number } | null }) {
@@ -162,7 +181,7 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
                   room={room}
                   isActive={room.roomId === activeRoomId}
                   avatar={roomAvatars[room.roomId]}
-                  onSelect={() => onSelectRoom(room.roomId, room.name)}
+                  onSelect={onSelectRoom}
                 />
               ))}
             </div>

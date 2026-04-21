@@ -191,18 +191,30 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
 
     const onReceipt = (_event: sdk.MatrixEvent, room_: sdk.Room) => {
       if (room_.roomId !== roomId) return
-      const otherMembers = room_.getMembers()
-        .filter((m: sdk.RoomMember) => m.userId !== userId && m.membership === 'join')
-      setMessages((prev) => prev.map((m) => {
-        if (!m.isOwnMessage || m.isRead) return m
-        const isRead = otherMembers.some((member: sdk.RoomMember) => {
-          const readUpTo = room_.getEventReadUpTo(member.userId)
-          if (!readUpTo) return false
-          const readEvent = room_.findEventById(readUpTo)
-          return readEvent ? readEvent.getTs() >= m.timestamp : false
+      // Collapse all other members' read markers into a single max
+      // timestamp, then apply in one O(n) pass over messages. Return
+      // the same reference when nothing changed so consumers of
+      // `messages` don't re-render.
+      let maxReadTs = 0
+      for (const member of room_.getMembers()) {
+        if (member.userId === userId || member.membership !== 'join') continue
+        const readUpTo = room_.getEventReadUpTo(member.userId)
+        if (!readUpTo) continue
+        const readEvent = room_.findEventById(readUpTo)
+        if (!readEvent) continue
+        const ts = readEvent.getTs()
+        if (ts > maxReadTs) maxReadTs = ts
+      }
+      if (maxReadTs === 0) return
+      setMessages((prev) => {
+        let changed = false
+        const next = prev.map((m) => {
+          if (!m.isOwnMessage || m.isRead || m.timestamp > maxReadTs) return m
+          changed = true
+          return { ...m, isRead: true }
         })
-        return isRead ? { ...m, isRead } : m
-      }))
+        return changed ? next : prev
+      })
     }
 
     client.on(sdk.MatrixEventEvent.Decrypted, onDecrypted)

@@ -15,7 +15,8 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   const { roomId } = useParams<{ roomId: string }>()
   const navigate = useNavigate()
   const [roomNames, setRoomNames] = useState<Record<string, string>>({})
-  const [ready, setReady] = useState(false)
+  const [clientReady, setClientReady] = useState(false)
+  const roomsReady = getCachedRooms(auth.userId) !== null
 
   const activeRoomId = roomId ? decodeURIComponent(roomId) : null
 
@@ -46,29 +47,37 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
             activeRoomId={activeRoomId}
             onSelectRoom={handleSelectRoom}
             onSignOut={onSignOut}
-            onReady={() => setReady(true)}
+            onReady={() => setClientReady(true)}
           />
         </aside>
 
         <main className="main">
-          {!ready ? (
+          {activeRoomId ? (
+            clientReady ? (
+              <ChatView
+                key={activeRoomId}
+                roomId={activeRoomId}
+                roomName={getRoomName(activeRoomId)}
+                userId={auth.userId}
+                onBack={handleBack}
+              />
+            ) : (
+              <div className="empty-state">
+                <div className="loading-dots">
+                  <span /><span /><span />
+                </div>
+              </div>
+            )
+          ) : roomsReady ? (
+            <div className="empty-state">
+              <div className="empty-icon">💬</div>
+              <p>Select a room to start chatting</p>
+            </div>
+          ) : (
             <div className="empty-state">
               <div className="loading-dots">
                 <span /><span /><span />
               </div>
-            </div>
-          ) : activeRoomId ? (
-            <ChatView
-              key={activeRoomId}
-              roomId={activeRoomId}
-              roomName={getRoomName(activeRoomId)}
-              userId={auth.userId}
-              onBack={handleBack}
-            />
-          ) : (
-            <div className="empty-state">
-              <div className="empty-icon">💬</div>
-              <p>Select a room to start chatting</p>
             </div>
           )}
         </main>

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import {
   DndContext,
@@ -123,7 +123,7 @@ function SortablePill({ pill, onActivate }: { pill: string; onActivate: () => vo
   )
 }
 
-export default function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
+function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -849,3 +849,8 @@ function formatDate(ts: number): string {
   return d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
 }
 
+// Memoized so that when RoomsLayout re-renders (e.g. on navigation),
+// the 1..N mounted ChatViews don't all re-render their entire message
+// lists synchronously. That reconciliation was causing a ~1s main-thread
+// stall on mobile when returning to the rooms screen.
+export default memo(ChatView)

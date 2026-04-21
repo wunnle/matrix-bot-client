@@ -298,9 +298,18 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   border-radius: 14px;
   transition: background 0.1s;
   width: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.room-card:hover { background: var(--bg-hover); }
+/* Only apply hover on devices that actually hover. Without this,
+   tapping a tile on mobile leaves :hover stuck until another element
+   is hovered — which looks like the active state is lingering after
+   navigating back to the rooms screen. */
+@media (hover: hover) {
+  .room-card:hover { background: var(--bg-hover); }
+}
+.room-card:focus { outline: none; }
+.room-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .room-card.active { background: var(--accent-dim); }
 .room-card.active .room-card-name { color: var(--accent); }
 

@@ -11,6 +11,11 @@ interface Props {
   onSignOut: () => void
 }
 
+// Keep the last N visited ChatViews mounted for instant room switching.
+// Older rooms get unmounted so their client event listeners, media
+// resolutions, and re-renders don't run in the background forever.
+const MAX_MOUNTED_ROOMS = 5
+
 export default function RoomsLayout({ auth, onSignOut }: Props) {
   const { roomId } = useParams<{ roomId: string }>()
   const navigate = useNavigate()
@@ -21,10 +26,20 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
 
   const activeRoomId = roomId ? decodeURIComponent(roomId) : null
 
+  // Maintain visitedRooms as MRU with the active room at the end.
   useEffect(() => {
-    if (activeRoomId && clientReady) {
-      setVisitedRooms((prev) => prev.includes(activeRoomId) ? prev : [...prev, activeRoomId])
-    }
+    if (!activeRoomId || !clientReady) return
+    setVisitedRooms((prev) => {
+      const alreadyAtEnd = prev[prev.length - 1] === activeRoomId
+      if (alreadyAtEnd && prev.length <= MAX_MOUNTED_ROOMS) return prev
+      const filtered = prev.indexOf(activeRoomId) === -1
+        ? prev
+        : prev.filter((id) => id !== activeRoomId)
+      const next = [...filtered, activeRoomId]
+      return next.length > MAX_MOUNTED_ROOMS
+        ? next.slice(next.length - MAX_MOUNTED_ROOMS)
+        : next
+    })
   }, [activeRoomId, clientReady])
 
   function getRoomName(id: string): string {

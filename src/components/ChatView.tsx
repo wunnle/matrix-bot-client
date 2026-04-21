@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import {
   DndContext,
@@ -138,7 +138,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
 
   useEffect(() => {
     isFirstLoad.current = true
-    lastScrolledCount.current = 0
+    stickToBottomRef.current = true
+    lastTailEventIdRef.current = undefined
     setHasMore(true)
     setMessages([])
     setRenderStart(0)
@@ -148,16 +149,19 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     const room = client.getRoom(roomId)
     if (!room) return
 
+    // Render once after we have enough events to fill the viewport, to
+    // avoid a double render/jump: cached-short-content → scrollback-tall-content.
     const existing = room.getLiveTimeline().getEvents()
-    if (existing.length > 0) {
+    if (existing.length >= 20) {
       setMessages(eventsToMessages(existing, userId, room))
-      client.scrollback(room, 10).then(() => {
-        setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, room))
-      }).catch(() => {})
     } else {
-      client.scrollback(room, 10).catch(() => {}).finally(() => {
-        setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, room))
-      })
+      client.scrollback(room, 20)
+        .then(() => {
+          setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, room))
+        })
+        .catch(() => {
+          setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, room))
+        })
     }
 
     const onEvent = (event: sdk.MatrixEvent, room_: sdk.Room | undefined) => {
@@ -314,28 +318,34 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     })
   }, [messages.length])
 
-  // Scroll to bottom on initial load, own messages, and incoming when already near bottom
+  // Scroll policy: stay pinned to bottom unless the user scrolls away.
+  //   - stickToBottomRef starts true and is toggled by handleScroll.
+  //   - Use 'instant' scroll for sticky-to-bottom updates. A 'smooth'
+  //     scroll during the async decryption/scrollback cascade races
+  //     with its own scroll events (which would briefly show us as
+  //     "not near bottom" mid-animation), and with further content
+  //     being appended after the animation target was already locked.
+  //   - Suppress stickToBottom changes while a programmatic scroll is
+  //     in flight so the scroll handler doesn't see the intermediate
+  //     position and flip the flag to false.
   const isFirstLoad = useRef(true)
-  const lastScrolledCount = useRef(0)
-  useEffect(() => {
+  const stickToBottomRef = useRef(true)
+  const lastTailEventIdRef = useRef<string | undefined>(undefined)
+  const programmaticScrollUntilRef = useRef(0)
+  // useLayoutEffect so we set scrollTop before the browser paints the new
+  // content. Otherwise there's a one-frame flash where the new messages
+  // render at the top of the scroll container before being scrolled down.
+  useLayoutEffect(() => {
     if (visibleMessages.length === 0) return
-    if (visibleMessages.length === lastScrolledCount.current) return
-    const prevCount = lastScrolledCount.current
-    lastScrolledCount.current = visibleMessages.length
-    if (isFirstLoad.current) {
-      isFirstLoad.current = false
-      requestAnimationFrame(() => requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'instant' })))
-      return
-    }
-    const newMessage = visibleMessages[visibleMessages.length - 1]
-    const isNewAppend = visibleMessages.length > prevCount
-    if (!isNewAppend) return
-    const container = messagesRef.current
-    const isNearBottom = container ? container.scrollHeight - container.scrollTop - container.clientHeight < 150 : true
-    if (!newMessage?.isOwnMessage && !isNearBottom) return
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }))
+    const tail = visibleMessages[visibleMessages.length - 1]
+    const tailChanged = tail.eventId !== lastTailEventIdRef.current
+    lastTailEventIdRef.current = tail.eventId
+    const shouldScroll = stickToBottomRef.current || (tailChanged && tail.isOwnMessage)
+    if (!shouldScroll) return
+    const behavior: ScrollBehavior = (!isFirstLoad.current && tailChanged && tail.isOwnMessage) ? 'smooth' : 'instant'
+    isFirstLoad.current = false
+    programmaticScrollUntilRef.current = performance.now() + (behavior === 'smooth' ? 500 : 100)
+    bottomRef.current?.scrollIntoView({ behavior })
   }, [visibleMessages])
 
   // Load pills — retry on sync (account data may not be in-memory until first SYNCING)
@@ -403,6 +413,13 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     const el = e.currentTarget
     const scrollTop = el.scrollTop
     const isNearBottom = el.scrollHeight - scrollTop - el.clientHeight < 150
+    // Ignore scroll events fired by our own programmatic scrollIntoView
+    // so we don't see the mid-animation position as "user scrolled up".
+    if (performance.now() >= programmaticScrollUntilRef.current) {
+      stickToBottomRef.current = isNearBottom
+    } else if (isNearBottom) {
+      stickToBottomRef.current = true
+    }
     setShowScrollDown(!isNearBottom)
     if (scrollTop < 80) {
       if (renderStart > 0) {

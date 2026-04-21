@@ -170,6 +170,7 @@ function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
   const [renderStart, setRenderStart] = useState(0)
   const [typingUsers, setTypingUsers] = useState<string[]>([])
   const [bot, setBot] = useState<{ name: string; avatarUrl: string | null } | null>(null)
+  const [roomAvatarUrl, setRoomAvatarUrl] = useState<string | null>(null)
   const [sendError, setSendError] = useState('')
   const [showScrollDown, setShowScrollDown] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -300,6 +301,19 @@ function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
       room.currentState.off(sdk.RoomStateEvent.Members, onMembers)
     }
   }, [roomId, userId, client])
+
+  // Resolve room's own avatar URL
+  useEffect(() => {
+    const room = client.getRoom(roomId)
+    if (!room) return
+    const mxcUrl = room.getMxcAvatarUrl()
+    if (!mxcUrl) { setRoomAvatarUrl(null); return }
+    let cancelled = false
+    resolveMediaUrl(client, mxcUrl, 80, 80, 'crop').then(url => {
+      if (!cancelled) setRoomAvatarUrl(url ?? null)
+    })
+    return () => { cancelled = true }
+  }, [roomId, client])
 
   // Resolve mxc image URLs to authenticated blob URLs. Kept out of
   // `messages` so resolution doesn't mutate the message array and
@@ -558,13 +572,13 @@ function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
       <div className="chat-header">
         <div className="chat-header-inner">
           <button className="back" onClick={onBack}>←</button>
-          {bot?.avatarUrl
-            ? <img className="chat-avatar" src={bot.avatarUrl} alt="" />
-            : <div className="chat-avatar chat-avatar-fallback">{(bot?.name ?? roomName).slice(0, 1).toUpperCase()}</div>}
+          {roomAvatarUrl
+            ? <img className="chat-avatar" src={roomAvatarUrl} alt="" />
+            : <div className="chat-avatar chat-avatar-fallback">{roomName.slice(0, 1).toUpperCase()}</div>}
           <div className="chat-header-info">
-            <span className="chat-title">{bot?.name ?? roomName}</span>
+            <span className="chat-title">{roomName}</span>
             <span className={`chat-subtitle${typingUsers.length > 0 ? ' chat-subtitle--thinking' : ''}`}>
-              {typingUsers.length > 0 ? 'thinking…' : (bot ? roomName : null)}
+              {typingUsers.length > 0 ? `${bot?.name ?? 'Bot'} is thinking…` : (bot?.name ?? null)}
             </span>
           </div>
           <button className="header-action" onClick={() => setShowEditor(true)} title="Room settings">⚙︎</button>

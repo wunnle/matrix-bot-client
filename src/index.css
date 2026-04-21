@@ -493,7 +493,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .chat-avatar {
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: 11px;
   object-fit: cover;
   background: var(--bg-surface);
   flex-shrink: 0;

@@ -416,7 +416,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
             : <div className="chat-avatar chat-avatar-fallback">{(bot?.name ?? roomName).slice(0, 1).toUpperCase()}</div>}
           <div className="chat-header-info">
             <span className="chat-title">{bot?.name ?? roomName}</span>
-            <span className="chat-subtitle">
+            <span className={`chat-subtitle${typingUsers.length > 0 ? ' chat-subtitle--thinking' : ''}`}>
               {typingUsers.length > 0 ? 'thinking…' : (bot ? roomName : null)}
             </span>
           </div>

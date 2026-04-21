@@ -113,6 +113,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 /* Mobile: sidebar full-width, hidden when room open */
 @media (max-width: 640px) {
+  .room-grid { grid-template-columns: repeat(3, 1fr); }
+
   .layout-body {
     position: relative;
   }
@@ -279,7 +281,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .room-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
   padding: 12px;
 }
@@ -508,6 +510,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.chat-subtitle--thinking { color: var(--accent); }
 
 .back {
   color: var(--text-muted);
@@ -960,17 +964,13 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .input-row button:hover { background: var(--accent-hover); }
 .input-row button:disabled { opacity: 0.4; cursor: default; }
 
-.send-btn-icon { display: none; }
+.send-btn-label { display: none; }
+.send-btn-icon { display: inline; }
 
-@media (max-width: 640px) {
-  .input-row button {
-    padding: 0;
-    width: 38px;
-    font-size: 18px;
-    border-radius: 8px;
-  }
-  .send-btn-label { display: none; }
-  .send-btn-icon { display: inline; }
+.input-row button {
+  padding: 0;
+  width: 38px;
+  font-size: 18px;
 }
 
 /* ─────────────────────────────

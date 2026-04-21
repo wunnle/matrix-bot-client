@@ -217,26 +217,35 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     }
   }, [roomId, userId, client])
 
-  // Compute bot info reactively — members may be lazy-loaded
+  // Compute bot info reactively — members may be lazy-loaded. Listen on
+  // room.currentState rather than the client so we don't wake up for
+  // every member change in every other joined room.
   useEffect(() => {
     const room = client.getRoom(roomId)
     if (!room) return
+    let cancelled = false
     const update = async () => {
       const meta = getRoomBotMeta(roomId, userId, client)
-      if (!meta) { setBot(null); return }
+      if (!meta) {
+        if (!cancelled) setBot((prev) => (prev === null ? prev : null))
+        return
+      }
       const avatarUrl = meta.mxcUrl ? await resolveMediaUrl(client, meta.mxcUrl, 80, 80, 'crop') : null
-      setBot({ name: meta.name, avatarUrl })
+      if (cancelled) return
+      setBot((prev) => {
+        if (prev && prev.name === meta.name && prev.avatarUrl === avatarUrl) return prev
+        return { name: meta.name, avatarUrl }
+      })
     }
     update()
     room.loadMembersIfNeeded().then(update).catch(() => {})
-    const onMember = (_e: sdk.MatrixEvent, member: sdk.RoomMember) => {
-      if (member.roomId === roomId) update()
+    const onMembers = (_e: sdk.MatrixEvent, _s: sdk.RoomState, member: sdk.RoomMember) => {
+      if (member.userId !== userId) update()
     }
-    client.on(sdk.RoomMemberEvent.Membership, onMember)
-    client.on(sdk.RoomMemberEvent.Name, onMember)
+    room.currentState.on(sdk.RoomStateEvent.Members, onMembers)
     return () => {
-      client.off(sdk.RoomMemberEvent.Membership, onMember)
-      client.off(sdk.RoomMemberEvent.Name, onMember)
+      cancelled = true
+      room.currentState.off(sdk.RoomStateEvent.Members, onMembers)
     }
   }, [roomId, userId, client])
 

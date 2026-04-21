@@ -380,6 +380,16 @@ function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
   const stickToBottomRef = useRef(true)
   const lastTailEventIdRef = useRef<string | undefined>(undefined)
   const programmaticScrollUntilRef = useRef(0)
+  // When stuck to the bottom and messages grow past the render window,
+  // advance renderStart so the new tail stays visible. Without this,
+  // a new message appended beyond renderStart + RENDER_LIMIT would fall
+  // outside visibleMessages and the scroll effect below would never fire.
+  useEffect(() => {
+    if (!stickToBottomRef.current) return
+    const maxStart = Math.max(0, messages.length - RENDER_LIMIT)
+    setRenderStart(maxStart)
+  }, [messages.length])
+
   // useLayoutEffect so we set scrollTop before the browser paints the new
   // content. Otherwise there's a one-frame flash where the new messages
   // render at the top of the scroll container before being scrolled down.

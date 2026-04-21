@@ -298,10 +298,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   border-radius: 14px;
   transition: background 0.1s;
   width: 100%;
-  /* Required for @dnd-kit TouchSensor: prevents iOS long-press from
-     triggering text selection instead of initiating the drag. */
-  user-select: none;
-  -webkit-user-select: none;
 }
 
 /* Only apply hover on devices that actually hover. Without this,
@@ -329,6 +325,12 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-weight: 700;
   color: var(--text-muted);
   overflow: visible;
+  /* drag handle: touch-action:none lets @dnd-kit capture the touch
+     before the browser steals it for scrolling. Applied here only
+     so the card-name area can still initiate list scrolling. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .room-card-avatar img {

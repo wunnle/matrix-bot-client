@@ -32,11 +32,13 @@ const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar
       ref={setNodeRef}
       style={style}
       {...attributes}
-      {...listeners}
       className={`room-card${isActive ? ' active' : ''}`}
       onClick={() => onSelect(room.roomId, room.name)}
     >
-      <div className="room-card-avatar">
+      {/* touch-action:none only on the avatar so the drag sensor can
+          capture touch events there, while the card name area still
+          allows the list to scroll naturally */}
+      <div className="room-card-avatar" {...listeners}>
         {avatar ? <img src={avatar} alt="" /> : <span>{roomInitial(room.name)}</span>}
         {room.unreadCount > 0 && (
           <span className="room-card-badge">

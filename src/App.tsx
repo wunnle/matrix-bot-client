@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { loadAuth, clearAuth } from './lib/auth'
-import { destroyClient } from './lib/matrix'
+import { destroyAndWipeStores } from './lib/matrix'
 import type { AuthState } from './types'
 import LoginScreen from './components/LoginScreen'
 import RoomsLayout from './components/RoomsLayout'
@@ -24,7 +24,8 @@ export default function App() {
   }
 
   function handleSignOut() {
-    destroyClient()
+    const userId = auth?.userId ?? ''
+    destroyAndWipeStores(userId).catch(() => {})
     clearAuth()
     setAuth(null)
     navigate('/')

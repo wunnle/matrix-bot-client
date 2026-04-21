@@ -3,19 +3,10 @@ import type { AuthState } from '../types'
 
 let client: sdk.MatrixClient | null = null
 let initPromise: Promise<RoomSummary[]> | null = null
+let store: sdk.IndexedDBStore | null = null
 
 export function getClient(): sdk.MatrixClient {
   if (!client) throw new Error('Matrix client not initialized')
-  return client
-}
-
-export function createClient(auth: AuthState): sdk.MatrixClient {
-  client = sdk.createClient({
-    baseUrl: auth.homeserver,
-    accessToken: auth.accessToken,
-    userId: auth.userId,
-    deviceId: auth.deviceId,
-  })
   return client
 }
 
@@ -24,6 +15,7 @@ export function destroyClient() {
     client.stopClient()
     client = null
   }
+  store = null
   initPromise = null
 }
 
@@ -70,11 +62,11 @@ function getCryptoStorageKey(userId: string, deviceId: string): Uint8Array {
   return key
 }
 
-async function wipeCryptoStores() {
+async function wipeIndexedDbs(filter: (name: string) => boolean) {
   const dbs = await indexedDB.databases()
   await Promise.all(
     dbs
-      .filter((db) => db.name?.includes('crypto'))
+      .filter((db) => db.name && filter(db.name))
       .map((db) => new Promise<void>((res) => {
         const req = indexedDB.deleteDatabase(db.name!)
         req.onsuccess = () => res()
@@ -84,8 +76,41 @@ async function wipeCryptoStores() {
   )
 }
 
+async function wipeCryptoStores() {
+  await wipeIndexedDbs((name) => name.includes('crypto'))
+}
+
+export async function destroyAndWipeStores(userId: string) {
+  destroyClient()
+  await wipeIndexedDbs((name) => name.includes('crypto') || name.startsWith(`construct:store:${userId}`))
+  localStorage.removeItem(`construct:rooms:${userId}`)
+}
+
 async function doInit(auth: AuthState): Promise<RoomSummary[]> {
-  const c = createClient(auth)
+  // Persist room timeline to IndexedDB so subsequent loads skip the full sync wait
+  let s: sdk.IndexedDBStore | null = null
+  try {
+    s = new sdk.IndexedDBStore({
+      indexedDB: window.indexedDB,
+      dbName: `construct:store:${auth.userId}`,
+      localStorage: window.localStorage,
+    })
+    await s.startup()
+  } catch (e) {
+    console.warn('IndexedDB store init failed, falling back to in-memory:', e)
+    s = null
+  }
+  store = s
+
+  client = sdk.createClient({
+    baseUrl: auth.homeserver,
+    accessToken: auth.accessToken,
+    userId: auth.userId,
+    deviceId: auth.deviceId,
+    ...(s ? { store: s } : {}),
+  })
+  const c = client
+
   const storageKey = getCryptoStorageKey(auth.userId, auth.deviceId)
 
   try {

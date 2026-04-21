@@ -38,9 +38,47 @@ const SLIDE_SIZE = 30
 // Matches lines like: "📖 read_file: "/path..."" or "🔧 patch: "..." (×2)"
 const TOOL_PROGRESS_LINE = /^(?:\*\s*)?\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\(×\d+\))?|\.\.\.)\s*$/u
 
+// Parses "🧠 memory: "foo bar" (×2)" → { emoji, tool, content, repeat }
+const TOOL_PROGRESS_PARSE = /^(?:\*\s*)?(\S\S?)\s+(\w[\w./-]*)(?::\s+"(.{0,80})"(?:\s+\(×(\d+)\))?|(\.\.\.))\s*$/u
+
+interface ToolProgressLine {
+  emoji: string
+  tool: string
+  content?: string
+  repeat?: number
+}
+
+function parseToolProgressLine(line: string): ToolProgressLine | null {
+  const m = line.trim().match(TOOL_PROGRESS_PARSE)
+  if (!m) return null
+  const [, emoji, tool, content, repeatStr, ellipsis] = m
+  return {
+    emoji,
+    tool,
+    content: ellipsis ? undefined : unescapeToolContent(content ?? ''),
+    repeat: repeatStr ? Number(repeatStr) : undefined,
+  }
+}
+
+// Strips backslash-escaped quotes and collapses redundant surrounding
+// quotes so "~user: \"foo\"" renders as ~user: "foo" instead of
+// "~user: \"foo\"".
+function unescapeToolContent(s: string): string {
+  return s.replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+}
+
 function isToolProgressMessage(body: string): boolean {
   const lines = body.split('\n').filter(l => l.trim() !== '')
   return lines.length > 0 && lines.every(l => TOOL_PROGRESS_LINE.test(l.trim()))
+}
+
+function parseToolProgressMessage(body: string): ToolProgressLine[] {
+  return body
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0)
+    .map(parseToolProgressLine)
+    .filter((l): l is ToolProgressLine => l !== null)
 }
 
 function parseActions(body: string): { text: string; actions: string[] } {
@@ -525,8 +563,17 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
           {visibleMessages.map((msg, i) => {
             const showDateDivider = i === 0 || !sameDay(visibleMessages[i - 1].timestamp, msg.timestamp)
             const imageUrl = msg.imageUrl ?? imageUrls[msg.eventId]
+            const isTool = !msg.isOwnMessage && isToolProgressMessage(msg.body)
+            const prev = i > 0 ? visibleMessages[i - 1] : null
+            const next = i + 1 < visibleMessages.length ? visibleMessages[i + 1] : null
+            const prevIsTool = !showDateDivider && prev && !prev.isOwnMessage && isToolProgressMessage(prev.body)
+            const nextIsTool = next && !next.isOwnMessage && isToolProgressMessage(next.body) &&
+              sameDay(msg.timestamp, next.timestamp)
             return (
-              <div key={msg.eventId}>
+              <div
+                key={msg.eventId}
+                className={isTool ? `tool-progress-wrap${prevIsTool ? ' tool-progress-wrap-cont' : ''}${nextIsTool ? ' tool-progress-wrap-open' : ''}` : undefined}
+              >
                 {showDateDivider && (
                   <div className="date-divider">
                     <span>{formatDate(msg.timestamp)}</span>
@@ -546,11 +593,21 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                     ) : (
                       <>
                         {(() => {
-                          if (isToolProgressMessage(msg.body)) {
+                          if (isTool) {
+                            const lines = parseToolProgressMessage(msg.body)
                             return (
-                              <div className="tool-progress">
-                                {msg.body.split('\n').filter(l => l.trim()).map((line, i) => (
-                                  <div key={i} className="tool-progress-line">{line}</div>
+                              <div className={`tool-progress${prevIsTool ? ' tool-progress-cont' : ''}${nextIsTool ? ' tool-progress-open' : ''}`}>
+                                {lines.map((l, idx) => (
+                                  <div key={idx} className="tool-progress-line">
+                                    <span className="tool-progress-emoji">{l.emoji}</span>
+                                    <span className="tool-progress-tool">{l.tool}</span>
+                                    {l.content !== undefined && (
+                                      <span className="tool-progress-content">{l.content}</span>
+                                    )}
+                                    {l.repeat !== undefined && (
+                                      <span className="tool-progress-repeat">×{l.repeat}</span>
+                                    )}
+                                  </div>
                                 ))}
                               </div>
                             )

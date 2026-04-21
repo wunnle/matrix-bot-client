@@ -31,6 +31,8 @@ interface Props {
 }
 
 const PAGE_SIZE = 30
+const RENDER_LIMIT = 60
+const SLIDE_SIZE = 30
 
 
 // Matches lines like: "📖 read_file: "/path..."" or "🔧 patch: "..." (×2)"
@@ -104,6 +106,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       return next
     })
   }, [roomId])
+  const visibleMessages = messages.slice(renderStart, renderStart + RENDER_LIMIT)
+
   const lastActions = (() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (!messages[i].isOwnMessage) return parseActions(messages[i].body).actions
@@ -116,6 +120,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const [sending, setSending] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
+  const [renderStart, setRenderStart] = useState(0)
   const [typingUsers, setTypingUsers] = useState<string[]>([])
   const [bot, setBot] = useState<{ name: string; avatarUrl: string | null } | null>(null)
   const [sendError, setSendError] = useState('')
@@ -131,6 +136,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     lastScrolledCount.current = 0
     setHasMore(true)
     setMessages([])
+    setRenderStart(0)
 
     const room = client.getRoom(roomId)
     if (!room) return
@@ -258,22 +264,31 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     return () => { client.off(sdk.RoomMemberEvent.Typing, onTyping) }
   }, [roomId, userId, client])
 
+  // Advance renderStart to keep render window pinned to bottom when new messages arrive
+  useEffect(() => {
+    if (messages.length <= RENDER_LIMIT) { setRenderStart(0); return }
+    setRenderStart(prev => {
+      const isPinnedToBottom = prev + RENDER_LIMIT >= messages.length
+      if (isPinnedToBottom) return Math.max(0, messages.length - RENDER_LIMIT)
+      return prev
+    })
+  }, [messages.length])
+
   // Scroll to bottom on initial load, own messages, and incoming when already near bottom
   const isFirstLoad = useRef(true)
   const lastScrolledCount = useRef(0)
   useEffect(() => {
-    if (messages.length === 0) return
-    if (messages.length === lastScrolledCount.current) return  // only image URLs changed, skip
+    if (visibleMessages.length === 0) return
+    if (visibleMessages.length === lastScrolledCount.current) return
     const prevCount = lastScrolledCount.current
-    lastScrolledCount.current = messages.length
+    lastScrolledCount.current = visibleMessages.length
     if (isFirstLoad.current) {
       isFirstLoad.current = false
       requestAnimationFrame(() => requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'instant' })))
       return
     }
-    // Only smooth-scroll for new appended messages (not backfill prepends)
-    const newMessage = messages[messages.length - 1]
-    const isNewAppend = messages.length > prevCount
+    const newMessage = visibleMessages[visibleMessages.length - 1]
+    const isNewAppend = visibleMessages.length > prevCount
     if (!isNewAppend) return
     const container = messagesRef.current
     const isNearBottom = container ? container.scrollHeight - container.scrollTop - container.clientHeight < 150 : true
@@ -281,7 +296,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     requestAnimationFrame(() => requestAnimationFrame(() => {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     }))
-  }, [messages])
+  }, [visibleMessages])
 
   // Load pills — retry on sync (account data may not be in-memory until first SYNCING)
   useEffect(() => {
@@ -343,10 +358,20 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     }
   }, [client, roomId, userId, loadingMore, hasMore])
 
-  // Trigger load more when scrolled to top
+  // Slide render window up when user scrolls to top of rendered slice
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
-    if (e.currentTarget.scrollTop < 80 && !loadingMore && hasMore) {
-      loadMore()
+    const scrollTop = e.currentTarget.scrollTop
+    if (scrollTop < 80) {
+      if (renderStart > 0) {
+        const container = e.currentTarget
+        const prevScrollHeight = container.scrollHeight
+        setRenderStart(prev => Math.max(0, prev - SLIDE_SIZE))
+        requestAnimationFrame(() => {
+          container.scrollTop = container.scrollHeight - prevScrollHeight
+        })
+      } else if (!loadingMore && hasMore) {
+        loadMore()
+      }
     }
   }
 
@@ -437,8 +462,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
             </div>
           )}
 
-          {messages.map((msg, i) => {
-            const showDateDivider = i === 0 || !sameDay(messages[i - 1].timestamp, msg.timestamp)
+          {visibleMessages.map((msg, i) => {
+            const showDateDivider = i === 0 || !sameDay(visibleMessages[i - 1].timestamp, msg.timestamp)
             return (
               <div key={msg.eventId}>
                 {showDateDivider && (
@@ -492,6 +517,14 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
               </div>
             )
           })}
+          {renderStart + RENDER_LIMIT < messages.length && (
+            <div className="load-more">
+              <button onClick={() => {
+                setRenderStart(Math.max(0, messages.length - RENDER_LIMIT))
+                requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'instant' }))
+              }}>Jump to latest</button>
+            </div>
+          )}
           <div ref={bottomRef} />
         </div>
       </div>

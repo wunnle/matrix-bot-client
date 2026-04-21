@@ -124,6 +124,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const [typingUsers, setTypingUsers] = useState<string[]>([])
   const [bot, setBot] = useState<{ name: string; avatarUrl: string | null } | null>(null)
   const [sendError, setSendError] = useState('')
+  const [showScrollDown, setShowScrollDown] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLInputElement>(null)
@@ -360,7 +361,10 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
 
   // Slide render window up when user scrolls to top of rendered slice
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
-    const scrollTop = e.currentTarget.scrollTop
+    const el = e.currentTarget
+    const scrollTop = el.scrollTop
+    const isNearBottom = el.scrollHeight - scrollTop - el.clientHeight < 150
+    setShowScrollDown(!isNearBottom)
     if (scrollTop < 80) {
       if (renderStart > 0) {
         const container = e.currentTarget
@@ -528,6 +532,10 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
           <div ref={bottomRef} />
         </div>
       </div>
+
+      {showScrollDown && (
+        <button className="scroll-down-btn" onClick={scrollToBottom} aria-label="Scroll to bottom">↓</button>
+      )}
 
       <div className="chat-footer">
 

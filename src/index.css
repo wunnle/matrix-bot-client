@@ -453,6 +453,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   display: flex;
   flex-direction: column;
   height: 100%;
+  position: relative;
 }
 
 .chat-header {
@@ -799,6 +800,28 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 /* ─────────────────────────────
    Chat footer (typing + compose)
 ───────────────────────────── */
+
+.scroll-down-btn {
+  position: absolute;
+  bottom: 80px;
+  right: 20px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  cursor: pointer;
+  z-index: 10;
+  transition: background 0.15s, color 0.15s;
+}
+
+.scroll-down-btn:hover { background: var(--bg-hover); color: var(--text); }
 
 .chat-footer {
   flex-shrink: 0;

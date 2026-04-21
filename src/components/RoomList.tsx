@@ -64,15 +64,14 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
   )
 
   useEffect(() => {
-    if (cached !== null) onReady()
     fetchJoinedRooms(auth)
       .then((r) => {
         const order = getRoomOrder(auth.userId)
         setRooms(order ? applyRoomOrder(r, order) : r)
         setLoading(false)
-        if (cached === null) onReady()
+        onReady()
       })
-      .catch((e) => { setError(e.message); setLoading(false); if (cached === null) onReady() })
+      .catch((e) => { setError(e.message); setLoading(false); onReady() })
   }, [auth])
 
   // Resolve room avatars

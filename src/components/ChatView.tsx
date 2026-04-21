@@ -142,6 +142,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     setHasMore(true)
     setMessages([])
     setRenderStart(0)
+    resolvedImagesRef.current = new Set()
+    setImageUrls({})
 
     const room = client.getRoom(roomId)
     if (!room) return
@@ -236,20 +238,34 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     }
   }, [roomId, userId, client])
 
-  // Resolve mxc image URLs to authenticated blob URLs
+  // Resolve mxc image URLs to authenticated blob URLs. Kept out of
+  // `messages` so resolution doesn't mutate the message array and
+  // re-trigger this effect in a feedback loop.
+  const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
+  const resolvedImagesRef = useRef<Set<string>>(new Set())
   useEffect(() => {
-    const unresolved = messages.filter(m => m.imageMxc && !m.imageUrl)
-    if (unresolved.length === 0) return
+    const toResolve: { eventId: string; mxc: string }[] = []
+    for (const m of messages) {
+      if (m.imageMxc && !m.imageUrl && !resolvedImagesRef.current.has(m.eventId)) {
+        resolvedImagesRef.current.add(m.eventId)
+        toResolve.push({ eventId: m.eventId, mxc: m.imageMxc })
+      }
+    }
+    if (toResolve.length === 0) return
     let cancelled = false
-    Promise.all(unresolved.map(async (m) => {
-      const url = await resolveMediaUrl(client, m.imageMxc!)
-      return { eventId: m.eventId, url }
+    Promise.all(toResolve.map(async ({ eventId, mxc }) => {
+      const url = await resolveMediaUrl(client, mxc)
+      return { eventId, url }
     })).then(results => {
       if (cancelled) return
-      setMessages(prev => prev.map(m => {
-        const r = results.find(r => r.eventId === m.eventId)
-        return r?.url ? { ...m, imageUrl: r.url } : m
-      }))
+      setImageUrls(prev => {
+        const next = { ...prev }
+        let changed = false
+        for (const r of results) {
+          if (r.url && !next[r.eventId]) { next[r.eventId] = r.url; changed = true }
+        }
+        return changed ? next : prev
+      })
     })
     return () => { cancelled = true }
   }, [messages, client])
@@ -480,6 +496,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
 
           {visibleMessages.map((msg, i) => {
             const showDateDivider = i === 0 || !sameDay(visibleMessages[i - 1].timestamp, msg.timestamp)
+            const imageUrl = msg.imageUrl ?? imageUrls[msg.eventId]
             return (
               <div key={msg.eventId}>
                 {showDateDivider && (
@@ -491,8 +508,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                   <div className="message-body">
                     {msg.isOwnMessage ? (
                       <>
-                        <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.imageUrl ? 'bubble-image' : ''}`}>
-                          {msg.imageUrl ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" /> : msg.body}
+                        <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${imageUrl ? 'bubble-image' : ''}`}>
+                          {imageUrl ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" /> : msg.body}
                         </div>
                         <div className={`msg-status ${msg.isRead ? 'msg-status-read' : ''}`}>
                           <span className="material-icons">{msg.isRead ? 'done_all' : 'done'}</span>
@@ -517,8 +534,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
                           return (
                             <>
                               <div className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}>
-                                {msg.imageUrl
-                                  ? <img src={msg.imageUrl} alt={msg.body || 'image'} className="msg-image" />
+                                {imageUrl
+                                  ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" />
                                   : cleanHtml
                                     ? <span dangerouslySetInnerHTML={{ __html: cleanHtml }} />
                                     : text}

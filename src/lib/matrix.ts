@@ -3,7 +3,6 @@ import type { AuthState } from '../types'
 
 let client: sdk.MatrixClient | null = null
 let initPromise: Promise<RoomSummary[]> | null = null
-let store: sdk.IndexedDBStore | null = null
 
 export function getClient(): sdk.MatrixClient {
   if (!client) throw new Error('Matrix client not initialized')
@@ -15,7 +14,6 @@ export function destroyClient() {
     client.stopClient()
     client = null
   }
-  store = null
   initPromise = null
 }
 
@@ -100,8 +98,6 @@ async function doInit(auth: AuthState): Promise<RoomSummary[]> {
     console.warn('IndexedDB store init failed, falling back to in-memory:', e)
     s = null
   }
-  store = s
-
   client = sdk.createClient({
     baseUrl: auth.homeserver,
     accessToken: auth.accessToken,

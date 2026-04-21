@@ -106,7 +106,6 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       return next
     })
   }, [roomId])
-  const visibleMessages = messages.slice(renderStart, renderStart + RENDER_LIMIT)
 
   const lastActions = (() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -131,6 +130,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
   const client = getClient()
+
+  const visibleMessages = messages.slice(renderStart, renderStart + RENDER_LIMIT)
 
   useEffect(() => {
     isFirstLoad.current = true

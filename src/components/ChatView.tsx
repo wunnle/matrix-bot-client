@@ -127,13 +127,20 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const client = getClient()
 
   useEffect(() => {
+    isFirstLoad.current = true
+    lastScrolledCount.current = 0
+    setHasMore(true)
+    setMessages([])
+
     const room = client.getRoom(roomId)
     if (!room) return
 
     const existing = room.getLiveTimeline().getEvents()
     if (existing.length > 0) {
       setMessages(eventsToMessages(existing, userId, client))
-      client.scrollback(room, 10).catch(() => {})
+      client.scrollback(room, 10).then(() => {
+        setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, client))
+      }).catch(() => {})
     } else {
       client.scrollback(room, 10).catch(() => {}).finally(() => {
         setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, client))
@@ -275,14 +282,6 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     }))
   }, [messages])
-
-  // Reset on room change
-  useEffect(() => {
-    isFirstLoad.current = true
-    lastScrolledCount.current = 0
-    setHasMore(true)
-    setMessages([])
-  }, [roomId])
 
   // Load pills — retry on sync (account data may not be in-memory until first SYNCING)
   useEffect(() => {

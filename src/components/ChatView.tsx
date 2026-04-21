@@ -34,6 +34,16 @@ const PAGE_SIZE = 30
 const RENDER_LIMIT = 60
 const SLIDE_SIZE = 30
 
+// Our swipe-back gesture is only useful in standalone/PWA mode. In a
+// regular browser (iOS Safari, most Android browsers) the OS/browser
+// already provides an edge-swipe-back whose animation fights ours and
+// makes the transition feel glitchy. Detect once at module load.
+const isStandalonePwa =
+  typeof window !== 'undefined' &&
+  (window.matchMedia?.('(display-mode: standalone)').matches ||
+    // iOS-specific standalone flag (non-standard, still used)
+    (navigator as unknown as { standalone?: boolean }).standalone === true)
+
 
 // Matches lines like: "📖 read_file: "/path..."" or "🔧 patch: "..." (×2)"
 const TOOL_PROGRESS_LINE = /^(?:\*\s*)?\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\(×\d+\))?|\.\.\.)\s*$/u
@@ -530,7 +540,11 @@ function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
   }
 
   return (
-    <div className="chat-view" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+    <div
+      className="chat-view"
+      onTouchStart={isStandalonePwa ? handleTouchStart : undefined}
+      onTouchEnd={isStandalonePwa ? handleTouchEnd : undefined}
+    >
       <div className="chat-header">
         <div className="chat-header-inner">
           <button className="back" onClick={onBack}>←</button>

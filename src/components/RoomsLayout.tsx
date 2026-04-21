@@ -55,8 +55,14 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     navigate(`/rooms/${encodeURIComponent(id)}`)
   }, [navigate])
 
+  // Use `replace` so the back action doesn't push a new history entry on
+  // top of /rooms/:id. On mobile iOS Safari's native edge swipe already
+  // pops history as part of the gesture, and our swipe handler used to
+  // push /rooms on top of that — two navigations per gesture caused a
+  // glitchy "reload" feel during the native swipe animation. With
+  // replace, our action is idempotent with the browser's own pop.
   const handleBack = useCallback(() => {
-    navigate('/rooms')
+    navigate('/rooms', { replace: true })
   }, [navigate])
 
   const handleReady = useCallback(() => setClientReady(true), [])

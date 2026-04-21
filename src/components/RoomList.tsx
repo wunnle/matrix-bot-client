@@ -59,6 +59,9 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
   const [loading, setLoading] = useState(cached === null)
   const [error, setError] = useState('')
   const [roomAvatars, setRoomAvatars] = useState<Record<string, string>>({})
+  const [userAvatarUrl, setUserAvatarUrl] = useState<string | null>(null)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const profileRef = useRef<HTMLDivElement>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -93,8 +96,45 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
     })
   }, [rooms])
 
+  // Own profile picture (from homeserver; client is ready after room list fetch)
+  useEffect(() => {
+    if (loading) return
+    let cancelled = false
+    let client: ReturnType<typeof getClient>
+    try { client = getClient() } catch { return }
+    void (async () => {
+      try {
+        const info = (await client.getProfileInfo(
+          auth.userId,
+        )) as { avatar_url?: string }
+        const mxc = info?.avatar_url
+        if (!mxc || cancelled) {
+          if (!cancelled) setUserAvatarUrl(null)
+          return
+        }
+        const url = await resolveMediaUrl(client, mxc, 64, 64, 'crop')
+        if (cancelled) return
+        setUserAvatarUrl(url ?? null)
+      } catch {
+        if (!cancelled) setUserAvatarUrl(null)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [auth.userId, loading])
+
   // Keep active room in a ref so the timeline subscription below doesn't
   // tear down and re-subscribe every time the active room changes.
+  useEffect(() => {
+    if (!profileOpen) return
+    function onClickOutside(e: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [profileOpen])
+
   const activeRoomIdRef = useRef(activeRoomId)
   useEffect(() => { activeRoomIdRef.current = activeRoomId }, [activeRoomId])
 
@@ -153,13 +193,6 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
 
   return (
     <div className="room-list">
-      <div className="room-list-header">
-        <div className="app-brand">
-          <span className="brand-icon">◈</span>
-          <span className="brand-name">BotClient</span>
-        </div>
-        <button className="sign-out" onClick={onSignOut} title="Sign out">↩</button>
-      </div>
 
       <div className="room-list-body">
         {loading && (
@@ -192,9 +225,22 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
       </div>
 
       <div className="sidebar-footer">
-        <div className="user-badge">
-          <div className="user-avatar">{auth.userId[1]?.toUpperCase()}</div>
-          <div className="user-id">{shortUserId(auth.userId)}</div>
+        <div className="user-badge-wrap" ref={profileRef}>
+          {profileOpen && (
+            <div className="user-menu">
+              <button className="user-menu-item user-menu-item--danger" onClick={onSignOut}>
+                Sign out
+              </button>
+            </div>
+          )}
+          <button className="user-badge" onClick={() => setProfileOpen(p => !p)}>
+            <div className="user-avatar">
+              {userAvatarUrl
+                ? <img src={userAvatarUrl} alt="" />
+                : (auth.userId[1]?.toUpperCase() ?? '?')}
+            </div>
+            <div className="user-id">{shortUserId(auth.userId)}</div>
+          </button>
         </div>
       </div>
     </div>

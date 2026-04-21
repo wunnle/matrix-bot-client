@@ -234,49 +234,13 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   height: 100%;
 }
 
-.room-list-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 14px 14px;
-  padding-top: calc(16px + env(safe-area-inset-top));
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.app-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.brand-icon {
-  font-size: 18px;
-  color: var(--accent);
-}
-
-.brand-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
-  letter-spacing: -0.2px;
-}
-
-.sign-out {
-  color: var(--text-muted);
-  font-size: 16px;
-  padding: 6px;
-  border-radius: 6px;
-  transition: color 0.15s, background 0.15s;
-}
-
-.sign-out:hover { color: var(--danger); background: rgba(224, 92, 92, 0.1); }
 
 .room-list-body {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  padding-top: calc(22px + env(safe-area-inset-top));
 }
 
 .room-grid {
@@ -414,24 +378,85 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   flex-shrink: 0;
 }
 
+.user-badge-wrap {
+  position: relative;
+}
+
 .user-badge {
   display: flex;
   align-items: center;
   gap: 9px;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 2px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+
+.user-badge:hover {
+  background: var(--bg-active);
+}
+
+.user-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+  min-width: 140px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  z-index: 100;
+}
+
+.user-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 7px;
+  font-size: 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+  transition: background 0.12s;
+}
+
+.user-menu-item:hover {
+  background: var(--bg-active);
+}
+
+.user-menu-item--danger {
+  color: var(--danger);
+}
+
+.user-menu-item--danger:hover {
+  background: rgba(224, 92, 92, 0.1);
 }
 
 .user-avatar {
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: var(--accent-dim);
   color: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .user-id {

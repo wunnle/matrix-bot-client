@@ -150,13 +150,13 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
 
     const existing = room.getLiveTimeline().getEvents()
     if (existing.length > 0) {
-      setMessages(eventsToMessages(existing, userId, client))
+      setMessages(eventsToMessages(existing, userId, room))
       client.scrollback(room, 10).then(() => {
-        setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, client))
+        setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, room))
       }).catch(() => {})
     } else {
       client.scrollback(room, 10).catch(() => {}).finally(() => {
-        setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, client))
+        setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, room))
       })
     }
 
@@ -164,10 +164,11 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
       if (room_?.roomId !== roomId) return
       const type = event.getType()
       if (type !== 'm.room.message' && type !== 'm.room.encrypted') return
+      const maxReadTs = getMaxReadTs(room_, userId)
       setMessages((prev) => {
         const id = event.getId() ?? ''
         if (prev.some((m) => m.eventId === id)) return prev
-        return [...prev, eventToMessage(event, userId, client)]
+        return [...prev, eventToMessage(event, userId, maxReadTs)]
       })
     }
 
@@ -182,29 +183,18 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
         // Try to fetch missing keys from key backup
         client.getCrypto()?.checkKeyBackupAndEnable().catch(() => {})
       }
+      const room_ = client.getRoom(roomId)
+      const maxReadTs = room_ ? getMaxReadTs(room_, userId) : 0
       setMessages((prev) =>
         prev.map((m) =>
-          m.eventId === (event.getId() ?? '') ? eventToMessage(event, userId, client) : m
+          m.eventId === (event.getId() ?? '') ? eventToMessage(event, userId, maxReadTs) : m
         )
       )
     }
 
     const onReceipt = (_event: sdk.MatrixEvent, room_: sdk.Room) => {
       if (room_.roomId !== roomId) return
-      // Collapse all other members' read markers into a single max
-      // timestamp, then apply in one O(n) pass over messages. Return
-      // the same reference when nothing changed so consumers of
-      // `messages` don't re-render.
-      let maxReadTs = 0
-      for (const member of room_.getMembers()) {
-        if (member.userId === userId || member.membership !== 'join') continue
-        const readUpTo = room_.getEventReadUpTo(member.userId)
-        if (!readUpTo) continue
-        const readEvent = room_.findEventById(readUpTo)
-        if (!readEvent) continue
-        const ts = readEvent.getTs()
-        if (ts > maxReadTs) maxReadTs = ts
-      }
+      const maxReadTs = getMaxReadTs(room_, userId)
       if (maxReadTs === 0) return
       setMessages((prev) => {
         let changed = false
@@ -378,7 +368,7 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     try {
       const result = await client.scrollback(room, PAGE_SIZE)
       const allEvents = result.getLiveTimeline().getEvents()
-      const msgs = eventsToMessages(allEvents, userId, client)
+      const msgs = eventsToMessages(allEvents, userId, result)
       setMessages(msgs)
 
       // If we got fewer than PAGE_SIZE new messages, we've reached the start
@@ -668,7 +658,21 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   )
 }
 
-function eventToMessage(event: sdk.MatrixEvent, userId: string, client: sdk.MatrixClient): Message {
+function getMaxReadTs(room: sdk.Room, userId: string): number {
+  let max = 0
+  for (const member of room.getMembers()) {
+    if (member.userId === userId || member.membership !== 'join') continue
+    const readUpTo = room.getEventReadUpTo(member.userId)
+    if (!readUpTo) continue
+    const readEvent = room.findEventById(readUpTo)
+    if (!readEvent) continue
+    const ts = readEvent.getTs()
+    if (ts > max) max = ts
+  }
+  return max
+}
+
+function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: number): Message {
   const isFailure = event.isDecryptionFailure()
   const isEncrypted = event.getType() === 'm.room.encrypted'
   const content = event.getContent()
@@ -687,21 +691,7 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, client: sdk.Matr
   }
 
   const isOwnMessage = event.getSender() === userId
-  let isRead = false
-  if (isOwnMessage) {
-    const room = client.getRoom(event.getRoomId() ?? '')
-    if (room) {
-      const eventTs = event.getTs()
-      isRead = room.getMembers()
-        .filter((m: sdk.RoomMember) => m.userId !== userId && m.membership === 'join')
-        .some((m: sdk.RoomMember) => {
-          const readUpTo = room.getEventReadUpTo(m.userId)
-          if (!readUpTo) return false
-          const readEvent = room.findEventById(readUpTo)
-          return readEvent ? readEvent.getTs() >= eventTs : false
-        })
-    }
-  }
+  const isRead = isOwnMessage && event.getTs() <= maxReadTs
 
   const imageMxc = content?.msgtype === 'm.image' && content?.url ? content.url : undefined
 
@@ -719,10 +709,11 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, client: sdk.Matr
   }
 }
 
-function eventsToMessages(events: sdk.MatrixEvent[], userId: string, client: sdk.MatrixClient): Message[] {
+function eventsToMessages(events: sdk.MatrixEvent[], userId: string, room: sdk.Room): Message[] {
+  const maxReadTs = getMaxReadTs(room, userId)
   return events
     .filter((e) => e.getType() === 'm.room.message' || e.getType() === 'm.room.encrypted' || e.isDecryptionFailure())
-    .map((e) => eventToMessage(e, userId, client))
+    .map((e) => eventToMessage(e, userId, maxReadTs))
 }
 
 const ALLOWED_TAGS = /^(p|br|strong|b|em|i|u|s|del|code|pre|ul|ol|li|blockquote|h[1-6]|a|span)$/i

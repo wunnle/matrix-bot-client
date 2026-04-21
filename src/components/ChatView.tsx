@@ -124,7 +124,8 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
   const textareaRef = useRef<HTMLInputElement>(null)
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
-  const client = getClient()
+  let client: ReturnType<typeof getClient>
+  try { client = getClient() } catch { return null }
 
   useEffect(() => {
     isFirstLoad.current = true

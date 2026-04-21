@@ -265,6 +265,14 @@ export default function ChatView({ roomId, roomName, config, userId, onBack }: P
     return () => { client.off(sdk.RoomMemberEvent.Typing, onTyping) }
   }, [roomId, userId, client])
 
+  // Keep scroll-down button in sync after renders (not just on scroll events)
+  useEffect(() => {
+    const container = messagesRef.current
+    if (!container) return
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150
+    setShowScrollDown(!isNearBottom)
+  }, [visibleMessages, renderStart])
+
   // Advance renderStart to keep render window pinned to bottom when new messages arrive
   useEffect(() => {
     if (messages.length <= RENDER_LIMIT) { setRenderStart(0); return }

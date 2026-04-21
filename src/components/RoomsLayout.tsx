@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { AuthState } from '../types'
 import RoomList from './RoomList'
 import ChatView from './ChatView'
@@ -16,9 +16,16 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   const navigate = useNavigate()
   const [roomNames, setRoomNames] = useState<Record<string, string>>({})
   const [clientReady, setClientReady] = useState(false)
+  const [visitedRooms, setVisitedRooms] = useState<string[]>([])
   const roomsReady = getCachedRooms(auth.userId) !== null
 
   const activeRoomId = roomId ? decodeURIComponent(roomId) : null
+
+  useEffect(() => {
+    if (activeRoomId && clientReady) {
+      setVisitedRooms((prev) => prev.includes(activeRoomId) ? prev : [...prev, activeRoomId])
+    }
+  }, [activeRoomId, clientReady])
 
   function getRoomName(id: string): string {
     try {
@@ -52,32 +59,31 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
         </aside>
 
         <main className="main">
-          {activeRoomId ? (
-            clientReady ? (
+          {visitedRooms.map((id) => (
+            <div key={id} style={{ display: id === activeRoomId ? 'contents' : 'none' }}>
               <ChatView
-                key={activeRoomId}
-                roomId={activeRoomId}
-                roomName={getRoomName(activeRoomId)}
+                roomId={id}
+                roomName={getRoomName(id)}
                 userId={auth.userId}
                 onBack={handleBack}
               />
+            </div>
+          ))}
+          {!activeRoomId && (
+            roomsReady ? (
+              <div className="empty-state">
+                <div className="empty-icon">💬</div>
+                <p>Select a room to start chatting</p>
+              </div>
             ) : (
               <div className="empty-state">
-                <div className="loading-dots">
-                  <span /><span /><span />
-                </div>
+                <div className="loading-dots"><span /><span /><span /></div>
               </div>
             )
-          ) : roomsReady ? (
+          )}
+          {activeRoomId && !clientReady && visitedRooms.length === 0 && (
             <div className="empty-state">
-              <div className="empty-icon">💬</div>
-              <p>Select a room to start chatting</p>
-            </div>
-          ) : (
-            <div className="empty-state">
-              <div className="loading-dots">
-                <span /><span /><span />
-              </div>
+              <div className="loading-dots"><span /><span /><span /></div>
             </div>
           )}
         </main>

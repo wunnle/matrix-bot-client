@@ -243,12 +243,82 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
   const [roomAvatarUrl, setRoomAvatarUrl] = useState<string | null>(null)
   const [sendError, setSendError] = useState('')
   const [showScrollDown, setShowScrollDown] = useState(false)
+  const [pinnedEventIds, setPinnedEventIds] = useState<string[]>([])
+  const [pinnedDisplay, setPinnedDisplay] = useState<Message[]>([])
+
+  const client = getClient()
   const bottomRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
+  const refreshPinnedRef = useRef<() => void>(() => {})
+  const pinnedIdsRef = useRef<Set<string>>(new Set())
+  const activeRoomIdRef = useRef(roomId)
   const textareaRef = useRef<HTMLInputElement>(null)
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
-  const client = getClient()
+
+  useEffect(() => {
+    activeRoomIdRef.current = roomId
+  }, [roomId])
+
+  const refreshPinned = useCallback(async () => {
+    const forRoom = roomId
+    const room = client.getRoom(forRoom)
+    if (!room) return
+    const st = room.currentState.getStateEvents(sdk.EventType.RoomPinnedEvents, '')
+    const content = st?.getContent() as { pinned?: string[] } | undefined
+    const ids = content?.pinned ?? []
+    pinnedIdsRef.current = new Set(ids)
+    if (forRoom !== activeRoomIdRef.current) return
+    setPinnedEventIds(ids)
+
+    if (ids.length === 0) {
+      setPinnedDisplay([])
+      return
+    }
+
+    // Prefer the local timeline, then GET /rooms/.../event/... for each pin. That works when
+    // timelineSupport was off, for thread based pins (getEventTimeline bails on thread roots), etc.
+    const eventById = new Map<string, sdk.MatrixEvent>()
+    for (const id of ids) {
+      const local = room.findEventById(id)
+      if (local) eventById.set(id, local)
+    }
+    const needFetch = ids.filter((id) => !eventById.has(id))
+    if (needFetch.length > 0) {
+      const mapper = client.getEventMapper()
+      await Promise.all(
+        needFetch.map(async (id) => {
+          try {
+            const raw = await client.fetchRoomEvent(forRoom, id)
+            const ev = mapper(raw)
+            await client.decryptEventIfNeeded(ev)
+            eventById.set(id, ev)
+          } catch {
+            // 404, access denied, etc.
+          }
+        }),
+      )
+    }
+
+    if (forRoom !== activeRoomIdRef.current) return
+
+    const maxReadTs = getMaxReadTs(room, userId)
+    const resolved: Message[] = []
+    for (const id of [...ids].reverse()) {
+      const ev = eventById.get(id)
+      if (!ev || ev.isRedacted()) continue
+      const t = ev.getType()
+      if (t !== 'm.room.message' && t !== 'm.room.encrypted' && !ev.isDecryptionFailure()) continue
+      resolved.push(eventToMessage(ev, userId, maxReadTs))
+    }
+    setPinnedDisplay(resolved)
+  }, [client, roomId, userId])
+
+  useEffect(() => {
+    refreshPinnedRef.current = () => {
+      void refreshPinned()
+    }
+  }, [refreshPinned])
 
   const visibleMessages = useMemo(
     () => messages.slice(renderStart, renderStart + RENDER_LIMIT),
@@ -313,6 +383,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
           m.eventId === (event.getId() ?? '') ? eventToMessage(event, userId, maxReadTs) : m
         )
       )
+      if (pinnedIdsRef.current.has(event.getId() ?? '')) {
+        refreshPinnedRef.current()
+      }
     }
 
     const onReceipt = (_event: sdk.MatrixEvent, room_: sdk.Room) => {
@@ -398,6 +471,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
         toResolve.push({ eventId: m.eventId, mxc: m.imageMxc })
       }
     }
+    for (const m of pinnedDisplay) {
+      if (m.imageMxc && !m.imageUrl && !resolvedImagesRef.current.has(m.eventId)) {
+        resolvedImagesRef.current.add(m.eventId)
+        toResolve.push({ eventId: m.eventId, mxc: m.imageMxc })
+      }
+    }
     if (toResolve.length === 0) return
     let cancelled = false
     Promise.all(toResolve.map(async ({ eventId, mxc }) => {
@@ -415,7 +494,24 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
       })
     })
     return () => { cancelled = true }
-  }, [messages, client])
+  }, [messages, pinnedDisplay, client])
+
+  // Pinned events (m.room.pinned_events) — resolve when state changes or the timeline may contain them
+  useEffect(() => {
+    const room = client.getRoom(roomId)
+    if (!room) return
+    refreshPinned()
+    const onState = (ev: sdk.MatrixEvent) => {
+      if (ev.getType() === sdk.EventType.RoomPinnedEvents) refreshPinned()
+    }
+    room.currentState.on(sdk.RoomStateEvent.Events, onState)
+    return () => { room.currentState.off(sdk.RoomStateEvent.Events, onState) }
+  }, [roomId, client, refreshPinned])
+
+  useEffect(() => {
+    if (pinnedEventIds.length === 0) return
+    refreshPinned()
+  }, [messages.length, pinnedEventIds.length, refreshPinned])
 
   // Typing indicators
   useEffect(() => {
@@ -691,6 +787,42 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
       </div>
 
       {showEditor && <RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} onLeave={() => { setShowEditor(false); onBack() }} />}
+
+      {pinnedEventIds.length > 0 && (
+        <div className="pinned-strip" role="region" aria-label="Pinned messages">
+          {pinnedDisplay.length === 0 && (
+            <p className="pinned-placeholder">This pinned message could not be loaded.</p>
+          )}
+          {pinnedDisplay.map((msg) => {
+            const { text: plain } = parseActions(msg.body)
+            const cleanHtml = msg.formattedBody
+              ? stripActionMarkersInRichHtml(msg.formattedBody).trim()
+              : undefined
+            const imgUrl = msg.imageMxc ? (msg.imageUrl ?? imageUrls[msg.eventId]) : undefined
+            return (
+              <div key={msg.eventId} className="pinned-row">
+                <span className="pinned-icon" aria-hidden>📌</span>
+                <div className="pinned-row-text">
+                  <div className={`pinned-body${cleanHtml ? ' pinned-body-rich' : ''}`} onClick={cleanHtml ? onBotRichTextClick : undefined}>
+                    {imgUrl ? (
+                      <>
+                        <img className="pinned-image" src={imgUrl} alt="" />
+                        {(plain || msg.body)?.trim() ? (
+                          <div className="pinned-caption">{plain || msg.body}</div>
+                        ) : null}
+                      </>
+                    ) : cleanHtml ? (
+                      <span dangerouslySetInnerHTML={{ __html: cleanHtml }} />
+                    ) : (
+                      (plain || msg.body)
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       <div className="messages" ref={messagesRef} onScroll={handleScroll}>
         <div className="messages-inner">

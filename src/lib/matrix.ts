@@ -103,6 +103,8 @@ async function doInit(auth: AuthState): Promise<RoomSummary[]> {
     accessToken: auth.accessToken,
     userId: auth.userId,
     deviceId: auth.deviceId,
+    // Required for getEventTimeline (/context); defaults to false otherwise.
+    timelineSupport: true,
     ...(s ? { store: s } : {}),
   })
   const c = client

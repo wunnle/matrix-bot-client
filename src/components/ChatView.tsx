@@ -241,6 +241,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
   const [typingUsers, setTypingUsers] = useState<string[]>([])
   const [bot, setBot] = useState<{ name: string; avatarUrl: string | null } | null>(null)
   const [roomAvatarUrl, setRoomAvatarUrl] = useState<string | null>(null)
+  const [roomTopic, setRoomTopic] = useState('')
   const [sendError, setSendError] = useState('')
   const [showScrollDown, setShowScrollDown] = useState(false)
   const [pinnedEventIds, setPinnedEventIds] = useState<string[]>([])
@@ -449,6 +450,28 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
       room.currentState.off(sdk.RoomStateEvent.Members, onMembers)
     }
   }, [roomId, userId, client])
+
+  // m.room.topic for subtitle (when non-empty); listen for state updates
+  useEffect(() => {
+    const room = client.getRoom(roomId)
+    if (!room) {
+      setRoomTopic('')
+      return
+    }
+    const readTopic = () => {
+      const ev = room.currentState.getStateEvents(sdk.EventType.RoomTopic, '')
+      const raw = ev?.getContent()?.topic
+      const t = typeof raw === 'string' ? raw.trim() : ''
+      setRoomTopic(t)
+    }
+    readTopic()
+    const onState = (ev: sdk.MatrixEvent) => {
+      if (ev.getRoomId() !== roomId) return
+      if (ev.getType() === sdk.EventType.RoomTopic) readTopic()
+    }
+    room.currentState.on(sdk.RoomStateEvent.Events, onState)
+    return () => { room.currentState.off(sdk.RoomStateEvent.Events, onState) }
+  }, [roomId, client])
 
   // Resolve room's own avatar URL
   useEffect(() => {
@@ -784,7 +807,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
           <div className="chat-header-info">
             <span className="chat-title">{roomName}</span>
             <span className={`chat-subtitle${typingUsers.length > 0 ? ' chat-subtitle--thinking' : ''}`}>
-              {typingUsers.length > 0 ? `${bot?.name ?? 'Bot'} is thinking…` : (bot?.name ?? null)}
+              {typingUsers.length > 0
+                ? `${bot?.name ?? 'Bot'} is thinking…`
+                : (roomTopic || (bot?.name ?? null))}
             </span>
           </div>
           {pinnedEventIds.length > 0 && (

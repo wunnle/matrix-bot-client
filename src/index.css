@@ -36,16 +36,6 @@ body {
 
 #root { height: 100dvh; display: flex; flex-direction: column; }
 
-/* Mobile: shell height tracks max innerHeight so the keyboard overlay does not collapse the flex column */
-@media (max-width: 640px) {
-  body,
-  #root,
-  .layout {
-    height: var(--app-locked-h, 100dvh);
-    max-height: var(--app-locked-h, 100dvh);
-  }
-}
-
 button { cursor: pointer; border: none; font: inherit; background: none; color: inherit; }
 
 /* ─────────────────────────────
@@ -55,9 +45,28 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .layout {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
-  max-height: 100dvh;
   overflow: hidden;
+}
+
+/* Desktop: normal dynamic viewport */
+@media (min-width: 641px) {
+  body,
+  #root,
+  .layout {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+}
+
+/* Mobile: stable shell height — do not use 100dvh here; it shrinks with the virtual
+   keyboard and was previously overridden by a second .layout { height: 100dvh } rule. */
+@media (max-width: 640px) {
+  body,
+  #root,
+  .layout {
+    height: var(--app-locked-h, 100dvh);
+    max-height: var(--app-locked-h, 100dvh);
+  }
 }
 
 .layout-body {

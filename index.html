@@ -6,6 +6,15 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=overlays-content" />
+    <script>
+      (function () {
+        var d = document.documentElement;
+        var h = window.innerHeight;
+        var vv = window.visualViewport;
+        if (vv && vv.height) h = Math.max(h, vv.height);
+        d.style.setProperty('--app-locked-h', h + 'px');
+      })();
+    </script>
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Construct</title>

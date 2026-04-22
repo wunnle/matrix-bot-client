@@ -1058,6 +1058,52 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .scroll-down-btn:hover { background: var(--bg-hover); color: var(--text); }
 
+.message-pin-surface--own {
+  align-self: flex-end;
+  max-width: 100%;
+}
+
+.message-pin-surface--pinned {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.message-ctx-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 160px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  padding: 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.message-ctx-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 15px;
+  font-family: inherit;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.message-ctx-menu-item:hover:not(:disabled) {
+  background: var(--bg-active, rgba(0, 0, 0, 0.06));
+}
+
+.message-ctx-menu-item:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .chat-footer {
   flex-shrink: 0;
   padding: 0 16px max(8px, calc(env(safe-area-inset-bottom) - 20px));

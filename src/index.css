@@ -665,6 +665,10 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .bot-text code { font-family: ui-monospace, monospace; font-size: 0.88em; background: var(--bg-active); padding: 0.1em 0.35em; border-radius: 4px; word-break: break-all; overflow-wrap: break-word; }
 .bot-text pre { background: var(--bg-active); border-radius: 6px; padding: 8px 12px; overflow-x: auto; margin-bottom: 0.5em; line-height: 1.25; }
 .bot-text pre code { background: none; padding: 0; font-size: 0.82em; }
+.bot-text-rich code,
+.bot-text-rich pre { cursor: pointer; }
+.bot-text-rich code:hover { background: var(--bg-hover); }
+.bot-text-rich pre:hover { background: var(--bg-hover); }
 .bot-text blockquote { border-left: 3px solid var(--border); padding-left: 0.8em; color: var(--text-muted); margin-bottom: 0.5em; }
 .bot-text a { color: var(--accent); text-decoration: none; }
 .bot-text a:hover { text-decoration: underline; }

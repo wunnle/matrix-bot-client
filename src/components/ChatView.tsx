@@ -135,6 +135,29 @@ function stripActionMarkersInPlainTextSegment(s: string): string {
   })
 }
 
+async function copyTextToClipboard(text: string): Promise<void> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return
+    }
+  } catch {
+    /* try fallback */
+  }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.setAttribute('readonly', 'true')
+    ta.style.cssText = 'position:fixed;left:-9999px'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  } catch {
+    /* ignore */
+  }
+}
+
 function getRoomBotMeta(roomId: string, userId: string, client: sdk.MatrixClient): { name: string; mxcUrl: string | null } | null {
   const room = client.getRoom(roomId)
   if (!room) return null
@@ -189,6 +212,18 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
       return next
     })
   }, [roomId])
+
+  const onBotRichTextClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const raw = e.target
+    if (raw == null || !(raw instanceof Element)) return
+    if (raw.closest('a')) return
+    const code = raw.closest('code')
+    const block: HTMLElement | null = (code as HTMLElement) ?? (raw.closest('pre') as HTMLElement | null)
+    if (!block) return
+    e.preventDefault()
+    const text = block.textContent ?? ''
+    void copyTextToClipboard(text)
+  }, [])
 
   const lastActions = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -726,7 +761,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
                             : undefined
                           return (
                             <>
-                              <div className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}>
+                              <div
+                                className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}
+                                onClick={cleanHtml ? onBotRichTextClick : undefined}
+                              >
                                 {imageUrl
                                   ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" />
                                   : cleanHtml

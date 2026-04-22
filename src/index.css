@@ -36,16 +36,6 @@ body {
 
 #root { height: 100dvh; display: flex; flex-direction: column; }
 
-/* Mobile: shell height tracks max innerHeight so the keyboard overlay does not collapse the flex column */
-@media (max-width: 640px) {
-  body,
-  #root,
-  .layout {
-    height: var(--app-locked-h, 100dvh);
-    max-height: var(--app-locked-h, 100dvh);
-  }
-}
-
 button { cursor: pointer; border: none; font: inherit; background: none; color: inherit; }
 
 /* ─────────────────────────────
@@ -56,7 +46,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   display: flex;
   flex-direction: column;
   height: 100dvh;
-  max-height: 100dvh;
   overflow: hidden;
 }
 
@@ -158,18 +147,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   align-items: center;
   justify-content: center;
   height: 100dvh;
-  max-height: 100dvh;
   padding: 24px;
   gap: 28px;
   background: var(--bg);
-  box-sizing: border-box;
-}
-
-@media (max-width: 640px) {
-  .login-screen {
-    height: var(--app-locked-h, 100dvh);
-    max-height: var(--app-locked-h, 100dvh);
-  }
 }
 
 .login-logo {

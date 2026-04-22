@@ -92,13 +92,47 @@ function parseToolProgressMessage(body: string): ToolProgressLine[] {
     .filter((l): l is ToolProgressLine => l !== null)
 }
 
+// Doc examples like [[label]] or <code>[[button]]</code> — not real CTAs
+function isActionPlaceholder(inner: string): boolean {
+  const t = inner.trim().toLowerCase()
+  return t === 'label' || t === 'button'
+}
+
 function parseActions(body: string): { text: string; actions: string[] } {
   const actions: string[] = []
-  const text = body.replace(/\[\[([^\]]{1,40})\]\]/g, (_, label) => {
+  const text = body.replace(/\[\[([^\]]{1,40})\]\]/g, (match, label) => {
+    if (isActionPlaceholder(label)) return match
     actions.push(label.trim())
     return ''
   }).trim()
   return { text, actions }
+}
+
+const CODE_BLOCK = /<code(\s[^>]*)?>[\s\S]*?<\/code>/gi
+
+/** Remove [[CTA]] from non-code HTML only; keep all [[...]] inside <code> (docs). */
+function stripActionMarkersInRichHtml(html: string): string {
+  const out: string[] = []
+  let i = 0
+  CODE_BLOCK.lastIndex = 0
+  for (;;) {
+    const m = CODE_BLOCK.exec(html)
+    if (!m) {
+      out.push(stripActionMarkersInPlainTextSegment(html.slice(i)))
+      break
+    }
+    out.push(stripActionMarkersInPlainTextSegment(html.slice(i, m.index)))
+    out.push(m[0])
+    i = m.index + m[0].length
+  }
+  return out.join('')
+}
+
+function stripActionMarkersInPlainTextSegment(s: string): string {
+  return s.replace(/\[\[([^\]]{1,40})\]\]/g, (match, inner) => {
+    if (isActionPlaceholder(inner)) return match
+    return ''
+  })
 }
 
 function getRoomBotMeta(roomId: string, userId: string, client: sdk.MatrixClient): { name: string; mxcUrl: string | null } | null {
@@ -688,7 +722,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
                           }
                           const { text } = parseActions(msg.body)
                           const cleanHtml = msg.formattedBody
-                            ? msg.formattedBody.replace(/\[\[([^\]]{1,40})\]\]/g, '').trim()
+                            ? stripActionMarkersInRichHtml(msg.formattedBody).trim()
                             : undefined
                           return (
                             <>

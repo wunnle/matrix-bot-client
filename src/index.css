@@ -588,16 +588,66 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   max-width: 760px;
   width: 100%;
   margin: 0 auto;
-  padding: 8px 16px 10px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface, var(--bg));
   display: flex;
   flex-direction: column;
+  gap: 0;
+  box-sizing: border-box;
+}
+
+.header-pinned {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin: 0;
+  padding: 2px 2px 2px 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s, background 0.12s;
+}
+
+.header-pinned:hover {
+  color: var(--text);
+  background: var(--bg-active, rgba(0, 0, 0, 0.04));
+}
+
+.header-pinned:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
+.header-pinned-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.header-pinned-chevron {
+  font-size: 16px;
+  line-height: 1;
+  margin-left: -3px;
+  opacity: 0.75;
+}
+
+.pinned-strip-inner {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+  padding: 0 16px 12px;
 }
 
 @media (min-width: 641px) {
   .pinned-strip { max-width: 560px; }
+  .pinned-toggle { padding: 1px 0; }
+  .pinned-strip-inner { padding: 0 0 12px; }
 }
 
 .pinned-placeholder {
@@ -607,29 +657,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   color: var(--text-muted);
 }
 
-.pinned-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-width: 0;
-}
-
-.pinned-icon {
-  flex-shrink: 0;
-  font-size: 12px;
-  line-height: 1.4;
-  opacity: 0.85;
-}
-
-.pinned-row-text {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
 .pinned-body {
+  min-width: 0;
   font-size: 13px;
   line-height: 1.45;
   color: var(--text);

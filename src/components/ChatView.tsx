@@ -245,6 +245,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
   const [showScrollDown, setShowScrollDown] = useState(false)
   const [pinnedEventIds, setPinnedEventIds] = useState<string[]>([])
   const [pinnedDisplay, setPinnedDisplay] = useState<Message[]>([])
+  const [pinnedExpanded, setPinnedExpanded] = useState(true)
 
   const client = getClient()
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -258,6 +259,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
 
   useEffect(() => {
     activeRoomIdRef.current = roomId
+  }, [roomId])
+
+  useEffect(() => {
+    setPinnedExpanded(true)
   }, [roomId])
 
   const refreshPinned = useCallback(async () => {
@@ -782,45 +787,63 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
               {typingUsers.length > 0 ? `${bot?.name ?? 'Bot'} is thinking…` : (bot?.name ?? null)}
             </span>
           </div>
+          {pinnedEventIds.length > 0 && (
+            <button
+              type="button"
+              className="header-pinned"
+              id="pinned-messages-button"
+              aria-expanded={pinnedExpanded}
+              aria-controls={pinnedExpanded ? 'pinned-messages-content' : undefined}
+              aria-label={pinnedExpanded ? 'Hide pinned messages' : 'Show pinned messages'}
+              title={pinnedExpanded ? 'Hide pinned' : 'Show pinned'}
+              onClick={() => setPinnedExpanded((v) => !v)}
+            >
+              <span className="material-icons header-pinned-icon" aria-hidden>push_pin</span>
+              <span className="material-icons header-pinned-chevron" aria-hidden>
+                {pinnedExpanded ? 'expand_less' : 'expand_more'}
+              </span>
+            </button>
+          )}
           <button className="header-action" onClick={() => setShowEditor(true)} title="Room settings">⚙︎</button>
         </div>
       </div>
 
       {showEditor && <RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} onLeave={() => { setShowEditor(false); onBack() }} />}
 
-      {pinnedEventIds.length > 0 && (
+      {pinnedEventIds.length > 0 && pinnedExpanded && (
         <div className="pinned-strip" role="region" aria-label="Pinned messages">
-          {pinnedDisplay.length === 0 && (
-            <p className="pinned-placeholder">This pinned message could not be loaded.</p>
-          )}
-          {pinnedDisplay.map((msg) => {
-            const { text: plain } = parseActions(msg.body)
-            const cleanHtml = msg.formattedBody
-              ? stripActionMarkersInRichHtml(msg.formattedBody).trim()
-              : undefined
-            const imgUrl = msg.imageMxc ? (msg.imageUrl ?? imageUrls[msg.eventId]) : undefined
-            return (
-              <div key={msg.eventId} className="pinned-row">
-                <span className="pinned-icon" aria-hidden>📌</span>
-                <div className="pinned-row-text">
-                  <div className={`pinned-body${cleanHtml ? ' pinned-body-rich' : ''}`} onClick={cleanHtml ? onBotRichTextClick : undefined}>
-                    {imgUrl ? (
-                      <>
-                        <img className="pinned-image" src={imgUrl} alt="" />
-                        {(plain || msg.body)?.trim() ? (
-                          <div className="pinned-caption">{plain || msg.body}</div>
-                        ) : null}
-                      </>
-                    ) : cleanHtml ? (
-                      <span dangerouslySetInnerHTML={{ __html: cleanHtml }} />
-                    ) : (
-                      (plain || msg.body)
-                    )}
-                  </div>
+          <div className="pinned-strip-inner" id="pinned-messages-content" role="group" aria-labelledby="pinned-messages-button">
+            {pinnedDisplay.length === 0 && (
+              <p className="pinned-placeholder">This pinned message could not be loaded.</p>
+            )}
+            {pinnedDisplay.map((msg) => {
+              const { text: plain } = parseActions(msg.body)
+              const cleanHtml = msg.formattedBody
+                ? stripActionMarkersInRichHtml(msg.formattedBody).trim()
+                : undefined
+              const imgUrl = msg.imageMxc ? (msg.imageUrl ?? imageUrls[msg.eventId]) : undefined
+              return (
+                <div
+                  key={msg.eventId}
+                  className={`pinned-body${cleanHtml ? ' pinned-body-rich' : ''}`}
+                  onClick={cleanHtml ? onBotRichTextClick : undefined}
+                >
+                  {imgUrl ? (
+                    <>
+                      <img className="pinned-image" src={imgUrl} alt="" />
+                      {(plain || msg.body)?.trim() ? (
+                        <div className="pinned-caption">{plain || msg.body}</div>
+                      ) : null}
+                    </>
+                  ) : cleanHtml ? (
+                    <span dangerouslySetInnerHTML={{ __html: cleanHtml }} />
+                  ) : (
+                    (plain || msg.body)
+                  )}
                 </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
       )}
 

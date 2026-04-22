@@ -24,6 +24,7 @@ import type { Message, RoomConfig } from '../types'
 
 interface Props {
   roomId: string
+  isActive: boolean
   roomName: string
   config?: RoomConfig
   userId: string
@@ -133,7 +134,7 @@ function SortablePill({ pill, onActivate }: { pill: string; onActivate: () => vo
   )
 }
 
-function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
+function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -394,6 +395,7 @@ function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
   const stickToBottomRef = useRef(true)
   const lastTailEventIdRef = useRef<string | undefined>(undefined)
   const programmaticScrollUntilRef = useRef(0)
+  const wasActiveRef = useRef(false)
   // When stuck to the bottom and messages grow past the render window,
   // advance renderStart so the new tail stays visible. Without this,
   // a new message appended beyond renderStart + RENDER_LIMIT would fall
@@ -403,6 +405,40 @@ function ChatView({ roomId, roomName, config, userId, onBack }: Props) {
     const maxStart = Math.max(0, messages.length - RENDER_LIMIT)
     setRenderStart(maxStart)
   }, [messages.length])
+
+  // When this room is shown again, its ChatView was only hidden (display)
+  // but kept state — scroll position and renderStart are preserved, so
+  // we never auto-scroll. Reset to the tail and pin to bottom.
+  useLayoutEffect(() => {
+    /* eslint-disable react-hooks/immutability, react-hooks/set-state-in-effect -- must sync refs + renderStart before the visible-messages useLayoutEffect in the same commit */
+    if (!isActive) {
+      wasActiveRef.current = false
+      return
+    }
+    const justBecameActive = !wasActiveRef.current
+    wasActiveRef.current = true
+    if (!justBecameActive) return
+    const n = messages.length
+    stickToBottomRef.current = true
+    isFirstLoad.current = true
+    setShowScrollDown(false)
+    lastTailEventIdRef.current = undefined
+    if (n > RENDER_LIMIT) {
+      setRenderStart(Math.max(0, n - RENDER_LIMIT))
+    } else {
+      setRenderStart(0)
+    }
+    programmaticScrollUntilRef.current = performance.now() + 200
+    /* eslint-enable react-hooks/immutability, react-hooks/set-state-in-effect */
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = messagesRef.current
+        if (!el) return
+        el.scrollTop = el.scrollHeight - el.clientHeight
+        bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'instant' })
+      })
+    })
+  }, [isActive, messages.length])
 
   // useLayoutEffect so we set scrollTop before the browser paints the new
   // content. Otherwise there's a one-frame flash where the new messages

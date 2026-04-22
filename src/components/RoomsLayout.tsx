@@ -86,6 +86,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
             <div key={id} style={{ display: id === activeRoomId ? 'contents' : 'none' }}>
               <ChatView
                 roomId={id}
+                isActive={id === activeRoomId}
                 roomName={getRoomName(id)}
                 userId={auth.userId}
                 onBack={handleBack}

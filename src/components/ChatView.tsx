@@ -875,7 +875,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
             onKeyDown={handleKeyDown}
             onFocus={() => setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 300)}
             placeholder="Message…"
-            disabled={sending}
             enterKeyHint="send"
           />
           <button className="send-btn" onClick={() => sendMessage(input)} disabled={sending || !input.trim()}>

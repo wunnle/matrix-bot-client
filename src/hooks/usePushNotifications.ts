@@ -11,7 +11,41 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   return outputArray.buffer as ArrayBuffer;
 }
 
+function getActiveRoomIdFromPath(): string | null {
+  const m = location.pathname.match(/^\/rooms\/(.+)$/);
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1]!);
+  } catch {
+    return m[1]!;
+  }
+}
+
 export function usePushNotifications(enabled: boolean) {
+  // When a push targets the room we already have open in the foreground, the SW asks us to
+  // confirm — we tell it to skip showing the system notification.
+  useEffect(() => {
+    if (!enabled) return;
+    if (!("serviceWorker" in navigator)) return;
+
+    const onServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type !== "PUSH_SUPPRESS_CHECK") return;
+      const { id, roomId } = event.data as { id: string; roomId: string };
+      if (document.visibilityState !== "visible") return;
+      const current = getActiveRoomIdFromPath();
+      if (current && roomId && current === roomId) {
+        navigator.serviceWorker.controller?.postMessage({
+          type: "PUSH_SUPPRESS_RESULT",
+          id,
+          suppress: true,
+        });
+      }
+    };
+
+    navigator.serviceWorker.addEventListener("message", onServiceWorkerMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onServiceWorkerMessage);
+  }, [enabled]);
+
   useEffect(() => {
     if (!enabled) return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;

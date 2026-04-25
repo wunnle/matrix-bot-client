@@ -30,6 +30,8 @@ import { getClient } from '../lib/matrix'
 import { pinRoomEvent, unpinRoomEvent } from '../lib/pinRoomMessage'
 import { loadPills, savePills } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
+import { isMobileSafari } from '../lib/isMobileSafari'
+import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import RoomEditor from './RoomEditor'
 import type { Message, RoomConfig } from '../types'
 
@@ -817,8 +819,23 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
     setSuggestions(all.filter((s) => s.toLowerCase().includes(q)).slice(0, 5))
   }, [input, config])
 
+  const {
+    dictating,
+    start: startDictation,
+    stop: stopDictation,
+    error: dictationError,
+    clearError: clearDictationError,
+    supported: dictationSupported,
+  } = useSpeechDictation(setInput)
+  const showDictation = useMemo(() => isMobileSafari(), [])
+
+  useEffect(() => {
+    stopDictation()
+  }, [roomId, stopDictation])
+
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || sending) return
+    stopDictation()
     setInput('')
     setSuggestions([])
     setSending(true)
@@ -836,7 +853,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
       setSending(false)
       textareaRef.current?.focus()
     }
-  }, [client, roomId, sending, scrollToBottom])
+  }, [client, roomId, sending, scrollToBottom, stopDictation])
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1273,6 +1290,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
         )}
 
         {sendError && <div className="send-error">{sendError}</div>}
+        {dictationError && <div className="send-error">{dictationError}</div>}
         {pinError && <div className="send-error">{pinError}</div>}
 
         <div className="input-row">
@@ -1285,7 +1303,35 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
             onFocus={() => setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 300)}
             placeholder="Message…"
             enterKeyHint="send"
+            readOnly={dictating}
+            aria-readonly={dictating || undefined}
           />
+          {showDictation && (
+            <button
+              type="button"
+              className={dictating ? 'dictation-btn dictation-btn--on' : 'dictation-btn'}
+              onClick={() => {
+                clearDictationError()
+                if (dictating) {
+                  stopDictation()
+                } else {
+                  if (!dictationSupported) {
+                    setSendError('Dictation is not available in this browser.')
+                    setTimeout(() => setSendError(''), 4000)
+                    return
+                  }
+                  startDictation(input)
+                }
+              }}
+              disabled={sending}
+              title={dictating ? 'Stop dictation' : 'Dictate message'}
+              aria-label={dictating ? 'Stop dictation' : 'Dictate message'}
+            >
+              <span className="material-icons" aria-hidden>
+                {dictating ? 'stop' : 'mic'}
+              </span>
+            </button>
+          )}
           <button className="send-btn" onClick={() => sendMessage(input)} disabled={sending || !input.trim()}>
             {sending ? '…' : <><span className="send-btn-label">Send</span><span className="send-btn-icon">↑</span></>}
           </button>

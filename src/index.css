@@ -1292,6 +1292,29 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-size: 18px;
 }
 
+.input-row button.dictation-btn {
+  background: var(--bg-active);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  font-size: 0;
+  line-height: 1;
+}
+.input-row button.dictation-btn .material-icons {
+  font-size: 22px;
+  line-height: 1;
+}
+.input-row button.dictation-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.input-row button.dictation-btn:disabled { opacity: 0.4; }
+.input-row button.dictation-btn--on,
+.input-row button.dictation-btn--on:hover:not(:disabled) {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 /* ─────────────────────────────
    Room Editor
 ───────────────────────────── */

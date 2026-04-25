@@ -6,12 +6,15 @@ import type { AuthState } from './types'
 import LoginScreen from './components/LoginScreen'
 import MicDemo from './components/MicDemo'
 import RoomsLayout from './components/RoomsLayout'
+import { usePushNotifications } from './hooks/usePushNotifications'
 import './App.css'
 
 export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null)
   const [ready, setReady] = useState(false)
   const navigate = useNavigate()
+
+  usePushNotifications(!!auth)
 
   useEffect(() => {
     const stored = loadAuth()

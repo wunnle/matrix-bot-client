@@ -539,7 +539,22 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   display: flex;
   flex-direction: column;
   gap: 1px;
+  min-width: 0;
   overflow: hidden;
+}
+
+.chat-header-model {
+  flex-shrink: 0;
+  max-width: 45%;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--bg-active);
 }
 
 .chat-subtitle {

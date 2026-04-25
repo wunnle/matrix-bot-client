@@ -992,9 +992,14 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
             <span className={`chat-subtitle${typingUsers.length > 0 ? ' chat-subtitle--thinking' : ''}`}>
               {typingUsers.length > 0
                 ? `${bot?.name ?? 'Bot'} is thinking…`
-                : (currentModel ?? roomTopic ?? (bot?.name ?? null))}
+                : (roomTopic || (bot?.name ?? null))}
             </span>
           </div>
+          {currentModel && (
+            <span className="chat-header-model" title={`Model: ${currentModel}`}>
+              {currentModel}
+            </span>
+          )}
           {pinnedEventIds.length > 0 && (
             <button
               type="button"

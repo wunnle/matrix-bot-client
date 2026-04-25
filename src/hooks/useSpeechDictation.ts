@@ -30,6 +30,12 @@ function getSpeechRecognitionCtor(): SpeechRecCtor | null {
 }
 
 /**
+ * How long with no onresult/onspeechstart before we show "Silence". WebKit
+ * often does not fire onspeechend under continuous mode; this debounce fixes that.
+ */
+const HEARING_QUIET_MS = 1200
+
+/**
  * One-shot or continuous Web Speech → text, merged with a static prefix
  * (e.g. existing compose text when dictation started).
  */
@@ -37,12 +43,42 @@ export function useSpeechDictation(
   onText: (full: string) => void,
 ) {
   const [dictating, setDictating] = useState(false)
-  /** True while the engine thinks you are talking; false on silence (onspeechend) or not dictating. */
+  /** True while the user is likely still talking (per activity debounce, not only Web Speech events). */
   const [userSpeaking, setUserSpeaking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const recRef = useRef<WebSpeechRecognition | null>(null)
   const prefixRef = useRef('')
   const finalsRef = useRef('')
+  const lastActivityAtRef = useRef(0)
+  const hearingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const endHearingWatch = useCallback(() => {
+    if (hearingIntervalRef.current) {
+      clearInterval(hearingIntervalRef.current)
+      hearingIntervalRef.current = null
+    }
+    lastActivityAtRef.current = 0
+    setUserSpeaking(false)
+  }, [])
+
+  const bumpSpeechActivity = useCallback(() => {
+    lastActivityAtRef.current = Date.now()
+    setUserSpeaking(true)
+  }, [])
+
+  const startHearingWatch = useCallback(() => {
+    if (hearingIntervalRef.current) {
+      clearInterval(hearingIntervalRef.current)
+    }
+    hearingIntervalRef.current = setInterval(() => {
+      const t = lastActivityAtRef.current
+      if (t === 0) return
+      if (Date.now() - t >= HEARING_QUIET_MS) {
+        lastActivityAtRef.current = 0
+        setUserSpeaking(false)
+      }
+    }, 100)
+  }, [])
 
   const clearError = useCallback(() => {
     setError(null)
@@ -52,6 +88,7 @@ export function useSpeechDictation(
     const r = recRef.current
     recRef.current = null
     if (!r) {
+      endHearingWatch()
       setDictating(false)
       return
     }
@@ -72,9 +109,9 @@ export function useSpeechDictation(
     } catch {
       /* */
     }
-    setUserSpeaking(false)
+    endHearingWatch()
     setDictating(false)
-  }, [])
+  }, [endHearingWatch])
 
   const start = useCallback(
     (prefix: string) => {
@@ -98,6 +135,7 @@ export function useSpeechDictation(
       rec.continuous = true
       rec.interimResults = true
       rec.onresult = (event: WebSttEvent) => {
+        bumpSpeechActivity()
         let interim = ''
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const piece = event.results[i]![0]!.transcript
@@ -114,14 +152,15 @@ export function useSpeechDictation(
         setError(e.message || e.error)
       }
       rec.onspeechstart = () => {
-        setUserSpeaking(true)
+        bumpSpeechActivity()
       }
       rec.onspeechend = () => {
+        lastActivityAtRef.current = 0
         setUserSpeaking(false)
       }
       rec.onend = () => {
         if (recRef.current === rec) {
-          setUserSpeaking(false)
+          endHearingWatch()
           setDictating(false)
           recRef.current = null
         }
@@ -130,14 +169,15 @@ export function useSpeechDictation(
         rec.start()
         setUserSpeaking(false)
         setDictating(true)
+        startHearingWatch()
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
         recRef.current = null
-        setUserSpeaking(false)
+        endHearingWatch()
         setDictating(false)
       }
     },
-    [onText, stop],
+    [onText, stop, endHearingWatch, bumpSpeechActivity, startHearingWatch],
   )
 
   useEffect(() => () => stop(), [stop])

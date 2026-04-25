@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-const VAPID_PUBLIC_KEY = "BCMqROMQYqKM7YJAQ4l-bcwLJpqmJa_4QGb_SDc4TZozPN2FtCp6dUEp52Lnq8VFNS80LLJPTfGZvitHnmmPGkw";
+const VAPID_PUBLIC_KEY = "BHAWGVTndxe9FH-hZmiPSoLsts1NOJLIx9uwVlJIXwDYf8JeXFb1xrKvCLIR5We0djZcWlXIvwiWW2DPLQ8SHdA";
 
 function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);

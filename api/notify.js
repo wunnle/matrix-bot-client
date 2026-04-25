@@ -1,4 +1,4 @@
-import { kv } from "@vercel/kv";
+import { list } from "@vercel/blob";
 import webpush from "web-push";
 
 webpush.setVapidDetails(
@@ -18,19 +18,16 @@ export default async function handler(req, res) {
   const { title, body } = req.body;
   if (!title) return res.status(400).json({ error: "missing title" });
 
-  const raw = await kv.get("push_subscription");
-  if (!raw) return res.status(404).json({ error: "no subscription" });
+  const { blobs } = await list({ prefix: "push_subscription.json" });
+  if (!blobs.length) return res.status(404).json({ error: "no subscription" });
 
-  const subscription = typeof raw === "string" ? JSON.parse(raw) : raw;
+  const response = await fetch(blobs[0].url);
+  const subscription = await response.json();
 
   try {
     await webpush.sendNotification(subscription, JSON.stringify({ title, body: body || "" }));
     res.status(200).json({ ok: true });
   } catch (err) {
-    if (err.statusCode === 410) {
-      await kv.del("push_subscription");
-      return res.status(410).json({ error: "subscription expired" });
-    }
     res.status(500).json({ error: err.message });
   }
 }

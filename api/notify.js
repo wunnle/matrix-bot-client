@@ -18,16 +18,19 @@ export default async function handler(req, res) {
   const { title, body, roomId, icon } = req.body;
   if (!title) return res.status(400).json({ error: "missing title" });
 
-  const { blobs } = await list({ prefix: "push_subscription.json" });
-  if (!blobs.length) return res.status(404).json({ error: "no subscription" });
+  const { blobs } = await list({ prefix: "push_subscriptions/" });
+  if (!blobs.length) return res.status(404).json({ error: "no subscriptions" });
 
-  const response = await fetch(blobs[0].url);
-  const subscription = await response.json();
+  const payload = JSON.stringify({ title, body: body || "", roomId: roomId || null, icon: icon || null });
 
-  try {
-    await webpush.sendNotification(subscription, JSON.stringify({ title, body: body || "", roomId: roomId || null, icon: icon || null }));
-    res.status(200).json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  const results = await Promise.allSettled(
+    blobs.map(async (blob) => {
+      const response = await fetch(blob.url);
+      const subscription = await response.json();
+      await webpush.sendNotification(subscription, payload);
+    })
+  );
+
+  const failed = results.filter((r) => r.status === "rejected").length;
+  res.status(200).json({ ok: true, sent: results.length - failed, failed });
 }

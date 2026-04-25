@@ -4,6 +4,7 @@ import { loadAuth, clearAuth } from './lib/auth'
 import { destroyAndWipeStores } from './lib/matrix'
 import type { AuthState } from './types'
 import LoginScreen from './components/LoginScreen'
+import MicDemo from './components/MicDemo'
 import RoomsLayout from './components/RoomsLayout'
 import './App.css'
 
@@ -47,6 +48,7 @@ export default function App() {
         path="/rooms/:roomId"
         element={auth ? <RoomsLayout auth={auth} onSignOut={handleSignOut} /> : <Navigate to="/" replace />}
       />
+      <Route path="/mic-demo" element={<MicDemo />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

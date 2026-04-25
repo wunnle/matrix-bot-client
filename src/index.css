@@ -783,7 +783,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .bot-text {
   min-width: 0;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.55;
   color: var(--text);
   word-break: break-word;
@@ -1542,3 +1542,141 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   transition: background 0.15s;
 }
 .editor-btn-danger:hover { background: rgba(248, 113, 113, 0.1); }
+
+/* Mic demo (PWA + getUserMedia) */
+.mic-demo {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  overflow: auto;
+}
+
+.mic-demo-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px 22px 20px;
+}
+
+.mic-demo-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.mic-demo-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.mic-demo-meter {
+  height: 10px;
+  margin: 20px 0 12px;
+  background: var(--bg-active);
+  border-radius: 99px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.mic-demo-meter-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+  transform-origin: left center;
+  transition: transform 0.04s linear;
+  border-radius: 99px;
+}
+
+.mic-demo-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  min-height: 2.5em;
+}
+
+.mic-demo-error {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+
+.mic-demo-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.mic-demo-btn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.12s;
+}
+.mic-demo-btn:hover:not(:disabled) {
+  background: var(--bg-active);
+}
+.mic-demo-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mic-demo-btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+.mic-demo-btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.mic-demo-back {
+  display: inline-block;
+  margin-top: 20px;
+  font-size: 14px;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.12s;
+}
+.mic-demo-back:hover {
+  color: var(--accent);
+}
+
+.mic-demo-section {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-top: 22px;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+
+.mic-demo-transcript {
+  min-height: 88px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 15px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mic-demo-transcript-interim {
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-decoration-color: var(--text-faint);
+  text-underline-offset: 2px;
+}
+
+.mic-demo-transcript-empty {
+  color: var(--text-faint);
+  font-size: 13px;
+}

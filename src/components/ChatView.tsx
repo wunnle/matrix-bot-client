@@ -205,6 +205,16 @@ function SortablePill({ pill, onActivate }: { pill: string; onActivate: () => vo
   )
 }
 
+const MODEL_SWITCH_RE = /^Model switched to `([^`]+)`/
+
+function getRoomModel(roomId: string): string | null {
+  return localStorage.getItem(`room-model:${roomId}`)
+}
+
+function setRoomModel(roomId: string, model: string) {
+  localStorage.setItem(`room-model:${roomId}`, model)
+}
+
 type MessageMenuPos = { eventId: string; x: number; y: number }
 
 function openPinContextMenu(
@@ -234,6 +244,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [showEditor, setShowEditor] = useState(false)
   const [pills, setPills] = useState<string[]>([])
+  const [currentModel, setCurrentModel] = useState<string | null>(() => getRoomModel(roomId))
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
@@ -390,6 +401,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
     setRenderStart(0)
     resolvedImagesRef.current = new Set()
     setImageUrls({})
+    setCurrentModel(getRoomModel(roomId))
 
     const room = client.getRoom(roomId)
     if (!room) return
@@ -414,10 +426,18 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
       const type = event.getType()
       if (type !== 'm.room.message' && type !== 'm.room.encrypted') return
       const maxReadTs = getMaxReadTs(room_, userId)
+      const msg = eventToMessage(event, userId, maxReadTs)
+      if (!msg.isOwnMessage) {
+        const match = MODEL_SWITCH_RE.exec(msg.body)
+        if (match) {
+          setRoomModel(roomId, match[1])
+          setCurrentModel(match[1])
+        }
+      }
       setMessages((prev) => {
         const id = event.getId() ?? ''
         if (prev.some((m) => m.eventId === id)) return prev
-        return [...prev, eventToMessage(event, userId, maxReadTs)]
+        return [...prev, msg]
       })
     }
 
@@ -972,7 +992,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
             <span className={`chat-subtitle${typingUsers.length > 0 ? ' chat-subtitle--thinking' : ''}`}>
               {typingUsers.length > 0
                 ? `${bot?.name ?? 'Bot'} is thinking…`
-                : (roomTopic || (bot?.name ?? null))}
+                : (currentModel ?? roomTopic ?? (bot?.name ?? null))}
             </span>
           </div>
           {pinnedEventIds.length > 0 && (

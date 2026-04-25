@@ -92,7 +92,11 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
     })).then(results => {
       const updates: Record<string, string> = {}
       results.forEach(r => { if (r.url) updates[r.roomId] = r.url })
-      if (Object.keys(updates).length > 0) setRoomAvatars(prev => ({ ...prev, ...updates }))
+      if (Object.keys(updates).length > 0) {
+        setRoomAvatars(prev => ({ ...prev, ...updates }))
+        const existing = JSON.parse(localStorage.getItem('room_avatars') || '{}')
+        localStorage.setItem('room_avatars', JSON.stringify({ ...existing, ...updates }))
+      }
     })
   }, [rooms])
 

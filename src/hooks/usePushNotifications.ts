@@ -33,11 +33,20 @@ export function usePushNotifications(enabled: boolean) {
       const { id, roomId } = event.data as { id: string; roomId: string };
       if (document.visibilityState !== "visible") return;
       const current = getActiveRoomIdFromPath();
+      const avatars = JSON.parse(localStorage.getItem('room_avatars') || '{}')
+      const icon = roomId ? (avatars[roomId] ?? null) : null
       if (current && roomId && current === roomId) {
         navigator.serviceWorker.controller?.postMessage({
           type: "PUSH_SUPPRESS_RESULT",
           id,
           suppress: true,
+          icon,
+        });
+      } else if (icon) {
+        navigator.serviceWorker.controller?.postMessage({
+          type: "PUSH_ICON_RESULT",
+          id,
+          icon,
         });
       }
     };

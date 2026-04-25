@@ -7,7 +7,7 @@ self.addEventListener("push", (event) => {
       const show = () =>
         self.registration.showNotification(data.title, {
           body: data.body,
-          icon: "/icon-192.png",
+          icon: data.icon || "/icon-192.png",
           badge: "/icon-192.png",
           data: { roomId: data.roomId },
         });

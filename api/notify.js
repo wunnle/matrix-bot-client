@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "unauthorized" });
   }
 
-  const { title, body, roomId } = req.body;
+  const { title, body, roomId, icon } = req.body;
   if (!title) return res.status(400).json({ error: "missing title" });
 
   const { blobs } = await list({ prefix: "push_subscription.json" });
@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   const subscription = await response.json();
 
   try {
-    await webpush.sendNotification(subscription, JSON.stringify({ title, body: body || "", roomId: roomId || null }));
+    await webpush.sendNotification(subscription, JSON.stringify({ title, body: body || "", roomId: roomId || null, icon: icon || null }));
     res.status(200).json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

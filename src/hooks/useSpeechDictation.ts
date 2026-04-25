@@ -12,6 +12,8 @@ type WebSpeechRecognition = {
   onresult: ((e: WebSttEvent) => void) | null
   onerror: ((e: WebSttError) => void) | null
   onend: (() => void) | null
+  onspeechstart: (() => void) | null
+  onspeechend: (() => void) | null
   start: () => void
   stop: () => void
   abort: () => void
@@ -35,6 +37,8 @@ export function useSpeechDictation(
   onText: (full: string) => void,
 ) {
   const [dictating, setDictating] = useState(false)
+  /** True while the engine thinks you are talking; false on silence (onspeechend) or not dictating. */
+  const [userSpeaking, setUserSpeaking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const recRef = useRef<WebSpeechRecognition | null>(null)
   const prefixRef = useRef('')
@@ -68,6 +72,7 @@ export function useSpeechDictation(
     } catch {
       /* */
     }
+    setUserSpeaking(false)
     setDictating(false)
   }, [])
 
@@ -108,18 +113,27 @@ export function useSpeechDictation(
         if (e.error === 'aborted' || e.error === 'no-speech') return
         setError(e.message || e.error)
       }
+      rec.onspeechstart = () => {
+        setUserSpeaking(true)
+      }
+      rec.onspeechend = () => {
+        setUserSpeaking(false)
+      }
       rec.onend = () => {
         if (recRef.current === rec) {
+          setUserSpeaking(false)
           setDictating(false)
           recRef.current = null
         }
       }
       try {
         rec.start()
+        setUserSpeaking(false)
         setDictating(true)
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
         recRef.current = null
+        setUserSpeaking(false)
         setDictating(false)
       }
     },
@@ -128,5 +142,13 @@ export function useSpeechDictation(
 
   useEffect(() => () => stop(), [stop])
 
-  return { dictating, start, stop, error, clearError, supported: getSpeechRecognitionCtor() !== null }
+  return {
+    dictating,
+    userSpeaking,
+    start,
+    stop,
+    error,
+    clearError,
+    supported: getSpeechRecognitionCtor() !== null,
+  }
 }

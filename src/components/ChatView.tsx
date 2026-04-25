@@ -821,6 +821,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
 
   const {
     dictating,
+    userSpeaking,
     start: startDictation,
     stop: stopDictation,
     error: dictationError,
@@ -1293,6 +1294,18 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
         {dictationError && <div className="send-error">{dictationError}</div>}
         {pinError && <div className="send-error">{pinError}</div>}
 
+        {showDictation && dictating && (
+          <div className="dictation-voice-row" role="status" aria-live="polite">
+            <span
+              className={
+                userSpeaking ? 'dictation-voice-dot dictation-voice-dot--on' : 'dictation-voice-dot'
+              }
+              aria-hidden
+            />
+            {userSpeaking ? 'Hearing' : 'Silence'}
+          </div>
+        )}
+
         <div className="input-row">
           <input
             ref={textareaRef as React.RefObject<HTMLInputElement>}
@@ -1309,7 +1322,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
           {showDictation && (
             <button
               type="button"
-              className={dictating ? 'dictation-btn dictation-btn--on' : 'dictation-btn'}
+              className={
+                dictating
+                  ? `dictation-btn dictation-btn--on${userSpeaking ? ' dictation-btn--hearing' : ''}`
+                  : 'dictation-btn'
+              }
               onClick={() => {
                 clearDictationError()
                 if (dictating) {

@@ -46,6 +46,11 @@ export default async function handler(req, res) {
   // Badge-only update — no actual message to show
   if (!room_id || !content?.body) return res.status(200).json({ rejected: [] });
 
+  // Tool progress / thinking message — suppress notification
+  const TOOL_PROGRESS_LINE = /^(?:\*\s*)?\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\(×\d+\))?|\.\.\.)\s*$/u;
+  const isThinking = content.body.split('\n').filter(l => l.trim()).every(l => TOOL_PROGRESS_LINE.test(l.trim()));
+  if (isThinking) return res.status(200).json({ rejected: [] });
+
   const title = room_name || "Hermes";
   const body = content?.body
     ? content.body.slice(0, 100)

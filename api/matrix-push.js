@@ -21,6 +21,7 @@ export default async function handler(req, res) {
   const { notification } = req.body || {};
   if (!notification) return res.status(400).json({ rejected: [] });
 
+  console.log("matrix-push payload:", JSON.stringify(notification, null, 2));
   const { room_id, room_name, content, sender_display_name, devices = [], counts } = notification;
 
   const title = room_name || "Hermes";

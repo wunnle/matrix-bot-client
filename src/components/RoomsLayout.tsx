@@ -5,6 +5,7 @@ import RoomList from './RoomList'
 import ChatView from './ChatView'
 import ConnectionBanner from './ConnectionBanner'
 import { getClient, getCachedRooms } from '../lib/matrix'
+import { getDictationAutoSend, setDictationAutoSend } from '../lib/clientSettings'
 
 interface Props {
   auth: AuthState
@@ -22,9 +23,21 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   const [roomNames, setRoomNames] = useState<Record<string, string>>({})
   const [clientReady, setClientReady] = useState(false)
   const [visitedRooms, setVisitedRooms] = useState<string[]>([])
+  const [dictationAutoSend, setDictationAutoSendState] = useState(() =>
+    getDictationAutoSend(auth.userId),
+  )
   const roomsReady = getCachedRooms(auth.userId) !== null
 
   const activeRoomId = roomId ? decodeURIComponent(roomId) : null
+
+  useEffect(() => {
+    setDictationAutoSendState(getDictationAutoSend(auth.userId))
+  }, [auth.userId])
+
+  const onDictationAutoSendChange = useCallback((value: boolean) => {
+    setDictationAutoSendState(value)
+    setDictationAutoSend(auth.userId, value)
+  }, [auth.userId])
 
   // Maintain visitedRooms as MRU with the active room at the end.
   useEffect(() => {
@@ -78,6 +91,8 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
             onSelectRoom={handleSelectRoom}
             onSignOut={onSignOut}
             onReady={handleReady}
+            dictationAutoSend={dictationAutoSend}
+            onDictationAutoSendChange={onDictationAutoSendChange}
           />
         </aside>
 
@@ -90,6 +105,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
                 roomName={getRoomName(id)}
                 userId={auth.userId}
                 onBack={handleBack}
+                dictationAutoSend={dictationAutoSend}
               />
             </div>
           ))}

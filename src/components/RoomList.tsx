@@ -13,6 +13,8 @@ interface Props {
   onSelectRoom: (roomId: string, roomName: string) => void
   onSignOut: () => void
   onReady: () => void
+  dictationAutoSend: boolean
+  onDictationAutoSendChange: (value: boolean) => void
 }
 
 const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar, onSelect }: {
@@ -51,7 +53,15 @@ const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar
   )
 })
 
-export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, onReady }: Props) {
+export default function RoomList({
+  auth,
+  activeRoomId,
+  onSelectRoom,
+  onSignOut,
+  onReady,
+  dictationAutoSend,
+  onDictationAutoSendChange,
+}: Props) {
   const cached = getCachedRooms(auth.userId)
   const savedOrder = getRoomOrder(auth.userId)
   const initialRooms = cached ? (savedOrder ? applyRoomOrder(cached, savedOrder) : cached) : []
@@ -232,6 +242,20 @@ export default function RoomList({ auth, activeRoomId, onSelectRoom, onSignOut, 
         <div className="user-badge-wrap" ref={profileRef}>
           {profileOpen && (
             <div className="user-menu">
+              <label
+                className="user-menu-toggle-row"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <span className="user-menu-toggle-label">Auto-send when done talking</span>
+                <input
+                  type="checkbox"
+                  className="user-menu-toggle-input"
+                  checked={dictationAutoSend}
+                  onChange={(e) => onDictationAutoSendChange(e.target.checked)}
+                  aria-label="Auto-send when done talking"
+                />
+              </label>
               <button className="user-menu-item user-menu-item--danger" onClick={onSignOut}>
                 Sign out
               </button>

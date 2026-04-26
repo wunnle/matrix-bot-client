@@ -42,6 +42,8 @@ interface Props {
   config?: RoomConfig
   userId: string
   onBack: () => void
+  /** Global: when true, mic dictation auto-sends after long silence (see user menu). */
+  dictationAutoSend: boolean
 }
 
 const PAGE_SIZE = 30
@@ -240,7 +242,7 @@ function openPinContextMenu(
   setMessageMenu({ eventId, x, y })
 }
 
-function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props) {
+function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictationAutoSend }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -826,7 +828,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
 
   const {
     dictating,
-    dictationMode,
     userSpeaking,
     start: startDictation,
     stop: stopDictation,
@@ -1312,7 +1313,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
               }
               aria-hidden
             />
-            {dictationMode === 'auto'
+            {dictationAutoSend
               ? (userSpeaking ? 'Hearing' : 'Silence — auto-send on pause')
               : (userSpeaking ? 'Hearing' : 'Silence')}
           </div>
@@ -1332,76 +1333,46 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack }: Props)
             aria-readonly={dictating || undefined}
           />
           {showDictation && (
-            <>
-              <button
-                type="button"
-                className={
-                  dictating
-                    ? dictationMode === 'manual'
-                        ? `dictation-btn dictation-btn--on${userSpeaking ? ' dictation-btn--hearing' : ''}`
-                        : 'dictation-btn'
-                    : 'dictation-btn'
-                }
-                onClick={() => {
-                  clearDictationError()
-                  if (dictating) {
-                    if (dictationMode === 'manual') stopDictation()
-                  } else {
-                    if (!dictationSupported) {
-                      setSendError('Dictation is not available in this browser.')
-                      setTimeout(() => setSendError(''), 4000)
-                      return
-                    }
-                    startDictation(input)
+            <button
+              type="button"
+              className={
+                dictating
+                  ? `dictation-btn dictation-btn--on${userSpeaking ? ' dictation-btn--hearing' : ''}`
+                  : 'dictation-btn'
+              }
+              onClick={() => {
+                clearDictationError()
+                if (dictating) {
+                  stopDictation()
+                } else {
+                  if (!dictationSupported) {
+                    setSendError('Dictation is not available in this browser.')
+                    setTimeout(() => setSendError(''), 4000)
+                    return
                   }
-                }}
-                disabled={sending || (dictating && dictationMode === 'auto')}
-                title={dictationMode === 'manual' && dictating ? 'Stop dictation' : 'Dictate (manual send)'}
-                aria-label={dictationMode === 'manual' && dictating ? 'Stop dictation' : 'Dictate, send with Send button'}
-              >
-                <span className="material-icons" aria-hidden>
-                  {dictationMode === 'manual' && dictating ? 'stop' : 'mic'}
-                </span>
-              </button>
-              <button
-                type="button"
-                className={
-                  dictating
-                    ? dictationMode === 'auto'
-                        ? `dictation-btn dictation-btn--auto dictation-btn--on${userSpeaking ? ' dictation-btn--hearing' : ''}`
-                        : 'dictation-btn dictation-btn--auto'
-                    : 'dictation-btn dictation-btn--auto'
+                  startDictation(input, dictationAutoSend ? { autoSend: true } : undefined)
                 }
-                onClick={() => {
-                  clearDictationError()
-                  if (dictating) {
-                    if (dictationMode === 'auto') stopDictation()
-                  } else {
-                    if (!dictationSupported) {
-                      setSendError('Dictation is not available in this browser.')
-                      setTimeout(() => setSendError(''), 4000)
-                      return
-                    }
-                    startDictation(input, { autoSend: true })
-                  }
-                }}
-                disabled={sending || (dictating && dictationMode === 'manual')}
-                title={
-                  dictationMode === 'auto' && dictating
-                    ? 'Stop'
-                    : 'Auto-send when you stop talking (long pause)'
-                }
-                aria-label={
-                  dictationMode === 'auto' && dictating
-                    ? 'Stop auto dictation'
-                    : 'Start dictation with auto-send on pause'
-                }
-              >
-                <span className="material-icons" aria-hidden>
-                  {dictationMode === 'auto' && dictating ? 'stop' : 'auto_awesome'}
-                </span>
-              </button>
-            </>
+              }}
+              disabled={sending}
+              title={
+                dictating
+                  ? 'Stop dictation'
+                  : dictationAutoSend
+                    ? 'Dictate — auto-send after you pause (toggle in profile menu)'
+                    : 'Dictate — send with Send button (enable auto-send in profile menu)'
+              }
+              aria-label={
+                dictating
+                  ? 'Stop dictation'
+                  : dictationAutoSend
+                    ? 'Start dictation with auto-send when done talking'
+                    : 'Start dictation; send manually with Send'
+              }
+            >
+              <span className="material-icons" aria-hidden>
+                {dictating ? 'stop' : 'mic'}
+              </span>
+            </button>
           )}
           <button className="send-btn" onClick={() => sendMessage(input)} disabled={sending || !input.trim()}>
             {sending ? '…' : <><span className="send-btn-label">Send</span><span className="send-btn-icon">↑</span></>}

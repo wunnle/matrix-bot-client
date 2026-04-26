@@ -22,6 +22,13 @@ export default function App() {
     setReady(true)
   }, [])
 
+  useEffect(() => {
+    if (!ready) return
+    const params = new URLSearchParams(window.location.search)
+    const path = params.get('path')
+    if (path) navigate(path, { replace: true })
+  }, [ready])
+
   function handleLogin(a: AuthState) {
     setAuth(a)
     navigate('/rooms')

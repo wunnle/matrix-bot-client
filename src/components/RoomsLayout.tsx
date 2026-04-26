@@ -6,6 +6,7 @@ import ChatView from './ChatView'
 import ConnectionBanner from './ConnectionBanner'
 import { getClient, getCachedRooms } from '../lib/matrix'
 import { getDictationAutoSend, setDictationAutoSend } from '../lib/clientSettings'
+import { resolveRoomIdFromParam } from '../lib/roomAliases'
 
 interface Props {
   auth: AuthState
@@ -28,7 +29,9 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   )
   const roomsReady = getCachedRooms(auth.userId) !== null
 
-  const activeRoomId = roomId ? decodeURIComponent(roomId) : null
+  const activeRoomId = roomId
+    ? resolveRoomIdFromParam(decodeURIComponent(roomId))
+    : null
 
   useEffect(() => {
     setDictationAutoSendState(getDictationAutoSend(auth.userId))

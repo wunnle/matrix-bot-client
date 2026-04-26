@@ -78,6 +78,31 @@ export function usePushNotifications(enabled: boolean) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(subscription),
         });
+
+        // Register Matrix pusher so matrix.org delivers pushes directly
+        const { loadAuth } = await import("../lib/auth");
+        const auth = loadAuth();
+        if (auth) {
+          await fetch(`${auth.homeserver}/_matrix/client/v3/pushers/set`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${auth.accessToken}`,
+            },
+            body: JSON.stringify({
+              kind: "http",
+              app_id: "com.kafagoz.construct",
+              app_display_name: "Construct",
+              device_display_name: navigator.userAgent.includes("iPhone") ? "iPhone" : "Browser",
+              pushkey: subscription.endpoint,
+              lang: "en",
+              data: {
+                url: "https://construct.kafagoz.com/_matrix/push/v1/notify",
+                format: "event_notification",
+              },
+            }),
+          });
+        }
       } catch (err) {
         console.warn("Push setup failed:", err);
       }

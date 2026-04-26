@@ -35,12 +35,6 @@ export default async function handler(req, res) {
   const { notification } = req.body || {};
   if (!notification) return res.status(400).json({ rejected: [] });
 
-  console.log("matrix-push payload:", JSON.stringify(notification, null, 2));
-
-  // Test icon URL resolution
-  const testMxc = ROOM_AVATARS[notification.room_id];
-  if (testMxc) console.log("icon url would be:", mxcToProxyUrl(testMxc));
-
   const { room_id, room_name, content, sender_display_name, devices = [], counts } = notification;
 
   // Badge-only update — no actual message to show
@@ -85,11 +79,8 @@ export default async function handler(req, res) {
       });
 
       try {
-        console.log("sending to pushkey:", pushkey.slice(0, 60), "payload:", payload);
         await webpush.sendNotification(subscription, payload);
-        console.log("sent ok");
       } catch (err) {
-        console.log("send error:", err.statusCode, err.message);
         if (err.statusCode === 410 || err.statusCode === 404) {
           rejected.push(pushkey);
         }

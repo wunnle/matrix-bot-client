@@ -20,6 +20,13 @@ type WebSpeechRecognition = {
 }
 type SpeechRecCtor = new () => WebSpeechRecognition
 
+export type DictationMode = 'off' | 'manual' | 'auto'
+
+type HookOptions = {
+  /** Fired in auto mode after long silence when there is text to send. */
+  onAutoSend?: (text: string) => void
+}
+
 function getSpeechRecognitionCtor(): SpeechRecCtor | null {
   if (typeof window === 'undefined') return null
   const w = window as unknown as {
@@ -36,21 +43,39 @@ function getSpeechRecognitionCtor(): SpeechRecCtor | null {
 const HEARING_QUIET_MS = 1200
 
 /**
+ * After this much quiet (since last onresult/onspeechstart), auto mode
+ * will send the message and stop, if the field is non-empty and STT added content.
+ */
+const AUTO_SEND_SILENCE_MS = 2500
+
+/**
  * One-shot or continuous Web Speech → text, merged with a static prefix
  * (e.g. existing compose text when dictation started).
  */
 export function useSpeechDictation(
   onText: (full: string) => void,
+  options?: HookOptions,
 ) {
-  const [dictating, setDictating] = useState(false)
-  /** True while the user is likely still talking (per activity debounce, not only Web Speech events). */
+  const [dictationMode, setDictationMode] = useState<DictationMode>('off')
   const [userSpeaking, setUserSpeaking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const recRef = useRef<WebSpeechRecognition | null>(null)
   const prefixRef = useRef('')
   const finalsRef = useRef('')
+  /** Last onresult/onspeechstart; not cleared on "Silence" so long-silence auto-send can use it. */
   const lastActivityAtRef = useRef(0)
   const hearingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lastHearingUIReturnedRef = useRef(false)
+  const onAutoSendRef = useRef<((text: string) => void) | undefined>(undefined)
+  const stopRef = useRef<() => void>(() => {})
+  const autoModeRef = useRef(false)
+  const hadSttThisSessionRef = useRef(false)
+  const lastEmittedTextRef = useRef('')
+  onAutoSendRef.current = options?.onAutoSend
+
+  const clearError = useCallback(() => {
+    setError(null)
+  }, [])
 
   const endHearingWatch = useCallback(() => {
     if (hearingIntervalRef.current) {
@@ -58,6 +83,7 @@ export function useSpeechDictation(
       hearingIntervalRef.current = null
     }
     lastActivityAtRef.current = 0
+    lastHearingUIReturnedRef.current = false
     setUserSpeaking(false)
   }, [])
 
@@ -70,26 +96,42 @@ export function useSpeechDictation(
     if (hearingIntervalRef.current) {
       clearInterval(hearingIntervalRef.current)
     }
+    lastHearingUIReturnedRef.current = false
     hearingIntervalRef.current = setInterval(() => {
       const t = lastActivityAtRef.current
-      if (t === 0) return
-      if (Date.now() - t >= HEARING_QUIET_MS) {
-        lastActivityAtRef.current = 0
-        setUserSpeaking(false)
+      const now = Date.now()
+      if (t > 0) {
+        const shouldHear = now - t < HEARING_QUIET_MS
+        if (shouldHear !== lastHearingUIReturnedRef.current) {
+          lastHearingUIReturnedRef.current = shouldHear
+          setUserSpeaking(shouldHear)
+        }
+        const isAuto = autoModeRef.current
+        if (isAuto && now - t >= AUTO_SEND_SILENCE_MS) {
+          if (hadSttThisSessionRef.current) {
+            const text = lastEmittedTextRef.current
+            const onAuto = onAutoSendRef.current
+            if (text.trim() && onAuto) {
+              onAuto(text)
+            } else {
+              stopRef.current()
+            }
+          } else {
+            stopRef.current()
+          }
+        }
       }
     }, 100)
   }, [])
 
-  const clearError = useCallback(() => {
-    setError(null)
-  }, [])
-
   const stop = useCallback(() => {
+    setDictationMode('off')
+    autoModeRef.current = false
+    hadSttThisSessionRef.current = false
     const r = recRef.current
     recRef.current = null
     if (!r) {
       endHearingWatch()
-      setDictating(false)
       return
     }
     if (typeof navigator !== 'undefined' && /\bApple\b/.test(navigator.vendor)) {
@@ -110,11 +152,13 @@ export function useSpeechDictation(
       /* */
     }
     endHearingWatch()
-    setDictating(false)
   }, [endHearingWatch])
 
+  stopRef.current = stop
+
+  type StartOptions = { autoSend?: boolean }
   const start = useCallback(
-    (prefix: string) => {
+    (prefix: string, startOptions?: StartOptions) => {
       const Ctor = getSpeechRecognitionCtor()
       if (!Ctor) {
         setError('Speech recognition is not available in this context.')
@@ -126,6 +170,11 @@ export function useSpeechDictation(
       }
       setError(null)
       stop()
+      const isAuto = !!startOptions?.autoSend
+      autoModeRef.current = isAuto
+      setDictationMode(isAuto ? 'auto' : 'manual')
+      hadSttThisSessionRef.current = false
+      lastEmittedTextRef.current = prefix
       prefixRef.current = prefix
       finalsRef.current = ''
 
@@ -135,6 +184,7 @@ export function useSpeechDictation(
       rec.continuous = true
       rec.interimResults = true
       rec.onresult = (event: WebSttEvent) => {
+        hadSttThisSessionRef.current = true
         bumpSpeechActivity()
         let interim = ''
         for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -145,7 +195,9 @@ export function useSpeechDictation(
             interim += piece
           }
         }
-        onText(prefixRef.current + finalsRef.current + interim)
+        const full = prefixRef.current + finalsRef.current + interim
+        lastEmittedTextRef.current = full
+        onText(full)
       }
       rec.onerror = (e: WebSttError) => {
         if (e.error === 'aborted' || e.error === 'no-speech') return
@@ -154,27 +206,27 @@ export function useSpeechDictation(
       rec.onspeechstart = () => {
         bumpSpeechActivity()
       }
-      rec.onspeechend = () => {
-        lastActivityAtRef.current = 0
-        setUserSpeaking(false)
-      }
       rec.onend = () => {
         if (recRef.current === rec) {
-          endHearingWatch()
-          setDictating(false)
+          setDictationMode('off')
+          autoModeRef.current = false
+          hadSttThisSessionRef.current = false
           recRef.current = null
+          endHearingWatch()
         }
       }
       try {
         rec.start()
+        lastHearingUIReturnedRef.current = false
         setUserSpeaking(false)
-        setDictating(true)
         startHearingWatch()
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
         recRef.current = null
+        setDictationMode('off')
+        autoModeRef.current = false
+        hadSttThisSessionRef.current = false
         endHearingWatch()
-        setDictating(false)
       }
     },
     [onText, stop, endHearingWatch, bumpSpeechActivity, startHearingWatch],
@@ -182,8 +234,11 @@ export function useSpeechDictation(
 
   useEffect(() => () => stop(), [stop])
 
+  const dictating = dictationMode !== 'off'
+
   return {
     dictating,
+    dictationMode,
     userSpeaking,
     start,
     stop,

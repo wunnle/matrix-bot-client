@@ -26,6 +26,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { useSearchParams } from 'react-router-dom'
 import { getClient } from '../lib/matrix'
 import { pinRoomEvent, unpinRoomEvent } from '../lib/pinRoomMessage'
 import { loadPills, savePills } from '../lib/roomMeta'
@@ -243,6 +244,7 @@ function openPinContextMenu(
 }
 
 function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictationAutoSend }: Props) {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -840,6 +842,38 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   useEffect(() => {
     stopDictation()
   }, [roomId, stopDictation])
+
+  // ?listen=true (or 1) — start dictation after navigation; strip the param (active room only)
+  useEffect(() => {
+    if (!isActive) return
+    const listen = searchParams.get('listen')
+    if (listen !== 'true' && listen !== '1') return
+    if (sending) return
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('listen')
+        return next
+      },
+      { replace: true },
+    )
+    if (!dictationSupported) return
+    if (dictating) return
+    queueMicrotask(() => {
+      startDictation(input, dictationAutoSend ? { autoSend: true } : undefined)
+    })
+  }, [
+    isActive,
+    roomId,
+    searchParams,
+    sending,
+    dictationSupported,
+    dictating,
+    startDictation,
+    dictationAutoSend,
+    input,
+    setSearchParams,
+  ])
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || sending) return

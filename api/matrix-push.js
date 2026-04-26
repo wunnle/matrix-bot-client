@@ -9,6 +9,20 @@ import { list } from "@vercel/blob";
 import webpush from "web-push";
 import { createHash } from "crypto";
 
+const ROOM_AVATARS = {
+  "!vjoGMHloXyNobvgGaK:matrix.org": "mxc://matrix.org/tOIBhgtMxpMQMmADcYIcprnh",
+  "!PuoXYYposdTSyiwnkx:matrix.org": "mxc://matrix.org/gEzjnnOcBuppMPJoijpZAkef",
+  "!mhNSsDLFdlzGIGyRgi:matrix.org": "mxc://matrix.org/pqhnMFYAoWmsukcvrjdujQdG",
+  "!iEbYoSfZgfHLeSKLei:matrix.org": "mxc://matrix.org/paDQdclqzpfVYCDZiWPPMzID",
+  "!tCuyENMznYGVHZQiod:matrix.org": "mxc://matrix.org/QcMeBkdMIjZGVOcwNTUkiqnI",
+  "!DpRWqhWOHJAxyvjOGI:matrix.org": "mxc://matrix.org/bAFLWJDiBQExiECpdDNHVOKl",
+};
+
+function mxcToProxyUrl(mxc) {
+  if (!mxc) return null;
+  return `https://construct.kafagoz.com/api/media?mxc=${encodeURIComponent(mxc)}`;
+}
+
 webpush.setVapidDetails(
   "mailto:sinanaksay@gmail.com",
   process.env.VAPID_PUBLIC_KEY,
@@ -21,7 +35,6 @@ export default async function handler(req, res) {
   const { notification } = req.body || {};
   if (!notification) return res.status(400).json({ rejected: [] });
 
-  console.log("matrix-push payload:", JSON.stringify(notification, null, 2));
   const { room_id, room_name, content, sender_display_name, devices = [], counts } = notification;
 
   const title = room_name || "Hermes";
@@ -48,11 +61,12 @@ export default async function handler(req, res) {
       const response = await fetch(blobs[0].url);
       const subscription = await response.json();
 
+      const icon = mxcToProxyUrl(ROOM_AVATARS[room_id]);
       const payload = JSON.stringify({
         title,
         body,
         roomId: room_id || null,
-        icon: null,
+        icon,
         unread: counts?.unread ?? null,
       });
 

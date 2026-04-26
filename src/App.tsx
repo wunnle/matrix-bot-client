@@ -24,6 +24,9 @@ export default function App() {
 
   useEffect(() => {
     if (!ready) return
+    console.log('[deep-link] href:', window.location.href)
+    console.log('[deep-link] search:', window.location.search)
+    console.log('[deep-link] hash:', window.location.hash)
     const params = new URLSearchParams(window.location.search)
     const path = params.get('path')
     if (path) navigate(path, { replace: true })

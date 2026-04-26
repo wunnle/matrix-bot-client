@@ -43,6 +43,9 @@ export default async function handler(req, res) {
 
   const { room_id, room_name, content, sender_display_name, devices = [], counts } = notification;
 
+  // Badge-only update — no actual message to show
+  if (!room_id || !content?.body) return res.status(200).json({ rejected: [] });
+
   const title = room_name || "Hermes";
   const body = content?.body
     ? content.body.slice(0, 100)

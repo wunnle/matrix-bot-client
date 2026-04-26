@@ -11,7 +11,7 @@ export default async function handler(req, res) {
   const [server, mediaId] = mxc.slice(6).split("/");
   if (!server || !mediaId) return res.status(400).json({ error: "invalid mxc" });
 
-  const url = `https://${server}/_matrix/media/v3/download/${server}/${mediaId}`;
+  const url = `https://${server}/_matrix/client/v1/media/download/${server}/${mediaId}`;
   const token = process.env.MATRIX_ACCESS_TOKEN;
 
   try {

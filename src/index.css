@@ -1309,7 +1309,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 6px 6px 6px 16px;
+  padding: 6px;
   transition: border-color 0.15s;
 }
 

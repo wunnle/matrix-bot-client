@@ -1304,7 +1304,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 /* Input Row */
 .input-row {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 10px;
   background: var(--bg-surface);
   border: 1px solid var(--border);

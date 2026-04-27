@@ -1451,7 +1451,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             readOnly={dictating}
             aria-readonly={dictating || undefined}
           />
-          {showDictation && (
+          {showDictation && !input.trim() && (
             <button
               type="button"
               className={
@@ -1493,9 +1493,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               </span>
             </button>
           )}
-          <button className="send-btn" onClick={() => sendMessage(input)} disabled={sending || !input.trim()}>
-            {sending ? '…' : <><span className="send-btn-label">Send</span><span className="send-btn-icon">↑</span></>}
-          </button>
+          {(input.trim() || !showDictation) && (
+            <button className="send-btn" onClick={() => sendMessage(input)} disabled={sending || !input.trim()}>
+              {sending ? '…' : <><span className="send-btn-label">Send</span><span className="send-btn-icon">↑</span></>}
+            </button>
+          )}
         </div>
       </div>
     </div>

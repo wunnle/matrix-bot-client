@@ -317,6 +317,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const pinnedIdsRef = useRef<Set<string>>(new Set())
   const activeRoomIdRef = useRef(roomId)
   const textareaRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const autoSendToMessage = useRef<((t: string) => void) | null>(null)
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
@@ -571,15 +572,17 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   useEffect(() => {
     const toResolve: { eventId: string; mxc: string }[] = []
     for (const m of messages) {
-      if (m.imageMxc && !m.imageUrl && !resolvedImagesRef.current.has(m.eventId)) {
+      const mxc = m.imageMxc ?? m.fileMxc
+      if (mxc && !m.imageUrl && !resolvedImagesRef.current.has(m.eventId)) {
         resolvedImagesRef.current.add(m.eventId)
-        toResolve.push({ eventId: m.eventId, mxc: m.imageMxc })
+        toResolve.push({ eventId: m.eventId, mxc })
       }
     }
     for (const m of pinnedDisplay) {
-      if (m.imageMxc && !m.imageUrl && !resolvedImagesRef.current.has(m.eventId)) {
+      const mxc = m.imageMxc ?? m.fileMxc
+      if (mxc && !m.imageUrl && !resolvedImagesRef.current.has(m.eventId)) {
         resolvedImagesRef.current.add(m.eventId)
-        toResolve.push({ eventId: m.eventId, mxc: m.imageMxc })
+        toResolve.push({ eventId: m.eventId, mxc })
       }
     }
     if (toResolve.length === 0) return
@@ -897,6 +900,50 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [client, roomId, sending, scrollToBottom, stopDictation])
 
+  const sendFile = useCallback(async (file: File) => {
+    if (sending) return
+    setSending(true)
+    try {
+      const upload = await client.uploadContent(file, { name: file.name, type: file.type })
+      const mxc = upload.content_uri
+      const isImage = file.type.startsWith('image/')
+      const msgContent: Record<string, unknown> = {
+        msgtype: isImage ? 'm.image' : 'm.file',
+        body: file.name,
+        url: mxc,
+        info: { mimetype: file.type, size: file.size },
+      }
+      if (isImage) {
+        await new Promise<void>((resolve) => {
+          const img = new Image()
+          img.onload = () => {
+            msgContent.info = { ...msgContent.info as object, w: img.naturalWidth, h: img.naturalHeight }
+            resolve()
+          }
+          img.onerror = () => resolve()
+          img.src = URL.createObjectURL(file)
+        })
+      }
+      await client.sendMessage(roomId, msgContent as any)
+    } catch (err: any) {
+      setSendError(err?.message ?? 'Failed to send file')
+      setTimeout(() => setSendError(''), 4000)
+    } finally {
+      setSending(false)
+      textareaRef.current?.focus()
+    }
+  }, [client, roomId, sending])
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = Array.from(e.clipboardData?.items ?? [])
+    const fileItem = items.find(it => it.kind === 'file')
+    if (!fileItem) return
+    const file = fileItem.getAsFile()
+    if (!file) return
+    e.preventDefault()
+    void sendFile(file)
+  }, [sendFile])
+
   useLayoutEffect(() => {
     autoSendToMessage.current = (t) => { void sendMessage(t) }
   }, [sendMessage])
@@ -1141,7 +1188,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
           {visibleMessages.map((msg, i) => {
             const showDateDivider = i === 0 || !sameDay(visibleMessages[i - 1].timestamp, msg.timestamp)
-            const imageUrl = msg.imageUrl ?? imageUrls[msg.eventId]
+            const imageUrl = msg.imageUrl ?? (msg.imageMxc ? imageUrls[msg.eventId] : undefined)
+            const fileUrl = msg.fileMxc ? imageUrls[msg.eventId] : undefined
             const isTool = !msg.isOwnMessage && isToolProgressMessage(msg.body)
             const prev = i > 0 ? visibleMessages[i - 1] : null
             const next = i + 1 < visibleMessages.length ? visibleMessages[i + 1] : null
@@ -1174,7 +1222,13 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                       <>
                         <div className="message-pin-surface message-pin-surface--own" {...pinSurfaceProps}>
                           <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${imageUrl ? 'bubble-image' : ''}`}>
-                            {imageUrl ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" /> : msg.body}
+                            {imageUrl
+                              ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" />
+                              : fileUrl
+                                ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
+                                : msg.fileMxc && !fileUrl
+                                  ? <span className="msg-file msg-file-loading"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</span>
+                                  : msg.body}
                           </div>
                         </div>
                         <div className={`msg-status ${msg.isRead ? 'msg-status-read' : ''}`}>
@@ -1218,9 +1272,13 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                               >
                                 {imageUrl
                                   ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" />
-                                  : cleanHtml
-                                    ? <span dangerouslySetInnerHTML={{ __html: cleanHtml }} />
-                                    : text}
+                                  : fileUrl
+                                    ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
+                                    : msg.fileMxc && !fileUrl
+                                      ? <span className="msg-file msg-file-loading"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</span>
+                                      : cleanHtml
+                                        ? <span dangerouslySetInnerHTML={{ __html: cleanHtml }} />
+                                        : text}
                               </div>
                             </div>
                           )
@@ -1355,11 +1413,33 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
         <div className="input-row">
           <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,*/*"
+            className="file-input-hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) void sendFile(file)
+              e.target.value = ''
+            }}
+          />
+          <button
+            type="button"
+            className="attach-btn"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending}
+            title="Attach file or image"
+            aria-label="Attach file or image"
+          >
+            <span className="material-icons" aria-hidden>attach_file</span>
+          </button>
+          <input
             ref={textareaRef as React.RefObject<HTMLInputElement>}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             onFocus={() => setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 300)}
             placeholder="Message…"
             enterKeyHint="send"
@@ -1440,7 +1520,7 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
 
   if (isFailure || (isEncrypted && !body)) {
     body = '🔒 Unable to decrypt'
-  } else if (content?.msgtype === 'm.image' && content?.url) {
+  } else if ((content?.msgtype === 'm.image' || content?.msgtype === 'm.file') && content?.url) {
     body = content.body ?? ''
   }
 
@@ -1453,6 +1533,9 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
   const isRead = isOwnMessage && event.getTs() <= maxReadTs
 
   const imageMxc = content?.msgtype === 'm.image' && content?.url ? content.url : undefined
+  const fileMxc = content?.msgtype === 'm.file' && content?.url ? content.url : undefined
+  const fileName = fileMxc ? (content?.body ?? 'file') : undefined
+  const fileMime = fileMxc ? (content?.info?.mimetype ?? 'application/octet-stream') : undefined
 
   return {
     eventId: event.getId() ?? event.getTs().toString(),
@@ -1461,6 +1544,9 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
     formattedBody,
     imageUrl,
     imageMxc,
+    fileMxc,
+    fileName,
+    fileMime,
     timestamp: event.getTs(),
     isOwnMessage,
     isDecryptionFailure: isFailure,

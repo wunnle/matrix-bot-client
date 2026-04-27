@@ -1447,7 +1447,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             onPaste={handlePaste}
             onFocus={() => setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 300)}
             placeholder="Message…"
-            enterKeyHint="send"
+            enterKeyHint="enter"
             readOnly={dictating}
             aria-readonly={dictating || undefined}
           />

@@ -950,7 +950,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [sendMessage])
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && navigator.maxTouchPoints === 0) {
       e.preventDefault()
       sendMessage(input)
     }

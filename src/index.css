@@ -1304,7 +1304,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 /* Input Row */
 .input-row {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 10px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -1317,7 +1317,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   border-color: var(--accent);
 }
 
-.input-row input[type="text"] {
+.input-row textarea {
   flex: 1;
   background: transparent;
   border: none;
@@ -1326,10 +1326,14 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font: 16px/1.4 system-ui, sans-serif;
   outline: none;
   min-width: 0;
+  resize: none;
+  overflow-y: hidden;
+  max-height: 160px;
+  overflow-y: auto;
 }
 
-.input-row input[type="text"]::placeholder { color: var(--text-faint); }
-.input-row input[type="text"]:disabled { opacity: 0.5; }
+.input-row textarea::placeholder { color: var(--text-faint); }
+.input-row textarea:disabled { opacity: 0.5; }
 
 .input-row button {
   background: var(--accent);

@@ -316,7 +316,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const refreshPinnedRef = useRef<() => void>(() => {})
   const pinnedIdsRef = useRef<Set<string>>(new Set())
   const activeRoomIdRef = useRef(roomId)
-  const textareaRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const autoSendToMessage = useRef<((t: string) => void) | null>(null)
   const touchStartX = useRef<number | null>(null)
@@ -882,6 +882,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     if (!text.trim() || sending) return
     stopDictation()
     setInput('')
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
     setSuggestions([])
     setSending(true)
     try {
@@ -1433,11 +1434,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           >
             <span className="material-icons" aria-hidden>attach_file</span>
           </button>
-          <input
-            ref={textareaRef as React.RefObject<HTMLInputElement>}
-            type="text"
+          <textarea
+            ref={textareaRef}
+            rows={1}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value)
+              e.target.style.height = 'auto'
+              e.target.style.height = `${e.target.scrollHeight}px`
+            }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             onFocus={() => setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 300)}

@@ -47,8 +47,15 @@ export default function App() {
       const hash = window.location.hash.replace(/^#/, '')
       log(`${trigger} href=${href}`)
 
+      // Dump all localStorage keys for debugging
+      const lsKeys = Object.keys(localStorage)
+      log(`localStorage keys: ${lsKeys.length === 0 ? '(empty)' : lsKeys.join(', ')}`)
+      const allCookies = document.cookie || '(none)'
+      log(`cookies: ${allCookies}`)
+
       // Check for pending room token set by Shortcut via /api/room-intent
       const intentToken = localStorage.getItem('intent-token')
+      log(`intent-token: ${intentToken ?? 'null'}`)
       if (intentToken) {
         localStorage.removeItem('intent-token')
         log(`→ found intent-token, fetching room…`)
@@ -59,6 +66,8 @@ export default function App() {
               const dest = `/rooms/${encodeURIComponent(room)}`
               log(`→ intent room: ${dest}`)
               navigate(dest, { replace: true })
+            } else {
+              log(`→ intent response had no room`)
             }
           })
           .catch(e => log(`→ intent fetch failed: ${e.message}`))

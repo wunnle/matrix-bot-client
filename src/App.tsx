@@ -35,10 +35,16 @@ export default function App() {
       const href = window.location.href
       const params = new URLSearchParams(window.location.search)
       const path = params.get('path')
+      const hash = window.location.hash.replace(/^#/, '')
       log(`${trigger} href=${href}`)
       if (path) {
         log(`→ navigating to path param: ${path}`)
         navigate(path, { replace: true })
+        return
+      }
+      if (hash && hash.startsWith('/')) {
+        log(`→ navigating to hash: ${hash}`)
+        navigate(hash, { replace: true })
         return
       }
       const pathname = window.location.pathname

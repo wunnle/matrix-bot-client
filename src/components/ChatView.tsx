@@ -846,6 +846,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     stopDictation()
   }, [roomId, stopDictation])
 
+  // ?camera=1 — open camera/file picker after navigation
+  useEffect(() => {
+    if (!isActive) return
+    const camera = searchParams.get('camera')
+    if (camera !== '1') return
+    setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('camera'); return next }, { replace: true })
+    queueMicrotask(() => fileInputRef.current?.click())
+  }, [isActive, roomId, searchParams])
+
   // ?listen=true (or 1) — start dictation after navigation; strip the param (active room only)
   useEffect(() => {
     if (!isActive) return

@@ -86,11 +86,12 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     if (roomId) return
     fetch(`/api/room-intent?key=${import.meta.env.VITE_INTENT_SECRET ?? 'construct-intent'}`)
       .then(r => r.json())
-      .then(({ room }: { room: string | null }) => {
+      .then(({ room, action }: { room: string | null, action: string | null }) => {
         if (!room) return
         const name = getClient().getRoom(room)?.name ?? room
         setRoomNames(prev => ({ ...prev, [room]: name }))
-        navigate(`/rooms/${encodeURIComponent(room)}`, { replace: true })
+        const query = action === 'voice' ? '?listen=1' : ''
+        navigate(`/rooms/${encodeURIComponent(room)}${query}`, { replace: true })
       })
       .catch(() => {})
   }, [roomId, navigate])

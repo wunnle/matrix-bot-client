@@ -321,6 +321,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const autoSendToMessage = useRef<((t: string) => void) | null>(null)
+  const footerRef = useRef<HTMLDivElement>(null)
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -731,6 +732,32 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     programmaticScrollUntilRef.current = performance.now() + (behavior === 'smooth' ? 500 : 100)
     bottomRef.current?.scrollIntoView({ behavior })
   }, [visibleMessages])
+
+  // Pin footer above the software keyboard using the Visual Viewport API.
+  // When the keyboard opens on mobile, visualViewport shrinks. We translate
+  // the footer up by the gap between the layout viewport bottom and the
+  // visual viewport bottom, keeping it visible without reflowing the whole page.
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const update = () => {
+      const footer = footerRef.current
+      if (!footer) return
+      // Distance from visual viewport bottom to layout viewport bottom
+      const offset = window.innerHeight - vv.offsetTop - vv.height
+      footer.style.transform = `translateY(${-offset}px)`
+      // Also pad the messages list so content isn't hidden behind the footer
+      const msgs = messagesRef.current
+      if (msgs) msgs.style.paddingBottom = `${footer.offsetHeight + Math.max(0, offset)}px`
+    }
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    update()
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [])
 
   // Load pills — retry on sync (account data may not be in-memory until first SYNCING)
   useEffect(() => {
@@ -1350,7 +1377,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         </div>
       )}
 
-      <div className="chat-footer">
+      <div className="chat-footer" ref={footerRef}>
 
         <div className="pills">
           {lastActions.map((action) => (

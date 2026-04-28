@@ -47,18 +47,21 @@ export default function App() {
       const hash = window.location.hash.replace(/^#/, '')
       log(`${trigger} href=${href}`)
 
-      // Check for pending room set by Safari JS (cookie) or go.html (localStorage)
-      const cookieRoom = document.cookie.split(';').map(c => c.trim())
-        .find(c => c.startsWith('pending-room='))?.split('=')[1]
-      const pendingRoom = cookieRoom
-        ? decodeURIComponent(cookieRoom)
-        : localStorage.getItem('pending-room')
-      if (pendingRoom) {
-        localStorage.removeItem('pending-room')
-        if (cookieRoom) document.cookie = 'pending-room=; path=/; max-age=0'
-        const dest = `/rooms/${encodeURIComponent(pendingRoom)}`
-        log(`→ pending-room: ${dest}`)
-        navigate(dest, { replace: true })
+      // Check for pending room token set by Shortcut via /api/room-intent
+      const intentToken = localStorage.getItem('intent-token')
+      if (intentToken) {
+        localStorage.removeItem('intent-token')
+        log(`→ found intent-token, fetching room…`)
+        fetch(`/api/room-intent?token=${intentToken}`)
+          .then(r => r.json())
+          .then(({ room }) => {
+            if (room) {
+              const dest = `/rooms/${encodeURIComponent(room)}`
+              log(`→ intent room: ${dest}`)
+              navigate(dest, { replace: true })
+            }
+          })
+          .catch(e => log(`→ intent fetch failed: ${e.message}`))
         return
       }
 

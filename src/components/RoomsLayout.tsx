@@ -83,8 +83,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
 
   const handleReady = useCallback(() => {
     setClientReady(true)
-    // Check for a pending room intent set by iOS Shortcut
-    if (roomId) return // already navigated to a room
+    if (roomId) return
     fetch('/api/room-intent?key=construct-intent')
       .then(r => r.json())
       .then(({ room }: { room: string | null }) => {

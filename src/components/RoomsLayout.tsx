@@ -81,9 +81,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     navigate('/rooms', { replace: true })
   }, [navigate])
 
-  const handleReady = useCallback(() => {
-    setClientReady(true)
-    if (roomId) return
+  const fetchIntent = useCallback(() => {
     fetch(`/api/room-intent?key=${import.meta.env.VITE_INTENT_SECRET ?? 'construct-intent'}`)
       .then(r => r.json())
       .then(({ room, action }: { room: string | null, action: string | null }) => {
@@ -95,7 +93,22 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
         navigate(`/rooms/${encodeURIComponent(room)}${query}`, { replace: true })
       })
       .catch(() => {})
-  }, [roomId, navigate])
+  }, [navigate])
+
+  const handleReady = useCallback(() => {
+    setClientReady(true)
+    if (roomId) return
+    fetchIntent()
+  }, [roomId, fetchIntent])
+
+  useEffect(() => {
+    if (!clientReady) return
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchIntent()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [clientReady, fetchIntent])
 
   return (
     <div className={`layout ${activeRoomId ? 'room-open' : ''}`}>

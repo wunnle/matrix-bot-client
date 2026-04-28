@@ -30,11 +30,11 @@
 ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
 
 body {
-  height: 100lvh;
+  height: 100dvh;
   overflow: hidden;
 }
 
-#root { height: 100lvh; display: flex; flex-direction: column; }
+#root { height: 100dvh; display: flex; flex-direction: column; }
 
 button { cursor: pointer; border: none; font: inherit; background: none; color: inherit; }
 
@@ -45,7 +45,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .layout {
   display: flex;
   flex-direction: column;
-  height: 100lvh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -146,7 +146,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100lvh;
+  height: 100dvh;
   padding: 24px;
   gap: 28px;
   background: var(--bg);
@@ -759,8 +759,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   overscroll-behavior: contain;
   mask-image: linear-gradient(to bottom, transparent 0%, black 30%);
   -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%);
-  /* Base padding so content clears the fixed footer; JS adjusts this dynamically. */
-  padding-bottom: 80px;
 }
 
 /* Centered content column */
@@ -1154,14 +1152,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 .chat-footer {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 0 16px max(8px, env(safe-area-inset-bottom));
-  background: var(--bg);
-  z-index: 10;
-  will-change: bottom;
+  flex-shrink: 0;
+  padding: 0 16px max(8px, calc(env(safe-area-inset-bottom) - 20px));
 }
 
 /* Inner wrapper centers footer content to match messages */

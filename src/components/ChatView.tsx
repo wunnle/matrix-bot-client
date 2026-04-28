@@ -321,7 +321,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const autoSendToMessage = useRef<((t: string) => void) | null>(null)
-  const footerRef = useRef<HTMLDivElement>(null)
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -732,43 +731,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     programmaticScrollUntilRef.current = performance.now() + (behavior === 'smooth' ? 500 : 100)
     bottomRef.current?.scrollIntoView({ behavior })
   }, [visibleMessages])
-
-  // Pin footer above the software keyboard using the Visual Viewport API.
-  // Keep the footer pinned above the software keyboard.
-  // Uses visualViewport to detect keyboard height and sets footer.bottom directly.
-  // Also resets any window scroll iOS applies when focusing an input.
-  useEffect(() => {
-    const update = () => {
-      const footer = footerRef.current
-      const msgs = messagesRef.current
-      // Reset any scroll iOS applies when focusing an input
-      if (window.scrollY !== 0) window.scrollTo(0, 0)
-      const vv = window.visualViewport
-      const keyboardHeight = vv
-        ? Math.max(0, window.innerHeight - vv.height - (vv.offsetTop ?? 0))
-        : 0
-      if (footer) {
-        footer.style.bottom = `${keyboardHeight}px`
-      }
-      if (msgs && footer) {
-        msgs.style.paddingBottom = `${footer.offsetHeight + keyboardHeight}px`
-      }
-    }
-    const vv = window.visualViewport
-    if (vv) {
-      vv.addEventListener('resize', update)
-      vv.addEventListener('scroll', update)
-    }
-    window.addEventListener('scroll', update)
-    update()
-    return () => {
-      if (vv) {
-        vv.removeEventListener('resize', update)
-        vv.removeEventListener('scroll', update)
-      }
-      window.removeEventListener('scroll', update)
-    }
-  }, [])
 
   // Load pills — retry on sync (account data may not be in-memory until first SYNCING)
   useEffect(() => {
@@ -1388,7 +1350,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         </div>
       )}
 
-      <div className="chat-footer" ref={footerRef}>
+      <div className="chat-footer">
 
         <div className="pills">
           {lastActions.map((action) => (

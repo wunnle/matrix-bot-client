@@ -47,10 +47,15 @@ export default function App() {
       const hash = window.location.hash.replace(/^#/, '')
       log(`${trigger} href=${href}`)
 
-      // Check for pending room set by /go.html redirect
-      const pendingRoom = localStorage.getItem('pending-room')
+      // Check for pending room set by Safari JS (cookie) or go.html (localStorage)
+      const cookieRoom = document.cookie.split(';').map(c => c.trim())
+        .find(c => c.startsWith('pending-room='))?.split('=')[1]
+      const pendingRoom = cookieRoom
+        ? decodeURIComponent(cookieRoom)
+        : localStorage.getItem('pending-room')
       if (pendingRoom) {
         localStorage.removeItem('pending-room')
+        if (cookieRoom) document.cookie = 'pending-room=; path=/; max-age=0'
         const dest = `/rooms/${encodeURIComponent(pendingRoom)}`
         log(`→ pending-room: ${dest}`)
         navigate(dest, { replace: true })

@@ -3,8 +3,11 @@
 <head>
   <meta charset="utf-8">
   <script>
-    const room = new URLSearchParams(location.search).get('room')
+    const p = new URLSearchParams(location.search)
+    const room = p.get('room')
+    const token = p.get('token')
     if (room) localStorage.setItem('pending-room', room)
+    if (token) localStorage.setItem('intent-token', token)
     location.replace('/')
   </script>
 </head>

@@ -96,9 +96,18 @@ export default function App() {
   return (
     <>
     {debugLog.length > 0 && (
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 9999, background: 'rgba(0,0,0,0.85)', color: '#0f0', fontFamily: 'monospace', fontSize: 11, padding: '6px 10px', maxHeight: 180, overflowY: 'auto' }} onClick={() => setDebugLog([])}>
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 9999, background: 'rgba(0,0,0,0.85)', color: '#0f0', fontFamily: 'monospace', fontSize: 11, padding: '6px 10px', maxHeight: 180, overflowY: 'auto' }}>
         {debugLog.map((l, i) => <div key={i}>{l}</div>)}
-        <div style={{ color: '#666', marginTop: 4 }}>tap to dismiss</div>
+        <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+          <button
+            style={{ background: 'none', border: '1px solid #0f0', color: '#0f0', fontFamily: 'monospace', fontSize: 11, padding: '2px 8px', cursor: 'pointer' }}
+            onClick={() => navigator.clipboard?.writeText(debugLog.join('\n'))}
+          >copy</button>
+          <button
+            style={{ background: 'none', border: '1px solid #666', color: '#666', fontFamily: 'monospace', fontSize: 11, padding: '2px 8px', cursor: 'pointer' }}
+            onClick={() => setDebugLog([])}
+          >dismiss</button>
+        </div>
       </div>
     )}
     <Routes>

@@ -9,10 +9,19 @@ import RoomsLayout from './components/RoomsLayout'
 import { usePushNotifications } from './hooks/usePushNotifications'
 import './App.css'
 
+// Log the URL at module load time, before React Router processes anything
+const _initialHref = window.location.href
+const _initialHash = window.location.hash
+const _initialSearch = window.location.search
+const _initialPathname = window.location.pathname
+
 export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null)
   const [ready, setReady] = useState(false)
-  const [debugLog, setDebugLog] = useState<string[]>([])
+  const [debugLog, setDebugLog] = useState<string[]>([
+    `initial: ${_initialHref}`,
+    `path=${_initialPathname} search=${_initialSearch} hash=${_initialHash}`,
+  ])
   const navigate = useNavigate()
 
   usePushNotifications(!!auth)

@@ -319,6 +319,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const activeRoomIdRef = useRef(roomId)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
   const autoSendToMessage = useRef<((t: string) => void) | null>(null)
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
@@ -1313,7 +1314,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       </div>
 
       {cameraPrompt && (
-        <div className="camera-prompt" onClick={() => { setCameraPrompt(false); fileInputRef.current?.click() }}>
+        <div className="camera-prompt" onClick={() => { setCameraPrompt(false); cameraInputRef.current?.click() }}>
           <span className="material-icons camera-prompt-icon">photo_camera</span>
           <span className="camera-prompt-label">Tap to open camera</span>
         </div>
@@ -1429,6 +1430,18 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         )}
 
         <div className="input-row">
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="file-input-hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) void sendFile(file)
+              e.target.value = ''
+            }}
+          />
           <input
             ref={fileInputRef}
             type="file"

@@ -90,7 +90,8 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
         if (!room) return
         const name = getClient().getRoom(room)?.name ?? room
         setRoomNames(prev => ({ ...prev, [room]: name }))
-        const query = action === 'voice' ? '?listen=1' : action === 'camera' ? '?camera=1' : ''
+        const ts = Date.now()
+        const query = action === 'voice' ? `?listen=${ts}` : action === 'camera' ? `?camera=${ts}` : ''
         navigate(`/rooms/${encodeURIComponent(room)}${query}`, { replace: true })
       })
       .catch(() => {})

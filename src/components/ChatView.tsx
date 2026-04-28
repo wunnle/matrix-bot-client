@@ -850,7 +850,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   useEffect(() => {
     if (!isActive) return
     const camera = searchParams.get('camera')
-    if (camera !== '1') return
+    if (!camera) return
     setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('camera'); return next }, { replace: true })
     setTimeout(() => fileInputRef.current?.click(), 300)
   }, [isActive, roomId, searchParams])
@@ -859,7 +859,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   useEffect(() => {
     if (!isActive) return
     const listen = searchParams.get('listen')
-    if (listen !== 'true' && listen !== '1') return
+    if (!listen) return
     if (sending) return
     setSearchParams(
       (prev) => {
@@ -870,17 +870,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       { replace: true },
     )
     if (!dictationSupported) return
-    if (dictating) return
-    queueMicrotask(() => {
+    setTimeout(() => {
       startDictation(input, dictationAutoSend ? { autoSend: true } : undefined)
-    })
+    }, 300)
   }, [
     isActive,
     roomId,
     searchParams,
     sending,
     dictationSupported,
-    dictating,
     startDictation,
     dictationAutoSend,
     input,

@@ -46,6 +46,17 @@ export default function App() {
       const path = params.get('path')
       const hash = window.location.hash.replace(/^#/, '')
       log(`${trigger} href=${href}`)
+
+      // Check for pending room set by /go.html redirect
+      const pendingRoom = localStorage.getItem('pending-room')
+      if (pendingRoom) {
+        localStorage.removeItem('pending-room')
+        const dest = `/rooms/${encodeURIComponent(pendingRoom)}`
+        log(`→ pending-room: ${dest}`)
+        navigate(dest, { replace: true })
+        return
+      }
+
       if (path) {
         log(`→ navigating to path param: ${path}`)
         navigate(path, { replace: true })

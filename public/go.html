@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script>
+    const room = new URLSearchParams(location.search).get('room')
+    if (room) localStorage.setItem('pending-room', room)
+    location.replace('/')
+  </script>
+</head>
+</html>

@@ -885,6 +885,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
     setSuggestions([])
     setSending(true)
+    requestAnimationFrame(scrollToBottom)
     try {
       await client.sendMessage(roomId, {
         msgtype: 'm.text',

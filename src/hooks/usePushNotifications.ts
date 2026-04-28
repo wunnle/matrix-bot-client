@@ -49,6 +49,9 @@ export function usePushNotifications(enabled: boolean) {
           icon,
         });
       }
+      if (roomId) {
+        window.dispatchEvent(new CustomEvent("matrix-push", { detail: { roomId } }));
+      }
     };
 
     navigator.serviceWorker.addEventListener("message", onServiceWorkerMessage);

@@ -179,6 +179,33 @@ export default function RoomList({
     return () => { client.off(sdk.RoomEvent.Timeline, onEvent) }
   }, [loading])
 
+  // Update unread count when a push notification arrives for a room
+  useEffect(() => {
+    if (loading) return
+    let client: ReturnType<typeof getClient>
+    try { client = getClient() } catch { return }
+
+    const onPush = (e: Event) => {
+      const { roomId } = (e as CustomEvent<{ roomId: string }>).detail
+      if (roomId === activeRoomIdRef.current) return
+      const room = client.getRoom(roomId)
+      if (!room) return
+      const newCount = room.getUnreadNotificationCount()
+      setRooms((prev) => {
+        let changed = false
+        const next = prev.map((r) => {
+          if (r.roomId !== roomId || r.unreadCount === newCount) return r
+          changed = true
+          return { ...r, unreadCount: newCount }
+        })
+        return changed ? next : prev
+      })
+    }
+
+    window.addEventListener("matrix-push", onPush)
+    return () => window.removeEventListener("matrix-push", onPush)
+  }, [loading])
+
   // Clear unread when active room changes
   useEffect(() => {
     if (!activeRoomId) return

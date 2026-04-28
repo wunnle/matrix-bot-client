@@ -852,7 +852,14 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const camera = searchParams.get('camera')
     if (!camera) return
     setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('camera'); return next }, { replace: true })
-    setTimeout(() => fileInputRef.current?.click(), 300)
+    const tryClick = (attempts = 0) => {
+      if (fileInputRef.current) {
+        fileInputRef.current.click()
+      } else if (attempts < 20) {
+        setTimeout(() => tryClick(attempts + 1), 100)
+      }
+    }
+    setTimeout(() => tryClick(), 100)
   }, [isActive, roomId, searchParams])
 
   // ?listen=true (or 1) — start dictation after navigation; strip the param (active room only)

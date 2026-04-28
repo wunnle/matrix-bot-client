@@ -1377,6 +1377,21 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   background: var(--bg-hover);
   color: var(--text);
 }
+.camera-prompt {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  cursor: pointer;
+}
+.camera-prompt-icon { font-size: 64px; color: #fff; }
+.camera-prompt-label { font-size: 18px; font-weight: 600; color: #fff; }
+
 .msg-file {
   display: flex;
   align-items: center;

@@ -245,6 +245,7 @@ function openPinContextMenu(
 
 function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictationAutoSend }: Props) {
   const [searchParams, setSearchParams] = useSearchParams()
+  const [cameraPrompt, setCameraPrompt] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -852,14 +853,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const camera = searchParams.get('camera')
     if (!camera) return
     setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('camera'); return next }, { replace: true })
-    const tryClick = (attempts = 0) => {
-      if (fileInputRef.current) {
-        fileInputRef.current.click()
-      } else if (attempts < 20) {
-        setTimeout(() => tryClick(attempts + 1), 100)
-      }
-    }
-    setTimeout(() => tryClick(), 100)
+    setCameraPrompt(true)
   }, [isActive, roomId, searchParams])
 
   // ?listen=true (or 1) — start dictation after navigation; strip the param (active room only)
@@ -1317,6 +1311,13 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           <div ref={bottomRef} />
         </div>
       </div>
+
+      {cameraPrompt && (
+        <div className="camera-prompt" onClick={() => { setCameraPrompt(false); fileInputRef.current?.click() }}>
+          <span className="material-icons camera-prompt-icon">photo_camera</span>
+          <span className="camera-prompt-label">Tap to open camera</span>
+        </div>
+      )}
 
       {showScrollDown && (
         <button className="scroll-down-btn" onClick={scrollToBottom} aria-label="Scroll to bottom">↓</button>

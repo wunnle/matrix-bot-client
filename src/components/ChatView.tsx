@@ -671,6 +671,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const lastTailEventIdRef = useRef<string | undefined>(undefined)
   const programmaticScrollUntilRef = useRef(0)
   const wasActiveRef = useRef(false)
+  const loadingMoreRef = useRef(false)
   // When stuck to the bottom and messages grow past the render window,
   // advance renderStart so the new tail stays visible. Without this,
   // a new message appended beyond renderStart + RENDER_LIMIT would fall
@@ -723,7 +724,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const tail = visibleMessages[visibleMessages.length - 1]
     const tailChanged = tail.eventId !== lastTailEventIdRef.current
     lastTailEventIdRef.current = tail.eventId
-    const shouldScroll = stickToBottomRef.current || (tailChanged && tail.isOwnMessage)
+    const shouldScroll = (stickToBottomRef.current || (tailChanged && tail.isOwnMessage)) && !loadingMoreRef.current
     if (!shouldScroll) return
     const behavior: ScrollBehavior = (!isFirstLoad.current && tailChanged && tail.isOwnMessage) ? 'smooth' : 'instant'
     isFirstLoad.current = false
@@ -767,6 +768,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const prevScrollHeight = container?.scrollHeight ?? 0
 
     setLoadingMore(true)
+    loadingMoreRef.current = true
     try {
       const result = await client.scrollback(room, PAGE_SIZE)
       const allEvents = result.getLiveTimeline().getEvents()
@@ -783,9 +785,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         if (container) {
           container.scrollTop = container.scrollHeight - prevScrollHeight
         }
+        loadingMoreRef.current = false
       })
     } catch {
       setHasMore(false)
+      loadingMoreRef.current = false
     } finally {
       setLoadingMore(false)
     }
@@ -808,9 +812,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       if (renderStart > 0) {
         const container = e.currentTarget
         const prevScrollHeight = container.scrollHeight
+        loadingMoreRef.current = true
         setRenderStart(prev => Math.max(0, prev - SLIDE_SIZE))
         requestAnimationFrame(() => {
           container.scrollTop = container.scrollHeight - prevScrollHeight
+          loadingMoreRef.current = false
         })
       } else if (!loadingMore && hasMore) {
         loadMore()

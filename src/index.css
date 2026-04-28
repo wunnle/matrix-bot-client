@@ -30,11 +30,11 @@
 ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
 
 body {
-  height: 100dvh;
+  height: 100lvh;
   overflow: hidden;
 }
 
-#root { height: 100dvh; display: flex; flex-direction: column; }
+#root { height: 100lvh; display: flex; flex-direction: column; }
 
 button { cursor: pointer; border: none; font: inherit; background: none; color: inherit; }
 
@@ -45,7 +45,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .layout {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  height: 100lvh;
   overflow: hidden;
 }
 
@@ -146,7 +146,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100dvh;
+  height: 100lvh;
   padding: 24px;
   gap: 28px;
   background: var(--bg);

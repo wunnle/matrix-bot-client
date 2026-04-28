@@ -53,26 +53,19 @@ export default function App() {
       const allCookies = document.cookie || '(none)'
       log(`cookies: ${allCookies}`)
 
-      // Check for pending room token set by Shortcut via /api/room-intent
-      const intentToken = localStorage.getItem('intent-token')
-      log(`intent-token: ${intentToken ?? 'null'}`)
-      if (intentToken) {
-        localStorage.removeItem('intent-token')
-        log(`→ found intent-token, fetching room…`)
-        fetch(`/api/room-intent?token=${intentToken}`)
-          .then(r => r.json())
-          .then(({ room }) => {
-            if (room) {
-              const dest = `/rooms/${encodeURIComponent(room)}`
-              log(`→ intent room: ${dest}`)
-              navigate(dest, { replace: true })
-            } else {
-              log(`→ intent response had no room`)
-            }
-          })
-          .catch(e => log(`→ intent fetch failed: ${e.message}`))
-        return
-      }
+      // Check server for a pending room intent set by Shortcut
+      log(`fetching room intent…`)
+      fetch(`/api/room-intent?key=construct-intent`)
+        .then(r => r.json())
+        .then(({ room }) => {
+          log(`intent response: ${room ?? 'null'}`)
+          if (room) {
+            const dest = `/rooms/${encodeURIComponent(room)}`
+            log(`→ intent room: ${dest}`)
+            navigate(dest, { replace: true })
+          }
+        })
+        .catch(e => log(`intent fetch failed: ${e.message}`))
 
       if (path) {
         log(`→ navigating to path param: ${path}`)

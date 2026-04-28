@@ -1,26 +1,34 @@
-const store = new Map()
+// Simple single-slot room intent store.
+// POST /api/room-intent?key=SECRET { room } → stores room
+// GET  /api/room-intent?key=SECRET         → returns { room } and clears it
+
+const SECRET = process.env.INTENT_SECRET || 'construct-intent'
+
+let pendingRoom = null
+let expiresAt = 0
 
 export default function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Origin', 'https://construct.kafagoz.com')
+
+  const { key } = req.query
+  if (key !== SECRET) return res.status(403).json({ error: 'forbidden' })
 
   if (req.method === 'POST') {
     const { room } = req.body ?? {}
     if (!room) return res.status(400).json({ error: 'missing room' })
-    const token = Math.random().toString(36).slice(2)
-    store.set(token, { room, expires: Date.now() + 30_000 })
-    return res.status(200).json({ token })
+    pendingRoom = room
+    expiresAt = Date.now() + 60_000
+    return res.status(200).json({ ok: true })
   }
 
   if (req.method === 'GET') {
-    const { token } = req.query
-    if (!token) return res.status(400).json({ error: 'missing token' })
-    const entry = store.get(token)
-    if (!entry || Date.now() > entry.expires) {
-      store.delete(token)
-      return res.status(404).json({ error: 'not found' })
+    if (!pendingRoom || Date.now() > expiresAt) {
+      pendingRoom = null
+      return res.status(200).json({ room: null })
     }
-    store.delete(token)
-    return res.status(200).json({ room: entry.room })
+    const room = pendingRoom
+    pendingRoom = null
+    return res.status(200).json({ room })
   }
 
   res.status(405).end()

@@ -24,12 +24,31 @@ export default function App() {
 
   useEffect(() => {
     if (!ready) return
-    console.log('[deep-link] href:', window.location.href)
-    console.log('[deep-link] search:', window.location.search)
-    console.log('[deep-link] hash:', window.location.hash)
-    const params = new URLSearchParams(window.location.search)
-    const path = params.get('path')
-    if (path) navigate(path, { replace: true })
+
+    function handleDeepLink() {
+      const params = new URLSearchParams(window.location.search)
+      const path = params.get('path')
+      if (path) {
+        navigate(path, { replace: true })
+        return
+      }
+      const pathname = window.location.pathname
+      if (pathname && pathname !== '/' && pathname !== '/rooms') {
+        navigate(pathname, { replace: true })
+      }
+    }
+
+    handleDeepLink()
+
+    const onFocus = () => handleDeepLink()
+    const onVisible = () => { if (document.visibilityState === 'visible') handleDeepLink() }
+
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [ready])
 
   function handleLogin(a: AuthState) {

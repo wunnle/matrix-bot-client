@@ -734,28 +734,39 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [visibleMessages])
 
   // Pin footer above the software keyboard using the Visual Viewport API.
-  // When the keyboard opens on mobile, visualViewport shrinks. We translate
-  // the footer up by the gap between the layout viewport bottom and the
-  // visual viewport bottom, keeping it visible without reflowing the whole page.
+  // Keep the footer pinned above the software keyboard.
+  // Uses visualViewport to detect keyboard height and sets footer.bottom directly.
+  // Also resets any window scroll iOS applies when focusing an input.
   useEffect(() => {
-    const vv = window.visualViewport
-    if (!vv) return
     const update = () => {
       const footer = footerRef.current
-      if (!footer) return
-      // Distance from visual viewport bottom to layout viewport bottom
-      const offset = window.innerHeight - vv.offsetTop - vv.height
-      footer.style.transform = `translateY(${-offset}px)`
-      // Also pad the messages list so content isn't hidden behind the footer
       const msgs = messagesRef.current
-      if (msgs) msgs.style.paddingBottom = `${footer.offsetHeight + Math.max(0, offset)}px`
+      // Reset any scroll iOS applies when focusing an input
+      if (window.scrollY !== 0) window.scrollTo(0, 0)
+      const vv = window.visualViewport
+      const keyboardHeight = vv
+        ? Math.max(0, window.innerHeight - vv.height - (vv.offsetTop ?? 0))
+        : 0
+      if (footer) {
+        footer.style.bottom = `${keyboardHeight}px`
+      }
+      if (msgs && footer) {
+        msgs.style.paddingBottom = `${footer.offsetHeight + keyboardHeight}px`
+      }
     }
-    vv.addEventListener('resize', update)
-    vv.addEventListener('scroll', update)
+    const vv = window.visualViewport
+    if (vv) {
+      vv.addEventListener('resize', update)
+      vv.addEventListener('scroll', update)
+    }
+    window.addEventListener('scroll', update)
     update()
     return () => {
-      vv.removeEventListener('resize', update)
-      vv.removeEventListener('scroll', update)
+      if (vv) {
+        vv.removeEventListener('resize', update)
+        vv.removeEventListener('scroll', update)
+      }
+      window.removeEventListener('scroll', update)
     }
   }, [])
 

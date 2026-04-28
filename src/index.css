@@ -1161,6 +1161,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   padding: 0 16px max(8px, env(safe-area-inset-bottom));
   background: var(--bg);
   z-index: 10;
+  will-change: bottom;
 }
 
 /* Inner wrapper centers footer content to match messages */

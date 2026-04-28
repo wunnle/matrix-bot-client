@@ -81,7 +81,20 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     navigate('/rooms', { replace: true })
   }, [navigate])
 
-  const handleReady = useCallback(() => setClientReady(true), [])
+  const handleReady = useCallback(() => {
+    setClientReady(true)
+    // Check for a pending room intent set by iOS Shortcut
+    if (roomId) return // already navigated to a room
+    fetch('/api/room-intent?key=construct-intent')
+      .then(r => r.json())
+      .then(({ room }: { room: string | null }) => {
+        if (!room) return
+        const name = getClient().getRoom(room)?.name ?? room
+        setRoomNames(prev => ({ ...prev, [room]: name }))
+        navigate(`/rooms/${encodeURIComponent(room)}`, { replace: true })
+      })
+      .catch(() => {})
+  }, [roomId, navigate])
 
   return (
     <div className={`layout ${activeRoomId ? 'room-open' : ''}`}>

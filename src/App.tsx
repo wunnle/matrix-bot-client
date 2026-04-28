@@ -47,25 +47,6 @@ export default function App() {
       const hash = window.location.hash.replace(/^#/, '')
       log(`${trigger} href=${href}`)
 
-      // Dump all localStorage keys for debugging
-      const lsKeys = Object.keys(localStorage)
-      log(`localStorage keys: ${lsKeys.length === 0 ? '(empty)' : lsKeys.join(', ')}`)
-      const allCookies = document.cookie || '(none)'
-      log(`cookies: ${allCookies}`)
-
-      // Check server for a pending room intent set by Shortcut
-      log(`fetching room intent…`)
-      fetch(`/api/room-intent?key=construct-intent`)
-        .then(r => r.json())
-        .then(({ room }) => {
-          log(`intent response: ${room ?? 'null'}`)
-          if (room) {
-            const dest = `/rooms/${encodeURIComponent(room)}`
-            log(`→ intent room: ${dest}`)
-            navigate(dest, { replace: true })
-          }
-        })
-        .catch(e => log(`intent fetch failed: ${e.message}`))
 
       if (path) {
         log(`→ navigating to path param: ${path}`)

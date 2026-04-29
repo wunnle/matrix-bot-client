@@ -672,6 +672,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const programmaticScrollUntilRef = useRef(0)
   const wasActiveRef = useRef(false)
   const loadingMoreRef = useRef(false)
+  // When loading older messages (scrollback or render-window slide), store
+  // the scrollHeight before the state update here. useLayoutEffect restores
+  // the anchor synchronously after the DOM update, before any paint.
+  const scrollAnchorRef = useRef<number | null>(null)
   // When stuck to the bottom and messages grow past the render window,
   // advance renderStart so the new tail stays visible. Without this,
   // a new message appended beyond renderStart + RENDER_LIMIT would fall
@@ -721,6 +725,18 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // render at the top of the scroll container before being scrolled down.
   useLayoutEffect(() => {
     if (visibleMessages.length === 0) return
+
+    // Restore scroll anchor synchronously after prepending older messages.
+    // This runs before paint, avoiding the RAF race that caused position jumps.
+    const anchor = scrollAnchorRef.current
+    if (anchor !== null) {
+      scrollAnchorRef.current = null
+      const container = messagesRef.current
+      if (container) container.scrollTop = container.scrollHeight - anchor
+      loadingMoreRef.current = false
+      return
+    }
+
     const tail = visibleMessages[visibleMessages.length - 1]
     const tailChanged = tail.eventId !== lastTailEventIdRef.current
     lastTailEventIdRef.current = tail.eventId
@@ -765,7 +781,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     if (!room) return
 
     const container = messagesRef.current
-    const prevScrollHeight = container?.scrollHeight ?? 0
 
     setLoadingMore(true)
     loadingMoreRef.current = true
@@ -773,20 +788,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       const result = await client.scrollback(room, PAGE_SIZE)
       const allEvents = result.getLiveTimeline().getEvents()
       const msgs = eventsToMessages(allEvents, userId, result)
+
+      // Capture scrollHeight immediately before the state update so
+      // useLayoutEffect can restore the anchor before the next paint.
+      scrollAnchorRef.current = container?.scrollHeight ?? 0
       setMessages(msgs)
 
-      // If we got fewer than PAGE_SIZE new messages, we've reached the start
       if (result.oldState.paginationToken === null) {
         setHasMore(false)
       }
-
-      // Restore scroll position after prepend
-      requestAnimationFrame(() => {
-        if (container) {
-          container.scrollTop = container.scrollHeight - prevScrollHeight
-        }
-        loadingMoreRef.current = false
-      })
     } catch {
       setHasMore(false)
       loadingMoreRef.current = false
@@ -810,14 +820,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setShowScrollDown(!isNearBottom)
     if (scrollTop < 80) {
       if (renderStart > 0) {
-        const container = e.currentTarget
-        const prevScrollHeight = container.scrollHeight
+        scrollAnchorRef.current = e.currentTarget.scrollHeight
         loadingMoreRef.current = true
         setRenderStart(prev => Math.max(0, prev - SLIDE_SIZE))
-        requestAnimationFrame(() => {
-          container.scrollTop = container.scrollHeight - prevScrollHeight
-          loadingMoreRef.current = false
-        })
       } else if (!loadingMore && hasMore) {
         loadMore()
       }

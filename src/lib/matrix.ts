@@ -26,7 +26,27 @@ export interface RoomSummary {
   avatarMxc?: string
 }
 
-function getRooms(c: sdk.MatrixClient): RoomSummary[] {
+// Count unread messages using the local read receipt position rather than
+// the server-side notification count, which can stay stale across restarts.
+export function getRoomUnreadCount(room: sdk.Room, userId: string): number {
+  const readUpTo = room.getEventReadUpTo(userId)
+  const timeline = room.getLiveTimeline().getEvents()
+  if (!readUpTo) {
+    return timeline.filter(
+      e => e.getType() === 'm.room.message' || e.getType() === 'm.room.encrypted'
+    ).length
+  }
+  const readIdx = timeline.findIndex(e => e.getId() === readUpTo)
+  if (readIdx === -1) {
+    // Receipt points to an event not in the local timeline — fall back
+    return room.getUnreadNotificationCount()
+  }
+  return timeline.slice(readIdx + 1).filter(
+    e => e.getType() === 'm.room.message' || e.getType() === 'm.room.encrypted'
+  ).length
+}
+
+function getRooms(c: sdk.MatrixClient, userId: string): RoomSummary[] {
   return c.getRooms()
     .filter((room) => {
       const createEvent = room.currentState.getStateEvents('m.room.create', '')
@@ -42,7 +62,7 @@ function getRooms(c: sdk.MatrixClient): RoomSummary[] {
         name: room.name,
         lastMessage: last?.getContent()?.body,
         lastTs: last?.getTs(),
-        unreadCount: room.getUnreadNotificationCount(),
+        unreadCount: getRoomUnreadCount(room, userId),
         avatarMxc,
       }
     })
@@ -129,7 +149,7 @@ async function doInit(auth: AuthState): Promise<RoomSummary[]> {
         clearTimeout(timeout)
         c.off(sdk.ClientEvent.Sync, onSync)
         c.getCrypto()?.checkKeyBackupAndEnable().catch(() => {})
-        const rooms = getRooms(c)
+        const rooms = getRooms(c, auth.userId)
         setCachedRooms(auth.userId, rooms)
         resolve(rooms)
       } else if (state === 'ERROR') {

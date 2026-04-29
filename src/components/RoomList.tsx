@@ -4,7 +4,7 @@ import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSe
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
-import { fetchJoinedRooms, getCachedRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, type RoomSummary } from '../lib/matrix'
+import { fetchJoinedRooms, getCachedRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, getRoomUnreadCount, type RoomSummary } from '../lib/matrix'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 
 interface Props {
@@ -162,7 +162,7 @@ export default function RoomList({
       if (!room) return
       const type = event.getType()
       if (type !== 'm.room.message' && type !== 'm.room.encrypted') return
-      const newCount = room.roomId === activeRoomIdRef.current ? 0 : room.getUnreadNotificationCount()
+      const newCount = room.roomId === activeRoomIdRef.current ? 0 : getRoomUnreadCount(room, auth.userId)
       setRooms((prev) => {
         let changed = false
         const next = prev.map((r) => {
@@ -190,7 +190,7 @@ export default function RoomList({
       if (roomId === activeRoomIdRef.current) return
       const room = client.getRoom(roomId)
       if (!room) return
-      const newCount = room.getUnreadNotificationCount()
+      const newCount = getRoomUnreadCount(room, auth.userId)
       setRooms((prev) => {
         let changed = false
         const next = prev.map((r) => {

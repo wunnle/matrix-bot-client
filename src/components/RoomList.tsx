@@ -283,6 +283,7 @@ export default function RoomList({
                   aria-label="Auto-send when done talking"
                 />
               </label>
+              <div className="user-menu-version">Construct v{__CONSTRUCT_VERSION__}</div>
               <button className="user-menu-item user-menu-item--danger" onClick={onSignOut}>
                 Sign out
               </button>

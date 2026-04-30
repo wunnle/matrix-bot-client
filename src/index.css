@@ -470,6 +470,13 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   background: rgba(224, 92, 92, 0.1);
 }
 
+.user-menu-version {
+  padding: 4px 12px 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  user-select: none;
+}
+
 .user-avatar {
   width: 24px;
   height: 24px;

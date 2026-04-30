@@ -1458,7 +1458,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*,*/*"
+            accept="*/*"
             className="file-input-hidden"
             onChange={(e) => {
               const file = e.target.files?.[0]

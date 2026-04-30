@@ -307,6 +307,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [messageMenu, setMessageMenu] = useState<null | MessageMenuPos>(null)
   const [pinInFlight, setPinInFlight] = useState(false)
   const [showScrollDown, setShowScrollDown] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const dragCounterRef = useRef(0)
   const [pinnedEventIds, setPinnedEventIds] = useState<string[]>([])
   const [pinnedDisplay, setPinnedDisplay] = useState<Message[]>([])
   const [pinnedExpanded, setPinnedExpanded] = useState(true)
@@ -958,6 +960,30 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [client, roomId, sending])
 
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounterRef.current++
+    if (e.dataTransfer.types.includes('Files')) setDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounterRef.current--
+    if (dragCounterRef.current === 0) setDragOver(false)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounterRef.current = 0
+    setDragOver(false)
+    const file = e.dataTransfer.files[0]
+    if (file) void sendFile(file)
+  }, [sendFile])
+
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = Array.from(e.clipboardData?.items ?? [])
     const fileItem = items.find(it => it.kind === 'file')
@@ -1114,7 +1140,17 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       className="chat-view"
       onTouchStart={isStandalonePwa ? handleTouchStart : undefined}
       onTouchEnd={isStandalonePwa ? handleTouchEnd : undefined}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
     >
+      {dragOver && (
+        <div className="drop-overlay">
+          <span className="material-icons drop-overlay-icon">upload_file</span>
+          <span>Drop to send</span>
+        </div>
+      )}
       <div className="chat-header">
         <div className="chat-header-inner">
           <button className="back" onClick={onBack}>←</button>

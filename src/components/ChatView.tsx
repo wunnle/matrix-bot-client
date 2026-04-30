@@ -912,6 +912,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         body: text,
         'com.construct.capabilities': ['actionable'],
         'com.construct.client': 'construct-web',
+        'com.construct.version': __CONSTRUCT_VERSION__,
       } as any)
     } catch (err: any) {
       setInput(text) // restore input so message isn't lost

@@ -1353,7 +1353,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   border: none;
   padding: 6px 0;
   color: var(--text);
-  font: 16px/1.4 system-ui, sans-serif;
+  font: 16px/1.25 system-ui, sans-serif;
   outline: none;
   min-width: 0;
   resize: none;

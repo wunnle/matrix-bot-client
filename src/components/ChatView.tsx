@@ -686,8 +686,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setShowScrollDown(!isNearBottom)
   }, [visibleMessages, renderStart])
 
-  // Advance renderStart to keep render window pinned to bottom when new messages arrive
+  // Advance renderStart to keep render window pinned to bottom when new messages arrive.
+  // Skip during loadMore — the anchor restore handles scroll position there.
   useEffect(() => {
+    if (loadingMoreRef.current) return
     if (messages.length <= RENDER_LIMIT) { setRenderStart(0); return }
     setRenderStart(prev => {
       const isPinnedToBottom = prev + RENDER_LIMIT >= messages.length

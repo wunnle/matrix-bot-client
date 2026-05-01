@@ -85,6 +85,9 @@ export function usePushNotifications(enabled: boolean) {
         // Register Matrix pusher so matrix.org delivers pushes directly
         const { loadAuth } = await import("../lib/auth");
         const auth = loadAuth();
+        if (!auth) {
+          console.warn("Push setup: no auth found, skipping pusher registration");
+        }
         if (auth) {
           await fetch(`${auth.homeserver}/_matrix/client/v3/pushers/set`, {
             method: "POST",
@@ -105,9 +108,24 @@ export function usePushNotifications(enabled: boolean) {
               },
             }),
           });
+          console.log("Push pusher registered successfully");
         }
       } catch (err) {
         console.warn("Push setup failed:", err);
+        // Report failure to Matrix so we can debug without DevTools
+        try {
+          const { loadAuth } = await import("../lib/auth");
+          const auth = loadAuth();
+          if (auth) {
+            const txnId = `push-err-${Date.now()}`;
+            const errMsg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+            await fetch(`${auth.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent("!DpRWqhWOHJAxyvjOGI:matrix.org")}/send/m.room.message/${txnId}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.accessToken}` },
+              body: JSON.stringify({ msgtype: "m.text", body: `[Construct push setup failed] ${errMsg}` }),
+            });
+          }
+        } catch {}
       }
     })();
   }, [enabled]);

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git push)",
+      "Edit(/home/wunnle/matrix-pwa/**)",
+      "Write(/home/wunnle/matrix-pwa/**)",
+      "Bash(systemctl --user status *)",
+      "Bash(systemctl --user is-active *)",
+      "Bash(systemctl --user list-units *)"
+    ]
+  }
+}

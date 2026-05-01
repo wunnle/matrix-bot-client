@@ -342,6 +342,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [messageMenu, setMessageMenu] = useState<null | MessageMenuPos>(null)
   const [pinInFlight, setPinInFlight] = useState(false)
   const [showScrollDown, setShowScrollDown] = useState(false)
+  const footerRef = useRef<HTMLDivElement>(null)
   const [dragOver, setDragOver] = useState(false)
   const dragCounterRef = useRef(0)
   const [pinnedEventIds, setPinnedEventIds] = useState<string[]>([])
@@ -814,7 +815,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
   // Scroll to bottom when own message is sent
   const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    stickToBottomRef.current = true
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' })
   }, [])
 
   // Load older messages
@@ -1476,9 +1478,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           })()) as React.ReactNode}
           <div ref={bottomRef} />
         </div>
-        {showScrollDown && (
-          <button className="scroll-down-btn" onClick={scrollToBottom} aria-label="Scroll to bottom">↓</button>
-        )}
       </div>
 
       {cameraPrompt && (
@@ -1508,7 +1507,16 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         </div>
       )}
 
-      <div className="chat-footer">
+      {showScrollDown && (
+        <button
+          className="scroll-down-btn"
+          onClick={scrollToBottom}
+          aria-label="Scroll to bottom"
+          style={{ bottom: (footerRef.current?.offsetHeight ?? 80) + 12 }}
+        >↓</button>
+      )}
+
+      <div className="chat-footer" ref={footerRef}>
 
         <div className="pills">
           {lastActions.map((action) => (

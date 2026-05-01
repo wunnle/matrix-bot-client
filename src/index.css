@@ -1019,7 +1019,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   color: var(--text-muted);
   font-weight: 500;
 }
-.tool-progress-tool::after { content: ':'; color: var(--text-faint); margin-left: 1px; }
+.tool-progress-tool::after { content: ''; }
 
 .tool-progress-content {
   flex: 1 1 auto;

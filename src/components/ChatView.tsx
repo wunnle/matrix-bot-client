@@ -116,26 +116,31 @@ function parseToolProgressMessage(body: string): ToolProgressLine[] {
 }
 
 function summarizeToolLines(lines: ToolProgressLine[]): string {
-  const counts: Record<string, number> = {}
+  const known: Record<string, number> = {}
+  const byName: Record<string, number> = {}
   for (const l of lines) {
     const t = l.tool.toLowerCase()
-    const key =
-      t === 'bash' ? 'commands' :
-      t === 'edit' || t === 'write' ? 'files edited' :
-      t === 'read' ? 'files read' :
-      t === 'grep' || t === 'glob' ? 'searches' :
+    const n = l.repeat ?? 1
+    const cat =
+      t === 'bash' || t === 'terminal' ? 'commands' :
+      t === 'edit' || t === 'write' ? 'edited' :
+      t === 'read' ? 'read' :
+      t === 'grep' || t === 'glob' || t === 'search_files' || t === 'search' ? 'searches' :
       t === 'agent' ? 'agents' :
-      'steps'
-    counts[key] = (counts[key] ?? 0) + (l.repeat ?? 1)
+      null
+    if (cat) {
+      known[cat] = (known[cat] ?? 0) + n
+    } else {
+      byName[l.tool] = (byName[l.tool] ?? 0) + n
+    }
   }
-  const parts = Object.entries(counts).map(([k, v]) => {
-    if (k === 'commands') return `Ran ${v} command${v === 1 ? '' : 's'}`
-    if (k === 'files edited') return `edited ${v} file${v === 1 ? '' : 's'}`
-    if (k === 'files read') return `read ${v} file${v === 1 ? '' : 's'}`
-    if (k === 'searches') return `${v} search${v === 1 ? '' : 'es'}`
-    if (k === 'agents') return `${v} agent${v === 1 ? '' : 's'}`
-    return `${v} step${v === 1 ? '' : 's'}`
-  })
+  const parts: string[] = []
+  if (known['commands']) { const v = known['commands']; parts.push(`Ran ${v} command${v === 1 ? '' : 's'}`) }
+  if (known['edited']) { const v = known['edited']; parts.push(`edited ${v} file${v === 1 ? '' : 's'}`) }
+  if (known['read']) { const v = known['read']; parts.push(`read ${v} file${v === 1 ? '' : 's'}`) }
+  if (known['searches']) { const v = known['searches']; parts.push(`${v} search${v === 1 ? '' : 'es'}`) }
+  if (known['agents']) { const v = known['agents']; parts.push(`${v} agent${v === 1 ? '' : 's'}`) }
+  for (const [name, v] of Object.entries(byName)) parts.push(`${v}× ${name}`)
   return parts.join(', ') || 'Used tools'
 }
 
@@ -1394,15 +1399,14 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                               .filter(m => toolGroupId[m.eventId] === groupId)
                               .flatMap(m => parseToolProgressMessage(m.body))
                             const summary = summarizeToolLines(allLines)
-                            const isLive = nextIsTool || (next !== null && next.isOwnMessage === false && isToolProgressMessage(next?.body ?? ''))
+                            const isLive = !collapsibleGroups.has(groupId)
                             return (
                               <div
                                 className={`tool-progress tool-progress-collapsed${isLive ? ' tool-progress-live' : ''}`}
                                 onClick={() => setToolDialog({ lines: allLines })}
                               >
-                                <span className="tool-progress-emoji">🔧</span>
                                 <span className="tool-progress-tool">{summary}</span>
-                                {isLive && <span className="tool-progress-expand-hint tool-progress-live-dot" />}
+                                {isLive && <span className="tool-progress-live-dot" />}
                               </div>
                             )
 

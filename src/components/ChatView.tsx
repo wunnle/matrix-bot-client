@@ -776,7 +776,14 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     if (anchor !== null) {
       scrollAnchorRef.current = null
       const container = messagesRef.current
-      if (container) container.scrollTop = container.scrollHeight - anchor
+      if (container) {
+        const target = container.scrollHeight - anchor
+        container.scrollTop = target
+        // Double-check after paint in case iOS deferred the layout flush
+        requestAnimationFrame(() => {
+          if (container.scrollTop !== target) container.scrollTop = target
+        })
+      }
       loadingMoreRef.current = false
       return
     }

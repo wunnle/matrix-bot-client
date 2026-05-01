@@ -1276,7 +1276,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                     <span>{formatDate(msg.timestamp)}</span>
                   </div>
                 )}
-                <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}`}>
+                <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}${prev && !showDateDivider && prev.isOwnMessage !== msg.isOwnMessage ? ' sender-switch' : ''}`}>
                   <div className="message-body">
                     {msg.isOwnMessage ? (
                       <>

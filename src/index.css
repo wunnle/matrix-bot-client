@@ -814,6 +814,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   width: 100%;
 }
 
+.message.sender-switch { margin-top: 12px; }
+
 .message.own { justify-content: flex-end; }
 .message.other { justify-content: flex-start; }
 

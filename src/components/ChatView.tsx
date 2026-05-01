@@ -1476,6 +1476,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           })()) as React.ReactNode}
           <div ref={bottomRef} />
         </div>
+        {showScrollDown && (
+          <button className="scroll-down-btn" onClick={scrollToBottom} aria-label="Scroll to bottom">↓</button>
+        )}
       </div>
 
       {cameraPrompt && (
@@ -1483,10 +1486,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           <span className="material-icons camera-prompt-icon">photo_camera</span>
           <span className="camera-prompt-label">Tap to open camera</span>
         </div>
-      )}
-
-      {showScrollDown && (
-        <button className="scroll-down-btn" onClick={scrollToBottom} aria-label="Scroll to bottom">↓</button>
       )}
 
       {messageMenu && (

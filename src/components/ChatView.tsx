@@ -1317,12 +1317,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
       <div className="messages" ref={messagesRef} onScroll={handleScroll}>
         <div className="messages-inner">
-          {hasMore && (
+          {loadingMore && (
             <div className="load-more">
-              {loadingMore
-                ? <span className="loading-dots"><span /><span /><span /></span>
-                : <button onClick={loadMore}>Load older messages</button>
-              }
+              <span className="loading-dots"><span /><span /><span /></span>
             </div>
           )}
 
@@ -1474,14 +1471,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             )
             })}</>
           })()) as React.ReactNode}
-          {renderStart + RENDER_LIMIT < messages.length && (
-            <div className="load-more">
-              <button onClick={() => {
-                setRenderStart(Math.max(0, messages.length - RENDER_LIMIT))
-                requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'instant' }))
-              }}>Jump to latest</button>
-            </div>
-          )}
           <div ref={bottomRef} />
         </div>
       </div>

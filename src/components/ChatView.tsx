@@ -1247,7 +1247,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           )}
 
           {visibleMessages.map((msg, i) => {
-            const showDateDivider = i === 0 || !sameDay(visibleMessages[i - 1].timestamp, msg.timestamp)
+            const showDateDivider = (i === 0 && renderStart === 0) || (i > 0 && !sameDay(visibleMessages[i - 1].timestamp, msg.timestamp))
             const imageUrl = msg.imageUrl ?? (msg.imageMxc ? imageUrls[msg.eventId] : undefined)
             const fileUrl = msg.fileMxc ? imageUrls[msg.eventId] : undefined
             const isTool = !msg.isOwnMessage && isToolProgressMessage(msg.body)

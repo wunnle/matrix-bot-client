@@ -49,8 +49,7 @@ interface Props {
 }
 
 const PAGE_SIZE = 30
-const RENDER_LIMIT = 60
-const SLIDE_SIZE = 30
+const RENDER_LIMIT = 60 // kept for isActive reset logic only
 const PIN_LONG_PRESS_MS = 500
 const PIN_MOVE_CANCEL_PX = 10
 const MENU_DISMISS_GRACE_MS = 350
@@ -435,10 +434,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [refreshPinned])
 
-  const visibleMessages = useMemo(
-    () => messages.slice(renderStart, renderStart + RENDER_LIMIT),
-    [messages, renderStart],
-  )
+  const visibleMessages = messages
 
   useEffect(() => {
     isFirstLoad.current = true
@@ -687,17 +683,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setShowScrollDown(!isNearBottom)
   }, [visibleMessages, renderStart])
 
-  // Advance renderStart to keep render window pinned to bottom when new messages arrive.
-  // Skip during loadMore — the anchor restore handles scroll position there.
-  useEffect(() => {
-    if (suppressRenderStartRef.current) { suppressRenderStartRef.current = false; return }
-    if (messages.length <= RENDER_LIMIT) { setRenderStart(0); return }
-    setRenderStart(prev => {
-      const isPinnedToBottom = prev + RENDER_LIMIT >= messages.length
-      if (isPinnedToBottom) return Math.max(0, messages.length - RENDER_LIMIT)
-      return prev
-    })
-  }, [messages.length])
 
   // Scroll policy: stay pinned to bottom unless the user scrolls away.
   //   - stickToBottomRef starts true and is toggled by handleScroll.
@@ -720,15 +705,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // the anchor synchronously after the DOM update, before any paint.
   const scrollAnchorRef = useRef<number | null>(null)
   const suppressRenderStartRef = useRef(false)
-  // When stuck to the bottom and messages grow past the render window,
-  // advance renderStart so the new tail stays visible. Without this,
-  // a new message appended beyond renderStart + RENDER_LIMIT would fall
-  // outside visibleMessages and the scroll effect below would never fire.
-  useEffect(() => {
-    if (!stickToBottomRef.current) return
-    const maxStart = Math.max(0, messages.length - RENDER_LIMIT)
-    setRenderStart(maxStart)
-  }, [messages.length])
 
   // When this room is shown again, its ChatView was only hidden (display)
   // but kept state — scroll position and renderStart are preserved, so
@@ -876,17 +852,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       stickToBottomRef.current = true
     }
     setShowScrollDown(!isNearBottom)
-    if (scrollTop < 80) {
-      if (renderStart > 0) {
-        stickToBottomRef.current = false
-        programmaticScrollUntilRef.current = 0
-        suppressRenderStartRef.current = true
-        scrollAnchorRef.current = e.currentTarget.scrollHeight - e.currentTarget.scrollTop
-        loadingMoreRef.current = true
-        setRenderStart(prev => Math.max(0, prev - SLIDE_SIZE))
-      } else if (!loadingMore && hasMore) {
-        loadMore()
-      }
+    if (scrollTop < 80 && !loadingMore && hasMore) {
+      loadMore()
     }
   }
 
@@ -1353,7 +1320,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               if (!nT && n !== null) collapsibleGroups.add(currentGroupStart)
             }
             return <>{visibleMessages.map((msg, i) => {
-            const showDateDivider = (i === 0 && renderStart === 0) || (i > 0 && !sameDay(visibleMessages[i - 1].timestamp, msg.timestamp))
+            const showDateDivider = i === 0 || !sameDay(visibleMessages[i - 1].timestamp, msg.timestamp)
             const imageUrl = msg.imageUrl ?? (msg.imageMxc ? imageUrls[msg.eventId] : undefined)
             const fileUrl = msg.fileMxc ? imageUrls[msg.eventId] : undefined
             const isTool = !msg.isOwnMessage && isToolProgressMessage(msg.body)

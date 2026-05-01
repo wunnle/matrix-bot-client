@@ -840,7 +840,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       // Capture scrollHeight immediately before the state update so
       // useLayoutEffect can restore the anchor before the next paint.
       suppressRenderStartRef.current = true
-      scrollAnchorRef.current = container?.scrollHeight ?? 0
+      scrollAnchorRef.current = container ? container.scrollHeight - container.scrollTop : 0
       setMessages(msgs)
 
       if (result.oldState.paginationToken === null) {
@@ -872,7 +872,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         stickToBottomRef.current = false
         programmaticScrollUntilRef.current = 0
         suppressRenderStartRef.current = true
-        scrollAnchorRef.current = e.currentTarget.scrollHeight
+        scrollAnchorRef.current = e.currentTarget.scrollHeight - e.currentTarget.scrollTop
         loadingMoreRef.current = true
         setRenderStart(prev => Math.max(0, prev - SLIDE_SIZE))
       } else if (!loadingMore && hasMore) {

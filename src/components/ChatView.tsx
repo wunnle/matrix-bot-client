@@ -689,7 +689,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // Advance renderStart to keep render window pinned to bottom when new messages arrive.
   // Skip during loadMore — the anchor restore handles scroll position there.
   useEffect(() => {
-    if (loadingMoreRef.current) return
+    if (suppressRenderStartRef.current) { suppressRenderStartRef.current = false; return }
     if (messages.length <= RENDER_LIMIT) { setRenderStart(0); return }
     setRenderStart(prev => {
       const isPinnedToBottom = prev + RENDER_LIMIT >= messages.length
@@ -718,6 +718,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // the scrollHeight before the state update here. useLayoutEffect restores
   // the anchor synchronously after the DOM update, before any paint.
   const scrollAnchorRef = useRef<number | null>(null)
+  const suppressRenderStartRef = useRef(false)
   // When stuck to the bottom and messages grow past the render window,
   // advance renderStart so the new tail stays visible. Without this,
   // a new message appended beyond renderStart + RENDER_LIMIT would fall
@@ -838,6 +839,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
       // Capture scrollHeight immediately before the state update so
       // useLayoutEffect can restore the anchor before the next paint.
+      suppressRenderStartRef.current = true
       scrollAnchorRef.current = container?.scrollHeight ?? 0
       setMessages(msgs)
 
@@ -869,6 +871,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       if (renderStart > 0) {
         stickToBottomRef.current = false
         programmaticScrollUntilRef.current = 0
+        suppressRenderStartRef.current = true
         scrollAnchorRef.current = e.currentTarget.scrollHeight
         loadingMoreRef.current = true
         setRenderStart(prev => Math.max(0, prev - SLIDE_SIZE))

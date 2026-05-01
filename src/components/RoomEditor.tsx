@@ -14,11 +14,56 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
   const [newPill, setNewPill] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [allMessages, setAllMessages] = useState<boolean | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     loadPills(client, roomId).then(setPills)
   }, [client, roomId])
+
+  useEffect(() => {
+    async function loadPushRule() {
+      try {
+        const rule = await client.http.authedRequest(
+          'GET' as any,
+          `/pushrules/global/room/${encodeURIComponent(roomId)}`,
+          undefined, undefined,
+          { prefix: '/_matrix/client/v3' }
+        )
+        const actions: any[] = (rule as any)?.actions ?? []
+        setAllMessages(actions.includes('notify') || actions.some((a: any) => a?.set_tweak === 'sound'))
+      } catch {
+        setAllMessages(false)
+      }
+    }
+    loadPushRule()
+  }, [client, roomId])
+
+  async function toggleAllMessages() {
+    const next = !allMessages
+    setAllMessages(next)
+    try {
+      if (next) {
+        await client.http.authedRequest(
+          'PUT' as any,
+          `/pushrules/global/room/${encodeURIComponent(roomId)}`,
+          undefined,
+          { actions: ['notify', { set_tweak: 'sound', value: 'default' }] },
+          { prefix: '/_matrix/client/v3' }
+        )
+      } else {
+        await client.http.authedRequest(
+          'DELETE' as any,
+          `/pushrules/global/room/${encodeURIComponent(roomId)}`,
+          undefined, undefined,
+          { prefix: '/_matrix/client/v3' }
+        )
+      }
+    } catch (e: any) {
+      setAllMessages(!next)
+      setError(e?.message ?? 'Failed to update notification setting')
+    }
+  }
 
   function addPill() {
     const val = newPill.trim()
@@ -73,6 +118,17 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
             <span>{roomId}</span>
             <button onClick={() => navigator.clipboard.writeText(roomId)} title="Copy">⎘</button>
           </div>
+
+          <div className="editor-section-label" style={{ marginTop: 20 }}>Notifications</div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={allMessages === true}
+              disabled={allMessages === null}
+              onChange={toggleAllMessages}
+            />
+            All messages
+          </label>
 
           <div className="editor-section-label" style={{ marginTop: 20 }}>Quick-reply pills</div>
 

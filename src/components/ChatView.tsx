@@ -822,6 +822,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
     const container = messagesRef.current
 
+    // User is scrolling up — unpin from bottom so the messages.length effect
+    // doesn't advance renderStart to the tail after new messages are loaded.
+    stickToBottomRef.current = false
+    programmaticScrollUntilRef.current = 0
+
     setLoadingMore(true)
     loadingMoreRef.current = true
     try {
@@ -860,6 +865,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setShowScrollDown(!isNearBottom)
     if (scrollTop < 80) {
       if (renderStart > 0) {
+        stickToBottomRef.current = false
+        programmaticScrollUntilRef.current = 0
         scrollAnchorRef.current = e.currentTarget.scrollHeight
         loadingMoreRef.current = true
         setRenderStart(prev => Math.max(0, prev - SLIDE_SIZE))

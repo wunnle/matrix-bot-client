@@ -1,3 +1,4 @@
+import React from 'react'
 import {
   memo,
   useEffect,
@@ -572,6 +573,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // `messages` so resolution doesn't mutate the message array and
   // re-trigger this effect in a feedback loop.
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
+  const [expandedToolGroups] = useState<Set<string>>(new Set())
+  const [toolDialog, setToolDialog] = useState<{ lines: ReturnType<typeof parseToolProgressMessage> } | null>(null)
   const resolvedImagesRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     const toResolve: { eventId: string; mxc: string }[] = []
@@ -1192,6 +1195,26 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       </div>
 
       {showEditor && <RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} onLeave={() => { setShowEditor(false); onBack() }} />}
+      {toolDialog && (
+        <div className="room-editor-overlay" onClick={() => setToolDialog(null)}>
+          <div className="room-editor" onClick={e => e.stopPropagation()}>
+            <div className="room-editor-header">
+              <span className="room-editor-title">Tool activity</span>
+              <button className="room-editor-close" onClick={() => setToolDialog(null)}>✕</button>
+            </div>
+            <div className="room-editor-body" style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {toolDialog.lines.map((l, idx) => (
+                <div key={idx} className="tool-progress-line" style={{ fontSize: 13 }}>
+                  <span className="tool-progress-emoji">{l.emoji}</span>
+                  <span className="tool-progress-tool">{l.tool}</span>
+                  {l.content !== undefined && <span className="tool-progress-content">{l.content}</span>}
+                  {l.repeat !== undefined && <span className="tool-progress-repeat">×{l.repeat}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {pinnedEventIds.length > 0 && pinnedExpanded && (
         <div className="pinned-strip" role="region" aria-label="Pinned messages">
@@ -1246,7 +1269,24 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             </div>
           )}
 
-          {visibleMessages.map((msg, i) => {
+          {((() => {
+            // Precompute tool group IDs: each tool msg maps to its group's start eventId
+            const toolGroupId: Record<string, string> = {}
+            const collapsibleGroups = new Set<string>()
+            let currentGroupStart = ''
+            for (let i = 0; i < visibleMessages.length; i++) {
+              const m = visibleMessages[i]
+              const p = i > 0 ? visibleMessages[i - 1] : null
+              const n = i + 1 < visibleMessages.length ? visibleMessages[i + 1] : null
+              const iT = !m.isOwnMessage && isToolProgressMessage(m.body)
+              if (!iT) continue
+              const pT = p && !p.isOwnMessage && isToolProgressMessage(p.body)
+              const nT = n && !n.isOwnMessage && isToolProgressMessage(n.body)
+              if (!pT) currentGroupStart = m.eventId
+              toolGroupId[m.eventId] = currentGroupStart
+              if (!nT && n !== null) collapsibleGroups.add(currentGroupStart)
+            }
+            return <>{visibleMessages.map((msg, i) => {
             const showDateDivider = (i === 0 && renderStart === 0) || (i > 0 && !sameDay(visibleMessages[i - 1].timestamp, msg.timestamp))
             const imageUrl = msg.imageUrl ?? (msg.imageMxc ? imageUrls[msg.eventId] : undefined)
             const fileUrl = msg.fileMxc ? imageUrls[msg.eventId] : undefined
@@ -1299,6 +1339,35 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                       <>
                         {(() => {
                           if (isTool) {
+                            const groupId = toolGroupId[msg.eventId]
+                            const isGroupStart = !prevIsTool
+                            // isGroupEnd = !nextIsTool (unused but kept for clarity)
+                            const isCollapsible = collapsibleGroups.has(groupId)
+                            const isExpanded = expandedToolGroups.has(groupId)
+                            const isCollapsed = isCollapsible && !isExpanded
+
+                            // Non-start messages in a collapsed group are hidden
+                            if (isCollapsed && !isGroupStart) return null
+
+                            // Collapsed summary — show only for group start
+                            if (isCollapsed && isGroupStart) {
+                              return (
+                                <div
+                                  className="tool-progress tool-progress-collapsed"
+                                  onClick={() => {
+                                    const allLines = visibleMessages
+                                      .filter(m => toolGroupId[m.eventId] === groupId)
+                                      .flatMap(m => parseToolProgressMessage(m.body))
+                                    setToolDialog({ lines: allLines })
+                                  }}
+                                >
+                                  <span className="tool-progress-emoji">🔧</span>
+                                  <span className="tool-progress-tool">Used tools</span>
+                                  <span className="tool-progress-expand-hint">· tap for details</span>
+                                </div>
+                              )
+                            }
+
                             const lines = parseToolProgressMessage(msg.body)
                             return (
                               <div
@@ -1349,7 +1418,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 </div>
               </div>
             )
-          })}
+            })}</>
+          })()) as React.ReactNode}
           {renderStart + RENDER_LIMIT < messages.length && (
             <div className="load-more">
               <button onClick={() => {

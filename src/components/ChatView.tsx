@@ -112,6 +112,30 @@ function parseToolProgressMessage(body: string): ToolProgressLine[] {
     .filter((l): l is ToolProgressLine => l !== null)
 }
 
+function summarizeToolLines(lines: ToolProgressLine[]): string {
+  const counts: Record<string, number> = {}
+  for (const l of lines) {
+    const t = l.tool.toLowerCase()
+    const key =
+      t === 'bash' ? 'commands' :
+      t === 'edit' || t === 'write' ? 'files edited' :
+      t === 'read' ? 'files read' :
+      t === 'grep' || t === 'glob' ? 'searches' :
+      t === 'agent' ? 'agents' :
+      'steps'
+    counts[key] = (counts[key] ?? 0) + (l.repeat ?? 1)
+  }
+  const parts = Object.entries(counts).map(([k, v]) => {
+    if (k === 'commands') return `Ran ${v} command${v === 1 ? '' : 's'}`
+    if (k === 'files edited') return `edited ${v} file${v === 1 ? '' : 's'}`
+    if (k === 'files read') return `read ${v} file${v === 1 ? '' : 's'}`
+    if (k === 'searches') return `${v} search${v === 1 ? '' : 'es'}`
+    if (k === 'agents') return `${v} agent${v === 1 ? '' : 's'}`
+    return `${v} step${v === 1 ? '' : 's'}`
+  })
+  return parts.join(', ') || 'Used tools'
+}
+
 // Doc examples like [[label]] or <code>[[button]]</code> — not real CTAs
 function isActionPlaceholder(inner: string): boolean {
   const t = inner.trim().toLowerCase()
@@ -1342,32 +1366,30 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                             const groupId = toolGroupId[msg.eventId]
                             const isGroupStart = !prevIsTool
                             // isGroupEnd = !nextIsTool (unused but kept for clarity)
-                            const isCollapsible = collapsibleGroups.has(groupId)
-                            const isExpanded = expandedToolGroups.has(groupId)
-                            const isCollapsed = isCollapsible && !isExpanded
+                            void collapsibleGroups
+                            void expandedToolGroups
 
-                            // Non-start messages in a collapsed group are hidden
-                            if (isCollapsed && !isGroupStart) return null
+                            // Non-start messages in any group are hidden — summary shown at group start
+                            if (!isGroupStart) return null
 
-                            // Collapsed summary — show only for group start
-                            if (isCollapsed && isGroupStart) {
-                              return (
-                                <div
-                                  className="tool-progress tool-progress-collapsed"
-                                  onClick={() => {
-                                    const allLines = visibleMessages
-                                      .filter(m => toolGroupId[m.eventId] === groupId)
-                                      .flatMap(m => parseToolProgressMessage(m.body))
-                                    setToolDialog({ lines: allLines })
-                                  }}
-                                >
-                                  <span className="tool-progress-emoji">🔧</span>
-                                  <span className="tool-progress-tool">Used tools</span>
-                                  <span className="tool-progress-expand-hint">· tap for details</span>
-                                </div>
-                              )
-                            }
+                            // All groups show as a summary chip (live group updates in real time)
+                            const allLines = visibleMessages
+                              .filter(m => toolGroupId[m.eventId] === groupId)
+                              .flatMap(m => parseToolProgressMessage(m.body))
+                            const summary = summarizeToolLines(allLines)
+                            const isLive = nextIsTool || (next !== null && next.isOwnMessage === false && isToolProgressMessage(next?.body ?? ''))
+                            return (
+                              <div
+                                className={`tool-progress tool-progress-collapsed${isLive ? ' tool-progress-live' : ''}`}
+                                onClick={() => setToolDialog({ lines: allLines })}
+                              >
+                                <span className="tool-progress-emoji">🔧</span>
+                                <span className="tool-progress-tool">{summary}</span>
+                                {isLive && <span className="tool-progress-expand-hint tool-progress-live-dot" />}
+                              </div>
+                            )
 
+                            // dead code kept for type-checker
                             const lines = parseToolProgressMessage(msg.body)
                             return (
                               <div

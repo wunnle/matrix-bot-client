@@ -77,10 +77,12 @@ interface ToolProgressLine {
   tool: string
   content?: string
   repeat?: number
+  raw: string
 }
 
 function parseToolProgressLine(line: string): ToolProgressLine | null {
-  const m = line.trim().match(TOOL_PROGRESS_PARSE)
+  const trimmed = line.trim()
+  const m = trimmed.match(TOOL_PROGRESS_PARSE)
   if (!m) return null
   const [, emoji, tool, content, repeatStr, ellipsis] = m
   return {
@@ -88,6 +90,7 @@ function parseToolProgressLine(line: string): ToolProgressLine | null {
     tool,
     content: ellipsis ? undefined : unescapeToolContent(content ?? ''),
     repeat: repeatStr ? Number(repeatStr) : undefined,
+    raw: trimmed,
   }
 }
 
@@ -599,6 +602,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
   const [expandedToolGroups] = useState<Set<string>>(new Set())
   const [toolDialog, setToolDialog] = useState<{ lines: ReturnType<typeof parseToolProgressMessage> } | null>(null)
+  const [expandedToolLine, setExpandedToolLine] = useState<string | null>(null)
   const resolvedImagesRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     const toResolve: { eventId: string; mxc: string }[] = []
@@ -1220,21 +1224,34 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
       {showEditor && <RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} onLeave={() => { setShowEditor(false); onBack() }} />}
       {toolDialog && (
-        <div className="room-editor-overlay" onClick={() => setToolDialog(null)}>
+        <div className="room-editor-overlay" onClick={() => { setToolDialog(null); setExpandedToolLine(null) }}>
           <div className="room-editor" onClick={e => e.stopPropagation()}>
             <div className="room-editor-header">
               <span className="room-editor-title">Tool activity</span>
-              <button className="room-editor-close" onClick={() => setToolDialog(null)}>✕</button>
+              <button className="room-editor-close" onClick={() => { setToolDialog(null); setExpandedToolLine(null) }}>✕</button>
             </div>
-            <div className="room-editor-body" style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {toolDialog.lines.map((l, idx) => (
-                <div key={idx} className="tool-progress-line" style={{ fontSize: 13 }}>
-                  <span className="tool-progress-emoji">{l.emoji}</span>
-                  <span className="tool-progress-tool">{l.tool}</span>
-                  {l.content !== undefined && <span className="tool-progress-content">{l.content}</span>}
-                  {l.repeat !== undefined && <span className="tool-progress-repeat">×{l.repeat}</span>}
-                </div>
-              ))}
+            <div className="room-editor-body" style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {toolDialog.lines.map((l, idx) => {
+                const key = `${idx}-${l.raw}`
+                const isExpanded = expandedToolLine === key
+                return (
+                  <div
+                    key={idx}
+                    className={`tool-dialog-line${l.content !== undefined ? ' tool-dialog-line-tappable' : ''}`}
+                    onClick={() => l.content !== undefined && setExpandedToolLine(isExpanded ? null : key)}
+                  >
+                    <div className="tool-progress-line" style={{ fontSize: 13 }}>
+                      <span className="tool-progress-emoji">{l.emoji}</span>
+                      <span className="tool-progress-tool">{l.tool}</span>
+                      {l.content !== undefined && <span className="tool-progress-content">{l.content}</span>}
+                      {l.repeat !== undefined && <span className="tool-progress-repeat">×{l.repeat}</span>}
+                    </div>
+                    {isExpanded && (
+                      <div className="tool-dialog-raw">{l.raw}</div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>

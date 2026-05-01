@@ -956,6 +956,31 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   opacity: 0.7;
 }
 
+.tool-dialog-line {
+  border-radius: 6px;
+  padding: 3px 4px;
+}
+
+.tool-dialog-line-tappable {
+  cursor: pointer;
+}
+
+.tool-dialog-line-tappable:hover {
+  background: var(--bg-active);
+}
+
+.tool-dialog-raw {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 6px 8px;
+  margin-top: 4px;
+  background: var(--bg-active);
+  border-radius: 6px;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
 .tool-progress-live-dot {
   width: 6px;
   height: 6px;

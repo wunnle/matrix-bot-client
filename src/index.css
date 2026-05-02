@@ -1425,6 +1425,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   overflow-y: hidden;
   max-height: 160px;
   overflow-y: auto;
+  margin-bottom: 3px;
 }
 
 .input-row textarea::placeholder { color: var(--text-faint); }

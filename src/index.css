@@ -1571,6 +1571,7 @@ a.msg-file:hover { text-decoration: underline; }
   border-radius: 20px 20px 0 0;
   width: 100%;
   max-width: 560px;
+  max-height: 80vh;
   display: flex;
   flex-direction: column;
   padding-bottom: env(safe-area-inset-bottom);
@@ -1626,6 +1627,7 @@ a.msg-file:hover { text-decoration: underline; }
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow-y: auto;
 }
 
 .editor-section-label {

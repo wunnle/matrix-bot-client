@@ -944,12 +944,15 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   flex-direction: row;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  opacity: 0.75;
+  padding: 2px 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  opacity: 0.45;
   transition: opacity 0.15s;
 }
 
-.tool-progress-collapsed:hover { opacity: 1; }
+.tool-progress-collapsed:hover { opacity: 0.75; }
 
 .tool-progress-expand-hint {
   font-size: 11px;

@@ -1505,7 +1505,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
       <div className="chat-footer" ref={footerRef}>
 
-        <div className="pills" onWheel={(e) => { if (e.deltaY !== 0) { e.preventDefault(); (e.currentTarget as HTMLDivElement).scrollLeft += e.deltaY } }}>
+        <div className="pills" onWheel={(e) => { if (e.deltaY !== 0) (e.currentTarget as HTMLDivElement).scrollLeft += e.deltaY }}>
           {lastActions.map((action) => (
             <button key={`action-${action}`} className="pill pill-action" onClick={() => sendMessage(action)}>
               {action}

@@ -1566,6 +1566,12 @@ a.msg-file:hover { text-decoration: underline; }
   animation: fadeIn 0.15s ease;
 }
 
+@media (min-width: 641px) {
+  .room-editor-overlay {
+    left: var(--sidebar-width);
+  }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }

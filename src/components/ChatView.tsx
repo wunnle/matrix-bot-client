@@ -254,10 +254,11 @@ function setRoomModel(roomId: string, model: string) {
   localStorage.setItem(`room-model:${roomId}`, model)
 }
 
-type MessageMenuPos = { eventId: string; x: number; y: number }
+type MessageMenuPos = { eventId: string; x: number; y: number; body: string }
 
 function openPinContextMenu(
   eventId: string,
+  body: string,
   clientX: number,
   clientY: number,
   clearLongPress: () => void,
@@ -268,13 +269,13 @@ function openPinContextMenu(
   clearLongPress()
   const pad = 8
   const mw = 180
-  const mh = 44
+  const mh = 80
   const x = Math.min(window.innerWidth - mw - pad, Math.max(pad, clientX - mw / 2))
   const y = Math.min(window.innerHeight - mh - pad, Math.max(pad, clientY + 4))
   const now = Date.now()
   messageMenuOpenedAt.current = now
   blockRichClickUntil.current = now + 450
-  setMessageMenu({ eventId, x, y })
+  setMessageMenu({ eventId, body, x, y })
 }
 
 function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictationAutoSend }: Props) {
@@ -1057,9 +1058,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [])
 
   const showMessageMenuAt = useCallback(
-    (eventId: string, clientX: number, clientY: number) => {
+    (eventId: string, body: string, clientX: number, clientY: number) => {
       openPinContextMenu(
         eventId,
+        body,
         clientX,
         clientY,
         clearLongPressTimer,
@@ -1072,16 +1074,16 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   )
 
   const onPinContextMenu = useCallback(
-    (eventId: string) => (e: React.MouseEvent) => {
+    (eventId: string, body: string) => (e: React.MouseEvent) => {
       e.preventDefault()
       clearLongPressTimer()
-      showMessageMenuAt(eventId, e.clientX, e.clientY)
+      showMessageMenuAt(eventId, body, e.clientX, e.clientY)
     },
     [clearLongPressTimer, showMessageMenuAt],
   )
 
   const onPinPointerDown = useCallback(
-    (eventId: string) => (e: React.PointerEvent) => {
+    (eventId: string, body: string) => (e: React.PointerEvent) => {
       if (e.button !== 0) return
       const x0 = e.clientX
       const y0 = e.clientY
@@ -1095,7 +1097,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             ;(navigator as Navigator & { vibrate: (n: number) => boolean }).vibrate(12)
           } catch { /* */ }
         }
-        showMessageMenuAt(eventId, x0, y0)
+        showMessageMenuAt(eventId, body, x0, y0)
       }, PIN_LONG_PRESS_MS)
     },
     [showMessageMenuAt],
@@ -1269,11 +1271,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                   key={msg.eventId}
                   className={`message-pin-surface message-pin-surface--pinned pinned-body${cleanHtml ? ' pinned-body-rich' : ''}`}
                   onClick={cleanHtml ? onBotRichTextClick : undefined}
-                  onPointerDown={onPinPointerDown(msg.eventId)}
+                  onPointerDown={onPinPointerDown(msg.eventId, msg.body)}
                   onPointerMove={onPinPointerMove}
                   onPointerUp={onPinPointerUp}
                   onPointerCancel={onPinPointerUp}
-                  onContextMenu={onPinContextMenu(msg.eventId)}
+                  onContextMenu={onPinContextMenu(msg.eventId, msg.body)}
                 >
                   {imgUrl ? (
                     <>
@@ -1332,11 +1334,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             const canPin = !msg.isDecryptionFailure
             const pinSurfaceProps = canPin
               ? {
-                onPointerDown: onPinPointerDown(msg.eventId),
+                onPointerDown: onPinPointerDown(msg.eventId, msg.body),
                 onPointerMove: onPinPointerMove,
                 onPointerUp: onPinPointerUp,
                 onPointerCancel: onPinPointerUp,
-                onContextMenu: onPinContextMenu(msg.eventId),
+                onContextMenu: onPinContextMenu(msg.eventId, msg.body),
               }
               : {}
             return (
@@ -1469,6 +1471,17 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           role="menu"
           onPointerDown={(e) => e.stopPropagation()}
         >
+          <button
+            type="button"
+            className="message-ctx-menu-item"
+            role="menuitem"
+            onClick={() => {
+              void navigator.clipboard.writeText(messageMenu.body)
+              setMessageMenu(null)
+            }}
+          >
+            Copy
+          </button>
           <button
             type="button"
             className="message-ctx-menu-item"

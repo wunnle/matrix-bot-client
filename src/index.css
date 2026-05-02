@@ -1034,6 +1034,13 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   white-space: nowrap;
 }
 
+.tool-dialog-line .tool-progress-content {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  word-break: break-word;
+}
+
 .tool-progress-repeat {
   flex: 0 0 auto;
   color: var(--text-faint);

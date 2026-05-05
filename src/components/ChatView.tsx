@@ -375,6 +375,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setPinnedExpanded(true)
   }, [roomId])
 
+  useEffect(() => {
+    if (!isActive) return
+    if (window.matchMedia('(max-width: 640px)').matches) return
+    textareaRef.current?.focus()
+  }, [roomId, isActive])
+
   const refreshPinned = useCallback(async () => {
     const forRoom = roomId
     const room = client.getRoom(forRoom)

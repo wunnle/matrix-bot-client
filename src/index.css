@@ -1693,8 +1693,16 @@ a.msg-file:hover { text-decoration: underline; }
   padding: 4px 20px 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 0;
   overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 20px;
 }
 
 .editor-section-label {
@@ -1703,7 +1711,15 @@ a.msg-file:hover { text-decoration: underline; }
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  margin-bottom: -8px;
+}
+.editor-select {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-input, var(--bg));
+  color: var(--text);
 }
 
 .editor-pills {

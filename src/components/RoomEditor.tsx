@@ -120,73 +120,81 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
         </div>
 
         <div className="room-editor-body">
-          <div className="editor-section-label">Room ID</div>
-          <div className="editor-room-id">
-            <span>{roomId}</span>
-            <button onClick={() => navigator.clipboard.writeText(roomId)} title="Copy">⎘</button>
+          <div className="editor-section" style={{ paddingTop: 4 }}>
+            <div className="editor-section-label">Room ID</div>
+            <div className="editor-room-id">
+              <span>{roomId}</span>
+              <button onClick={() => navigator.clipboard.writeText(roomId)} title="Copy">⎘</button>
+            </div>
           </div>
 
-          <div className="editor-section-label" style={{ marginTop: 20 }}>Notification preference</div>
-          <select
-            value={notifPref ?? ''}
-            disabled={notifPref === null}
-            onChange={(e) => changeNotifPref(e.target.value as any)}
-            style={{ width: '100%', padding: '7px 10px', fontSize: 14, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input, var(--bg))', color: 'var(--text)' }}
-          >
-            {notifPref === null && <option value="">Loading…</option>}
-            <option value="all">All messages</option>
-            <option value="mentions">Mentions &amp; keywords</option>
-            <option value="mute">Muted</option>
-          </select>
-
-          <div className="editor-section-label" style={{ marginTop: 20 }}>Quick-reply pills</div>
-
-          <div className="editor-pills">
-            {pills.map((pill) => (
-              <span key={pill} className="editor-pill">
-                {pill}
-                <button onClick={() => removePill(pill)}>✕</button>
-              </span>
-            ))}
-            {pills.length === 0 && <span style={{ fontSize: 13, color: 'var(--text-faint)' }}>No pills yet</span>}
+          <div className="editor-section">
+            <div className="editor-section-label">Notification preference</div>
+            <select
+              value={notifPref ?? ''}
+              disabled={notifPref === null}
+              onChange={(e) => changeNotifPref(e.target.value as any)}
+              className="editor-select"
+            >
+              {notifPref === null && <option value="">Loading…</option>}
+              <option value="all">All messages</option>
+              <option value="mentions">Mentions &amp; keywords</option>
+              <option value="mute">Muted</option>
+            </select>
           </div>
 
-          <div className="editor-pill-input">
-            <input
-              ref={inputRef}
-              type="text"
-              value={newPill}
-              onChange={(e) => setNewPill(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Add pill…"
-              enterKeyHint="done"
-            />
-            <button onClick={addPill} disabled={!newPill.trim()}>Add</button>
+          <div className="editor-section">
+            <div className="editor-section-label">Quick-reply pills</div>
+            <div className="editor-pills">
+              {pills.map((pill) => (
+                <span key={pill} className="editor-pill">
+                  {pill}
+                  <button onClick={() => removePill(pill)}>✕</button>
+                </span>
+              ))}
+              {pills.length === 0 && <span style={{ fontSize: 13, color: 'var(--text-faint)' }}>No pills yet</span>}
+            </div>
+            <div className="editor-pill-input">
+              <input
+                ref={inputRef}
+                type="text"
+                value={newPill}
+                onChange={(e) => setNewPill(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Add pill…"
+                enterKeyHint="done"
+              />
+              <button onClick={addPill} disabled={!newPill.trim()}>Add</button>
+            </div>
           </div>
 
-          {error && <div className="editor-error">{error}</div>}
+          {error && <div className="editor-error" style={{ paddingTop: 4 }}>{error}</div>}
 
-          <div className="editor-section-label" style={{ marginTop: 24 }}>Troubleshooting</div>
-          <button className="editor-btn-cancel" onClick={resetEncryption} style={{ width: '100%' }}>
-            Reset encryption session
-          </button>
+          <div className="editor-section">
+            <div className="editor-section-label">Troubleshooting</div>
+            <button className="editor-btn-cancel" onClick={resetEncryption} style={{ width: '100%' }}>
+              Reset encryption session
+            </button>
+          </div>
 
-          <div className="editor-section-label" style={{ marginTop: 24 }}>Danger zone</div>
-          <button
-            className="editor-btn-danger"
-            style={{ width: '100%' }}
-            onClick={async () => {
-              if (!confirm('Leave this room?')) return
-              try {
-                await getClient().leave(roomId)
-                onLeave()
-              } catch (e: any) {
-                setError(e?.message ?? 'Failed to leave room')
-              }
-            }}
-          >
-            Leave room
-          </button>
+          <div className="editor-section">
+            <div className="editor-section-label">Danger zone</div>
+            <button
+              className="editor-btn-danger"
+              style={{ width: '100%' }}
+              onClick={async () => {
+                if (!confirm('Leave this room?')) return
+                try {
+                  await getClient().leave(roomId)
+                  onLeave()
+                } catch (e: any) {
+                  setError(e?.message ?? 'Failed to leave room')
+                }
+              }}
+            >
+              Leave room
+            </button>
+          </div>
         </div>
 
         <div className="room-editor-footer">

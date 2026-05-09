@@ -1405,20 +1405,19 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                         <div className={`msg-status ${msg.isRead ? 'msg-status-read' : ''}`}>
                           <span className="material-icons">{msg.isRead ? 'done_all' : 'done'}</span>
                         </div>
-                        <div className="reaction-bar reaction-bar--own">
-                          {['✅', '❎'].map(emoji => {
-                            const senders = msg.reactions?.[emoji] ?? []
-                            return (
+                        {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                          <div className="reaction-bar reaction-bar--own">
+                            {Object.entries(msg.reactions).map(([emoji, senders]) => (
                               <button
                                 key={emoji}
                                 className={`reaction-btn${senders.includes(userId) ? ' reaction-btn--active' : ''}`}
                                 onClick={() => sendReaction(msg.eventId, emoji)}
                               >
-                                {emoji}{senders.length > 0 && <span className="reaction-count">{senders.length}</span>}
+                                {emoji}<span className="reaction-count">{senders.length}</span>
                               </button>
-                            )
-                          })}
-                        </div>
+                            ))}
+                          </div>
+                        )}
                       </>
                     ) : (
                       <>
@@ -1493,20 +1492,19 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                                           : text}
                                 </div>
                               </div>
-                              <div className="reaction-bar">
-                                {['✅', '❎'].map(emoji => {
-                                  const senders = msg.reactions?.[emoji] ?? []
-                                  return (
+                              {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                <div className="reaction-bar">
+                                  {Object.entries(msg.reactions).map(([emoji, senders]) => (
                                     <button
                                       key={emoji}
                                       className={`reaction-btn${senders.includes(userId) ? ' reaction-btn--active' : ''}`}
                                       onClick={() => sendReaction(msg.eventId, emoji)}
                                     >
-                                      {emoji}{senders.length > 0 && <span className="reaction-count">{senders.length}</span>}
+                                      {emoji}<span className="reaction-count">{senders.length}</span>
                                     </button>
-                                  )
-                                })}
-                              </div>
+                                  ))}
+                                </div>
+                              )}
                             </>
                           )
                         })()}
@@ -1537,6 +1535,21 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           role="menu"
           onPointerDown={(e) => e.stopPropagation()}
         >
+          <div className="message-ctx-menu-reactions">
+            {['✅', '❎'].map(emoji => (
+              <button
+                key={emoji}
+                type="button"
+                className="message-ctx-menu-reaction"
+                onClick={() => {
+                  void sendReaction(messageMenu.eventId, emoji)
+                  setMessageMenu(null)
+                }}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             className="message-ctx-menu-item"

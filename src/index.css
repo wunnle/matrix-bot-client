@@ -1668,6 +1668,24 @@ a.msg-file:hover { text-decoration: underline; }
   justify-content: space-between;
   padding: 16px 20px 12px;
 }
+.room-editor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.room-editor-copy-id {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-active);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.room-editor-copy-id .material-icons { font-size: 14px; }
+.room-editor-copy-id:hover { background: var(--bg-hover); color: var(--text); }
 
 .room-editor-title {
   font-size: 17px;
@@ -1817,6 +1835,7 @@ a.msg-file:hover { text-decoration: underline; }
   transition: background 0.15s;
 }
 .editor-btn-cancel:hover { background: var(--bg-active); }
+.editor-btn-inline { align-self: flex-start; }
 
 .editor-btn-save {
   background: var(--accent);

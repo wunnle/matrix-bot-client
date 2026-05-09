@@ -116,17 +116,15 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
       <div className="room-editor">
         <div className="room-editor-header">
           <span className="room-editor-title">Room settings</span>
-          <button className="room-editor-close" onClick={onClose}>✕</button>
+          <div className="room-editor-header-actions">
+            <button className="room-editor-copy-id" onClick={() => navigator.clipboard.writeText(roomId)} title={roomId}>
+              <span className="material-icons">content_copy</span>
+            </button>
+            <button className="room-editor-close" onClick={onClose}>✕</button>
+          </div>
         </div>
 
         <div className="room-editor-body">
-          <div className="editor-section" style={{ paddingTop: 4 }}>
-            <div className="editor-section-label">Room ID</div>
-            <div className="editor-room-id">
-              <span>{roomId}</span>
-              <button onClick={() => navigator.clipboard.writeText(roomId)} title="Copy">⎘</button>
-            </div>
-          </div>
 
           <div className="editor-section">
             <div className="editor-section-label">Notification preference</div>
@@ -172,16 +170,15 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
 
           <div className="editor-section">
             <div className="editor-section-label">Troubleshooting</div>
-            <button className="editor-btn-cancel" onClick={resetEncryption} style={{ width: '100%' }}>
-              Reset encryption session
+            <button className="editor-btn-cancel editor-btn-inline" onClick={resetEncryption}>
+              Reset session
             </button>
           </div>
 
           <div className="editor-section">
             <div className="editor-section-label">Danger zone</div>
             <button
-              className="editor-btn-danger"
-              style={{ width: '100%' }}
+              className="editor-btn-danger editor-btn-inline"
               onClick={async () => {
                 if (!confirm('Leave this room?')) return
                 try {

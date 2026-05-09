@@ -1221,7 +1221,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           {roomAvatarUrl
             ? <img className="chat-avatar" src={roomAvatarUrl} alt="" />
             : <div className="chat-avatar chat-avatar-fallback">{roomName.slice(0, 1).toUpperCase()}</div>}
-          <div className="chat-header-info">
+          <div className="chat-header-info" onClick={() => setShowEditor(true)} style={{ cursor: 'pointer' }}>
             <span className="chat-title">{roomName}</span>
             <span className={`chat-subtitle${typingUsers.length > 0 ? ' chat-subtitle--thinking' : ''}`}>
               {typingUsers.length > 0

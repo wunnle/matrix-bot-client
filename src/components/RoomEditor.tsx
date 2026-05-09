@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { getClient } from '../lib/matrix'
 import { loadPills, savePills } from '../lib/roomMeta'
+import { useToast } from '../hooks/useToast'
 
 interface Props {
   roomId: string
@@ -16,6 +17,7 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
   const [error, setError] = useState('')
   const [notifPref, setNotifPref] = useState<'all' | 'mentions' | 'mute' | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const { toast, showToast } = useToast()
 
   useEffect(() => {
     loadPills(client, roomId).then(setPills)
@@ -89,10 +91,10 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
   }
 
   async function resetEncryption() {
-    if (!confirm('Force a fresh encryption session for this room? Useful when bot replies stop arriving after a bot restart.')) return
+    if (!confirm('Force a fresh encryption session? Send a message after to trigger a new one.')) return
     try {
       await client.getCrypto()?.forceDiscardSession(roomId)
-      alert('Session discarded. Send a message to trigger a fresh one.')
+      showToast('Session reset')
     } catch (e: any) {
       setError(e?.message ?? 'Failed to discard session')
     }
@@ -114,11 +116,16 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
   return (
     <div className="room-editor-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="room-editor">
+        {toast && <div className="toast">{toast}</div>}
         <div className="room-editor-header">
           <span className="room-editor-title">Room settings</span>
           <div className="room-editor-header-actions">
-            <button className="room-editor-copy-id" onClick={() => navigator.clipboard.writeText(roomId)} title={roomId}>
-              <span className="material-icons">content_copy</span>
+            <button
+              className="room-editor-copy-id"
+              onClick={() => { navigator.clipboard.writeText(roomId); showToast('Copied') }}
+              title={roomId}
+            >
+              <span className="material-icons">tag</span>
             </button>
             <button className="room-editor-close" onClick={onClose}>✕</button>
           </div>
@@ -168,15 +175,10 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
 
           {error && <div className="editor-error" style={{ paddingTop: 4 }}>{error}</div>}
 
-          <div className="editor-section">
-            <div className="editor-section-label">Troubleshooting</div>
+          <div className="editor-section editor-actions-row">
             <button className="editor-btn-cancel editor-btn-inline" onClick={resetEncryption}>
               Reset session
             </button>
-          </div>
-
-          <div className="editor-section">
-            <div className="editor-section-label">Danger zone</div>
             <button
               className="editor-btn-danger editor-btn-inline"
               onClick={async () => {

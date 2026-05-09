@@ -1836,6 +1836,33 @@ a.msg-file:hover { text-decoration: underline; }
 }
 .editor-btn-cancel:hover { background: var(--bg-active); }
 .editor-btn-inline { align-self: flex-start; }
+.editor-actions-row {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.toast {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom) + 80px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-active);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 7px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  pointer-events: none;
+  z-index: 200;
+  white-space: nowrap;
+  animation: toastIn 0.15s ease;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
 
 .editor-btn-save {
   background: var(--accent);

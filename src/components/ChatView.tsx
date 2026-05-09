@@ -244,7 +244,7 @@ function SortablePill({ pill, onActivate }: { pill: string; onActivate: () => vo
   )
 }
 
-const MODEL_SWITCH_RE = /^Model switched to `([^`]+)`/
+const MODEL_SWITCH_RE = /^Model switched to [`"]?([^`"\n]+)[`"]?/m
 
 function getRoomModel(roomId: string): string | null {
   return localStorage.getItem(`room-model:${roomId}`)
@@ -479,10 +479,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       const maxReadTs = getMaxReadTs(room_, userId)
       const msg = eventToMessage(event, userId, maxReadTs)
       if (!msg.isOwnMessage) {
-        const match = MODEL_SWITCH_RE.exec(msg.body)
+        const match = MODEL_SWITCH_RE.exec(msg.body) ?? (msg.formattedBody ? MODEL_SWITCH_RE.exec(msg.formattedBody.replace(/<[^>]+>/g, '')) : null)
         if (match) {
-          setRoomModel(roomId, match[1])
-          setCurrentModel(match[1])
+          setRoomModel(roomId, match[1].trim())
+          setCurrentModel(match[1].trim())
         }
       }
       setMessages((prev) => {

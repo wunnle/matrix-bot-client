@@ -34,6 +34,7 @@ import { loadPills, savePills } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { isMobileSafari } from '../lib/isMobileSafari'
 import { useSpeechDictation } from '../hooks/useSpeechDictation'
+import { useToast } from '../hooks/useToast'
 import RoomEditor from './RoomEditor'
 import type { Message, RoomConfig } from '../types'
 
@@ -279,6 +280,7 @@ function openPinContextMenu(
 }
 
 function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictationAutoSend }: Props) {
+  const { toast, showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [cameraPrompt, setCameraPrompt] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
@@ -317,8 +319,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     if (!block) return
     e.preventDefault()
     const text = block.textContent ?? ''
-    void copyTextToClipboard(text)
-  }, [])
+    void copyTextToClipboard(text).then(() => showToast('Copied'))
+  }, [showToast])
 
   const lastActions = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -1209,6 +1211,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      {toast && <div className="toast">{toast}</div>}
       {dragOver && (
         <div className="drop-overlay">
           <span className="material-icons drop-overlay-icon">upload_file</span>
@@ -1251,7 +1254,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               </span>
             </button>
           )}
-          <button className="header-action" onClick={() => setShowEditor(true)} title="Room settings">⚙︎</button>
         </div>
       </div>
 
@@ -1555,7 +1557,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             className="message-ctx-menu-item"
             role="menuitem"
             onClick={() => {
-              void navigator.clipboard.writeText(messageMenu.body)
+              void navigator.clipboard.writeText(messageMenu.body).then(() => showToast('Copied'))
               setMessageMenu(null)
             }}
           >

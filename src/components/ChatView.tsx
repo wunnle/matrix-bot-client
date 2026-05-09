@@ -530,11 +530,31 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       })
     }
 
+    const onReaction = (event: sdk.MatrixEvent, room_: sdk.Room | undefined) => {
+      if (room_?.roomId !== roomId) return
+      if (event.getType() !== 'm.reaction') return
+      const rel = event.getContent()['m.relates_to']
+      if (!rel || rel.rel_type !== 'm.annotation') return
+      const targetId = rel.event_id as string
+      const emoji = rel.key as string
+      const sender = event.getSender() ?? ''
+      setMessages((prev) => prev.map((m) => {
+        if (m.eventId !== targetId) return m
+        const reactions = { ...(m.reactions ?? {}) }
+        const senders = reactions[emoji] ? [...reactions[emoji]] : []
+        if (!senders.includes(sender)) senders.push(sender)
+        reactions[emoji] = senders
+        return { ...m, reactions }
+      }))
+    }
+
     client.on(sdk.MatrixEventEvent.Decrypted, onDecrypted)
     client.on(sdk.RoomEvent.Timeline, onEvent)
+    client.on(sdk.RoomEvent.Timeline, onReaction)
     client.on(sdk.RoomEvent.Receipt, onReceipt)
     return () => {
       client.off(sdk.RoomEvent.Timeline, onEvent)
+      client.off(sdk.RoomEvent.Timeline, onReaction)
       client.off(sdk.MatrixEventEvent.Decrypted, onDecrypted)
       client.off(sdk.RoomEvent.Receipt, onReceipt)
     }
@@ -959,6 +979,16 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [client, roomId, sending, scrollToBottom, stopDictation])
 
+  const sendReaction = useCallback(async (eventId: string, emoji: string) => {
+    try {
+      await client.sendEvent(roomId, 'm.reaction' as any, {
+        'm.relates_to': { rel_type: 'm.annotation', event_id: eventId, key: emoji },
+      })
+    } catch {
+      // ignore — reaction is best-effort
+    }
+  }, [client, roomId])
+
   const sendFile = useCallback(async (file: File) => {
     if (sending) return
     setSending(true)
@@ -1375,6 +1405,20 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                         <div className={`msg-status ${msg.isRead ? 'msg-status-read' : ''}`}>
                           <span className="material-icons">{msg.isRead ? 'done_all' : 'done'}</span>
                         </div>
+                        <div className="reaction-bar reaction-bar--own">
+                          {['✅', '❎'].map(emoji => {
+                            const senders = msg.reactions?.[emoji] ?? []
+                            return (
+                              <button
+                                key={emoji}
+                                className={`reaction-btn${senders.includes(userId) ? ' reaction-btn--active' : ''}`}
+                                onClick={() => sendReaction(msg.eventId, emoji)}
+                              >
+                                {emoji}{senders.length > 0 && <span className="reaction-count">{senders.length}</span>}
+                              </button>
+                            )
+                          })}
+                        </div>
                       </>
                     ) : (
                       <>
@@ -1432,22 +1476,38 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                             ? stripActionMarkersInRichHtml(msg.formattedBody).trim()
                             : undefined
                           return (
-                            <div className="message-pin-surface" {...pinSurfaceProps}>
-                              <div
-                                className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}
-                                onClick={cleanHtml ? onBotRichTextClick : undefined}
-                              >
-                                {imageUrl
-                                  ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" />
-                                  : fileUrl
-                                    ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
-                                    : msg.fileMxc && !fileUrl
-                                      ? <span className="msg-file msg-file-loading"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</span>
-                                      : cleanHtml
-                                        ? <span dangerouslySetInnerHTML={{ __html: cleanHtml }} />
-                                        : text}
+                            <>
+                              <div className="message-pin-surface" {...pinSurfaceProps}>
+                                <div
+                                  className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}
+                                  onClick={cleanHtml ? onBotRichTextClick : undefined}
+                                >
+                                  {imageUrl
+                                    ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" />
+                                    : fileUrl
+                                      ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
+                                      : msg.fileMxc && !fileUrl
+                                        ? <span className="msg-file msg-file-loading"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</span>
+                                        : cleanHtml
+                                          ? <span dangerouslySetInnerHTML={{ __html: cleanHtml }} />
+                                          : text}
+                                </div>
                               </div>
-                            </div>
+                              <div className="reaction-bar">
+                                {['✅', '❎'].map(emoji => {
+                                  const senders = msg.reactions?.[emoji] ?? []
+                                  return (
+                                    <button
+                                      key={emoji}
+                                      className={`reaction-btn${senders.includes(userId) ? ' reaction-btn--active' : ''}`}
+                                      onClick={() => sendReaction(msg.eventId, emoji)}
+                                    >
+                                      {emoji}{senders.length > 0 && <span className="reaction-count">{senders.length}</span>}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </>
                           )
                         })()}
                       </>
@@ -1755,11 +1815,32 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
   }
 }
 
+function buildReactionsMap(events: sdk.MatrixEvent[]): Record<string, Record<string, string[]>> {
+  const map: Record<string, Record<string, string[]>> = {}
+  for (const e of events) {
+    if (e.getType() !== 'm.reaction') continue
+    const rel = e.getContent()['m.relates_to']
+    if (!rel || rel.rel_type !== 'm.annotation') continue
+    const targetId = rel.event_id as string
+    const emoji = rel.key as string
+    const sender = e.getSender() ?? ''
+    if (!map[targetId]) map[targetId] = {}
+    if (!map[targetId][emoji]) map[targetId][emoji] = []
+    if (!map[targetId][emoji].includes(sender)) map[targetId][emoji].push(sender)
+  }
+  return map
+}
+
 function eventsToMessages(events: sdk.MatrixEvent[], userId: string, room: sdk.Room): Message[] {
   const maxReadTs = getMaxReadTs(room, userId)
+  const reactionsMap = buildReactionsMap(events)
   return events
     .filter((e) => e.getType() === 'm.room.message' || e.getType() === 'm.room.encrypted' || e.isDecryptionFailure())
-    .map((e) => eventToMessage(e, userId, maxReadTs))
+    .map((e) => {
+      const msg = eventToMessage(e, userId, maxReadTs)
+      const reactions = reactionsMap[msg.eventId]
+      return reactions ? { ...msg, reactions } : msg
+    })
 }
 
 const ALLOWED_TAGS = /^(p|br|strong|b|em|i|u|s|del|code|pre|ul|ol|li|blockquote|h[1-6]|a|span)$/i

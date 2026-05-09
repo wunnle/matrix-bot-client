@@ -22,6 +22,7 @@ export interface Message {
   isOwnMessage: boolean
   isDecryptionFailure?: boolean
   isRead?: boolean
+  reactions?: Record<string, string[]> // emoji → list of senderIds
 }
 
 export interface AuthState {

@@ -86,15 +86,15 @@ export default async function handler(req, res) {
       const pushkey = device.pushkey;
       if (!pushkey) return;
 
+      // Skip if any client has this room open and focused
+      if (activeRooms.has(room_id)) return;
+
       const id = createHash("sha256").update(pushkey).digest("hex").slice(0, 16);
       const { blobs } = await list({ prefix: `push_subscriptions/${id}.json` });
       if (!blobs.length) {
         rejected.push(pushkey);
         return;
       }
-
-      // Skip if any client has this room open and focused
-      if (activeRooms.has(room_id)) return;
 
       const response = await fetch(blobs[0].url);
       const subscription = await response.json();

@@ -35,6 +35,7 @@ import { resolveMediaUrl } from '../lib/mediaUrl'
 import { isMobileSafari } from '../lib/isMobileSafari'
 import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
+import { useActiveRoom } from '../hooks/useActiveRoom'
 import RoomEditor from './RoomEditor'
 import type { Message, RoomConfig } from '../types'
 
@@ -280,6 +281,7 @@ function openPinContextMenu(
 }
 
 function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictationAutoSend }: Props) {
+  useActiveRoom(roomId)
   const { toast, showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [cameraPrompt, setCameraPrompt] = useState(false)

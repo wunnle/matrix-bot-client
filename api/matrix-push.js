@@ -9,6 +9,24 @@ import { list } from "@vercel/blob";
 import webpush from "web-push";
 import { createHash } from "crypto";
 
+async function getActiveRooms() {
+  try {
+    const { blobs } = await list({ prefix: "active_rooms/state.json" });
+    if (!blobs.length) return {};
+    const r = await fetch(blobs[0].url);
+    const state = await r.json();
+    const now = Date.now();
+    const TTL_MS = 5 * 60 * 1000;
+    const active = {};
+    for (const [deviceId, entry] of Object.entries(state)) {
+      if (now - entry.ts < TTL_MS) active[deviceId] = entry.roomId;
+    }
+    return active;
+  } catch {
+    return {};
+  }
+}
+
 const ROOM_AVATARS = {
   "!vjoGMHloXyNobvgGaK:matrix.org": "mxc://matrix.org/tOIBhgtMxpMQMmADcYIcprnh",
   "!PuoXYYposdTSyiwnkx:matrix.org": "mxc://matrix.org/gEzjnnOcBuppMPJoijpZAkef",
@@ -53,6 +71,7 @@ export default async function handler(req, res) {
     : "New message";
 
   const rejected = [];
+  const activeRooms = await getActiveRooms();
 
   await Promise.all(
     devices.map(async (device) => {
@@ -65,6 +84,10 @@ export default async function handler(req, res) {
         rejected.push(pushkey);
         return;
       }
+
+      // Skip if any client has this room open and focused
+      const roomActiveOnDevice = Object.values(activeRooms).some((r) => r === room_id);
+      if (roomActiveOnDevice) return;
 
       const response = await fetch(blobs[0].url);
       const subscription = await response.json();

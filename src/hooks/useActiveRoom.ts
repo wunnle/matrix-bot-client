@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { loadAuth } from "../lib/auth";
 
 function reportActiveRoom(roomId: string | null, deviceId: string) {
@@ -10,32 +10,21 @@ function reportActiveRoom(roomId: string | null, deviceId: string) {
 }
 
 export function useActiveRoom(roomId: string | null) {
-  const deviceId = useRef<string | null>(null);
-
   useEffect(() => {
     const auth = loadAuth();
-    if (auth?.deviceId) deviceId.current = auth.deviceId;
-  }, []);
+    const deviceId = auth?.deviceId;
+    if (!deviceId || !roomId) return;
 
-  useEffect(() => {
-    const id = deviceId.current;
-    if (!id) return;
-
-    const report = (active: boolean) => reportActiveRoom(active ? roomId : null, id);
+    const report = (active: boolean) => reportActiveRoom(active ? roomId : null, deviceId);
 
     if (document.visibilityState === "visible") report(true);
 
-    const onVisible = () => report(true);
-    const onHidden = () => report(false);
-
-    document.addEventListener("visibilitychange", () => {
-      document.visibilityState === "visible" ? onVisible() : onHidden();
-    });
+    const onChange = () => report(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onChange);
 
     return () => {
       report(false);
-      document.removeEventListener("visibilitychange", onVisible);
-      document.removeEventListener("visibilitychange", onHidden);
+      document.removeEventListener("visibilitychange", onChange);
     };
   }, [roomId]);
 }

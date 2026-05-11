@@ -1,23 +1,12 @@
 /**
  * Active room beacon — tracks which room each device currently has open.
- * PATCH { roomId, deviceId } on focus, { roomId: null, deviceId } on blur.
- * matrix-push.js reads this before delivering a push to skip rooms already in view.
+ * State is encoded in the blob path: active_rooms/{deviceId}/{roomId}
+ * so matrix-push.js only needs list() — no blob content fetch needed.
  */
-import { put, list } from "@vercel/blob";
+import { put, list, del } from "@vercel/blob";
 
-const PREFIX = "active_rooms/state.json";
+const PREFIX = "active_rooms/";
 const TTL_MS = 5 * 60 * 1000;
-
-async function loadState() {
-  try {
-    const { blobs } = await list({ prefix: PREFIX });
-    if (!blobs.length) return {};
-    const r = await fetch(`${blobs[0].url}?_=${Date.now()}`, { cache: "no-store" });
-    return await r.json();
-  } catch {
-    return {};
-  }
-}
 
 export default async function handler(req, res) {
   if (req.method !== "PATCH") return res.status(405).end();
@@ -25,25 +14,21 @@ export default async function handler(req, res) {
   const { roomId, deviceId } = req.body || {};
   if (!deviceId) return res.status(400).json({ error: "missing deviceId" });
 
-  const state = await loadState();
-  const now = Date.now();
-
-  // Prune stale entries
-  for (const id of Object.keys(state)) {
-    if (now - state[id].ts > TTL_MS) delete state[id];
-  }
+  // Remove any existing entry for this device
+  try {
+    const { blobs } = await list({ prefix: `${PREFIX}${deviceId}/` });
+    await Promise.all(blobs.map((b) => del(b.url)));
+  } catch {}
 
   if (roomId) {
-    state[deviceId] = { roomId, ts: now };
-  } else {
-    delete state[deviceId];
+    // Encode roomId and timestamp in the path
+    const ts = Date.now();
+    await put(
+      `${PREFIX}${deviceId}/${encodeURIComponent(roomId)}_${ts}`,
+      "",
+      { access: "public", addRandomSuffix: false }
+    );
   }
-
-  await put(PREFIX, JSON.stringify(state), {
-    access: "public",
-    addRandomSuffix: false,
-    contentType: "application/json",
-  });
 
   res.status(200).json({ ok: true });
 }

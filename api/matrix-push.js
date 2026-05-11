@@ -10,21 +10,28 @@ import webpush from "web-push";
 import { createHash } from "crypto";
 
 async function getActiveRooms() {
+  // State is encoded in blob paths: active_rooms/{deviceId}/{roomId}_{ts}
+  // list() hits the Blob storage API directly — no CDN, always fresh.
   try {
-    const { blobs } = await list({ prefix: "active_rooms/state.json" });
-    if (!blobs.length) return {};
-    // Cache-bust to bypass Vercel Blob CDN caching
-    const r = await fetch(`${blobs[0].url}?_=${Date.now()}`, { cache: "no-store" });
-    const state = await r.json();
+    const { blobs } = await list({ prefix: "active_rooms/" });
     const now = Date.now();
     const TTL_MS = 5 * 60 * 1000;
-    const active = {};
-    for (const [deviceId, entry] of Object.entries(state)) {
-      if (now - entry.ts < TTL_MS) active[deviceId] = entry.roomId;
+    const active = new Set();
+    for (const blob of blobs) {
+      // path: active_rooms/{deviceId}/{encodedRoomId}_{ts}
+      const parts = blob.pathname.split("/");
+      if (parts.length < 3) continue;
+      const filename = parts[parts.length - 1];
+      const lastUnderscore = filename.lastIndexOf("_");
+      if (lastUnderscore === -1) continue;
+      const ts = parseInt(filename.slice(lastUnderscore + 1), 10);
+      if (now - ts > TTL_MS) continue;
+      const roomId = decodeURIComponent(filename.slice(0, lastUnderscore));
+      active.add(roomId);
     }
     return active;
   } catch {
-    return {};
+    return new Set();
   }
 }
 
@@ -87,8 +94,7 @@ export default async function handler(req, res) {
       }
 
       // Skip if any client has this room open and focused
-      const roomActiveOnDevice = Object.values(activeRooms).some((r) => r === room_id);
-      if (roomActiveOnDevice) return;
+      if (activeRooms.has(room_id)) return;
 
       const response = await fetch(blobs[0].url);
       const subscription = await response.json();

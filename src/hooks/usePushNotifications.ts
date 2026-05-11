@@ -76,40 +76,40 @@ export function usePushNotifications(enabled: boolean) {
             applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
           }));
 
+        // Always store subscription and re-register pusher — self-heals if pusher was wiped
         await fetch("/api/subscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(subscription),
         });
 
-        // Register Matrix pusher so matrix.org delivers pushes directly
         const { loadAuth } = await import("../lib/auth");
         const auth = loadAuth();
         if (!auth) {
           console.warn("Push setup: no auth found, skipping pusher registration");
+          return;
         }
-        if (auth) {
-          await fetch(`${auth.homeserver}/_matrix/client/v3/pushers/set`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${auth.accessToken}`,
+
+        await fetch(`${auth.homeserver}/_matrix/client/v3/pushers/set`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${auth.accessToken}`,
+          },
+          body: JSON.stringify({
+            kind: "http",
+            app_id: "com.kafagoz.construct",
+            app_display_name: "Construct",
+            device_display_name: navigator.userAgent.includes("iPhone") ? "iPhone" : "Browser",
+            pushkey: subscription.endpoint,
+            lang: "en",
+            data: {
+              url: "https://construct.kafagoz.com/_matrix/push/v1/notify",
+              format: "event_notification",
             },
-            body: JSON.stringify({
-              kind: "http",
-              app_id: "com.kafagoz.construct",
-              app_display_name: "Construct",
-              device_display_name: navigator.userAgent.includes("iPhone") ? "iPhone" : "Browser",
-              pushkey: subscription.endpoint,
-              lang: "en",
-              data: {
-                url: "https://construct.kafagoz.com/_matrix/push/v1/notify",
-                format: "event_notification",
-              },
-            }),
-          });
-          console.log("Push pusher registered successfully");
-        }
+          }),
+        });
+        console.log("Push pusher registered successfully");
       } catch (err) {
         console.warn("Push setup failed:", err);
         // Report failure to Matrix so we can debug without DevTools

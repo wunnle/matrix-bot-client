@@ -17,7 +17,7 @@ export default async function handler(req, res) {
   // Remove any existing entry for this device
   try {
     const { blobs } = await list({ prefix: `${PREFIX}${deviceId}/` });
-    await Promise.all(blobs.map((b) => del(b.url)));
+    if (blobs.length) await del(blobs.map((b) => b.url));
   } catch {}
 
   if (roomId) {
@@ -25,8 +25,8 @@ export default async function handler(req, res) {
     const ts = Date.now();
     await put(
       `${PREFIX}${deviceId}/${encodeURIComponent(roomId)}_${ts}`,
-      "",
-      { access: "public", addRandomSuffix: false }
+      "1",
+      { access: "public", addRandomSuffix: false, contentType: "text/plain" }
     );
   }
 

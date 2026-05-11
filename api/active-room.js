@@ -9,6 +9,10 @@ const PREFIX = "active_rooms/";
 const TTL_MS = 5 * 60 * 1000;
 
 export default async function handler(req, res) {
+  if (req.method === "GET") {
+    const { blobs } = await list({ prefix: PREFIX }).catch(() => ({ blobs: [] }));
+    return res.status(200).json({ blobs: blobs.map((b) => ({ pathname: b.pathname, url: b.url })) });
+  }
   if (req.method !== "PATCH") return res.status(405).end();
 
   const { roomId, deviceId } = req.body || {};

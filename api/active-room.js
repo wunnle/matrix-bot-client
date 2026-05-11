@@ -12,7 +12,7 @@ async function loadState() {
   try {
     const { blobs } = await list({ prefix: PREFIX });
     if (!blobs.length) return {};
-    const r = await fetch(blobs[0].url);
+    const r = await fetch(`${blobs[0].url}?_=${Date.now()}`, { cache: "no-store" });
     return await r.json();
   } catch {
     return {};

@@ -13,7 +13,8 @@ async function getActiveRooms() {
   try {
     const { blobs } = await list({ prefix: "active_rooms/state.json" });
     if (!blobs.length) return {};
-    const r = await fetch(blobs[0].url);
+    // Cache-bust to bypass Vercel Blob CDN caching
+    const r = await fetch(`${blobs[0].url}?_=${Date.now()}`, { cache: "no-store" });
     const state = await r.json();
     const now = Date.now();
     const TTL_MS = 5 * 60 * 1000;

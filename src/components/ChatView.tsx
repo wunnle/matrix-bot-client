@@ -283,7 +283,7 @@ function openPinContextMenu(
 
 function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictationAutoSend }: Props) {
   useActiveRoom(roomId)
-  useVisualViewport()
+  useVisualViewport(() => bottomRef.current?.scrollIntoView({ behavior: 'instant' }))
   const { toast, showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [cameraPrompt, setCameraPrompt] = useState(false)

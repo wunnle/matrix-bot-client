@@ -1,9 +1,12 @@
 import { useEffect } from "react";
 
 /**
- * Tracks the visual viewport (shrinks when the software keyboard appears on iOS).
- * Sets --viewport-offset-bottom on <html> so the chat footer can compensate
- * without relying on env(safe-area-inset-bottom) which misbehaves on iPadOS.
+ * Tracks the visual viewport so the layout stays anchored when iOS Safari
+ * scrolls the page up to keep a focused input above the keyboard bar.
+ *
+ * Sets two CSS vars on <html>:
+ *   --vv-offset-top:    how far Safari scrolled the page up (we translate down to cancel it)
+ *   --viewport-offset-bottom: gap between visual viewport bottom and layout viewport bottom
  */
 export function useVisualViewport() {
   useEffect(() => {
@@ -11,11 +14,12 @@ export function useVisualViewport() {
     if (!vv) return;
 
     function update() {
-      // Offset = gap between bottom of visual viewport and bottom of layout viewport
-      const offset = window.innerHeight - (vv!.offsetTop + vv!.height);
+      const offsetTop = vv!.offsetTop;
+      const offsetBottom = window.innerHeight - (vv!.offsetTop + vv!.height);
+      document.documentElement.style.setProperty("--vv-offset-top", `${offsetTop}px`);
       document.documentElement.style.setProperty(
         "--viewport-offset-bottom",
-        `${Math.max(0, offset)}px`
+        `${Math.max(0, offsetBottom)}px`
       );
     }
 

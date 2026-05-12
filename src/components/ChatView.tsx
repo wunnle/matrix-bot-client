@@ -1718,6 +1718,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onTouchStart={(e) => {
+              const el = e.currentTarget
+              el.style.transform = 'translateY(-8000px)'
+              el.focus()
+              setTimeout(() => { el.style.transform = '' }, 0)
+            }}
             onFocus={() => setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 300)}
             placeholder="Message…"
             enterKeyHint="enter"

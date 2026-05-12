@@ -47,8 +47,10 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .layout {
   display: flex;
   flex-direction: column;
-  height: 100svh;
-  transform: translateY(var(--vv-offset-top, 0px));
+  position: fixed;
+  top: var(--vv-top, 0px);
+  width: 100%;
+  height: var(--vv-height, 100svh);
   overflow: hidden;
 }
 

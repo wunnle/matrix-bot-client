@@ -1,12 +1,13 @@
 import { useEffect } from "react";
 
 /**
- * Tracks the visual viewport so the layout stays anchored when iOS Safari
- * scrolls the page up to keep a focused input above the keyboard bar.
+ * Keeps the layout pinned to the visual viewport so it stays fully visible
+ * when iOS Safari scrolls the page or the keyboard appears.
  *
- * Sets two CSS vars on <html>:
- *   --vv-offset-top:    how far Safari scrolled the page up (we translate down to cancel it)
- *   --viewport-offset-bottom: gap between visual viewport bottom and layout viewport bottom
+ * Sets on <html>:
+ *   --vv-top:    visual viewport top offset (where the layout should start)
+ *   --vv-height: visual viewport height (how tall the layout should be)
+ *   --viewport-offset-bottom: gap below visual viewport (for footer padding)
  */
 export function useVisualViewport() {
   useEffect(() => {
@@ -14,12 +15,14 @@ export function useVisualViewport() {
     if (!vv) return;
 
     function update() {
-      const offsetTop = vv!.offsetTop;
-      const offsetBottom = window.innerHeight - (vv!.offsetTop + vv!.height);
-      document.documentElement.style.setProperty("--vv-offset-top", `${offsetTop}px`);
+      const top = vv!.offsetTop;
+      const height = vv!.height;
+      const bottomGap = window.innerHeight - top - height;
+      document.documentElement.style.setProperty("--vv-top", `${top}px`);
+      document.documentElement.style.setProperty("--vv-height", `${height}px`);
       document.documentElement.style.setProperty(
         "--viewport-offset-bottom",
-        `${Math.max(0, offsetBottom)}px`
+        `${Math.max(0, bottomGap)}px`
       );
     }
 

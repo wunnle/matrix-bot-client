@@ -922,6 +922,19 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .reaction-bar--own {
   justify-content: flex-end;
 }
+.reaction-bar--own-inline {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  margin-right: 4px;
+}
+.reaction-pill--own {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  opacity: 0.6;
+}
 .reaction-btn {
   display: inline-flex;
   align-items: center;

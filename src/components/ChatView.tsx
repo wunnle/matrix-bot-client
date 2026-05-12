@@ -1409,21 +1409,17 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                           </div>
                         </div>
                         <div className={`msg-status ${msg.isRead ? 'msg-status-read' : ''}`}>
+                          {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                            <span className="reaction-bar reaction-bar--own-inline">
+                              {Object.entries(msg.reactions).map(([emoji, senders]) => (
+                                <span key={emoji} className="reaction-pill--own">
+                                  {emoji}{senders.length > 1 && <span className="reaction-count">{senders.length}</span>}
+                                </span>
+                              ))}
+                            </span>
+                          )}
                           <span className="material-icons">{msg.isRead ? 'done_all' : 'done'}</span>
                         </div>
-                        {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                          <div className="reaction-bar reaction-bar--own">
-                            {Object.entries(msg.reactions).map(([emoji, senders]) => (
-                              <button
-                                key={emoji}
-                                className={`reaction-btn${senders.includes(userId) ? ' reaction-btn--active' : ''}`}
-                                onClick={() => sendReaction(msg.eventId, emoji)}
-                              >
-                                {emoji}<span className="reaction-count">{senders.length}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
                       </>
                     ) : (
                       <>

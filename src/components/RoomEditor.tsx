@@ -16,6 +16,9 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notifPref, setNotifPref] = useState<'all' | 'mentions' | 'mute' | null>(null)
+  const [inviteInput, setInviteInput] = useState('')
+  const [inviting, setInviting] = useState(false)
+  const [inviteStatus, setInviteStatus] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const { toast, showToast } = useToast()
 
@@ -88,6 +91,22 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter') { e.preventDefault(); addPill() }
+  }
+
+  async function inviteUser() {
+    const userId = inviteInput.trim()
+    if (!userId) return
+    setInviting(true)
+    setInviteStatus('')
+    try {
+      await client.invite(roomId, userId)
+      setInviteStatus(`Invited ${userId}`)
+      setInviteInput('')
+    } catch (e: any) {
+      setInviteStatus(e?.message ?? 'Invite failed')
+    } finally {
+      setInviting(false)
+    }
   }
 
   async function resetEncryption() {
@@ -171,6 +190,28 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
               />
               <button onClick={addPill} disabled={!newPill.trim()}>Add</button>
             </div>
+          </div>
+
+          <div className="editor-section">
+            <div className="editor-section-label">Invite user</div>
+            <div className="editor-pill-input">
+              <input
+                type="text"
+                value={inviteInput}
+                onChange={(e) => setInviteInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); inviteUser() } }}
+                placeholder="@user:server.org"
+                enterKeyHint="done"
+              />
+              <button onClick={inviteUser} disabled={inviting || !inviteInput.trim()}>
+                {inviting ? '…' : 'Invite'}
+              </button>
+            </div>
+            {inviteStatus && (
+              <div style={{ fontSize: 12, marginTop: 4, color: inviteStatus.startsWith('Invited') ? 'var(--text-faint)' : 'var(--color-danger)' }}>
+                {inviteStatus}
+              </div>
+            )}
           </div>
 
           {error && <div className="editor-error" style={{ paddingTop: 4 }}>{error}</div>}

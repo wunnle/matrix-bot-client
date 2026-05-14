@@ -33,8 +33,10 @@ export default async function handler(req, res) {
         "1",
         { access: "public", addRandomSuffix: false, contentType: "text/plain" }
       );
-    } catch (err) {
-      return res.status(500).json({ error: String(err) });
+    } catch {
+      // Blob unavailable — beacon not written, suppression and indicator degrade
+      // gracefully. Push notifications still go through (getActiveRooms returns
+      // empty Set on error).
     }
   }
 

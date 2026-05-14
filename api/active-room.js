@@ -27,11 +27,15 @@ export default async function handler(req, res) {
   if (roomId) {
     // Encode roomId and timestamp in the path
     const ts = Date.now();
-    await put(
-      `${PREFIX}${deviceId}/${encodeURIComponent(roomId)}_${ts}`,
-      "1",
-      { access: "public", addRandomSuffix: false, contentType: "text/plain" }
-    );
+    try {
+      await put(
+        `${PREFIX}${deviceId}/${encodeURIComponent(roomId)}_${ts}`,
+        "1",
+        { access: "public", addRandomSuffix: false, contentType: "text/plain" }
+      );
+    } catch (err) {
+      return res.status(500).json({ error: String(err) });
+    }
   }
 
   res.status(200).json({ ok: true });

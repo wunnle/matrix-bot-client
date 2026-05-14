@@ -37,6 +37,7 @@ import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
 import { useActiveRoom } from '../hooks/useActiveRoom'
 import { useVisualViewport } from '../hooks/useVisualViewport'
+import { loadAuth } from '../lib/auth'
 import RoomEditor from './RoomEditor'
 import type { Message, RoomConfig } from '../types'
 
@@ -350,6 +351,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [showScrollDown, setShowScrollDown] = useState(false)
   const footerRef = useRef<HTMLDivElement>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [notifSuppressed, setNotifSuppressed] = useState(false)
   const dragCounterRef = useRef(0)
   const [pinnedEventIds, setPinnedEventIds] = useState<string[]>([])
   const [pinnedDisplay, setPinnedDisplay] = useState<Message[]>([])
@@ -386,6 +388,35 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     if (window.matchMedia('(max-width: 640px)').matches) return
     textareaRef.current?.focus()
   }, [roomId, isActive])
+
+  useEffect(() => {
+    if (!isActive) return
+    const myDeviceId = loadAuth()?.deviceId
+    if (!myDeviceId) return
+    const TTL_MS = 5 * 60 * 1000
+    const check = async () => {
+      try {
+        const r = await fetch('/api/active-room')
+        const { blobs } = await r.json()
+        const now = Date.now()
+        const suppressed = blobs.some((b: { pathname: string }) => {
+          const parts = b.pathname.split('/')
+          if (parts.length < 3) return false
+          if (parts[1] === myDeviceId) return false
+          const filename = parts[parts.length - 1]
+          const lastUnderscore = filename.lastIndexOf('_')
+          if (lastUnderscore === -1) return false
+          const ts = parseInt(filename.slice(lastUnderscore + 1), 10)
+          if (now - ts > TTL_MS) return false
+          return decodeURIComponent(filename.slice(0, lastUnderscore)) === roomId
+        })
+        setNotifSuppressed(suppressed)
+      } catch { /* ignore */ }
+    }
+    check()
+    const interval = setInterval(check, 30_000)
+    return () => clearInterval(interval)
+  }, [isActive, roomId])
 
   const refreshPinned = useCallback(async () => {
     const forRoom = roomId
@@ -1236,6 +1267,13 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 : (roomTopic || (bot?.name ?? null))}
             </span>
           </div>
+          {notifSuppressed && (
+            <span
+              className="material-icons header-notif-suppressed"
+              title="Notifications suppressed — room open on another device"
+              aria-label="Notifications suppressed on another active device"
+            >notifications_off</span>
+          )}
           {currentModel && (
             <span className="chat-header-model" title={`Model: ${currentModel}`}>
               {currentModel}

@@ -10,28 +10,29 @@ import webpush from "web-push";
 import { createHash } from "crypto";
 
 async function getActiveRooms() {
+  // Returns Map<deviceId, Set<roomId>> — suppression is per-device only.
   // State is encoded in blob paths: active_rooms/{deviceId}/{roomId}_{ts}
-  // list() hits the Blob storage API directly — no CDN, always fresh.
   try {
     const { blobs } = await list({ prefix: "active_rooms/" });
     const now = Date.now();
     const TTL_MS = 5 * 60 * 1000;
-    const active = new Set();
+    const active = new Map();
     for (const blob of blobs) {
-      // path: active_rooms/{deviceId}/{encodedRoomId}_{ts}
       const parts = blob.pathname.split("/");
       if (parts.length < 3) continue;
+      const deviceId = parts[1];
       const filename = parts[parts.length - 1];
       const lastUnderscore = filename.lastIndexOf("_");
       if (lastUnderscore === -1) continue;
       const ts = parseInt(filename.slice(lastUnderscore + 1), 10);
       if (now - ts > TTL_MS) continue;
       const roomId = decodeURIComponent(filename.slice(0, lastUnderscore));
-      active.add(roomId);
+      if (!active.has(deviceId)) active.set(deviceId, new Set());
+      active.get(deviceId).add(roomId);
     }
     return active;
   } catch {
-    return new Set();
+    return new Map();
   }
 }
 
@@ -86,8 +87,9 @@ export default async function handler(req, res) {
       const pushkey = device.pushkey;
       if (!pushkey) return;
 
-      // Skip if any client has this room open and focused
-      if (activeRooms.has(room_id)) return;
+      // Skip if this specific device has the room open
+      const deviceRooms = activeRooms.get(subscription.deviceId);
+      if (deviceRooms && deviceRooms.has(room_id)) return;
 
       const id = createHash("sha256").update(pushkey).digest("hex").slice(0, 16);
       const { blobs } = await list({ prefix: `push_subscriptions/${id}.json` });

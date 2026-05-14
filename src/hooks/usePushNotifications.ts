@@ -76,15 +76,15 @@ export function usePushNotifications(enabled: boolean) {
             applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
           }));
 
+        const { loadAuth } = await import("../lib/auth");
+        const auth = loadAuth();
+
         // Always store subscription and re-register pusher — self-heals if pusher was wiped
         await fetch("/api/subscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(subscription),
+          body: JSON.stringify({ ...subscription.toJSON(), deviceId: auth?.deviceId }),
         });
-
-        const { loadAuth } = await import("../lib/auth");
-        const auth = loadAuth();
         if (!auth) {
           console.warn("Push setup: no auth found, skipping pusher registration");
           return;

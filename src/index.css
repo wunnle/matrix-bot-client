@@ -610,6 +610,13 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   overflow: hidden;
 }
 
+.header-notif-suppressed {
+  font-size: 16px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  cursor: default;
+}
+
 .chat-header-model {
   flex-shrink: 0;
   max-width: 45%;

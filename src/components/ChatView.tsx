@@ -283,7 +283,7 @@ function openPinContextMenu(
 
 function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictationAutoSend }: Props) {
   useActiveRoom(roomId)
-  useVisualViewport(() => bottomRef.current?.scrollIntoView({ behavior: 'instant' }))
+  useVisualViewport(() => bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'instant' }))
   const { toast, showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [cameraPrompt, setCameraPrompt] = useState(false)
@@ -832,7 +832,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const behavior: ScrollBehavior = (!isFirstLoad.current && tailChanged && tail.isOwnMessage) ? 'smooth' : 'instant'
     isFirstLoad.current = false
     programmaticScrollUntilRef.current = performance.now() + (behavior === 'smooth' ? 500 : 100)
-    bottomRef.current?.scrollIntoView({ behavior })
+    bottomRef.current?.scrollIntoView({ block: 'end', behavior })
   }, [visibleMessages])
 
   // Load pills — retry on sync (account data may not be in-memory until first SYNCING)
@@ -859,7 +859,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // Scroll to bottom when own message is sent
   const scrollToBottom = useCallback(() => {
     stickToBottomRef.current = true
-    bottomRef.current?.scrollIntoView({ behavior: 'instant' })
+    bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'instant' })
   }, [])
 
   // Load older messages
@@ -1748,7 +1748,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            onFocus={() => setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 300)}
+            onFocus={() => setTimeout(() => bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' }), 300)}
             placeholder="Message…"
             enterKeyHint="enter"
             readOnly={dictating}

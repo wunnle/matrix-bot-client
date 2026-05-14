@@ -336,6 +336,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [newPillInput, setNewPillInput] = useState('')
   const newPillRef = useRef<HTMLInputElement>(null)
   const [sending, setSending] = useState(false)
+  const [initializing, setInitializing] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
   const [renderStart, setRenderStart] = useState(0)
@@ -483,6 +484,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setHasMore(true)
     setMessages([])
     setRenderStart(0)
+    setInitializing(true)
     resolvedImagesRef.current = new Set()
     setImageUrls({})
     setCurrentModel(getRoomModel(roomId))
@@ -490,19 +492,19 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const room = client.getRoom(roomId)
     if (!room) return
 
-    // Render once after we have enough events to fill the viewport, to
-    // avoid a double render/jump: cached-short-content → scrollback-tall-content.
+    // Block rendering until we have a stable first batch to avoid jump cascades.
+    const populate = (msgs: ReturnType<typeof eventsToMessages>) => {
+      setMessages(msgs)
+      setInitializing(false)
+    }
+
     const existing = room.getLiveTimeline().getEvents()
     if (existing.length >= 20) {
-      setMessages(eventsToMessages(existing, userId, room))
+      populate(eventsToMessages(existing, userId, room))
     } else {
       client.scrollback(room, 20)
-        .then(() => {
-          setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, room))
-        })
-        .catch(() => {
-          setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, room))
-        })
+        .then(() => populate(eventsToMessages(room.getLiveTimeline().getEvents(), userId, room)))
+        .catch(() => populate(eventsToMessages(room.getLiveTimeline().getEvents(), userId, room)))
     }
 
     const onEvent = (event: sdk.MatrixEvent, room_: sdk.Room | undefined) => {
@@ -1372,7 +1374,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         </div>
       )}
 
-      <div className="messages" ref={messagesRef} onScroll={handleScroll}>
+      {initializing && (
+        <div className="messages-init-loading">
+          <span className="loading-dots"><span /><span /><span /></span>
+        </div>
+      )}
+      <div className="messages" ref={messagesRef} onScroll={handleScroll} style={initializing ? { visibility: 'hidden' } : undefined}>
         <div className="messages-inner">
           {loadingMore && (
             <div className="load-more">

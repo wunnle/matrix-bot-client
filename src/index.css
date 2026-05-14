@@ -794,6 +794,13 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 /* Scrollable messages area */
+.messages-init-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .messages {
   flex: 1;
   overflow-y: auto;

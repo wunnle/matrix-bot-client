@@ -37,7 +37,6 @@ import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
 import { useActiveRoom } from '../hooks/useActiveRoom'
 import { useVisualViewport } from '../hooks/useVisualViewport'
-import { loadAuth } from '../lib/auth'
 import RoomEditor from './RoomEditor'
 import type { Message, RoomConfig } from '../types'
 
@@ -391,8 +390,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
   useEffect(() => {
     if (!isActive) return
-    const myDeviceId = loadAuth()?.deviceId
-    if (!myDeviceId) return
     const TTL_MS = 5 * 60 * 1000
     const check = async () => {
       try {
@@ -402,7 +399,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         const suppressed = blobs.some((b: { pathname: string }) => {
           const parts = b.pathname.split('/')
           if (parts.length < 3) return false
-          if (parts[1] === myDeviceId) return false
           const filename = parts[parts.length - 1]
           const lastUnderscore = filename.lastIndexOf('_')
           if (lastUnderscore === -1) return false

@@ -11,15 +11,6 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   return outputArray.buffer as ArrayBuffer;
 }
 
-function getActiveRoomIdFromPath(): string | null {
-  const m = location.pathname.match(/^\/rooms\/(.+)$/);
-  if (!m) return null;
-  try {
-    return decodeURIComponent(m[1]!);
-  } catch {
-    return m[1]!;
-  }
-}
 
 export function usePushNotifications(enabled: boolean) {
   // When a push targets the room we already have open in the foreground, the SW asks us to
@@ -30,12 +21,11 @@ export function usePushNotifications(enabled: boolean) {
 
     const onServiceWorkerMessage = (event: MessageEvent) => {
       if (event.data?.type !== "PUSH_SUPPRESS_CHECK") return;
-      const { id, roomId } = event.data as { id: string; roomId: string };
-      if (document.visibilityState !== "visible") return;
-      const current = getActiveRoomIdFromPath();
+      const { id, roomId } = event.data as { id: string; roomId: string | null };
       const avatars = JSON.parse(localStorage.getItem('room_avatars') || '{}')
       const icon = roomId ? (avatars[roomId] ?? null) : null
-      if (current && roomId && current === roomId) {
+      if (document.visibilityState === "visible") {
+        // App is in foreground — suppress system notification; toast handles it
         navigator.serviceWorker.controller?.postMessage({
           type: "PUSH_SUPPRESS_RESULT",
           id,

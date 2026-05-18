@@ -35,7 +35,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     ? resolveRoomIdFromParam(decodeURIComponent(roomId))
     : null
 
-  const { roomToast, dismissRoomToast } = useRoomToast(activeRoomId, clientReady)
+  const { toasts, dismissTop, dismissAll } = useRoomToast(activeRoomId, clientReady)
 
   useEffect(() => {
     setDictationAutoSendState(getDictationAutoSend(auth.userId))
@@ -117,11 +117,15 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   return (
     <div className={`layout ${activeRoomId ? 'room-open' : ''}`}>
       <ConnectionBanner />
-      {roomToast && (
+      {toasts.length > 0 && (
         <RoomToast
-          toast={roomToast}
-          onDismiss={dismissRoomToast}
-          onNavigate={(id) => handleSelectRoom(id, roomToast.roomName)}
+          toasts={toasts}
+          onDismissTop={dismissTop}
+          onDismissAll={dismissAll}
+          onNavigate={(id) => {
+            const t = toasts[toasts.length - 1]
+            if (t) handleSelectRoom(id, t.roomName)
+          }}
         />
       )}
       <div className="layout-body">

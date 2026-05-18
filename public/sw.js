@@ -20,6 +20,8 @@ self.addEventListener("push", (event) => {
       const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       const ourClients = clientList.filter((c) => c.url.startsWith(self.location.origin));
 
+      console.log(`[SW push] clients=${clientList.length} ourClients=${ourClients.length} origin=${self.location.origin} urls=${clientList.map(c=>c.url).join(',')}`);
+
       // Any open window means the sync client is running — suppress system notification
       // and let the in-app toast handle it instead.
       if (ourClients.length > 0) {

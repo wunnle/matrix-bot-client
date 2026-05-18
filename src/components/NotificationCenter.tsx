@@ -55,10 +55,24 @@ function NotifCard({ notification, onDismiss, onNavigate }: NotifCardProps) {
     dismissedRef.current = true
     const el = cardRef.current
     if (!el) { onDismiss(notification.roomId); return }
-    el.style.transition = 'transform 0.2s ease, opacity 0.2s ease'
+    // Phase 1: slide left
+    const height = el.offsetHeight
+    el.style.transition = 'transform 0.22s ease, opacity 0.22s ease'
     el.style.transform = 'translateX(-110%)'
     el.style.opacity = '0'
-    setTimeout(() => onDismiss(notification.roomId), 200)
+    // Phase 2: collapse height so items below move up smoothly
+    setTimeout(() => {
+      el.style.transition = 'height 0.18s ease, padding 0.18s ease, margin 0.18s ease'
+      el.style.overflow = 'hidden'
+      el.style.height = height + 'px'
+      requestAnimationFrame(() => {
+        el.style.height = '0'
+        el.style.paddingTop = '0'
+        el.style.paddingBottom = '0'
+        el.style.borderBottomWidth = '0'
+      })
+      setTimeout(() => onDismiss(notification.roomId), 180)
+    }, 220)
   }, [notification.roomId, onDismiss])
 
   const handleTouchStart = (e: React.TouchEvent) => {

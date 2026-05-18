@@ -24,6 +24,15 @@ self.addEventListener("push", (event) => {
         return;
       }
 
+      // If any client is focused/visible, suppress immediately without waiting for reply
+      const hasVisibleClient = ourClients.some((c) => c.visibilityState === "visible");
+      if (hasVisibleClient) {
+        for (const c of ourClients) {
+          c.postMessage({ type: "PUSH_SUPPRESS_CHECK", id, roomId, title: data.title, body: data.body });
+        }
+        return;
+      }
+
       const id =
         (self.crypto && self.crypto.randomUUID && self.crypto.randomUUID()) || String(Date.now() + Math.random());
 
@@ -52,7 +61,7 @@ self.addEventListener("push", (event) => {
         self.addEventListener("message", onMessage);
         const t = setTimeout(() => {
           void finish(false, null);
-        }, 300);
+        }, 1500);
 
         for (const c of ourClients) {
           c.postMessage({ type: "PUSH_SUPPRESS_CHECK", id, roomId, title: data.title, body: data.body });

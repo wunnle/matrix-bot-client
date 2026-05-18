@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import type { RoomToastData } from '../hooks/useRoomToast'
 import { getClient } from '../lib/matrix'
 import { resolveMediaUrl } from '../lib/mediaUrl'
@@ -17,8 +17,10 @@ interface ToastCardProps {
 
 function ToastCard({ toast, stackIndex, onDismiss, onNavigate }: ToastCardProps) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+  const draggingRef = useRef(false)
+  const dismissedRef = useRef(false)
 
   useEffect(() => {
     if (!toast.avatarMxc) return
@@ -32,16 +34,50 @@ function ToastCard({ toast, stackIndex, onDismiss, onNavigate }: ToastCardProps)
     return () => { cancelled = true }
   }, [toast.avatarMxc])
 
+  const animateOut = useCallback((dx: number, dy: number) => {
+    if (dismissedRef.current) return
+    dismissedRef.current = true
+    const el = cardRef.current
+    if (!el) { onDismiss(); return }
+    // Determine exit direction: up or right
+    const exitX = dx > 0 ? Math.max(dx, 120) : 0
+    const exitY = dy < 0 ? Math.min(dy, -120) : 0
+    el.style.transition = 'transform 0.22s cubic-bezier(0.4,0,1,1), opacity 0.22s ease'
+    el.style.transform = `translateX(${exitX}px) translateY(${exitY}px) scale(0.9)`
+    el.style.opacity = '0'
+    setTimeout(onDismiss, 220)
+  }, [onDismiss])
+
   const handleClick = () => {
-    if (stackIndex !== 0) return
+    if (stackIndex !== 0 || draggingRef.current) return
     onNavigate(toast.roomId)
-    onDismiss()
+    animateOut(0, -80)
   }
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (stackIndex !== 0) return
     const t = e.touches[0]
     touchStartRef.current = { x: t.clientX, y: t.clientY }
+    draggingRef.current = false
+    const el = cardRef.current
+    if (el) el.style.transition = 'none'
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (stackIndex !== 0 || !touchStartRef.current) return
+    const t = e.touches[0]
+    const dx = t.clientX - touchStartRef.current.x
+    const dy = t.clientY - touchStartRef.current.y
+    // Only track swipe-up or swipe-right
+    if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return
+    draggingRef.current = true
+    const el = cardRef.current
+    if (!el) return
+    const clampedDx = Math.max(0, dx)   // only right
+    const clampedDy = Math.min(0, dy)   // only up
+    const opacity = Math.max(0.2, 1 - (Math.abs(clampedDx) + Math.abs(clampedDy)) / 180)
+    el.style.transform = `translateX(${clampedDx}px) translateY(${clampedDy}px) scale(1)`
+    el.style.opacity = String(opacity)
   }
 
   const handleTouchEnd = (e: React.TouchEvent) => {
@@ -50,9 +86,18 @@ function ToastCard({ toast, stackIndex, onDismiss, onNavigate }: ToastCardProps)
     const dx = t.clientX - touchStartRef.current.x
     const dy = t.clientY - touchStartRef.current.y
     touchStartRef.current = null
-    // Swipe up or right to dismiss
-    if (dy < -40 || dx > 60) {
-      onDismiss()
+    const el = cardRef.current
+
+    if (dy < -50 || dx > 80) {
+      animateOut(Math.max(0, dx), Math.min(0, dy))
+    } else {
+      // Snap back
+      draggingRef.current = false
+      if (el) {
+        el.style.transition = 'transform 0.2s cubic-bezier(0.34,1.56,0.64,1), opacity 0.2s ease'
+        el.style.transform = 'translateX(0) translateY(0) scale(1)'
+        el.style.opacity = '1'
+      }
     }
   }
 
@@ -73,6 +118,7 @@ function ToastCard({ toast, stackIndex, onDismiss, onNavigate }: ToastCardProps)
       }}
       onClick={handleClick}
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       role={stackIndex === 0 ? 'button' : undefined}
     >
@@ -91,7 +137,7 @@ function ToastCard({ toast, stackIndex, onDismiss, onNavigate }: ToastCardProps)
       {stackIndex === 0 && (
         <button
           className="room-toast-close"
-          onClick={(e) => { e.stopPropagation(); onDismiss() }}
+          onClick={(e) => { e.stopPropagation(); animateOut(0, -80) }}
           aria-label="Dismiss"
         >✕</button>
       )}

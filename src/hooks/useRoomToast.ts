@@ -3,6 +3,12 @@ import * as sdk from 'matrix-js-sdk'
 import type { IRoomTimelineData } from 'matrix-js-sdk'
 import { getClient } from '../lib/matrix'
 
+const TOOL_PROGRESS_LINE = /^(?:\*\s*)?\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\(×\d+\))?|\.\.\.)\s*$/u
+
+function isThinkingMessage(body: string): boolean {
+  return body.split('\n').filter(l => l.trim()).every(l => TOOL_PROGRESS_LINE.test(l.trim()))
+}
+
 export interface RoomToastData {
   id: string
   roomId: string
@@ -46,6 +52,7 @@ export function useRoomToast(activeRoomId: string | null, clientReady: boolean) 
       const content = event.getContent()
       const body = content?.body as string | undefined
       if (!body) return
+      if (isThinkingMessage(body)) return
 
       const sender = event.getSender() ?? ''
       const member = room.getMember(sender)

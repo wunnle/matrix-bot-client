@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import type { RoomNotification } from '../hooks/useRoomNotifications'
 import { getClient } from '../lib/matrix'
 import { resolveMediaUrl } from '../lib/mediaUrl'
@@ -33,23 +33,74 @@ interface NotifCardProps {
 
 function NotifCard({ notification, onDismiss, onNavigate }: NotifCardProps) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
+  const touchStartX = useRef<number | null>(null)
+  const dismissedRef = useRef(false)
 
   useEffect(() => {
     if (!notification.avatarMxc) return
     let cancelled = false
     try {
       const client = getClient()
-      resolveMediaUrl(client, notification.avatarMxc, 32, 32, 'crop').then((url) => {
+      // 2× the display size for crisp rendering on high-DPI screens
+      resolveMediaUrl(client, notification.avatarMxc, 64, 64, 'crop').then((url) => {
         if (!cancelled) setAvatarUrl(url)
       })
     } catch {}
     return () => { cancelled = true }
   }, [notification.avatarMxc])
 
+  const animateOut = useCallback(() => {
+    if (dismissedRef.current) return
+    dismissedRef.current = true
+    const el = cardRef.current
+    if (!el) { onDismiss(notification.roomId); return }
+    el.style.transition = 'transform 0.2s ease, opacity 0.2s ease'
+    el.style.transform = 'translateX(-110%)'
+    el.style.opacity = '0'
+    setTimeout(() => onDismiss(notification.roomId), 200)
+  }, [notification.roomId, onDismiss])
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX
+    const el = cardRef.current
+    if (el) el.style.transition = 'none'
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return
+    const dx = e.touches[0].clientX - touchStartX.current
+    if (dx >= 0) return
+    const el = cardRef.current
+    if (!el) return
+    el.style.transform = `translateX(${dx}px)`
+    el.style.opacity = String(Math.max(0.2, 1 + dx / 160))
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    touchStartX.current = null
+    if (dx < -80) {
+      animateOut()
+    } else {
+      const el = cardRef.current
+      if (el) {
+        el.style.transition = 'transform 0.2s cubic-bezier(0.34,1.56,0.64,1), opacity 0.2s ease'
+        el.style.transform = 'translateX(0)'
+        el.style.opacity = '1'
+      }
+    }
+  }
+
   return (
     <div
+      ref={cardRef}
       className="notif-card"
       onClick={() => onNavigate(notification.roomId, notification.roomName)}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
       role="button"
     >
       <div className="notif-card-avatar">
@@ -61,7 +112,7 @@ function NotifCard({ notification, onDismiss, onNavigate }: NotifCardProps) {
       </div>
       <button
         className="notif-card-close"
-        onClick={(e) => { e.stopPropagation(); onDismiss(notification.roomId) }}
+        onClick={(e) => { e.stopPropagation(); animateOut() }}
         aria-label="Dismiss"
       >✕</button>
     </div>

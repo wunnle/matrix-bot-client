@@ -2196,7 +2196,7 @@ a.msg-file:hover { text-decoration: underline; }
 
 /* ── Notification center (sidebar, above room list) ────────────────────── */
 .notif-center {
-  margin: 0 20px 10px;
+  margin: 0 28px 10px;
   border-radius: 12px;
   background: #f0f0f8;
   overflow: hidden;

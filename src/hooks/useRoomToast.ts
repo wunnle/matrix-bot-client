@@ -9,6 +9,14 @@ function isThinkingMessage(body: string): boolean {
   return body.split('\n').filter(l => l.trim()).every(l => TOOL_PROGRESS_LINE.test(l.trim()))
 }
 
+function toastBody(raw: string): string {
+  // Replace fenced code blocks with a placeholder
+  let text = raw.replace(/```[\s\S]*?```/g, '[code]')
+  // Collapse to first non-empty line for single-line preview
+  const firstLine = text.split('\n').map(l => l.trim()).find(l => l.length > 0) ?? text.trim()
+  return firstLine.slice(0, 120)
+}
+
 export interface RoomToastData {
   id: string
   roomId: string
@@ -49,12 +57,13 @@ export function useRoomToast(activeRoomId: string | null, clientReady: boolean) 
       if (event.getType() !== 'm.room.message') return
       if (event.isDecryptionFailure()) return
 
+      const sender = event.getSender() ?? ''
+      if (sender === client.getUserId()) return
+
       const content = event.getContent()
       const body = content?.body as string | undefined
       if (!body) return
       if (isThinkingMessage(body)) return
-
-      const sender = event.getSender() ?? ''
       const member = room.getMember(sender)
       const senderName = member?.name ?? sender.split(':')[0].replace('@', '')
 
@@ -63,7 +72,7 @@ export function useRoomToast(activeRoomId: string | null, clientReady: boolean) 
         roomId: room.roomId,
         roomName: room.name,
         senderName,
-        body: body.slice(0, 100),
+        body: toastBody(body),
         avatarMxc: room.getMxcAvatarUrl() ?? undefined,
       }
 

@@ -1,12 +1,3 @@
-// App posts CLIENT_VISIBLE messages to keep this flag current
-let appVisible = false;
-
-self.addEventListener("message", (event) => {
-  if (event.data?.type === "CLIENT_VISIBLE") {
-    appVisible = event.data.visible;
-  }
-});
-
 self.addEventListener("push", (event) => {
   const data = event.data ? event.data.json() : { title: "Hermes", body: "" };
   const roomId = data.roomId;
@@ -26,57 +17,19 @@ self.addEventListener("push", (event) => {
         return;
       }
 
-      // App is open and visible — suppress; in-app toast handles it
-      if (appVisible) {
-        const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-        const ourClients = clientList.filter((c) => c.url.startsWith(self.location.origin));
+      const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const ourClients = clientList.filter((c) => c.url.startsWith(self.location.origin));
+
+      // Any open window means the sync client is running — suppress system notification
+      // and let the in-app toast handle it instead.
+      if (ourClients.length > 0) {
         for (const c of ourClients) {
           c.postMessage({ type: "PUSH_SUPPRESS_CHECK", id: null, roomId, title: data.title, body: data.body });
         }
         return;
       }
 
-      const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      const ourClients = clientList.filter((c) => c.url.startsWith(self.location.origin));
-      if (ourClients.length === 0) {
-        await show(null);
-        return;
-      }
-
-      const id =
-        (self.crypto && self.crypto.randomUUID && self.crypto.randomUUID()) || String(Date.now() + Math.random());
-
-      await new Promise((resolve) => {
-        let done = false;
-        const finish = async (suppressed, icon) => {
-          if (done) return;
-          done = true;
-          self.removeEventListener("message", onMessage);
-          clearTimeout(t);
-          if (!suppressed) {
-            await show(icon);
-          }
-          resolve();
-        };
-
-        const onMessage = (e) => {
-          if (!e.data || e.data.id !== id) return;
-          if (e.data.type === "PUSH_SUPPRESS_RESULT" && e.data.suppress === true) {
-            finish(true, null);
-          } else if (e.data.type === "PUSH_SUPPRESS_RESULT" || e.data.type === "PUSH_ICON_RESULT") {
-            finish(false, e.data.icon || null);
-          }
-        };
-
-        self.addEventListener("message", onMessage);
-        const t = setTimeout(() => {
-          void finish(false, null);
-        }, 1500);
-
-        for (const c of ourClients) {
-          c.postMessage({ type: "PUSH_SUPPRESS_CHECK", id, roomId, title: data.title, body: data.body });
-        }
-      });
+      await show(null);
     })()
   );
 });

@@ -5,7 +5,8 @@ import RoomList from './RoomList'
 import ChatView from './ChatView'
 import ConnectionBanner from './ConnectionBanner'
 import RoomToast from './RoomToast'
-import { useRoomToast } from '../hooks/useRoomToast'
+import NotificationCenter from './NotificationCenter'
+import { useRoomNotifications } from '../hooks/useRoomNotifications'
 import { getClient, getCachedRooms } from '../lib/matrix'
 import { getDictationAutoSend, setDictationAutoSend } from '../lib/clientSettings'
 import { resolveRoomIdFromParam } from '../lib/roomAliases'
@@ -15,9 +16,6 @@ interface Props {
   onSignOut: () => void
 }
 
-// Keep the last N visited ChatViews mounted for instant room switching.
-// Older rooms get unmounted so their client event listeners, media
-// resolutions, and re-renders don't run in the background forever.
 const MAX_MOUNTED_ROOMS = 5
 
 export default function RoomsLayout({ auth, onSignOut }: Props) {
@@ -35,7 +33,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     ? resolveRoomIdFromParam(decodeURIComponent(roomId))
     : null
 
-  const { toasts, dismissTop, dismissAll } = useRoomToast(activeRoomId, clientReady)
+  const { notifications, toasts, dismiss } = useRoomNotifications(activeRoomId, clientReady)
 
   useEffect(() => {
     setDictationAutoSendState(getDictationAutoSend(auth.userId))
@@ -46,7 +44,6 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     setDictationAutoSend(auth.userId, value)
   }, [auth.userId])
 
-  // Maintain visitedRooms as MRU with the active room at the end.
   useEffect(() => {
     if (!activeRoomId || !clientReady) return
     setVisitedRooms((prev) => {
@@ -75,12 +72,6 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     navigate(`/rooms/${encodeURIComponent(id)}`)
   }, [navigate])
 
-  // Use `replace` so the back action doesn't push a new history entry on
-  // top of /rooms/:id. On mobile iOS Safari's native edge swipe already
-  // pops history as part of the gesture, and our swipe handler used to
-  // push /rooms on top of that — two navigations per gesture caused a
-  // glitchy "reload" feel during the native swipe animation. With
-  // replace, our action is idempotent with the browser's own pop.
   const handleBack = useCallback(() => {
     navigate('/rooms', { replace: true })
   }, [navigate])
@@ -120,16 +111,17 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
       {toasts.length > 0 && (
         <RoomToast
           toasts={toasts}
-          onDismissTop={dismissTop}
-          onDismissAll={dismissAll}
-          onNavigate={(id) => {
-            const t = toasts[toasts.length - 1]
-            if (t) handleSelectRoom(id, t.roomName)
-          }}
+          onDismiss={dismiss}
+          onNavigate={handleSelectRoom}
         />
       )}
       <div className="layout-body">
         <aside className="sidebar">
+          <NotificationCenter
+            notifications={notifications}
+            onDismiss={dismiss}
+            onNavigate={handleSelectRoom}
+          />
           <RoomList
             auth={auth}
             activeRoomId={activeRoomId}

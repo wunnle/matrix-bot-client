@@ -237,7 +237,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-list {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 
@@ -2182,7 +2183,7 @@ a.msg-file:hover { text-decoration: underline; }
 
 /* ── Notification center (sidebar, above room list) ────────────────────── */
 .notif-center {
-  margin: 6px 12px 0;
+  margin: 6px 16px 0;
   border-radius: 12px;
   background: #f0f0f8;
   overflow: hidden;

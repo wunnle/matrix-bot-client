@@ -108,7 +108,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   return (
     <div className={`layout ${activeRoomId ? 'room-open' : ''}`}>
       <ConnectionBanner />
-      {toasts.length > 0 && (
+      {activeRoomId && toasts.length > 0 && (
         <RoomToast
           toasts={toasts}
           onDismiss={dismiss}

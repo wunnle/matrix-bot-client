@@ -2216,7 +2216,7 @@ a.msg-file:hover { text-decoration: underline; }
 .notif-card-avatar {
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: 7px;
   background: rgba(92,79,214,0.15);
   flex-shrink: 0;
   display: flex;

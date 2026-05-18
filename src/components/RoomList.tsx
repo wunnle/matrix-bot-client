@@ -294,6 +294,9 @@ export default function RoomList({
                   aria-label="Auto-send when done talking"
                 />
               </label>
+              <button className="user-menu-item" onClick={() => window.location.reload()}>
+                Reload app
+              </button>
               <button className="user-menu-item user-menu-item--danger" onClick={onSignOut}>
                 Sign out
               </button>

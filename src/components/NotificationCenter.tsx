@@ -137,17 +137,16 @@ interface Props {
   notifications: RoomNotification[]
   onDismiss: (roomId: string) => void
   onNavigate: (roomId: string, roomName: string) => void
-  position: 'top' | 'bottom'
 }
 
-export default function NotificationCenter({ notifications, onDismiss, onNavigate, position }: Props) {
+export default function NotificationCenter({ notifications, onDismiss, onNavigate }: Props) {
   if (notifications.length === 0) return null
 
   const visible = notifications.slice(-MAX_VISIBLE)
   const hiddenCount = notifications.length - visible.length
 
   return (
-    <div className={`notif-center notif-center--${position}`}>
+    <div className="notif-center">
       {visible.map((n) => (
         <NotifCard
           key={n.roomId}

@@ -2198,15 +2198,10 @@ a.msg-file:hover { text-decoration: underline; }
 
 /* ── Notification center (sidebar, above room list) ────────────────────── */
 .notif-center {
-  margin: 0 28px 10px;
+  margin: auto 28px 28px;
   border-radius: 12px;
   background: #f0f0f8;
   overflow: hidden;
-}
-.notif-center--bottom { display: none; }
-@media (max-width: 640px) {
-  .notif-center--top    { display: none; }
-  .notif-center--bottom { display: block; margin: auto 28px 28px; }
 }
 .notif-card {
   display: flex;

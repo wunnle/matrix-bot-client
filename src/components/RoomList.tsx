@@ -259,12 +259,6 @@ export default function RoomList({
     <div className="room-list">
 
       <div className="room-list-body">
-        <NotificationCenter
-          notifications={notifications}
-          onDismiss={onDismissNotification}
-          onNavigate={onSelectRoom}
-          position="top"
-        />
         {loading && (
           <div className="room-grid">
             {[...Array(6)].map((_, i) => (
@@ -296,7 +290,6 @@ export default function RoomList({
           notifications={notifications}
           onDismiss={onDismissNotification}
           onNavigate={onSelectRoom}
-          position="bottom"
         />
       </div>
 

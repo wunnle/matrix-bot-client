@@ -2093,8 +2093,8 @@ a.msg-file:hover { text-decoration: underline; }
   left: 50%;
   transform: translateX(-50%);
   width: min(380px, calc(100vw - 24px));
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
+  background: #1e1e2e;
+  border: 1px solid rgba(124, 106, 247, 0.35);
   border-radius: 16px;
   padding: 10px 12px;
   display: flex;
@@ -2102,10 +2102,10 @@ a.msg-file:hover { text-decoration: underline; }
   gap: 10px;
   cursor: pointer;
   z-index: 300;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  box-shadow: 0 4px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(124,106,247,0.08);
   animation: roomToastIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.room-toast:hover { background: var(--bg-hover); }
+.room-toast:hover { background: #252538; }
 @keyframes roomToastIn {
   from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -2114,15 +2114,15 @@ a.msg-file:hover { text-decoration: underline; }
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--accent-dim);
+  background: rgba(124, 106, 247, 0.2);
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   font-size: 16px;
-  font-weight: 600;
-  color: var(--accent);
+  font-weight: 700;
+  color: #a89af9;
 }
 .room-toast-avatar img {
   width: 100%;
@@ -2141,15 +2141,15 @@ a.msg-file:hover { text-decoration: underline; }
 }
 .room-toast-room {
   font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
+  font-weight: 700;
+  color: #e8e8f8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .room-toast-sender {
   font-size: 12px;
-  color: var(--text-muted);
+  color: #a89af9;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2157,7 +2157,7 @@ a.msg-file:hover { text-decoration: underline; }
 }
 .room-toast-body {
   font-size: 13px;
-  color: var(--text-muted);
+  color: #c0c0d8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2165,11 +2165,11 @@ a.msg-file:hover { text-decoration: underline; }
 .room-toast-close {
   background: none;
   border: none;
-  color: var(--text-faint);
+  color: #6b6b85;
   font-size: 13px;
   padding: 4px;
   cursor: pointer;
   flex-shrink: 0;
   line-height: 1;
 }
-.room-toast-close:hover { color: var(--text-muted); }
+.room-toast-close:hover { color: #c0c0d8; }

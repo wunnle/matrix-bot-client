@@ -2264,3 +2264,6 @@ a.msg-file:hover { text-decoration: underline; }
   padding: 4px 0 6px;
   border-top: 1px solid rgba(0,0,0,0.08);
 }
+@media (max-width: 640px) {
+  .notif-center { margin-left: 32px; margin-right: 32px; }
+}

@@ -2201,6 +2201,11 @@ a.msg-file:hover { text-decoration: underline; }
   background: #f0f0f8;
   overflow: hidden;
 }
+.notif-center--bottom { display: none; }
+@media (max-width: 640px) {
+  .notif-center--top    { display: none; }
+  .notif-center--bottom { display: block; margin: 10px 28px 0; }
+}
 .notif-card {
   display: flex;
   align-items: center;

@@ -246,6 +246,7 @@ export default function RoomList({
           notifications={notifications}
           onDismiss={onDismissNotification}
           onNavigate={onSelectRoom}
+          position="top"
         />
         {loading && (
           <div className="room-grid">
@@ -274,6 +275,12 @@ export default function RoomList({
             </div>
           </SortableContext>
         </DndContext>
+        <NotificationCenter
+          notifications={notifications}
+          onDismiss={onDismissNotification}
+          onNavigate={onSelectRoom}
+          position="bottom"
+        />
       </div>
 
       <div className="sidebar-footer">

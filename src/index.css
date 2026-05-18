@@ -383,6 +383,14 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   padding: 10px 12px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sidebar-version {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex-shrink: 0;
 }
 
 .user-badge-wrap {
@@ -2188,13 +2196,10 @@ a.msg-file:hover { text-decoration: underline; }
 
 /* ── Notification center (sidebar, above room list) ────────────────────── */
 .notif-center {
-  margin: 0 0 10px;
+  margin: 0 20px 10px;
   border-radius: 12px;
   background: #f0f0f8;
   overflow: hidden;
-}
-@media (max-width: 640px) {
-  .notif-center { margin: 0 8px 10px; }
 }
 .notif-card {
   display: flex;

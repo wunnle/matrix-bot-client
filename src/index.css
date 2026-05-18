@@ -2181,28 +2181,30 @@ a.msg-file:hover { text-decoration: underline; }
 
 /* ── Notification center (sidebar, above room list) ────────────────────── */
 .notif-center {
-  border-bottom: 1px solid var(--border);
-  padding: 8px 8px 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  margin: 6px 8px 0;
+  border-radius: 12px;
+  background: #f0f0f8;
+  overflow: hidden;
+  border-bottom: none;
+  flex-shrink: 0;
 }
 .notif-card {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 8px;
-  border-radius: 10px;
+  padding: 9px 10px;
   cursor: pointer;
-  background: var(--bg-surface);
-  transition: background 0.15s;
+  background: transparent;
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+  transition: background 0.12s;
 }
-.notif-card:hover { background: var(--bg-hover); }
+.notif-card:last-of-type { border-bottom: none; }
+.notif-card:hover { background: rgba(0,0,0,0.04); }
 .notif-card-avatar {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--accent-dim);
+  background: rgba(92,79,214,0.15);
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -2210,40 +2212,48 @@ a.msg-file:hover { text-decoration: underline; }
   overflow: hidden;
   font-size: 12px;
   font-weight: 700;
-  color: var(--accent);
+  color: #5c4fd6;
 }
 .notif-card-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .notif-card-content { flex: 1; min-width: 0; }
 .notif-card-room {
   font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
+  font-weight: 700;
+  color: #1a1a2e;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .notif-card-body {
   font-size: 12px;
-  color: var(--text-muted);
+  color: #444460;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.notif-card-body code {
+  background: rgba(92,79,214,0.12);
+  color: #5c4fd6;
+  border-radius: 3px;
+  padding: 0 3px;
+  font-size: 11px;
+  font-family: monospace;
+}
 .notif-card-close {
   background: none;
   border: none;
-  color: var(--text-muted);
+  color: #9090a8;
   font-size: 11px;
   padding: 4px;
   cursor: pointer;
   flex-shrink: 0;
   line-height: 1;
-  opacity: 0.6;
 }
-.notif-card-close:hover { opacity: 1; }
+.notif-card-close:hover { color: #444460; }
 .notif-center-overflow {
   font-size: 11px;
-  color: var(--text-muted);
+  color: #7070a0;
   text-align: center;
-  padding: 2px 0 4px;
+  padding: 4px 0 6px;
+  border-top: 1px solid rgba(0,0,0,0.08);
 }

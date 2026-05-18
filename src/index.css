@@ -130,6 +130,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
     inset: 0;
     z-index: 10;
     transition: transform 0.25s ease;
+    padding-top: env(safe-area-inset-top);
   }
 
   .layout.room-open .sidebar {
@@ -245,7 +246,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding-top: calc(22px + env(safe-area-inset-top));
+  padding-top: 12px;
 }
 
 .room-grid {
@@ -2181,7 +2182,7 @@ a.msg-file:hover { text-decoration: underline; }
 
 /* ── Notification center (sidebar, above room list) ────────────────────── */
 .notif-center {
-  margin: 6px 8px 0;
+  margin: 6px 12px 0;
   border-radius: 12px;
   background: #f0f0f8;
   overflow: hidden;

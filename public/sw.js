@@ -1,3 +1,12 @@
+// App posts CLIENT_VISIBLE messages to keep this flag current
+let appVisible = false;
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "CLIENT_VISIBLE") {
+    appVisible = event.data.visible;
+  }
+});
+
 self.addEventListener("push", (event) => {
   const data = event.data ? event.data.json() : { title: "Hermes", body: "" };
   const roomId = data.roomId;
@@ -17,19 +26,20 @@ self.addEventListener("push", (event) => {
         return;
       }
 
+      // App is open and visible — suppress; in-app toast handles it
+      if (appVisible) {
+        const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        const ourClients = clientList.filter((c) => c.url.startsWith(self.location.origin));
+        for (const c of ourClients) {
+          c.postMessage({ type: "PUSH_SUPPRESS_CHECK", id: null, roomId, title: data.title, body: data.body });
+        }
+        return;
+      }
+
       const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       const ourClients = clientList.filter((c) => c.url.startsWith(self.location.origin));
       if (ourClients.length === 0) {
         await show(null);
-        return;
-      }
-
-      // If any client is focused/visible, suppress immediately without waiting for reply
-      const hasVisibleClient = ourClients.some((c) => c.visibilityState === "visible");
-      if (hasVisibleClient) {
-        for (const c of ourClients) {
-          c.postMessage({ type: "PUSH_SUPPRESS_CHECK", id, roomId, title: data.title, body: data.body });
-        }
         return;
       }
 

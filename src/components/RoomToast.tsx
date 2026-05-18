@@ -7,9 +7,29 @@ function roomInitial(name: string) {
   return name.trim()[0]?.toUpperCase() ?? '?'
 }
 
+// Render inline markdown: **bold**, *italic*, `code`, ~~strike~~
+function renderInlineMarkdown(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = []
+  // Pattern matches bold, italic, code, strikethrough in order of precedence
+  const re = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|~~(.+?)~~)/g
+  let last = 0
+  let match: RegExpExecArray | null
+  let key = 0
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index))
+    if (match[2] !== undefined) parts.push(<strong key={key++}>{match[2]}</strong>)
+    else if (match[3] !== undefined) parts.push(<em key={key++}>{match[3]}</em>)
+    else if (match[4] !== undefined) parts.push(<code key={key++}>{match[4]}</code>)
+    else if (match[5] !== undefined) parts.push(<s key={key++}>{match[5]}</s>)
+    last = match.index + match[0].length
+  }
+  if (last < text.length) parts.push(text.slice(last))
+  return parts
+}
+
 interface ToastCardProps {
   toast: RoomToastData
-  stackIndex: number   // 0 = top (front), 1 = behind, 2 = further behind
+  stackIndex: number
   totalCount: number
   onDismiss: () => void
   onNavigate: (roomId: string) => void
@@ -34,16 +54,14 @@ function ToastCard({ toast, stackIndex, onDismiss, onNavigate }: ToastCardProps)
     return () => { cancelled = true }
   }, [toast.avatarMxc])
 
-  const animateOut = useCallback((dx: number, dy: number) => {
+  const animateOut = useCallback((dy: number) => {
     if (dismissedRef.current) return
     dismissedRef.current = true
     const el = cardRef.current
     if (!el) { onDismiss(); return }
-    // Determine exit direction: up or right
-    const exitX = dx > 0 ? Math.max(dx, 120) : 0
-    const exitY = dy < 0 ? Math.min(dy, -120) : 0
+    const exitY = Math.min(dy, -100)
     el.style.transition = 'transform 0.22s cubic-bezier(0.4,0,1,1), opacity 0.22s ease'
-    el.style.transform = `translateX(${exitX}px) translateY(${exitY}px) scale(0.9)`
+    el.style.transform = `translateY(${exitY}px) scale(0.9)`
     el.style.opacity = '0'
     setTimeout(onDismiss, 220)
   }, [onDismiss])
@@ -51,7 +69,7 @@ function ToastCard({ toast, stackIndex, onDismiss, onNavigate }: ToastCardProps)
   const handleClick = () => {
     if (stackIndex !== 0 || draggingRef.current) return
     onNavigate(toast.roomId)
-    animateOut(0, -80)
+    animateOut(-80)
   }
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -66,36 +84,30 @@ function ToastCard({ toast, stackIndex, onDismiss, onNavigate }: ToastCardProps)
   const handleTouchMove = (e: React.TouchEvent) => {
     if (stackIndex !== 0 || !touchStartRef.current) return
     const t = e.touches[0]
-    const dx = t.clientX - touchStartRef.current.x
     const dy = t.clientY - touchStartRef.current.y
-    // Only track swipe-up or swipe-right
-    if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return
+    if (dy >= 0) return // only track upward movement
     draggingRef.current = true
     const el = cardRef.current
     if (!el) return
-    const clampedDx = Math.max(0, dx)   // only right
-    const clampedDy = Math.min(0, dy)   // only up
-    const opacity = Math.max(0.2, 1 - (Math.abs(clampedDx) + Math.abs(clampedDy)) / 180)
-    el.style.transform = `translateX(${clampedDx}px) translateY(${clampedDy}px) scale(1)`
+    const opacity = Math.max(0.2, 1 - Math.abs(dy) / 160)
+    el.style.transform = `translateY(${dy}px)`
     el.style.opacity = String(opacity)
   }
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (stackIndex !== 0 || !touchStartRef.current) return
     const t = e.changedTouches[0]
-    const dx = t.clientX - touchStartRef.current.x
     const dy = t.clientY - touchStartRef.current.y
     touchStartRef.current = null
     const el = cardRef.current
 
-    if (dy < -50 || dx > 80) {
-      animateOut(Math.max(0, dx), Math.min(0, dy))
+    if (dy < -60) {
+      animateOut(dy)
     } else {
-      // Snap back
       draggingRef.current = false
       if (el) {
         el.style.transition = 'transform 0.2s cubic-bezier(0.34,1.56,0.64,1), opacity 0.2s ease'
-        el.style.transform = 'translateX(0) translateY(0) scale(1)'
+        el.style.transform = 'translateY(0)'
         el.style.opacity = '1'
       }
     }
@@ -132,12 +144,12 @@ function ToastCard({ toast, stackIndex, onDismiss, onNavigate }: ToastCardProps)
           <span className="room-toast-room">{toast.roomName}</span>
           <span className="room-toast-sender">{toast.senderName}</span>
         </div>
-        <div className="room-toast-body">{toast.body}</div>
+        <div className="room-toast-body">{renderInlineMarkdown(toast.body)}</div>
       </div>
       {stackIndex === 0 && (
         <button
           className="room-toast-close"
-          onClick={(e) => { e.stopPropagation(); animateOut(0, -80) }}
+          onClick={(e) => { e.stopPropagation(); animateOut(-80) }}
           aria-label="Dismiss"
         >✕</button>
       )}
@@ -155,7 +167,6 @@ interface Props {
 export default function RoomToast({ toasts, onDismissTop, onNavigate }: Props) {
   if (toasts.length === 0) return null
 
-  // Render at most 3 cards; newest is on top (last in array = stackIndex 0)
   const visible = toasts.slice(-3)
 
   return (

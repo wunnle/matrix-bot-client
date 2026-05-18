@@ -12,9 +12,28 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
 }
 
 
+function notifySWVisibility(visible: boolean) {
+  navigator.serviceWorker.controller?.postMessage({ type: "CLIENT_VISIBLE", visible });
+}
+
 export function usePushNotifications(enabled: boolean) {
-  // When a push targets the room we already have open in the foreground, the SW asks us to
-  // confirm — we tell it to skip showing the system notification.
+  // Keep the SW's appVisible flag in sync so it can suppress pushes immediately
+  useEffect(() => {
+    if (!enabled) return;
+    if (!("serviceWorker" in navigator)) return;
+    const report = () => notifySWVisibility(document.visibilityState === "visible");
+    // Report once on mount (controller may not exist yet — retry after SW is ready)
+    if (navigator.serviceWorker.controller) {
+      report();
+    } else {
+      navigator.serviceWorker.ready.then(report);
+    }
+    document.addEventListener("visibilitychange", report);
+    return () => document.removeEventListener("visibilitychange", report);
+  }, [enabled]);
+
+  // When a push arrives while the app is backgrounded, the SW asks us to confirm.
+  // For the visible case the SW now suppresses directly, but we still handle icons.
   useEffect(() => {
     if (!enabled) return;
     if (!("serviceWorker" in navigator)) return;

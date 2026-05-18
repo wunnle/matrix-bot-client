@@ -2204,3 +2204,11 @@ a.msg-file:hover { text-decoration: underline; }
   line-height: 1;
 }
 .room-toast-close:hover { color: #444460; }
+.room-toast-body code {
+  background: rgba(92,79,214,0.12);
+  color: #5c4fd6;
+  border-radius: 3px;
+  padding: 0 3px;
+  font-size: 12px;
+  font-family: monospace;
+}

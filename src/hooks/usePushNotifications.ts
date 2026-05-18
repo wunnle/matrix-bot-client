@@ -79,16 +79,13 @@ export function usePushNotifications(enabled: boolean) {
         const { loadAuth } = await import("../lib/auth");
         const auth = loadAuth();
 
-        // Always store subscription and re-register pusher — self-heals if pusher was wiped
-        await fetch("/api/subscribe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...subscription.toJSON(), deviceId: auth?.deviceId }),
-        });
         if (!auth) {
           console.warn("Push setup: no auth found, skipping pusher registration");
           return;
         }
+
+        // Store the full subscription JSON as pushkey — gateway reads it directly, no server-side storage needed
+        const pushkey = JSON.stringify(subscription.toJSON());
 
         await fetch(`${auth.homeserver}/_matrix/client/v3/pushers/set`, {
           method: "POST",
@@ -101,7 +98,7 @@ export function usePushNotifications(enabled: boolean) {
             app_id: "com.kafagoz.construct",
             app_display_name: "Construct",
             device_display_name: navigator.userAgent.includes("iPhone") ? "iPhone" : "Browser",
-            pushkey: subscription.endpoint,
+            pushkey,
             lang: "en",
             data: {
               url: "https://construct.kafagoz.com/_matrix/push/v1/notify",

@@ -5,36 +5,8 @@
  * Receives push notifications from matrix.org and delivers them as Web Push
  * to the subscription stored under push_subscriptions/{hash}.json in Vercel Blob.
  */
-import { list } from "@vercel/blob";
 import webpush from "web-push";
-import { createHash } from "crypto";
 
-async function getActiveRooms() {
-  // Returns Set<roomId> — any device actively viewing a room suppresses push for it.
-  // Beacon clears immediately on tab hide (visibilitychange), so this only fires
-  // when a device is genuinely in the foreground. TTL is a safety net for crashes.
-  // State is encoded in blob paths: active_rooms/{deviceId}/{roomId}_{ts}
-  try {
-    const { blobs } = await list({ prefix: "active_rooms/" });
-    const now = Date.now();
-    const TTL_MS = 5 * 60 * 1000;
-    const active = new Set();
-    for (const blob of blobs) {
-      const parts = blob.pathname.split("/");
-      if (parts.length < 3) continue;
-      const filename = parts[parts.length - 1];
-      const lastUnderscore = filename.lastIndexOf("_");
-      if (lastUnderscore === -1) continue;
-      const ts = parseInt(filename.slice(lastUnderscore + 1), 10);
-      if (now - ts > TTL_MS) continue;
-      const roomId = decodeURIComponent(filename.slice(0, lastUnderscore));
-      active.add(roomId);
-    }
-    return active;
-  } catch {
-    return new Set();
-  }
-}
 
 const ROOM_AVATARS = {
   "!vjoGMHloXyNobvgGaK:matrix.org": "mxc://matrix.org/tOIBhgtMxpMQMmADcYIcprnh",
@@ -80,25 +52,24 @@ export default async function handler(req, res) {
     : "New message";
 
   const rejected = [];
-  const activeRooms = await getActiveRooms();
 
   await Promise.all(
     devices.map(async (device) => {
       const pushkey = device.pushkey;
       if (!pushkey) return;
 
-      // Skip if any device is actively viewing this room
-      if (activeRooms.has(room_id)) return;
-
-      const id = createHash("sha256").update(pushkey).digest("hex").slice(0, 16);
-      const { blobs } = await list({ prefix: `push_subscriptions/${id}.json` });
-      if (!blobs.length) {
+      let subscription;
+      try {
+        subscription = JSON.parse(pushkey);
+      } catch {
         rejected.push(pushkey);
         return;
       }
 
-      const response = await fetch(blobs[0].url);
-      const subscription = await response.json();
+      if (!subscription?.endpoint) {
+        rejected.push(pushkey);
+        return;
+      }
 
       const icon = mxcToProxyUrl(ROOM_AVATARS[room_id]);
       const payload = JSON.stringify({

@@ -1,3 +1,19 @@
+const APP_ACTIVE_CACHE = "construct-app-state";
+const APP_ACTIVE_KEY = "/app-active-ts";
+const ACTIVE_TTL_MS = 30_000;
+
+async function isAppActive() {
+  try {
+    const cache = await caches.open(APP_ACTIVE_CACHE);
+    const res = await cache.match(APP_ACTIVE_KEY);
+    if (!res) return false;
+    const ts = parseInt(await res.text(), 10);
+    return !isNaN(ts) && Date.now() - ts < ACTIVE_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
 self.addEventListener("push", (event) => {
   const data = event.data ? event.data.json() : { title: "Hermes", body: "" };
   const roomId = data.roomId;
@@ -17,15 +33,10 @@ self.addEventListener("push", (event) => {
         return;
       }
 
-      const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      const ourClients = clientList.filter((c) => c.url.startsWith(self.location.origin));
-
-      console.log(`[SW push] clients=${clientList.length} ourClients=${ourClients.length} origin=${self.location.origin} urls=${clientList.map(c=>c.url).join(',')}`);
-
-      // Any open window means the sync client is running — suppress system notification
-      // and let the in-app toast handle it instead.
-      if (ourClients.length > 0) {
-        for (const c of ourClients) {
+      // App wrote an active timestamp recently — suppress, let toast handle it
+      if (await isAppActive()) {
+        const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        for (const c of clientList) {
           c.postMessage({ type: "PUSH_SUPPRESS_CHECK", id: null, roomId, title: data.title, body: data.body });
         }
         return;

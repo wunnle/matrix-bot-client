@@ -1,6 +1,10 @@
 import { useEffect } from "react";
 
 const VAPID_PUBLIC_KEY = "BHAWGVTndxe9FH-hZmiPSoLsts1NOJLIx9uwVlJIXwDYf8JeXFb1xrKvCLIR5We0djZcWlXIvwiWW2DPLQ8SHdA";
+const APP_ACTIVE_CACHE = "construct-app-state";
+const APP_ACTIVE_KEY = "/app-active-ts";
+// SW suppresses push if timestamp is fresher than this
+const ACTIVE_TTL_MS = 30_000;
 
 function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -11,53 +15,58 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   return outputArray.buffer as ArrayBuffer;
 }
 
+async function writeActiveTimestamp() {
+  try {
+    const cache = await caches.open(APP_ACTIVE_CACHE);
+    await cache.put(APP_ACTIVE_KEY, new Response(String(Date.now())));
+  } catch {}
+}
 
-function notifySWVisibility(visible: boolean) {
-  navigator.serviceWorker.controller?.postMessage({ type: "CLIENT_VISIBLE", visible });
+async function clearActiveTimestamp() {
+  try {
+    const cache = await caches.open(APP_ACTIVE_CACHE);
+    await cache.delete(APP_ACTIVE_KEY);
+  } catch {}
 }
 
 export function usePushNotifications(enabled: boolean) {
-  // Keep the SW's appVisible flag in sync so it can suppress pushes immediately
+  // Write a "last active" timestamp into the Cache API while the app is visible.
+  // The SW reads this on every push and suppresses if it's fresh — reliable even
+  // when clients.matchAll() fails to return the open window (iOS Safari quirk).
   useEffect(() => {
     if (!enabled) return;
-    if (!("serviceWorker" in navigator)) return;
-    const report = () => notifySWVisibility(document.visibilityState === "visible");
-    // Report once on mount (controller may not exist yet — retry after SW is ready)
-    if (navigator.serviceWorker.controller) {
-      report();
-    } else {
-      navigator.serviceWorker.ready.then(report);
-    }
-    document.addEventListener("visibilitychange", report);
-    return () => document.removeEventListener("visibilitychange", report);
+    if (!("caches" in window)) return;
+
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        writeActiveTimestamp();
+        interval = setInterval(writeActiveTimestamp, 10_000);
+      } else {
+        if (interval) { clearInterval(interval); interval = null; }
+        clearActiveTimestamp();
+      }
+    };
+
+    // Initialise for current state
+    onVisibility();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (interval) clearInterval(interval);
+      clearActiveTimestamp();
+    };
   }, [enabled]);
 
-  // When a push arrives while the app is backgrounded, the SW asks us to confirm.
-  // For the visible case the SW now suppresses directly, but we still handle icons.
+  // Forward PUSH_SUPPRESS_CHECK to dispatch matrix-push events for toast system
   useEffect(() => {
     if (!enabled) return;
     if (!("serviceWorker" in navigator)) return;
 
     const onServiceWorkerMessage = (event: MessageEvent) => {
       if (event.data?.type !== "PUSH_SUPPRESS_CHECK") return;
-      const { id, roomId } = event.data as { id: string; roomId: string | null };
-      const avatars = JSON.parse(localStorage.getItem('room_avatars') || '{}')
-      const icon = roomId ? (avatars[roomId] ?? null) : null
-      if (document.visibilityState === "visible") {
-        // App is in foreground — suppress system notification; toast handles it
-        navigator.serviceWorker.controller?.postMessage({
-          type: "PUSH_SUPPRESS_RESULT",
-          id,
-          suppress: true,
-          icon,
-        });
-      } else if (icon) {
-        navigator.serviceWorker.controller?.postMessage({
-          type: "PUSH_ICON_RESULT",
-          id,
-          icon,
-        });
-      }
+      const { roomId } = event.data as { roomId: string | null };
       if (roomId) {
         window.dispatchEvent(new CustomEvent("matrix-push", { detail: { roomId } }));
       }
@@ -93,7 +102,6 @@ export function usePushNotifications(enabled: boolean) {
           return;
         }
 
-        // Store the full subscription JSON as pushkey — gateway reads it directly, no server-side storage needed
         const pushkey = JSON.stringify(subscription.toJSON());
 
         await fetch(`${auth.homeserver}/_matrix/client/v3/pushers/set`, {
@@ -118,7 +126,6 @@ export function usePushNotifications(enabled: boolean) {
         console.log("Push pusher registered successfully");
       } catch (err) {
         console.warn("Push setup failed:", err);
-        // Report failure to Matrix so we can debug without DevTools
         try {
           const { loadAuth } = await import("../lib/auth");
           const auth = loadAuth();
@@ -136,3 +143,5 @@ export function usePushNotifications(enabled: boolean) {
     })();
   }, [enabled]);
 }
+
+export { ACTIVE_TTL_MS, APP_ACTIVE_CACHE, APP_ACTIVE_KEY };

@@ -4,6 +4,8 @@ import type { AuthState } from '../types'
 import RoomList from './RoomList'
 import ChatView from './ChatView'
 import ConnectionBanner from './ConnectionBanner'
+import RoomToast from './RoomToast'
+import { useRoomToast } from '../hooks/useRoomToast'
 import { getClient, getCachedRooms } from '../lib/matrix'
 import { getDictationAutoSend, setDictationAutoSend } from '../lib/clientSettings'
 import { resolveRoomIdFromParam } from '../lib/roomAliases'
@@ -32,6 +34,8 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   const activeRoomId = roomId
     ? resolveRoomIdFromParam(decodeURIComponent(roomId))
     : null
+
+  const { roomToast, dismissRoomToast } = useRoomToast(activeRoomId, clientReady)
 
   useEffect(() => {
     setDictationAutoSendState(getDictationAutoSend(auth.userId))
@@ -113,6 +117,13 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   return (
     <div className={`layout ${activeRoomId ? 'room-open' : ''}`}>
       <ConnectionBanner />
+      {roomToast && (
+        <RoomToast
+          toast={roomToast}
+          onDismiss={dismissRoomToast}
+          onNavigate={(id) => handleSelectRoom(id, roomToast.roomName)}
+        />
+      )}
       <div className="layout-body">
         <aside className="sidebar">
           <RoomList

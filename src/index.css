@@ -248,6 +248,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   padding-top: 12px;
+  display: flex;
+  flex-direction: column;
 }
 
 .room-grid {
@@ -2204,7 +2206,7 @@ a.msg-file:hover { text-decoration: underline; }
 .notif-center--bottom { display: none; }
 @media (max-width: 640px) {
   .notif-center--top    { display: none; }
-  .notif-center--bottom { display: block; margin: 10px 28px 0; }
+  .notif-center--bottom { display: block; margin: auto 28px 10px; }
 }
 .notif-card {
   display: flex;

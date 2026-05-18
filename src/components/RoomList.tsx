@@ -181,8 +181,25 @@ export default function RoomList({
       })
     }
 
+    const onReceipt = (_event: sdk.MatrixEvent, room: sdk.Room) => {
+      const newCount = room.roomId === activeRoomIdRef.current ? 0 : getRoomUnreadCount(room, auth.userId)
+      setRooms((prev) => {
+        let changed = false
+        const next = prev.map((r) => {
+          if (r.roomId !== room.roomId || r.unreadCount === newCount) return r
+          changed = true
+          return { ...r, unreadCount: newCount }
+        })
+        return changed ? next : prev
+      })
+    }
+
     client.on(sdk.RoomEvent.Timeline, onEvent)
-    return () => { client.off(sdk.RoomEvent.Timeline, onEvent) }
+    client.on(sdk.RoomEvent.Receipt, onReceipt)
+    return () => {
+      client.off(sdk.RoomEvent.Timeline, onEvent)
+      client.off(sdk.RoomEvent.Receipt, onReceipt)
+    }
   }, [loading])
 
   // Update unread count when a push notification arrives for a room

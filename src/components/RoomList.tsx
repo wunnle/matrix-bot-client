@@ -6,6 +6,8 @@ import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
 import { fetchJoinedRooms, getCachedRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, getRoomUnreadCount, type RoomSummary } from '../lib/matrix'
 import { resolveMediaUrl } from '../lib/mediaUrl'
+import NotificationCenter from './NotificationCenter'
+import type { RoomNotification } from '../hooks/useRoomNotifications'
 
 interface Props {
   auth: AuthState
@@ -15,6 +17,8 @@ interface Props {
   onReady: () => void
   dictationAutoSend: boolean
   onDictationAutoSendChange: (value: boolean) => void
+  notifications: RoomNotification[]
+  onDismissNotification: (roomId: string) => void
 }
 
 const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar, onSelect }: {
@@ -61,6 +65,8 @@ export default function RoomList({
   onReady,
   dictationAutoSend,
   onDictationAutoSendChange,
+  notifications,
+  onDismissNotification,
 }: Props) {
   const cached = getCachedRooms(auth.userId)
   const savedOrder = getRoomOrder(auth.userId)
@@ -236,6 +242,11 @@ export default function RoomList({
     <div className="room-list">
 
       <div className="room-list-body">
+        <NotificationCenter
+          notifications={notifications}
+          onDismiss={onDismissNotification}
+          onNavigate={onSelectRoom}
+        />
         {loading && (
           <div className="room-grid">
             {[...Array(6)].map((_, i) => (

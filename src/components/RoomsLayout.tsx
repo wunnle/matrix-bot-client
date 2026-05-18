@@ -5,7 +5,6 @@ import RoomList from './RoomList'
 import ChatView from './ChatView'
 import ConnectionBanner from './ConnectionBanner'
 import RoomToast from './RoomToast'
-import NotificationCenter from './NotificationCenter'
 import { useRoomNotifications } from '../hooks/useRoomNotifications'
 import { getClient, getCachedRooms } from '../lib/matrix'
 import { getDictationAutoSend, setDictationAutoSend } from '../lib/clientSettings'
@@ -117,11 +116,6 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
       )}
       <div className="layout-body">
         <aside className="sidebar">
-          <NotificationCenter
-            notifications={notifications}
-            onDismiss={dismiss}
-            onNavigate={handleSelectRoom}
-          />
           <RoomList
             auth={auth}
             activeRoomId={activeRoomId}
@@ -130,6 +124,8 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
             onReady={handleReady}
             dictationAutoSend={dictationAutoSend}
             onDictationAutoSendChange={onDictationAutoSendChange}
+            notifications={notifications}
+            onDismissNotification={dismiss}
           />
         </aside>
 

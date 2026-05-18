@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import type { IRoomTimelineData } from 'matrix-js-sdk'
-import { getClient } from '../lib/matrix'
+import { getClient, getRoomUnreadCount } from '../lib/matrix'
 
 const TOOL_PROGRESS_LINE = /^(?:\*\s*)?\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\(×\d+\))?|\.\.\.)\s*$/u
 const TOAST_TTL_MS = 4000
@@ -16,6 +16,26 @@ function toastBody(raw: string): string {
   return firstLine.slice(0, 120)
 }
 
+function notifFromRoom(room: sdk.Room, userId: string): RoomNotification | null {
+  const events = room.getLiveTimeline().getEvents()
+  const lastMsg = [...events].reverse().find(
+    e => (e.getType() === 'm.room.message') && !e.isDecryptionFailure() && e.getSender() !== userId
+  )
+  if (!lastMsg) return null
+  const body = lastMsg.getContent()?.body as string | undefined
+  if (!body || isThinkingMessage(body)) return null
+  const sender = lastMsg.getSender() ?? ''
+  const member = room.getMember(sender)
+  return {
+    roomId: room.roomId,
+    roomName: room.name,
+    senderName: member?.name ?? sender.split(':')[0].replace('@', ''),
+    body: toastBody(body),
+    avatarMxc: room.getMxcAvatarUrl() ?? undefined,
+    receivedAt: lastMsg.getTs(),
+  }
+}
+
 export interface RoomNotification {
   roomId: string
   roomName: string
@@ -25,15 +45,32 @@ export interface RoomNotification {
   receivedAt: number
 }
 
-export function useRoomNotifications(activeRoomId: string | null, clientReady: boolean) {
-  // All pending notifications, one per room (keyed by roomId)
+export function useRoomNotifications(activeRoomId: string | null, clientReady: boolean, userId: string) {
   const [notifications, setNotifications] = useState<RoomNotification[]>([])
-  // Set of roomIds currently showing as in-room toasts (auto-expires after TOAST_TTL_MS)
   const [toastRoomIds, setToastRoomIds] = useState<Set<string>>(new Set())
   const toastTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const activeRoomIdRef = useRef(activeRoomId)
 
   useEffect(() => { activeRoomIdRef.current = activeRoomId }, [activeRoomId])
+
+  // Seed from existing unread rooms on initial ready
+  useEffect(() => {
+    if (!clientReady) return
+    let client: ReturnType<typeof getClient>
+    try { client = getClient() } catch { return }
+
+    const initial: RoomNotification[] = []
+    for (const room of client.getRooms()) {
+      if (room.roomId === activeRoomId) continue
+      if (getRoomUnreadCount(room, userId) === 0) continue
+      const n = notifFromRoom(room, userId)
+      if (n) initial.push(n)
+    }
+    // Sort oldest first so newest appears at bottom
+    initial.sort((a, b) => a.receivedAt - b.receivedAt)
+    setNotifications(initial)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientReady])
 
   // Clear notification when its room becomes active
   useEffect(() => {
@@ -44,13 +81,26 @@ export function useRoomNotifications(activeRoomId: string | null, clientReady: b
     if (t) { clearTimeout(t); toastTimers.current.delete(activeRoomId) }
   }, [activeRoomId])
 
+  // Dismiss = remove notification + send read receipt so badge clears too
   const dismiss = useCallback((roomId: string) => {
     setNotifications(prev => prev.filter(n => n.roomId !== roomId))
     setToastRoomIds(prev => { const s = new Set(prev); s.delete(roomId); return s })
     const t = toastTimers.current.get(roomId)
     if (t) { clearTimeout(t); toastTimers.current.delete(roomId) }
+
+    try {
+      const client = getClient()
+      const room = client.getRoom(roomId)
+      if (!room) return
+      const events = room.getLiveTimeline().getEvents()
+      const lastEvent = [...events].reverse().find(e =>
+        e.getType() === 'm.room.message' || e.getType() === 'm.room.encrypted'
+      )
+      if (lastEvent) client.sendReadReceipt(lastEvent).catch(() => {})
+    } catch {}
   }, [])
 
+  // Live event listener
   useEffect(() => {
     if (!clientReady) return
     let client: ReturnType<typeof getClient>
@@ -89,13 +139,11 @@ export function useRoomNotifications(activeRoomId: string | null, clientReady: b
         receivedAt: Date.now(),
       }
 
-      // Upsert: one notification per room
       setNotifications(prev => {
         const filtered = prev.filter(n => n.roomId !== room.roomId)
         return [...filtered, notification]
       })
 
-      // Show as in-room toast, reset timer if room already toasting
       const existing = toastTimers.current.get(room.roomId)
       if (existing) clearTimeout(existing)
       setToastRoomIds(prev => new Set([...prev, room.roomId]))
@@ -109,12 +157,10 @@ export function useRoomNotifications(activeRoomId: string | null, clientReady: b
     client.on(sdk.RoomEvent.Timeline, onEvent)
     return () => {
       client.off(sdk.RoomEvent.Timeline, onEvent)
-      toastTimers.current.forEach(t => clearTimeout(t))
+      toastTimers.current.forEach(clearTimeout)
     }
   }, [clientReady])
 
-  // Toasts = notifications whose roomId is in toastRoomIds
   const toasts = notifications.filter(n => toastRoomIds.has(n.roomId))
-
   return { notifications, toasts, dismiss }
 }

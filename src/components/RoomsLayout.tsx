@@ -33,7 +33,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     ? resolveRoomIdFromParam(decodeURIComponent(roomId))
     : null
 
-  const { notifications, toasts, dismiss } = useRoomNotifications(activeRoomId, clientReady)
+  const { notifications, toasts, dismiss } = useRoomNotifications(activeRoomId, clientReady, auth.userId)
 
   useEffect(() => {
     setDictationAutoSendState(getDictationAutoSend(auth.userId))

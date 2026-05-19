@@ -77,6 +77,7 @@ export default function RoomList({
   const [roomAvatars, setRoomAvatars] = useState<Record<string, string>>({})
   const [userAvatarUrl, setUserAvatarUrl] = useState<string | null>(null)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null)
   const profileRef = useRef<HTMLDivElement>(null)
 
   const sensors = useSensors(
@@ -154,6 +155,33 @@ export default function RoomList({
     document.addEventListener('mousedown', onClickOutside)
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [profileOpen])
+
+  // Read master push rule state when menu opens
+  useEffect(() => {
+    if (!profileOpen) return
+    let cancelled = false;
+    (async () => {
+      try {
+        const client = getClient()
+        const rules = await client.getPushRules()
+        if (cancelled) return
+        const master = rules?.global?.override?.find(
+          (r: sdk.IPushRule) => r.rule_id === '.m.rule.master'
+        )
+        setNotificationsEnabled(master ? !master.enabled : true)
+      } catch {}
+    })()
+    return () => { cancelled = true }
+  }, [profileOpen])
+
+  const toggleNotifications = async () => {
+    try {
+      const client = getClient()
+      const next = !notificationsEnabled
+      await client.setPushRuleEnabled('global', sdk.PushRuleKind.Override, '.m.rule.master', !next)
+      setNotificationsEnabled(next)
+    } catch {}
+  }
 
   const activeRoomIdRef = useRef(activeRoomId)
   useEffect(() => { activeRoomIdRef.current = activeRoomId }, [activeRoomId])
@@ -309,6 +337,21 @@ export default function RoomList({
                   checked={dictationAutoSend}
                   onChange={(e) => onDictationAutoSendChange(e.target.checked)}
                   aria-label="Auto-send when done talking"
+                />
+              </label>
+              <label
+                className="user-menu-toggle-row"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <span className="user-menu-toggle-label">Notifications</span>
+                <input
+                  type="checkbox"
+                  className="user-menu-toggle-input"
+                  checked={notificationsEnabled ?? false}
+                  disabled={notificationsEnabled === null}
+                  onChange={toggleNotifications}
+                  aria-label="Notifications"
                 />
               </label>
               <button className="user-menu-item" onClick={() => window.location.reload()}>

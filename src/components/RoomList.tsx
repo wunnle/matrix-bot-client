@@ -21,10 +21,11 @@ interface Props {
   onDismissNotification: (roomId: string) => void
 }
 
-const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar, onSelect }: {
+const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar, hasNotification, onSelect }: {
   room: RoomSummary
   isActive: boolean
   avatar?: string
+  hasNotification: boolean
   onSelect: (roomId: string, name: string) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: room.roomId })
@@ -46,9 +47,9 @@ const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar
           allows the list to scroll naturally */}
       <div className="room-card-avatar" {...listeners}>
         {avatar ? <img src={avatar} alt="" /> : <span>{roomInitial(room.name)}</span>}
-        {room.unreadCount > 0 && (
+        {(room.unreadCount > 0 || hasNotification) && (
           <span className="room-card-badge">
-            {room.unreadCount > 99 ? '99+' : room.unreadCount}
+            {room.unreadCount > 99 ? '99+' : Math.max(room.unreadCount, 1)}
           </span>
         )}
       </div>
@@ -308,6 +309,7 @@ export default function RoomList({
                   room={room}
                   isActive={room.roomId === activeRoomId}
                   avatar={roomAvatars[room.roomId]}
+                  hasNotification={notifications.some(n => n.roomId === room.roomId)}
                   onSelect={onSelectRoom}
                 />
               ))}

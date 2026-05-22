@@ -80,7 +80,7 @@ export function usePushNotifications(enabled: boolean) {
     if (!enabled) return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
 
-    (async () => {
+    const registerPusher = async () => {
       try {
         const reg = await navigator.serviceWorker.register("/sw.js");
         const permission = await Notification.requestPermission();
@@ -140,7 +140,15 @@ export function usePushNotifications(enabled: boolean) {
           }
         } catch {}
       }
-    })();
+    };
+
+    registerPusher();
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") registerPusher();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [enabled]);
 }
 

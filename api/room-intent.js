@@ -21,7 +21,7 @@ export default function handler(req, res) {
     pendingRoom = room
     pendingAction = action ?? null
     pendingText = text ?? null
-    expiresAt = Date.now() + 60_000
+    expiresAt = Date.now() + 5_000
     return res.status(200).json({ ok: true })
   }
 

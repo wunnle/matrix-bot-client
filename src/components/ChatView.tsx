@@ -287,6 +287,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const { toast, showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [cameraPrompt, setCameraPrompt] = useState(false)
+  const [pendingSend, setPendingSend] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -988,7 +989,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setSearchParams,
   ])
 
-  // ?send=<text> — auto-send dictated text after navigation; strip the param
+  // ?send=<text> — strip param and queue the text for auto-send
   useEffect(() => {
     if (!isActive) return
     const text = searchParams.get('send')
@@ -1001,10 +1002,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       },
       { replace: true },
     )
-    setTimeout(() => {
-      autoSendToMessage.current?.(text)
-    }, 300)
+    setPendingSend(text)
   }, [isActive, roomId, searchParams, setSearchParams])
+
+  // flush pendingSend once sendMessage is stable and not already sending
+  useEffect(() => {
+    if (!pendingSend || sending) return
+    setPendingSend(null)
+    void sendMessage(pendingSend)
+  }, [pendingSend, sending, sendMessage])
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || sending) return

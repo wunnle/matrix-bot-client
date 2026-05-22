@@ -287,7 +287,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const { toast, showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [cameraPrompt, setCameraPrompt] = useState(false)
-  const [pendingSend, setPendingSend] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -989,21 +988,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setSearchParams,
   ])
 
-  // ?send=<text> — strip param and queue the text for auto-send
-  useEffect(() => {
-    if (!isActive) return
-    const text = searchParams.get('send')
-    if (!text) return
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev)
-        next.delete('send')
-        return next
-      },
-      { replace: true },
-    )
-    setPendingSend(text)
-  }, [isActive, roomId, searchParams, setSearchParams])
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || sending) return
@@ -1031,12 +1015,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [client, roomId, sending, scrollToBottom, stopDictation])
 
-  // flush pendingSend once sendMessage is stable and not already sending
-  useEffect(() => {
-    if (!pendingSend || sending) return
-    setPendingSend(null)
-    void sendMessage(pendingSend)
-  }, [pendingSend, sending, sendMessage])
 
   const sendReaction = useCallback(async (eventId: string, emoji: string) => {
     try {

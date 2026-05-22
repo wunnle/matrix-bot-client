@@ -19,8 +19,8 @@ export default function handler(req, res) {
     const { room, action, text } = req.body ?? {}
     if (!room) return res.status(400).json({ error: 'missing room' })
     pendingRoom = room
-    pendingAction = action ?? null
-    pendingText = text ?? null
+    pendingAction = action !== 'send' ? (action ?? null) : null
+    pendingText = action !== 'send' ? (text ?? null) : null
     expiresAt = Date.now() + 5_000
     return res.status(200).json({ ok: true })
   }

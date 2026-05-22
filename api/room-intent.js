@@ -6,6 +6,7 @@ const SECRET = process.env.INTENT_SECRET || 'construct-intent'
 
 let pendingRoom = null
 let pendingAction = null
+let pendingText = null
 let expiresAt = 0
 
 export default function handler(req, res) {
@@ -15,10 +16,11 @@ export default function handler(req, res) {
   if (key !== SECRET) return res.status(403).json({ error: 'forbidden' })
 
   if (req.method === 'POST') {
-    const { room, action } = req.body ?? {}
+    const { room, action, text } = req.body ?? {}
     if (!room) return res.status(400).json({ error: 'missing room' })
     pendingRoom = room
     pendingAction = action ?? null
+    pendingText = text ?? null
     expiresAt = Date.now() + 60_000
     return res.status(200).json({ ok: true })
   }
@@ -27,13 +29,16 @@ export default function handler(req, res) {
     if (!pendingRoom || Date.now() > expiresAt) {
       pendingRoom = null
       pendingAction = null
-      return res.status(200).json({ room: null, action: null })
+      pendingText = null
+      return res.status(200).json({ room: null, action: null, text: null })
     }
     const room = pendingRoom
     const action = pendingAction
+    const text = pendingText
     pendingRoom = null
     pendingAction = null
-    return res.status(200).json({ room, action })
+    pendingText = null
+    return res.status(200).json({ room, action, text })
   }
 
   res.status(405).end()

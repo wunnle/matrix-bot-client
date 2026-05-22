@@ -988,6 +988,24 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setSearchParams,
   ])
 
+  // ?send=<text> — auto-send dictated text after navigation; strip the param
+  useEffect(() => {
+    if (!isActive) return
+    const text = searchParams.get('send')
+    if (!text) return
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('send')
+        return next
+      },
+      { replace: true },
+    )
+    setTimeout(() => {
+      autoSendToMessage.current?.(text)
+    }, 300)
+  }, [isActive, roomId, searchParams, setSearchParams])
+
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || sending) return
     stopDictation()

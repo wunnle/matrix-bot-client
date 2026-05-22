@@ -20,7 +20,7 @@ export default async function handler(req, res) {
   if (!ACCESS_TOKEN) return res.status(500).json({ error: 'server not configured' })
 
   const txnId = crypto.randomUUID()
-  const url = `${HOMESERVER}/_matrix/client/v3/rooms/${encodeURIComponent(room)}/send/m.room.message/${txnId}`
+  const url = `${HOMESERVER}/_matrix/client/v3/rooms/${encodeURIComponent(decodeURIComponent(room))}/send/m.room.message/${txnId}`
 
   const response = await fetch(url, {
     method: 'PUT',

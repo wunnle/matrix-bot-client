@@ -475,7 +475,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [refreshPinned])
 
-  const visibleMessages = messages
+  const visibleMessages = renderStart > 0 ? messages.slice(renderStart) : messages
 
   useEffect(() => {
     isFirstLoad.current = true
@@ -786,7 +786,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setShowScrollDown(false)
     lastTailEventIdRef.current = undefined
     if (n > RENDER_LIMIT) {
-      setRenderStart(Math.max(0, n - RENDER_LIMIT))
+      const newStart = Math.max(0, n - RENDER_LIMIT)
+      setRenderStart(newStart)
+      const visibleIds = new Set(messages.slice(newStart).map(m => m.eventId))
+      resolvedImagesRef.current = new Set([...resolvedImagesRef.current].filter(id => visibleIds.has(id)))
+      setImageUrls(prev => {
+        const next: Record<string, string> = {}
+        for (const id of visibleIds) if (prev[id]) next[id] = prev[id]
+        return next
+      })
     } else {
       setRenderStart(0)
     }

@@ -1005,13 +1005,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setPendingSend(text)
   }, [isActive, roomId, searchParams, setSearchParams])
 
-  // flush pendingSend once sendMessage is stable and not already sending
-  useEffect(() => {
-    if (!pendingSend || sending) return
-    setPendingSend(null)
-    void sendMessage(pendingSend)
-  }, [pendingSend, sending, sendMessage])
-
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || sending) return
     stopDictation()
@@ -1037,6 +1030,13 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       textareaRef.current?.focus()
     }
   }, [client, roomId, sending, scrollToBottom, stopDictation])
+
+  // flush pendingSend once sendMessage is stable and not already sending
+  useEffect(() => {
+    if (!pendingSend || sending) return
+    setPendingSend(null)
+    void sendMessage(pendingSend)
+  }, [pendingSend, sending, sendMessage])
 
   const sendReaction = useCallback(async (eventId: string, emoji: string) => {
     try {

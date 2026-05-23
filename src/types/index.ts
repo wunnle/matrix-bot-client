@@ -11,6 +11,7 @@ export interface RoomsConfig {
 export interface ConstructCard {
   title: string
   subtitle?: string
+  description?: string
   image?: string
   fields?: { label: string; value: string }[]
   url?: string

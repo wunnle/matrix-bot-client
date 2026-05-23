@@ -1541,22 +1541,21 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                                           const isLinkCard = !hasActions && !!card.url
                                           const inner = (
                                             <>
-                                              <div className="msg-card-main">
-                                                {card.image && <img className="msg-card-image" src={card.image} alt="" loading="lazy" />}
-                                                <div className="msg-card-body">
-                                                  <div className="msg-card-title">{card.title}</div>
-                                                  {card.subtitle && <div className="msg-card-subtitle">{card.subtitle}</div>}
-                                                  {card.fields && card.fields.length > 0 && (
-                                                    <dl className="msg-card-fields">
-                                                      {card.fields.map((f, fi) => (
-                                                        <div key={fi} className="msg-card-field">
-                                                          <dt>{f.label}</dt>
-                                                          <dd>{f.value}</dd>
-                                                        </div>
-                                                      ))}
-                                                    </dl>
-                                                  )}
-                                                </div>
+                                              {card.image && <img className="msg-card-image" src={card.image} alt="" loading="lazy" />}
+                                              <div className="msg-card-body">
+                                                <div className="msg-card-title">{card.title}</div>
+                                                {card.subtitle && <div className="msg-card-subtitle">{card.subtitle}</div>}
+                                                {card.description && <div className="msg-card-description">{card.description}</div>}
+                                                {card.fields && card.fields.length > 0 && (
+                                                  <dl className="msg-card-fields">
+                                                    {card.fields.map((f, fi) => (
+                                                      <div key={fi} className="msg-card-field">
+                                                        <dt>{f.label}</dt>
+                                                        <dd>{f.value}</dd>
+                                                      </div>
+                                                    ))}
+                                                  </dl>
+                                                )}
                                               </div>
                                               {hasActions && (
                                                 <div className="msg-card-actions">
@@ -1909,6 +1908,7 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
         .map((c: any) => ({
           title: String(c.title),
           subtitle: typeof c.subtitle === 'string' ? c.subtitle : undefined,
+          description: typeof c.description === 'string' ? c.description : undefined,
           image: typeof c.image === 'string' ? c.image : undefined,
           fields: Array.isArray(c.fields)
             ? c.fields

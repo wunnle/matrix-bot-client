@@ -4,7 +4,7 @@ const VAPID_PUBLIC_KEY = "BHAWGVTndxe9FH-hZmiPSoLsts1NOJLIx9uwVlJIXwDYf8JeXFb1xr
 const APP_ACTIVE_CACHE = "construct-app-state";
 const APP_ACTIVE_KEY = "/app-active-ts";
 // SW suppresses push if timestamp is fresher than this
-const ACTIVE_TTL_MS = 30_000;
+const ACTIVE_TTL_MS = 8_000;
 
 function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -42,7 +42,7 @@ export function usePushNotifications(enabled: boolean) {
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
         writeActiveTimestamp();
-        interval = setInterval(writeActiveTimestamp, 10_000);
+        interval = setInterval(writeActiveTimestamp, 3_000);
       } else {
         if (interval) { clearInterval(interval); interval = null; }
         clearActiveTimestamp();

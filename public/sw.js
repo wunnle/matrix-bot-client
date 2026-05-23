@@ -1,6 +1,6 @@
 const APP_ACTIVE_CACHE = "construct-app-state";
 const APP_ACTIVE_KEY = "/app-active-ts";
-const ACTIVE_TTL_MS = 30_000;
+const ACTIVE_TTL_MS = 8_000;
 
 async function isAppActive() {
   try {

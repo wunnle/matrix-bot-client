@@ -816,6 +816,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .messages {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   overflow-anchor: none;
@@ -857,7 +858,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   max-width: 78%;
 }
 
-.message.other .message-body { max-width: 100%; min-width: 0; overflow: visible; }
+.message.other .message-body { max-width: 100%; min-width: 0; overflow: hidden; }
 
 .message.own .message-body { align-items: flex-end; }
 .message.other .message-body { align-items: flex-start; }
@@ -909,9 +910,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   border-radius: 6px;
   padding: 8px 10px;
   overflow-x: auto;
-  max-width: 100%;
-  /* Prevent pre from expanding the layout on mobile and triggering viewport zoom */
-  min-width: 0;
+  /* Contain width so long lines scroll instead of expanding the layout */
+  width: 0;
+  min-width: 100%;
   box-sizing: border-box;
   margin-bottom: 0.5em;
   line-height: 1.55;

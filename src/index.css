@@ -1617,7 +1617,7 @@ a.msg-file:hover { text-decoration: underline; }
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-width: 420px;
+  max-width: 320px;
 }
 .msg-card {
   display: flex;
@@ -1708,6 +1708,10 @@ a.msg-card-link:hover {
   min-width: 0;
   margin-left: auto;
 }
+.msg-card-footer:not(:has(.msg-card-price)) .msg-card-actions {
+  flex: 1 1 100%;
+  margin-left: 0;
+}
 .msg-card-action {
   display: inline-flex;
   flex: 1 1 auto;
@@ -1715,20 +1719,20 @@ a.msg-card-link:hover {
   align-items: center;
   padding: 8px 14px;
   font-size: 0.9em;
-  font-weight: 500;
+  font-weight: 700;
   border-radius: 8px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  color: var(--text);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #fff;
   text-decoration: none;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition: background 0.15s, border-color 0.15s;
   white-space: nowrap;
 }
 .bot-text a.msg-card-action:hover,
 .msg-card-action:hover {
-  background: var(--accent-dim);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: #fff;
   text-decoration: none;
 }
 .input-row button.dictation-btn {

@@ -70,48 +70,12 @@ const isStandalonePwa =
     (navigator as unknown as { standalone?: boolean }).standalone === true)
 
 
-// Matches lines like: "📖 read_file: "/path..."" or "🔧 patch: "..." (×2)"
-const TOOL_PROGRESS_LINE = /^(?:\*\s*)?\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\(×\d+\))?|\.\.\.)\s*$/u
-
-// Parses "🧠 memory: "foo bar" (×2)" → { emoji, tool, content, repeat }
-const TOOL_PROGRESS_PARSE = /^(?:\*\s*)?(\S\S?)\s+(\w[\w./-]*)(?::\s+"(.{0,80})"(?:\s+\(×(\d+)\))?|(\.\.\.))\s*$/u
-
-
-function parseToolProgressLine(line: string): ToolProgressLine | null {
-  const trimmed = line.trim()
-  const m = trimmed.match(TOOL_PROGRESS_PARSE)
-  if (!m) return null
-  const [, emoji, tool, content, repeatStr, ellipsis] = m
-  return {
-    emoji,
-    tool,
-    content: ellipsis ? undefined : unescapeToolContent(content ?? ''),
-    repeat: repeatStr ? Number(repeatStr) : undefined,
-    raw: trimmed,
-  }
+function isToolProgressMessage(_body: string, msg?: Message): boolean {
+  return !!msg?.toolProgress
 }
 
-// Strips backslash-escaped quotes and collapses redundant surrounding
-// quotes so "~user: \"foo\"" renders as ~user: "foo" instead of
-// "~user: \"foo\"".
-function unescapeToolContent(s: string): string {
-  return s.replace(/\\"/g, '"').replace(/\\\\/g, '\\')
-}
-
-function isToolProgressMessage(body: string, msg?: Message): boolean {
-  if (msg?.toolProgress) return true
-  const lines = body.split('\n').filter(l => l.trim() !== '')
-  return lines.length > 0 && lines.every(l => TOOL_PROGRESS_LINE.test(l.trim()))
-}
-
-function parseToolProgressMessage(body: string, msg?: Message): ToolProgressLine[] {
-  if (msg?.toolProgress) return msg.toolProgress
-  return body
-    .split('\n')
-    .map(l => l.trim())
-    .filter(l => l.length > 0)
-    .map(parseToolProgressLine)
-    .filter((l): l is ToolProgressLine => l !== null)
+function parseToolProgressMessage(_body: string, msg?: Message): ToolProgressLine[] {
+  return msg?.toolProgress ?? []
 }
 
 function summarizeToolLines(lines: ToolProgressLine[]): string {
@@ -269,7 +233,6 @@ function ThreadBlock({ thread }: { thread: ConstructThread }) {
   )
 }
 
-const MODEL_SWITCH_RE = /^Model switched to [`"]?([^`"\n]+)[`"]?/m
 
 function getRoomModel(roomId: string): string | null {
   return localStorage.getItem(`room-model:${roomId}`)
@@ -541,13 +504,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         if (eventModel) {
           setRoomModel(roomId, eventModel)
           setCurrentModel(eventModel)
-        } else {
-          // Fallback: parse "Model switched to X" from message body
-          const match = MODEL_SWITCH_RE.exec(msg.body) ?? (msg.formattedBody ? MODEL_SWITCH_RE.exec(msg.formattedBody.replace(/<[^>]+>/g, '')) : null)
-          if (match) {
-            setRoomModel(roomId, match[1].trim())
-            setCurrentModel(match[1].trim())
-          }
         }
       }
       setMessages((prev) => {

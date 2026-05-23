@@ -82,8 +82,11 @@ export function usePushNotifications(enabled: boolean) {
 
     const registerPusher = async () => {
       try {
-        const reg = await navigator.serviceWorker.register("/sw.js");
-        const permission = await Notification.requestPermission();
+        await navigator.serviceWorker.register("/sw.js");
+        const reg = await navigator.serviceWorker.ready;
+        const permission = Notification.permission === "granted"
+          ? "granted"
+          : await Notification.requestPermission();
         if (permission !== "granted") return;
 
         const existing = await reg.pushManager.getSubscription();

@@ -19,6 +19,12 @@ export interface ConstructCard {
   actions?: { label: string; url: string }[]
 }
 
+export interface ConstructThread {
+  title: string
+  summary?: string
+  body: string
+}
+
 export interface Message {
   eventId: string
   sender: string
@@ -30,6 +36,7 @@ export interface Message {
   fileName?: string
   fileMime?: string
   cards?: ConstructCard[]
+  thread?: ConstructThread
   timestamp: number
   isOwnMessage: boolean
   isDecryptionFailure?: boolean

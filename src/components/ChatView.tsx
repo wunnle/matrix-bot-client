@@ -54,6 +54,7 @@ interface Props {
 
 const PAGE_SIZE = 30
 const RENDER_LIMIT = 60 // kept for isActive reset logic only
+const MSG_CAP = 200 // max messages kept in state; old ones dropped from the front
 const PIN_LONG_PRESS_MS = 500
 const PIN_MOVE_CANCEL_PX = 10
 const MENU_DISMISS_GRACE_MS = 350
@@ -549,7 +550,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       setMessages((prev) => {
         const id = event.getId() ?? ''
         if (prev.some((m) => m.eventId === id)) return prev
-        return [...prev, msg]
+        const next = [...prev, msg]
+        return next.length > MSG_CAP ? next.slice(next.length - MSG_CAP) : next
       })
     }
 
@@ -591,31 +593,32 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       })
     }
 
-    const onReaction = (event: sdk.MatrixEvent, room_: sdk.Room | undefined) => {
-      if (room_?.roomId !== roomId) return
-      if (event.getType() !== 'm.reaction') return
-      const rel = event.getContent()['m.relates_to']
-      if (!rel || rel.rel_type !== 'm.annotation') return
-      const targetId = rel.event_id as string
-      const emoji = rel.key as string
-      const sender = event.getSender() ?? ''
-      setMessages((prev) => prev.map((m) => {
-        if (m.eventId !== targetId) return m
-        const reactions = { ...(m.reactions ?? {}) }
-        const senders = reactions[emoji] ? [...reactions[emoji]] : []
-        if (!senders.includes(sender)) senders.push(sender)
-        reactions[emoji] = senders
-        return { ...m, reactions }
-      }))
+    const onTimeline = (event: sdk.MatrixEvent, room_: sdk.Room | undefined) => {
+      if (event.getType() === 'm.reaction') {
+        if (room_?.roomId !== roomId) return
+        const rel = event.getContent()['m.relates_to']
+        if (!rel || rel.rel_type !== 'm.annotation') return
+        const targetId = rel.event_id as string
+        const emoji = rel.key as string
+        const sender = event.getSender() ?? ''
+        setMessages((prev) => prev.map((m) => {
+          if (m.eventId !== targetId) return m
+          const reactions = { ...(m.reactions ?? {}) }
+          const senders = reactions[emoji] ? [...reactions[emoji]] : []
+          if (!senders.includes(sender)) senders.push(sender)
+          reactions[emoji] = senders
+          return { ...m, reactions }
+        }))
+      } else {
+        onEvent(event, room_)
+      }
     }
 
     client.on(sdk.MatrixEventEvent.Decrypted, onDecrypted)
-    client.on(sdk.RoomEvent.Timeline, onEvent)
-    client.on(sdk.RoomEvent.Timeline, onReaction)
+    client.on(sdk.RoomEvent.Timeline, onTimeline)
     client.on(sdk.RoomEvent.Receipt, onReceipt)
     return () => {
-      client.off(sdk.RoomEvent.Timeline, onEvent)
-      client.off(sdk.RoomEvent.Timeline, onReaction)
+      client.off(sdk.RoomEvent.Timeline, onTimeline)
       client.off(sdk.MatrixEventEvent.Decrypted, onDecrypted)
       client.off(sdk.RoomEvent.Receipt, onReceipt)
     }

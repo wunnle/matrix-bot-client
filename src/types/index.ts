@@ -14,6 +14,7 @@ export interface ConstructCard {
   description?: string
   image?: string
   fields?: { label: string; value: string }[]
+  price?: string
   url?: string
   actions?: { label: string; url: string }[]
 }

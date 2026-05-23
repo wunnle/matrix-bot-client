@@ -1682,11 +1682,25 @@ a.msg-card-link:hover {
   margin: 0;
   font-weight: 500;
 }
+.msg-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 10px;
+}
+.msg-card-price {
+  font-weight: 700;
+  font-size: 1.05em;
+  color: var(--text);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .msg-card-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 0 14px 12px;
+  flex: 1 1 0;
+  min-width: 0;
 }
 .msg-card-action {
   display: inline-flex;

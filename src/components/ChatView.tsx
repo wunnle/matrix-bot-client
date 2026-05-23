@@ -1538,7 +1538,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                                     ? <div className="msg-cards">
                                         {msg.cards.map((card, ci) => {
                                           const hasActions = card.actions && card.actions.length > 0
-                                          const isLinkCard = !hasActions && !!card.url
+                                          const hasFooter = hasActions || !!card.price
+                                          const isLinkCard = !hasFooter && !!card.url
                                           const inner = (
                                             <>
                                               {card.image && <img className="msg-card-image" src={card.image} alt="" loading="lazy" />}
@@ -1557,11 +1558,16 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                                                   </dl>
                                                 )}
                                               </div>
-                                              {hasActions && (
-                                                <div className="msg-card-actions">
-                                                  {card.actions!.map((a, ai) => (
-                                                    <a key={ai} className="msg-card-action" href={a.url} target="_blank" rel="noopener noreferrer">{a.label}</a>
-                                                  ))}
+                                              {hasFooter && (
+                                                <div className="msg-card-footer">
+                                                  {card.price && <span className="msg-card-price">{card.price}</span>}
+                                                  {hasActions && (
+                                                    <div className="msg-card-actions">
+                                                      {card.actions!.map((a, ai) => (
+                                                        <a key={ai} className="msg-card-action" href={a.url} target="_blank" rel="noopener noreferrer">{a.label}</a>
+                                                      ))}
+                                                    </div>
+                                                  )}
                                                 </div>
                                               )}
                                             </>
@@ -1915,6 +1921,7 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
                 .filter((f: any) => f && typeof f.label === 'string' && typeof f.value === 'string')
                 .map((f: any) => ({ label: String(f.label), value: String(f.value) }))
             : undefined,
+          price: typeof c.price === 'string' ? c.price : undefined,
           url: typeof c.url === 'string' && /^https?:\/\//.test(c.url) ? c.url : undefined,
           actions: Array.isArray(c.actions)
             ? c.actions

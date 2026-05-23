@@ -1617,7 +1617,7 @@ a.msg-file:hover { text-decoration: underline; }
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-width: 320px;
+  max-width: 260px;
 }
 .msg-card {
   display: flex;
@@ -1718,20 +1718,20 @@ a.msg-card-link:hover {
   justify-content: center;
   align-items: center;
   padding: 8px 14px;
-  font-size: 0.9em;
+  font-size: 1em;
   font-weight: 700;
   border-radius: 8px;
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  color: #fff;
+  background: #fff;
+  border: 1px solid #fff;
+  color: var(--accent);
   text-decoration: none;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
   white-space: nowrap;
 }
 .bot-text a.msg-card-action:hover,
 .msg-card-action:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
   text-decoration: none;
 }

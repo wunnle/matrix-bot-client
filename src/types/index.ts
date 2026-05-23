@@ -36,7 +36,7 @@ export interface Message {
   fileName?: string
   fileMime?: string
   cards?: ConstructCard[]
-  thread?: ConstructThread
+  threads?: ConstructThread[]
   timestamp: number
   isOwnMessage: boolean
   isDecryptionFailure?: boolean

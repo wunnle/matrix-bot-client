@@ -38,6 +38,7 @@ import { useToast } from '../hooks/useToast'
 import { useActiveRoom } from '../hooks/useActiveRoom'
 import { useVisualViewport } from '../hooks/useVisualViewport'
 import RoomEditor from './RoomEditor'
+import { marked } from 'marked'
 import type { Message, RoomConfig, ConstructThread } from '../types'
 
 interface Props {
@@ -249,19 +250,24 @@ function SortablePill({ pill, onActivate }: { pill: string; onActivate: () => vo
 
 function ThreadBlock({ thread }: { thread: ConstructThread }) {
   const [expanded, setExpanded] = React.useState(false)
+  const bodyHtml = React.useMemo(
+    () => sanitizeHtml(marked.parse(thread.body, { async: false }) as string),
+    [thread.body]
+  )
   return (
     <div className={`msg-thread${expanded ? ' msg-thread--open' : ''}`}>
       <button className="msg-thread-header" onClick={() => setExpanded(v => !v)}>
         <span className="material-icons msg-thread-chevron">chevron_right</span>
         <span className="msg-thread-title">{thread.title}</span>
       </button>
-      {expanded && (
-        <div
-          className="msg-thread-body bot-text"
-        >{thread.body}</div>
-      )}
       {!expanded && thread.summary && (
         <div className="msg-thread-summary">{thread.summary}</div>
+      )}
+      {expanded && (
+        <div
+          className="msg-thread-body bot-text bot-text-rich"
+          dangerouslySetInnerHTML={{ __html: bodyHtml }}
+        />
       )}
     </div>
   )
@@ -1554,8 +1560,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                                   className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}
                                   onClick={cleanHtml ? onBotRichTextClick : undefined}
                                 >
-                                  {msg.thread
-                                    ? <ThreadBlock thread={msg.thread} />
+                                  {msg.threads
+                                    ? <div className="msg-threads">{msg.threads.map((t, i) => <ThreadBlock key={i} thread={t} />)}</div>
                                     : msg.cards
                                     ? <div className="msg-cards">
                                         {msg.cards.map((card, ci) => {
@@ -1953,14 +1959,14 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
         }))
     : undefined
 
-  const rawThread = content?.['com.construct.thread']
-  const thread = rawThread && typeof rawThread === 'object' && typeof rawThread.title === 'string' && typeof rawThread.body === 'string'
-    ? {
-        title: String(rawThread.title),
-        summary: typeof rawThread.summary === 'string' ? rawThread.summary : undefined,
-        body: String(rawThread.body),
-      }
-    : undefined
+  const parseThread = (t: any): ConstructThread | null =>
+    t && typeof t === 'object' && typeof t.title === 'string' && typeof t.body === 'string'
+      ? { title: String(t.title), summary: typeof t.summary === 'string' ? t.summary : undefined, body: String(t.body) }
+      : null
+  const rawThreads = content?.['com.construct.threads'] ?? content?.['com.construct.thread']
+  const threads = Array.isArray(rawThreads)
+    ? (rawThreads.map(parseThread).filter(Boolean) as ConstructThread[])
+    : rawThreads ? ([parseThread(rawThreads)].filter(Boolean) as ConstructThread[]) : undefined
 
   return {
     eventId: event.getId() ?? event.getTs().toString(),
@@ -1973,7 +1979,7 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
     fileName,
     fileMime,
     cards: cards && cards.length > 0 ? cards : undefined,
-    thread,
+    threads: threads && threads.length > 0 ? threads : undefined,
     timestamp: event.getTs(),
     isOwnMessage,
     isDecryptionFailure: isFailure,

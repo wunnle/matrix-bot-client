@@ -1613,6 +1613,12 @@ a.msg-file:hover { text-decoration: underline; }
 .msg-file-loading { opacity: 0.6; }
 .msg-file-icon { font-size: 20px; flex-shrink: 0; }
 
+.msg-threads {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 360px;
+}
 .msg-thread {
   border: 1px solid var(--border);
   border-radius: 10px;

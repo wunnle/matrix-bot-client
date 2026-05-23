@@ -1658,13 +1658,25 @@ a.msg-file:hover { text-decoration: underline; }
   line-height: 1.4;
 }
 .msg-thread-body {
-  padding: 0 12px 12px;
+  padding: 8px 12px 12px;
   border-top: 1px solid var(--border);
   font-size: 0.9em;
   line-height: 1.5;
-  white-space: pre-wrap;
   word-break: break-word;
 }
+.msg-thread-body h1 { font-size: 1.1em; font-weight: 700; margin: 0.6em 0 0.3em; }
+.msg-thread-body h2 { font-size: 1.05em; font-weight: 700; margin: 0.6em 0 0.3em; }
+.msg-thread-body h3,
+.msg-thread-body h4,
+.msg-thread-body h5,
+.msg-thread-body h6 { font-size: 1em; font-weight: 600; margin: 0.5em 0 0.2em; }
+.msg-thread-body p { margin: 0 0 0.5em; }
+.msg-thread-body p:last-child { margin-bottom: 0; }
+.msg-thread-body ul,
+.msg-thread-body ol { padding-left: 1.3em; margin: 0 0 0.5em; }
+.msg-thread-body li { margin-bottom: 0.2em; }
+.msg-thread-body code { font-size: 0.9em; background: var(--bg); padding: 0.1em 0.3em; border-radius: 3px; }
+.msg-thread-body pre { font-size: 0.85em; background: var(--bg); border-radius: 5px; padding: 8px 10px; overflow-x: auto; width: 0; min-width: 100%; box-sizing: border-box; margin-bottom: 0.5em; }
 
 .msg-cards {
   display: flex;

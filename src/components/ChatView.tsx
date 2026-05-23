@@ -1537,26 +1537,37 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                                   {msg.cards
                                     ? <div className="msg-cards">
                                         {msg.cards.map((card, ci) => {
+                                          const hasActions = card.actions && card.actions.length > 0
+                                          const isLinkCard = !hasActions && !!card.url
                                           const inner = (
                                             <>
-                                              {card.image && <img className="msg-card-image" src={card.image} alt="" loading="lazy" />}
-                                              <div className="msg-card-body">
-                                                <div className="msg-card-title">{card.title}</div>
-                                                {card.subtitle && <div className="msg-card-subtitle">{card.subtitle}</div>}
-                                                {card.fields && card.fields.length > 0 && (
-                                                  <dl className="msg-card-fields">
-                                                    {card.fields.map((f, fi) => (
-                                                      <div key={fi} className="msg-card-field">
-                                                        <dt>{f.label}</dt>
-                                                        <dd>{f.value}</dd>
-                                                      </div>
-                                                    ))}
-                                                  </dl>
-                                                )}
+                                              <div className="msg-card-main">
+                                                {card.image && <img className="msg-card-image" src={card.image} alt="" loading="lazy" />}
+                                                <div className="msg-card-body">
+                                                  <div className="msg-card-title">{card.title}</div>
+                                                  {card.subtitle && <div className="msg-card-subtitle">{card.subtitle}</div>}
+                                                  {card.fields && card.fields.length > 0 && (
+                                                    <dl className="msg-card-fields">
+                                                      {card.fields.map((f, fi) => (
+                                                        <div key={fi} className="msg-card-field">
+                                                          <dt>{f.label}</dt>
+                                                          <dd>{f.value}</dd>
+                                                        </div>
+                                                      ))}
+                                                    </dl>
+                                                  )}
+                                                </div>
                                               </div>
+                                              {hasActions && (
+                                                <div className="msg-card-actions">
+                                                  {card.actions!.map((a, ai) => (
+                                                    <a key={ai} className="msg-card-action" href={a.url} target="_blank" rel="noopener noreferrer">{a.label}</a>
+                                                  ))}
+                                                </div>
+                                              )}
                                             </>
                                           )
-                                          return card.url
+                                          return isLinkCard
                                             ? <a key={ci} className="msg-card msg-card-link" href={card.url} target="_blank" rel="noopener noreferrer">{inner}</a>
                                             : <div key={ci} className="msg-card">{inner}</div>
                                         })}
@@ -1905,6 +1916,11 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
                 .map((f: any) => ({ label: String(f.label), value: String(f.value) }))
             : undefined,
           url: typeof c.url === 'string' && /^https?:\/\//.test(c.url) ? c.url : undefined,
+          actions: Array.isArray(c.actions)
+            ? c.actions
+                .filter((a: any) => a && typeof a.label === 'string' && typeof a.url === 'string' && /^https?:\/\//.test(a.url))
+                .map((a: any) => ({ label: String(a.label), url: String(a.url) }))
+            : undefined,
         }))
     : undefined
 

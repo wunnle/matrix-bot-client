@@ -14,6 +14,7 @@ export interface ConstructCard {
   image?: string
   fields?: { label: string; value: string }[]
   url?: string
+  actions?: { label: string; url: string }[]
 }
 
 export interface Message {

@@ -356,6 +356,23 @@ export default function RoomList({
                   aria-label="Notifications"
                 />
               </label>
+              <button className="user-menu-item" onClick={async () => {
+                try {
+                  const client = getClient()
+                  const pushers = await client.getPushers()
+                  const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null
+                  const sub = reg ? await reg.pushManager.getSubscription() : null
+                  const subEndpoint = sub?.endpoint?.slice(-20) ?? 'none'
+                  const pusherList = (pushers?.pushers ?? []).map((p: any) =>
+                    `${p.app_display_name} / ${p.device_display_name}: ...${String(p.pushkey).slice(-20)}`
+                  ).join('\n') || 'none'
+                  alert(`Push subscription: ...${subEndpoint}\n\nRegistered pushers:\n${pusherList}`)
+                } catch (e: any) {
+                  alert(`Debug error: ${e?.message}`)
+                }
+              }}>
+                Debug notifications
+              </button>
               <button className="user-menu-item" onClick={() => window.location.reload()}>
                 Reload app
               </button>

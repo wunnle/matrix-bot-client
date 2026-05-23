@@ -1682,7 +1682,7 @@ a.msg-file:hover { text-decoration: underline; }
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-width: 260px;
+  max-width: 360px;
 }
 .msg-card {
   display: flex;
@@ -1793,8 +1793,6 @@ a.msg-card-link:hover {
   text-decoration: none;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   min-width: 0;
 }
 .bot-text a.msg-card-action:hover,

@@ -39,7 +39,7 @@ import { useActiveRoom } from '../hooks/useActiveRoom'
 import { useVisualViewport } from '../hooks/useVisualViewport'
 import RoomEditor from './RoomEditor'
 import { marked } from 'marked'
-import type { Message, RoomConfig, ConstructThread } from '../types'
+import type { Message, RoomConfig, ConstructThread, ToolProgressLine } from '../types'
 
 interface Props {
   roomId: string
@@ -76,13 +76,6 @@ const TOOL_PROGRESS_LINE = /^(?:\*\s*)?\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\
 // Parses "🧠 memory: "foo bar" (×2)" → { emoji, tool, content, repeat }
 const TOOL_PROGRESS_PARSE = /^(?:\*\s*)?(\S\S?)\s+(\w[\w./-]*)(?::\s+"(.{0,80})"(?:\s+\(×(\d+)\))?|(\.\.\.))\s*$/u
 
-interface ToolProgressLine {
-  emoji: string
-  tool: string
-  content?: string
-  repeat?: number
-  raw: string
-}
 
 function parseToolProgressLine(line: string): ToolProgressLine | null {
   const trimmed = line.trim()
@@ -105,12 +98,14 @@ function unescapeToolContent(s: string): string {
   return s.replace(/\\"/g, '"').replace(/\\\\/g, '\\')
 }
 
-function isToolProgressMessage(body: string): boolean {
+function isToolProgressMessage(body: string, msg?: Message): boolean {
+  if (msg?.toolProgress) return true
   const lines = body.split('\n').filter(l => l.trim() !== '')
   return lines.length > 0 && lines.every(l => TOOL_PROGRESS_LINE.test(l.trim()))
 }
 
-function parseToolProgressMessage(body: string): ToolProgressLine[] {
+function parseToolProgressMessage(body: string, msg?: Message): ToolProgressLine[] {
+  if (msg?.toolProgress) return msg.toolProgress
   return body
     .split('\n')
     .map(l => l.trim())
@@ -1354,7 +1349,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             </div>
             <div className="room-editor-body" style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
               {toolDialog.lines.map((l, idx) => {
-                const key = `${idx}-${l.raw}`
+                const key = `${idx}-${l.raw ?? l.tool}`
                 const isExpanded = expandedToolLine === key
                 return (
                   <div
@@ -1368,7 +1363,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                       {l.content !== undefined && <span className="tool-progress-content">{l.content}</span>}
                       {l.repeat !== undefined && <span className="tool-progress-repeat">×{l.repeat}</span>}
                     </div>
-                    {isExpanded && (
+                    {isExpanded && l.raw && (
                       <div className="tool-dialog-raw">{l.raw}</div>
                     )}
                   </div>
@@ -1443,10 +1438,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               const m = visibleMessages[i]
               const p = i > 0 ? visibleMessages[i - 1] : null
               const n = i + 1 < visibleMessages.length ? visibleMessages[i + 1] : null
-              const iT = !m.isOwnMessage && isToolProgressMessage(m.body)
+              const iT = !m.isOwnMessage && isToolProgressMessage(m.body, m)
               if (!iT) continue
-              const pT = p && !p.isOwnMessage && isToolProgressMessage(p.body)
-              const nT = n && !n.isOwnMessage && isToolProgressMessage(n.body)
+              const pT = p && !p.isOwnMessage && isToolProgressMessage(p.body, p)
+              const nT = n && !n.isOwnMessage && isToolProgressMessage(n.body, n)
               if (!pT) currentGroupStart = m.eventId
               toolGroupId[m.eventId] = currentGroupStart
               if (!nT && n !== null) collapsibleGroups.add(currentGroupStart)
@@ -1455,11 +1450,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             const showDateDivider = i === 0 || !sameDay(visibleMessages[i - 1].timestamp, msg.timestamp)
             const imageUrl = msg.imageUrl ?? (msg.imageMxc ? imageUrls[msg.eventId] : undefined)
             const fileUrl = msg.fileMxc ? imageUrls[msg.eventId] : undefined
-            const isTool = !msg.isOwnMessage && isToolProgressMessage(msg.body)
+            const isTool = !msg.isOwnMessage && isToolProgressMessage(msg.body, msg)
             const prev = i > 0 ? visibleMessages[i - 1] : null
             const next = i + 1 < visibleMessages.length ? visibleMessages[i + 1] : null
-            const prevIsTool = !showDateDivider && prev && !prev.isOwnMessage && isToolProgressMessage(prev.body)
-            const nextIsTool = next && !next.isOwnMessage && isToolProgressMessage(next.body) &&
+            const prevIsTool = !showDateDivider && prev && !prev.isOwnMessage && isToolProgressMessage(prev.body, prev)
+            const nextIsTool = next && !next.isOwnMessage && isToolProgressMessage(next.body, next) &&
               sameDay(msg.timestamp, next.timestamp)
             const canPin = !msg.isDecryptionFailure
             const pinSurfaceProps = canPin
@@ -1525,7 +1520,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                             // All groups show as a summary chip (live group updates in real time)
                             const allLines = visibleMessages
                               .filter(m => toolGroupId[m.eventId] === groupId)
-                              .flatMap(m => parseToolProgressMessage(m.body))
+                              .flatMap(m => parseToolProgressMessage(m.body, m))
                             const summary = summarizeToolLines(allLines)
                             const isLive = !collapsibleGroups.has(groupId)
                             return (
@@ -1539,7 +1534,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                             )
 
                             // dead code kept for type-checker
-                            const lines = parseToolProgressMessage(msg.body)
+                            const lines = parseToolProgressMessage(msg.body, msg)
                             return (
                               <div
                                 className={`message-pin-surface message-pin-surface--tool tool-progress${prevIsTool ? ' tool-progress-cont' : ''}${nextIsTool ? ' tool-progress-open' : ''}`}
@@ -1979,6 +1974,19 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
     ? (rawThreads.map(parseThread).filter(Boolean) as ConstructThread[])
     : rawThreads ? ([parseThread(rawThreads)].filter(Boolean) as ConstructThread[]) : undefined
 
+  const rawToolProgress = content?.['com.construct.tool_progress']
+  const toolProgress: ToolProgressLine[] | undefined = Array.isArray(rawToolProgress)
+    ? rawToolProgress
+        .filter((l: any) => l && typeof l.emoji === 'string' && typeof l.tool === 'string')
+        .map((l: any) => ({
+          emoji: String(l.emoji),
+          tool: String(l.tool),
+          content: typeof l.content === 'string' ? l.content : undefined,
+          repeat: typeof l.repeat === 'number' ? l.repeat : undefined,
+          raw: `${l.emoji} ${l.tool}${l.content ? `: "${l.content}"` : '...'}`,
+        }))
+    : undefined
+
   return {
     eventId: event.getId() ?? event.getTs().toString(),
     sender: event.getSender() ?? '',
@@ -1991,6 +1999,7 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
     fileMime,
     cards: cards && cards.length > 0 ? cards : undefined,
     threads: threads && threads.length > 0 ? threads : undefined,
+    toolProgress: toolProgress && toolProgress.length > 0 ? toolProgress : undefined,
     timestamp: event.getTs(),
     isOwnMessage,
     isDecryptionFailure: isFailure,

@@ -25,6 +25,14 @@ export interface ConstructThread {
   body: string
 }
 
+export interface ToolProgressLine {
+  emoji: string
+  tool: string
+  content?: string
+  repeat?: number
+  raw?: string
+}
+
 export interface Message {
   eventId: string
   sender: string
@@ -37,6 +45,7 @@ export interface Message {
   fileMime?: string
   cards?: ConstructCard[]
   threads?: ConstructThread[]
+  toolProgress?: ToolProgressLine[]
   timestamp: number
   isOwnMessage: boolean
   isDecryptionFailure?: boolean

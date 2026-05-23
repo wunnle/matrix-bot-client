@@ -1691,9 +1691,9 @@ a.msg-card-link:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px 10px;
-  margin-top: 4px;
+  padding: 12px 14px;
   background: rgba(0, 0, 0, 0.18);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 .msg-card-price {
   font-weight: 700;

@@ -1612,6 +1612,7 @@ a.msg-file:hover { text-decoration: underline; }
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-width: 420px;
 }
 .msg-card {
   display: flex;
@@ -1630,19 +1631,13 @@ a.msg-card-link {
 a.msg-card-link:hover {
   background: var(--bg-hover, var(--bg-active));
   border-color: var(--text-muted);
+  text-decoration: none;
 }
 .msg-card-image {
   display: block;
   width: 100%;
-  max-height: 220px;
-  object-fit: cover;
+  height: auto;
   background: var(--border);
-}
-@media (min-width: 600px) {
-  .msg-card-image { max-height: 280px; }
-}
-@media (min-width: 900px) {
-  .msg-card-image { max-height: 340px; }
 }
 .msg-card-body {
   display: flex;
@@ -1702,16 +1697,19 @@ a.msg-card-link:hover {
   font-size: 0.9em;
   font-weight: 500;
   border-radius: 8px;
-  background: var(--bg, transparent);
+  background: var(--bg-surface);
   border: 1px solid var(--border);
   color: var(--text);
   text-decoration: none;
-  transition: background 0.1s ease, border-color 0.1s ease;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
   white-space: nowrap;
 }
+.bot-text a.msg-card-action:hover,
 .msg-card-action:hover {
-  background: var(--bg-hover, var(--bg-active));
-  border-color: var(--text-muted);
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+  text-decoration: none;
 }
 .input-row button.dictation-btn {
   background: var(--bg-active);

@@ -541,10 +541,18 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       const maxReadTs = getMaxReadTs(room_, userId)
       const msg = eventToMessage(event, userId, maxReadTs)
       if (!msg.isOwnMessage) {
-        const match = MODEL_SWITCH_RE.exec(msg.body) ?? (msg.formattedBody ? MODEL_SWITCH_RE.exec(msg.formattedBody.replace(/<[^>]+>/g, '')) : null)
-        if (match) {
-          setRoomModel(roomId, match[1].trim())
-          setCurrentModel(match[1].trim())
+        const content = event.getContent()
+        const eventModel: string | undefined = content['com.construct.model']
+        if (eventModel) {
+          setRoomModel(roomId, eventModel)
+          setCurrentModel(eventModel)
+        } else {
+          // Fallback: parse "Model switched to X" from message body
+          const match = MODEL_SWITCH_RE.exec(msg.body) ?? (msg.formattedBody ? MODEL_SWITCH_RE.exec(msg.formattedBody.replace(/<[^>]+>/g, '')) : null)
+          if (match) {
+            setRoomModel(roomId, match[1].trim())
+            setCurrentModel(match[1].trim())
+          }
         }
       }
       setMessages((prev) => {

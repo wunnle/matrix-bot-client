@@ -8,6 +8,14 @@ export interface RoomsConfig {
   [roomId: string]: RoomConfig
 }
 
+export interface ConstructCard {
+  title: string
+  subtitle?: string
+  image?: string
+  fields?: { label: string; value: string }[]
+  url?: string
+}
+
 export interface Message {
   eventId: string
   sender: string
@@ -18,6 +26,7 @@ export interface Message {
   fileMxc?: string
   fileName?: string
   fileMime?: string
+  cards?: ConstructCard[]
   timestamp: number
   isOwnMessage: boolean
   isDecryptionFailure?: boolean

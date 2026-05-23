@@ -1534,7 +1534,34 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                                   className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}
                                   onClick={cleanHtml ? onBotRichTextClick : undefined}
                                 >
-                                  {imageUrl
+                                  {msg.cards
+                                    ? <div className="msg-cards">
+                                        {msg.cards.map((card, ci) => {
+                                          const inner = (
+                                            <>
+                                              {card.image && <img className="msg-card-image" src={card.image} alt="" loading="lazy" />}
+                                              <div className="msg-card-body">
+                                                <div className="msg-card-title">{card.title}</div>
+                                                {card.subtitle && <div className="msg-card-subtitle">{card.subtitle}</div>}
+                                                {card.fields && card.fields.length > 0 && (
+                                                  <dl className="msg-card-fields">
+                                                    {card.fields.map((f, fi) => (
+                                                      <div key={fi} className="msg-card-field">
+                                                        <dt>{f.label}</dt>
+                                                        <dd>{f.value}</dd>
+                                                      </div>
+                                                    ))}
+                                                  </dl>
+                                                )}
+                                              </div>
+                                            </>
+                                          )
+                                          return card.url
+                                            ? <a key={ci} className="msg-card msg-card-link" href={card.url} target="_blank" rel="noopener noreferrer">{inner}</a>
+                                            : <div key={ci} className="msg-card">{inner}</div>
+                                        })}
+                                      </div>
+                                    : imageUrl
                                     ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" />
                                     : fileUrl
                                       ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
@@ -1864,6 +1891,23 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
   const fileName = fileMxc ? (content?.body ?? 'file') : undefined
   const fileMime = fileMxc ? (content?.info?.mimetype ?? 'application/octet-stream') : undefined
 
+  const rawCards = content?.['com.construct.cards']
+  const cards = Array.isArray(rawCards)
+    ? rawCards
+        .filter((c: any) => c && typeof c === 'object' && typeof c.title === 'string')
+        .map((c: any) => ({
+          title: String(c.title),
+          subtitle: typeof c.subtitle === 'string' ? c.subtitle : undefined,
+          image: typeof c.image === 'string' ? c.image : undefined,
+          fields: Array.isArray(c.fields)
+            ? c.fields
+                .filter((f: any) => f && typeof f.label === 'string' && typeof f.value === 'string')
+                .map((f: any) => ({ label: String(f.label), value: String(f.value) }))
+            : undefined,
+          url: typeof c.url === 'string' && /^https?:\/\//.test(c.url) ? c.url : undefined,
+        }))
+    : undefined
+
   return {
     eventId: event.getId() ?? event.getTs().toString(),
     sender: event.getSender() ?? '',
@@ -1874,6 +1918,7 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
     fileMxc,
     fileName,
     fileMime,
+    cards: cards && cards.length > 0 ? cards : undefined,
     timestamp: event.getTs(),
     isOwnMessage,
     isDecryptionFailure: isFailure,

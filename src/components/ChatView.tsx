@@ -1884,6 +1884,22 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
   const content = replacing
     ? { ...event.getContent(), ...(replacing.getContent()?.['m.new_content'] ?? {}) }
     : event.getContent()
+
+  // Debug: log edit-related parsing
+  if (replacing || event.getContent()?.['m.relates_to']?.rel_type === 'm.replace') {
+    console.log('[debug edit]', {
+      eventId: event.getId(),
+      hasReplacing: !!replacing,
+      replacingEventId: replacing?.getId?.(),
+      origKeys: Object.keys(event.getContent() ?? {}),
+      replacingKeys: replacing ? Object.keys(replacing.getContent() ?? {}) : null,
+      newContentKeys: replacing ? Object.keys(replacing.getContent()?.['m.new_content'] ?? {}) : null,
+      mergedKeys: Object.keys(content ?? {}),
+      hasToolProgress: !!content?.['com.construct.tool_progress'],
+      toolProgressLen: Array.isArray(content?.['com.construct.tool_progress']) ? content['com.construct.tool_progress'].length : null,
+      body: typeof content?.body === 'string' ? content.body.slice(0, 100) : null,
+    })
+  }
   let body = content?.body ?? ''
   let imageUrl: string | undefined
 

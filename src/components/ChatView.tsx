@@ -1437,7 +1437,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                     {msg.isOwnMessage ? (
                       <>
                         <div className="message-pin-surface message-pin-surface--own" {...pinSurfaceProps}>
-                          <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${imageUrl ? 'bubble-image' : ''}`}>
+                          <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${imageUrl ? 'bubble-image' : ''} ${msg.source === 'voice' ? 'bubble-voice' : ''}`}>
+                            {msg.source === 'voice' && (
+                              <span className="material-icons bubble-voice-icon" title="Voice input">mic</span>
+                            )}
                             {imageUrl
                               ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" />
                               : fileUrl
@@ -1943,6 +1946,10 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
         }))
     : undefined
 
+  const source = typeof content?.['com.construct.source'] === 'string'
+    ? String(content['com.construct.source'])
+    : undefined
+
   return {
     eventId: event.getId() ?? event.getTs().toString(),
     sender: event.getSender() ?? '',
@@ -1960,6 +1967,7 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
     isOwnMessage,
     isDecryptionFailure: isFailure,
     isRead,
+    source,
   }
 }
 

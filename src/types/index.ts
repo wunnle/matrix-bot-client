@@ -51,6 +51,7 @@ export interface Message {
   isDecryptionFailure?: boolean
   isRead?: boolean
   reactions?: Record<string, string[]> // emoji → list of senderIds
+  source?: string // com.construct.source — e.g. "voice"
 }
 
 export interface AuthState {

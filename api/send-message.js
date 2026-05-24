@@ -15,12 +15,20 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') return res.status(405).end()
 
-  const { room, text } = req.body ?? {}
+  const { room, text, source } = req.body ?? {}
   if (!room || !text) return res.status(400).json({ error: 'missing room or text' })
   if (!ACCESS_TOKEN) return res.status(500).json({ error: 'server not configured' })
 
   const txnId = crypto.randomUUID()
   const url = `${HOMESERVER}/_matrix/client/v3/rooms/${encodeURIComponent(decodeURIComponent(room))}/send/m.room.message/${txnId}`
+
+  const event = {
+    msgtype: 'm.text',
+    body: text,
+    'com.construct.capabilities': ['actionable'],
+    'com.construct.client': 'construct-web',
+  }
+  if (source) event['com.construct.source'] = source
 
   const response = await fetch(url, {
     method: 'PUT',
@@ -28,12 +36,7 @@ export default async function handler(req, res) {
       'Authorization': `Bearer ${ACCESS_TOKEN}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      msgtype: 'm.text',
-      body: text,
-      'com.construct.capabilities': ['actionable'],
-      'com.construct.client': 'construct-web',
-    }),
+    body: JSON.stringify(event),
   })
 
   if (!response.ok) {

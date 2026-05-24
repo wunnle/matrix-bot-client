@@ -1906,28 +1906,21 @@ function getMaxReadTs(room: sdk.Room, userId: string): number {
 function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: number): Message {
   const isFailure = event.isDecryptionFailure()
   const isEncrypted = event.getType() === 'm.room.encrypted'
-  // If this event has been edited, prefer the replacement event's full content
-  // so custom fields like com.construct.tool_progress / cards on the edit are
-  // honored instead of the original content.
+  // Resolve the effective content, honoring two edit shapes:
+  // 1. This event was edited → use the replacement's m.new_content
+  // 2. This event IS the replacement (m.relates_to.rel_type=m.replace) →
+  //    use its own m.new_content directly (timeline rendered the edit as
+  //    a standalone bubble, e.g. streamed tool-progress updates).
+  // Custom fields like com.construct.tool_progress live in m.new_content;
+  // without this merge, only the top-level body (with `*` prefix) is read.
+  const rawContent = event.getContent() ?? {}
   const replacing = (event as any).replacingEvent?.()
-  const content = replacing
-    ? { ...event.getContent(), ...(replacing.getContent()?.['m.new_content'] ?? {}) }
-    : event.getContent()
-
-  // Debug: log edit-related parsing
-  if (replacing || event.getContent()?.['m.relates_to']?.rel_type === 'm.replace') {
-    console.log('[debug edit]', {
-      eventId: event.getId(),
-      hasReplacing: !!replacing,
-      replacingEventId: replacing?.getId?.(),
-      origKeys: Object.keys(event.getContent() ?? {}),
-      replacingKeys: replacing ? Object.keys(replacing.getContent() ?? {}) : null,
-      newContentKeys: replacing ? Object.keys(replacing.getContent()?.['m.new_content'] ?? {}) : null,
-      mergedKeys: Object.keys(content ?? {}),
-      hasToolProgress: !!content?.['com.construct.tool_progress'],
-      toolProgressLen: Array.isArray(content?.['com.construct.tool_progress']) ? content['com.construct.tool_progress'].length : null,
-      body: typeof content?.body === 'string' ? content.body.slice(0, 100) : null,
-    })
+  const isReplacementItself = rawContent?.['m.relates_to']?.rel_type === 'm.replace'
+  let content = rawContent
+  if (replacing) {
+    content = { ...rawContent, ...(replacing.getContent()?.['m.new_content'] ?? {}) }
+  } else if (isReplacementItself && rawContent?.['m.new_content']) {
+    content = { ...rawContent, ...(rawContent['m.new_content'] as Record<string, unknown>) }
   }
   let body = content?.body ?? ''
   let imageUrl: string | undefined

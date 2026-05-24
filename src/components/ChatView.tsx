@@ -1654,6 +1654,35 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             type="button"
             className="message-ctx-menu-item"
             role="menuitem"
+            onClick={() => {
+              const room = client.getRoom(roomId)
+              const ev = room?.findEventById(messageMenu.eventId)
+              if (!ev) { showToast('Event not found'); setMessageMenu(null); return }
+              const replacing = (ev as any).replacingEvent?.()
+              const payload = {
+                eventId: ev.getId(),
+                type: ev.getType(),
+                sender: ev.getSender(),
+                ts: ev.getTs(),
+                content: ev.getContent(),
+                hasReplacing: !!replacing,
+                replacingEventId: replacing?.getId?.(),
+                replacingContent: replacing?.getContent?.(),
+                replacingNewContent: replacing?.getContent?.()?.['m.new_content'],
+              }
+              console.log('[inspect event]', payload)
+              void navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
+                .then(() => showToast('Event JSON copied to clipboard'))
+                .catch(() => showToast('Logged to console'))
+              setMessageMenu(null)
+            }}
+          >
+            Inspect
+          </button>
+          <button
+            type="button"
+            className="message-ctx-menu-item"
+            role="menuitem"
             disabled={pinInFlight}
             onClick={() => { void onPinOrUnpin() }}
           >

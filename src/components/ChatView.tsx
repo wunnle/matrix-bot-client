@@ -1877,7 +1877,13 @@ function getMaxReadTs(room: sdk.Room, userId: string): number {
 function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: number): Message {
   const isFailure = event.isDecryptionFailure()
   const isEncrypted = event.getType() === 'm.room.encrypted'
-  const content = event.getContent()
+  // If this event has been edited, prefer the replacement event's full content
+  // so custom fields like com.construct.tool_progress / cards on the edit are
+  // honored instead of the original content.
+  const replacing = (event as any).replacingEvent?.()
+  const content = replacing
+    ? { ...event.getContent(), ...(replacing.getContent()?.['m.new_content'] ?? {}) }
+    : event.getContent()
   let body = content?.body ?? ''
   let imageUrl: string | undefined
 

@@ -4,6 +4,7 @@ const ALIASES: Record<string, string> = {
    * (same as …/!DpRWqhWOHJAxyvjOGI%3Amatrix.org)
    */
   default: '!DpRWqhWOHJAxyvjOGI:matrix.org',
+  home: '!oaTHLpJGhjNHVGLRge:matrix.org',
 }
 
 /**

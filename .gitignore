@@ -29,3 +29,5 @@ indexeddb
 *.njsproj
 *.sln
 *.sw?
+ios/App/App/public/
+dist/

@@ -7,6 +7,7 @@ import type { AuthState } from '../types'
 import { fetchJoinedRooms, getCachedRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, getRoomUnreadCount, type RoomSummary } from '../lib/matrix'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import NotificationCenter from './NotificationCenter'
+import { toggleDebug } from '../lib/debug'
 import type { RoomNotification } from '../hooks/useRoomNotifications'
 
 interface Props {
@@ -390,7 +391,7 @@ export default function RoomList({
             <div className="user-id">{shortUserId(auth.userId)}</div>
           </button>
         </div>
-        <div className="sidebar-version">v{__CONSTRUCT_VERSION__}</div>
+        <div className="sidebar-version" onClick={toggleDebug}>v{__CONSTRUCT_VERSION__}</div>
       </div>
     </div>
   )

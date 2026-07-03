@@ -6,6 +6,7 @@ import type { AuthState } from './types'
 import LoginScreen from './components/LoginScreen'
 import MicDemo from './components/MicDemo'
 import RoomsLayout from './components/RoomsLayout'
+import DebugOverlay from './components/DebugOverlay'
 import { usePushNotifications } from './hooks/usePushNotifications'
 import './App.css'
 
@@ -38,6 +39,8 @@ export default function App() {
   if (!ready) return null
 
   return (
+    <>
+    <DebugOverlay />
     <Routes>
       <Route
         path="/"
@@ -54,5 +57,6 @@ export default function App() {
       <Route path="/mic-demo" element={<MicDemo />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   )
 }

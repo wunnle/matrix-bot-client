@@ -66,6 +66,23 @@ export default function DebugOverlay() {
   if (!enabled || lines.length === 0) return null
 
   return (
+    <>
+    {/* Paint probe: drawn just below the reported viewport bottom. If the
+        stripes are visible in the bottom chin, the real window extends
+        past what innerHeight/dvh claim (iOS 26.1 webkit bug 301994) and a
+        JS workaround is possible. */}
+    <div
+      style={{
+        position: 'fixed',
+        top: '100dvh',
+        left: 0,
+        right: 0,
+        height: 150,
+        zIndex: 9998,
+        pointerEvents: 'none',
+        background: 'repeating-linear-gradient(45deg, #ef4444 0 12px, #fbbf24 12px 24px)',
+      }}
+    />
     <div
       style={{
         position: 'fixed',
@@ -83,5 +100,6 @@ export default function DebugOverlay() {
     >
       {lines.join('\n')}
     </div>
+    </>
   )
 }

@@ -1372,7 +1372,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .chat-footer {
   flex-shrink: 0;
-  padding: 0 16px max(20px, var(--viewport-offset-bottom, env(safe-area-inset-bottom)));
+  /* .layout is already sized to the visual viewport (--vv-height), so the
+     keyboard never needs compensating here — only the home-indicator inset. */
+  padding: 0 16px max(20px, env(safe-area-inset-bottom));
 }
 
 /* Inner wrapper centers footer content to match messages */

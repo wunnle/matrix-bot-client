@@ -6,6 +6,7 @@ import ChatView from './ChatView'
 import ConnectionBanner from './ConnectionBanner'
 import RoomToast from './RoomToast'
 import { useRoomNotifications } from '../hooks/useRoomNotifications'
+import { useVisualViewportVars } from '../hooks/useVisualViewport'
 import { getClient, getCachedRooms } from '../lib/matrix'
 import { getDictationAutoSend, setDictationAutoSend } from '../lib/clientSettings'
 import { resolveRoomIdFromParam } from '../lib/roomAliases'
@@ -18,6 +19,7 @@ interface Props {
 const MAX_MOUNTED_ROOMS = 5
 
 export default function RoomsLayout({ auth, onSignOut }: Props) {
+  useVisualViewportVars()
   const { roomId } = useParams<{ roomId: string }>()
   const navigate = useNavigate()
   const [roomNames, setRoomNames] = useState<Record<string, string>>({})

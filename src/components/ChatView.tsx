@@ -36,7 +36,7 @@ import { isMobileSafari } from '../lib/isMobileSafari'
 import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
 import { useActiveRoom } from '../hooks/useActiveRoom'
-import { useVisualViewport } from '../hooks/useVisualViewport'
+import { useVisualViewportResize } from '../hooks/useVisualViewport'
 import RoomEditor from './RoomEditor'
 import { marked } from 'marked'
 import type { Message, RoomConfig, ConstructThread, ToolProgressLine } from '../types'
@@ -268,7 +268,13 @@ function openPinContextMenu(
 
 function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictationAutoSend }: Props) {
   useActiveRoom(roomId)
-  useVisualViewport(() => bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'instant' }))
+  // Keyboard show/hide resizes the layout; keep the tail visible, but only
+  // if the user was already at the bottom — never yank them out of history.
+  useVisualViewportResize(() => {
+    if (!stickToBottomRef.current) return
+    programmaticScrollUntilRef.current = performance.now() + 100
+    bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'instant' })
+  }, isActive)
   const { toast, showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const [cameraPrompt, setCameraPrompt] = useState(false)
@@ -1830,7 +1836,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            onFocus={() => setTimeout(() => bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' }), 300)}
             placeholder="Message…"
             enterKeyHint="enter"
             readOnly={dictating}

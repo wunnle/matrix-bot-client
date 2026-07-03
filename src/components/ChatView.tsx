@@ -514,6 +514,21 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       }
       setMessages((prev) => {
         const id = event.getId() ?? ''
+        // m.replace edits (streamed responses, tool progress) update the
+        // target bubble in place; appending them would duplicate the text.
+        const rel = event.getRelation()
+        if (rel?.rel_type === 'm.replace' && rel.event_id) {
+          const targetId = rel.event_id
+          if (prev.some((m) => m.eventId === targetId)) {
+            return prev
+              .filter((m) => m.eventId !== id)
+              .map((m) => (m.eventId === targetId
+                ? { ...msg, eventId: m.eventId, timestamp: m.timestamp, reactions: m.reactions, isRead: m.isRead }
+                : m))
+          }
+          // Target not rendered (scrolled out of window) — fall through
+          // and keep the edit as a standalone bubble so content shows.
+        }
         if (prev.some((m) => m.eventId === id)) return prev
         const next = [...prev, msg]
         return next.length > MSG_CAP ? next.slice(next.length - MSG_CAP) : next
@@ -533,11 +548,22 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       }
       const room_ = client.getRoom(roomId)
       const maxReadTs = room_ ? getMaxReadTs(room_, userId) : 0
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.eventId === (event.getId() ?? '') ? eventToMessage(event, userId, maxReadTs) : m
-        )
-      )
+      const decrypted = eventToMessage(event, userId, maxReadTs)
+      const rel = event.getRelation()
+      setMessages((prev) => {
+        const id = event.getId() ?? ''
+        // Decrypted m.replace edits fold into their target bubble; drop
+        // the encrypted placeholder appended before decryption revealed
+        // the relation.
+        if (rel?.rel_type === 'm.replace' && rel.event_id && prev.some((m) => m.eventId === rel.event_id)) {
+          return prev
+            .filter((m) => m.eventId !== id)
+            .map((m) => (m.eventId === rel.event_id
+              ? { ...decrypted, eventId: m.eventId, timestamp: m.timestamp, reactions: m.reactions, isRead: m.isRead }
+              : m))
+        }
+        return prev.map((m) => (m.eventId === id ? decrypted : m))
+      })
       if (pinnedIdsRef.current.has(event.getId() ?? '')) {
         refreshPinnedRef.current()
       }
@@ -2039,10 +2065,34 @@ function buildReactionsMap(events: sdk.MatrixEvent[]): Record<string, Record<str
 function eventsToMessages(events: sdk.MatrixEvent[], userId: string, room: sdk.Room): Message[] {
   const maxReadTs = getMaxReadTs(room, userId)
   const reactionsMap = buildReactionsMap(events)
-  return events
+  const messageEvents = events
     .filter((e) => e.getType() === 'm.room.message' || e.getType() === 'm.room.encrypted' || e.isDecryptionFailure())
+  // Fold m.replace edits into their target: render the newest edit's
+  // content inside the target bubble and hide the edit events themselves.
+  // Edits whose target sits outside the loaded window keep the newest
+  // edit as a standalone bubble so the content isn't lost.
+  const presentIds = new Set(messageEvents.map((e) => e.getId() ?? ''))
+  const latestEditByTarget = new Map<string, sdk.MatrixEvent>()
+  for (const e of messageEvents) {
+    const rel = e.getRelation()
+    if (rel?.rel_type === 'm.replace' && rel.event_id) latestEditByTarget.set(rel.event_id, e)
+  }
+  const standaloneEditIds = new Set(
+    [...latestEditByTarget.entries()]
+      .filter(([targetId]) => !presentIds.has(targetId))
+      .map(([, e]) => e.getId() ?? '')
+  )
+  return messageEvents
+    .filter((e) => {
+      const rel = e.getRelation()
+      if (rel?.rel_type !== 'm.replace' || !rel.event_id) return true
+      return standaloneEditIds.has(e.getId() ?? '')
+    })
     .map((e) => {
-      const msg = eventToMessage(e, userId, maxReadTs)
+      const id = e.getId() ?? ''
+      const edit = latestEditByTarget.get(id)
+      let msg = eventToMessage(edit ?? e, userId, maxReadTs)
+      if (edit) msg = { ...msg, eventId: id, timestamp: e.getTs() }
       const reactions = reactionsMap[msg.eventId]
       return reactions ? { ...msg, reactions } : msg
     })

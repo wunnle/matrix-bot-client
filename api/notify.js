@@ -11,7 +11,8 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const secret = process.env.NOTIFY_SECRET;
-  if (secret && req.headers["x-notify-secret"] !== secret) {
+  if (!secret) return res.status(500).json({ error: "server not configured" });
+  if (req.headers["x-notify-secret"] !== secret) {
     return res.status(401).json({ error: "unauthorized" });
   }
 

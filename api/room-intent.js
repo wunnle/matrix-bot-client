@@ -2,7 +2,7 @@
 // POST /api/room-intent?key=SECRET { room } → stores room
 // GET  /api/room-intent?key=SECRET         → returns { room } and clears it
 
-const SECRET = process.env.INTENT_SECRET || 'construct-intent'
+const SECRET = process.env.INTENT_SECRET
 
 let pendingRoom = null
 let pendingAction = null
@@ -11,6 +11,8 @@ let expiresAt = 0
 
 export default function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', 'https://construct.kafagoz.com')
+
+  if (!SECRET) return res.status(500).json({ error: 'server not configured' })
 
   const { key } = req.query
   if (key !== SECRET) return res.status(403).json({ error: 'forbidden' })

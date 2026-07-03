@@ -1,7 +1,7 @@
 // POST /api/send-message?key=SECRET { room, text } → sends message via Matrix HTTP API
 import crypto from 'crypto'
 
-const SECRET = process.env.INTENT_SECRET || 'construct-intent'
+const SECRET = process.env.INTENT_SECRET
 const HOMESERVER = process.env.MATRIX_HOMESERVER || 'https://matrix-client.matrix.org'
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN
 
@@ -9,6 +9,8 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', 'https://construct.kafagoz.com')
 
   if (req.method === 'OPTIONS') return res.status(200).end()
+
+  if (!SECRET) return res.status(500).json({ error: 'server not configured' })
 
   const { key } = req.query
   if (key !== SECRET) return res.status(403).json({ error: 'forbidden' })

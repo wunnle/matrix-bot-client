@@ -50,7 +50,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   position: fixed;
   top: var(--vv-top, 0px);
   width: 100%;
-  height: var(--vv-height, 100svh);
+  /* --vv-* are only set while an editable element is focused (keyboard
+     open); the rest of the time this dvh fallback is the live value. */
+  height: var(--vv-height, 100dvh);
   overflow: hidden;
 }
 

@@ -19,6 +19,7 @@ function probe(height: string): number {
 export default function DebugOverlay() {
   const [enabled, setEnabled] = useState(isDebugEnabled)
   const [lines, setLines] = useState<string[]>([])
+  const [top, setTop] = useState(70)
 
   useEffect(() => {
     const onToggle = () => setEnabled(isDebugEnabled())
@@ -35,9 +36,12 @@ export default function DebugOverlay() {
       const layoutRect = document.querySelector('.layout')?.getBoundingClientRect()
       const active = document.activeElement
       const fmt = (n: number | undefined) => (n === undefined ? '-' : String(Math.round(n)))
+      // Overlay is position:fixed (layout viewport); when the keyboard makes
+      // iOS scroll the visual viewport, follow it so the box stays readable.
+      setTop(Math.round(vv?.offsetTop ?? 0) + 70)
       setLines([
         `v${__CONSTRUCT_VERSION__}  ${window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser'}`,
-        `inner ${window.innerWidth}x${window.innerHeight}  screen ${screen.width}x${screen.height}`,
+        `inner ${window.innerWidth}x${window.innerHeight}  outer ${window.outerWidth}x${window.outerHeight}  screen ${screen.width}x${screen.height}`,
         `vv h=${fmt(vv?.height)} top=${fmt(vv?.offsetTop)} scale=${vv ? vv.scale.toFixed(2) : '-'}`,
         `--vv-height ${rootStyle.getPropertyValue('--vv-height') || '(unset)'}  --vv-top ${rootStyle.getPropertyValue('--vv-top') || '(unset)'}`,
         `layout top=${fmt(layoutRect?.top)} bottom=${fmt(layoutRect?.bottom)} h=${fmt(layoutRect?.height)}`,
@@ -48,9 +52,14 @@ export default function DebugOverlay() {
 
     const first = setTimeout(measure, 0)
     const id = setInterval(measure, 500)
+    const vv = window.visualViewport
+    vv?.addEventListener('resize', measure)
+    vv?.addEventListener('scroll', measure)
     return () => {
       clearTimeout(first)
       clearInterval(id)
+      vv?.removeEventListener('resize', measure)
+      vv?.removeEventListener('scroll', measure)
     }
   }, [enabled])
 
@@ -60,7 +69,7 @@ export default function DebugOverlay() {
     <div
       style={{
         position: 'fixed',
-        top: 70,
+        top,
         left: 8,
         zIndex: 9999,
         pointerEvents: 'none',

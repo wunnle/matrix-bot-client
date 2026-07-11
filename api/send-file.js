@@ -48,6 +48,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   const { key, room, filename, source } = req.query
+  const constructSource = source || 'file-endpoint'
   if (key !== SECRET) return res.status(403).json({ error: 'forbidden' })
 
   if (req.method !== 'POST') return res.status(405).end()
@@ -95,8 +96,8 @@ export default async function handler(req, res) {
     },
     'com.construct.capabilities': ['actionable'],
     'com.construct.client': 'construct-web',
+    'com.construct.source': constructSource,
   }
-  if (source) event['com.construct.source'] = source
 
   const sendResponse = await fetch(sendUrl, {
     method: 'PUT',

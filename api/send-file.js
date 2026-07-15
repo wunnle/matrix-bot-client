@@ -1,5 +1,6 @@
-// POST /api/send-file?key=***&room=!room:server&filename=photo.jpg
-// Raw body = file bytes. Sends native Matrix media event via Matrix media upload API.
+// POST /api/send-file?room=!room:server&filename=photo.jpg
+// Raw body = file bytes; the secret travels in the x-intent-secret header,
+// never the URL. Sends native Matrix media event via Matrix media upload API.
 import crypto from 'crypto'
 
 export const config = {
@@ -8,7 +9,7 @@ export const config = {
   },
 }
 
-const SECRET = process.env.INTENT_SECRET || 'construct-intent'
+const SECRET = process.env.INTENT_SECRET
 const HOMESERVER = process.env.MATRIX_HOMESERVER || 'https://matrix-client.matrix.org'
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN
 const MAX_BYTES = 10 * 1024 * 1024
@@ -43,13 +44,15 @@ async function readRawBody(req) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', 'https://construct.kafagoz.com')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-intent-secret')
 
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const { key, room, filename, source } = req.query
+  if (!SECRET) return res.status(500).json({ error: 'server not configured' })
+
+  const { room, filename, source } = req.query
   const constructSource = source || 'file-endpoint'
-  if (key !== SECRET) return res.status(403).json({ error: 'forbidden' })
+  if (req.headers['x-intent-secret'] !== SECRET) return res.status(403).json({ error: 'forbidden' })
 
   if (req.method !== 'POST') return res.status(405).end()
   if (!room) return res.status(400).json({ error: 'missing room' })

@@ -80,7 +80,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   const fetchIntent = useCallback(() => {
     const secret = import.meta.env.VITE_INTENT_SECRET
     if (!secret) return
-    fetch(`/api/room-intent?key=${encodeURIComponent(secret)}`)
+    fetch('/api/room-intent', { headers: { 'x-intent-secret': secret } })
       .then(r => r.json())
       .then(({ room, action, text }: { room: string | null, action: string | null, text: string | null }) => {
         if (!room) return

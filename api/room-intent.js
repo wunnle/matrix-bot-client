@@ -1,6 +1,7 @@
 // Simple single-slot room intent store.
-// POST /api/room-intent?key=SECRET { room } → stores room
-// GET  /api/room-intent?key=SECRET         → returns { room } and clears it
+// POST /api/room-intent { key, room }              → stores room
+// GET  /api/room-intent (x-intent-secret header)   → returns { room } and clears it
+// The secret travels in the body or header, never the URL.
 
 const SECRET = process.env.INTENT_SECRET
 
@@ -14,7 +15,7 @@ export default function handler(req, res) {
 
   if (!SECRET) return res.status(500).json({ error: 'server not configured' })
 
-  const { key } = req.query
+  const key = req.headers['x-intent-secret'] ?? req.body?.key
   if (key !== SECRET) return res.status(403).json({ error: 'forbidden' })
 
   if (req.method === 'POST') {

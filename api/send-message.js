@@ -1,5 +1,5 @@
-// POST /api/send-message { key, room, text } → sends message via Matrix HTTP API
-// The secret travels in the body (or x-intent-secret header), never the URL.
+// POST /api/send-message { room, text } → sends message via Matrix HTTP API
+// Auth: x-intent-secret header — never the URL or body.
 import crypto from 'crypto'
 
 const SECRET = process.env.INTENT_SECRET
@@ -8,6 +8,7 @@ const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', 'https://construct.kafagoz.com')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-intent-secret')
 
   if (req.method === 'OPTIONS') return res.status(200).end()
 
@@ -15,9 +16,9 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') return res.status(405).end()
 
-  const { room, text, source, key: bodyKey } = req.body ?? {}
-  const key = req.headers['x-intent-secret'] ?? bodyKey
-  if (key !== SECRET) return res.status(403).json({ error: 'forbidden' })
+  if (req.headers['x-intent-secret'] !== SECRET) return res.status(403).json({ error: 'forbidden' })
+
+  const { room, text, source } = req.body ?? {}
   if (!room || !text) return res.status(400).json({ error: 'missing room or text' })
   if (!ACCESS_TOKEN) return res.status(500).json({ error: 'server not configured' })
 

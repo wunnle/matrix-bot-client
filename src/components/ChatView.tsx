@@ -382,10 +382,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
   useEffect(() => {
     if (!isActive) return
+    const secret = import.meta.env.VITE_INTENT_SECRET
+    if (!secret) return
     const TTL_MS = 5 * 60 * 1000
     const check = async () => {
       try {
-        const r = await fetch('/api/active-room')
+        const r = await fetch('/api/active-room', { headers: { 'x-intent-secret': secret } })
         const { blobs } = await r.json()
         const now = Date.now()
         const suppressed = blobs.some((b: { pathname: string }) => {

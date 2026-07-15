@@ -2,9 +2,11 @@ import { useEffect } from "react";
 import { loadAuth } from "../lib/auth";
 
 function reportActiveRoom(roomId: string | null, deviceId: string) {
+  const secret = import.meta.env.VITE_INTENT_SECRET
+  if (!secret) return
   fetch("/api/active-room", {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-intent-secret": secret },
     body: JSON.stringify({ roomId, deviceId }),
   }).catch(() => {});
 }

@@ -5,13 +5,19 @@
  */
 import { put, list, del } from "@vercel/blob";
 
+const SECRET = process.env.INTENT_SECRET;
 const PREFIX = "active_rooms/";
 const TTL_MS = 5 * 60 * 1000;
 
 export default async function handler(req, res) {
+  if (!SECRET) return res.status(500).json({ error: "server not configured" });
+  if (req.headers["x-intent-secret"] !== SECRET) {
+    return res.status(403).json({ error: "forbidden" });
+  }
+
   if (req.method === "GET") {
     const { blobs } = await list({ prefix: PREFIX }).catch(() => ({ blobs: [] }));
-    return res.status(200).json({ blobs: blobs.map((b) => ({ pathname: b.pathname, url: b.url })) });
+    return res.status(200).json({ blobs: blobs.map((b) => ({ pathname: b.pathname })) });
   }
   if (req.method !== "PATCH") return res.status(405).end();
 

@@ -31,3 +31,4 @@ indexeddb
 *.sw?
 ios/App/App/public/
 dist/
+.env

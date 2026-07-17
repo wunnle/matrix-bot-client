@@ -2,7 +2,10 @@
 
 ## Native iOS app (Capacitor)
 
-- [ ] **Fix top/bottom gaps in native app when composer is focused** (bug, 2026-07-17)
+- [x] **Fix top/bottom gaps in native app when composer is focused** (fixed 2026-07-17:
+  `contentInset: 'never'`, Keyboard plugin `resize: 'none'` + native keyboard events
+  driving the `--vv-*` vars, accessory bar hidden, safe-area padding on
+  `.room-list-body` and `.sidebar-footer`)
   - Symptom: black band above the header (status bar / Dynamic Island area) at all times,
     and a second black band between the composer and the keyboard accessory bar while
     an input is focused.

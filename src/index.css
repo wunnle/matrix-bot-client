@@ -250,6 +250,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   padding-top: 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
 }
@@ -384,7 +385,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 /* Sidebar footer */
 .sidebar-footer {
-  padding: 10px 12px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   display: flex;
@@ -1375,8 +1376,10 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .chat-footer {
   flex-shrink: 0;
   /* .layout is already sized to the visual viewport (--vv-height), so the
-     keyboard never needs compensating here — only the home-indicator inset. */
-  padding: 0 16px max(20px, env(safe-area-inset-bottom));
+     keyboard never needs compensating here — only the home-indicator inset.
+     --vv-safe-bottom is zeroed while the native keyboard is open (the
+     keyboard sits above the home indicator, so no inset is needed). */
+  padding: 0 16px max(20px, var(--vv-safe-bottom, env(safe-area-inset-bottom)));
 }
 
 /* Inner wrapper centers footer content to match messages */

@@ -1,4 +1,7 @@
 import { useEffect, useRef } from "react";
+import { Capacitor } from "@capacitor/core";
+import type { PluginListenerHandle } from "@capacitor/core";
+import { Keyboard } from "@capacitor/keyboard";
 
 /**
  * Keep --vv-top / --vv-height in sync with the visual viewport so the
@@ -8,10 +11,33 @@ import { useEffect, useRef } from "react";
  */
 export function useVisualViewportVars() {
   useEffect(() => {
+    const root = document.documentElement;
+
+    if (Capacitor.isNativePlatform()) {
+      // In the Capacitor webview (Keyboard resize: 'none') visualViewport
+      // never reflects the keyboard — drive the vars from the native
+      // keyboard events instead.
+      const handles: PluginListenerHandle[] = [];
+      Keyboard.addListener("keyboardWillShow", (info) => {
+        root.style.setProperty("--vv-top", "0px");
+        root.style.setProperty("--vv-height", `${window.innerHeight - info.keyboardHeight}px`);
+        root.style.setProperty("--vv-safe-bottom", "0px");
+      }).then((h) => handles.push(h));
+      Keyboard.addListener("keyboardWillHide", () => {
+        root.style.removeProperty("--vv-top");
+        root.style.removeProperty("--vv-height");
+        root.style.removeProperty("--vv-safe-bottom");
+      }).then((h) => handles.push(h));
+      return () => {
+        handles.forEach((h) => h.remove());
+        root.style.removeProperty("--vv-top");
+        root.style.removeProperty("--vv-height");
+        root.style.removeProperty("--vv-safe-bottom");
+      };
+    }
+
     const vv = window.visualViewport;
     if (!vv) return;
-
-    const root = document.documentElement;
     let settleTimers: ReturnType<typeof setTimeout>[] = [];
 
     function editableFocused(): boolean {

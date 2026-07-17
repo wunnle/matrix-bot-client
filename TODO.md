@@ -22,10 +22,15 @@
 - [ ] Point client API calls at an absolute base URL when running native.
   Relative `/api/...` fetches resolve against the local webview origin, so
   room-intent polling and the active-room beacon silently no-op in the app.
-- [ ] Push notifications for the native app: Web Push doesn't exist in WKWebView.
-  Add `@capacitor/push-notifications` (APNs), register the APNs token as the Matrix
-  pusher pushkey, and teach `api/matrix-push.js` to deliver APNs pushkeys
-  alongside Web Push subscriptions.
+- [ ] Push notifications for the native app — **code done, blocked on paid Apple
+  Developer Program enrollment** (free personal teams can't have the push
+  capability). Client, AppDelegate, entitlements file, and APNs delivery in
+  `api/matrix-push.js` are all in place. Once enrolled:
+  1. Uncomment `CODE_SIGN_ENTITLEMENTS` in `ios/debug.xcconfig`.
+  2. Create an APNs auth key at developer.apple.com → Keys, download the `.p8`.
+  3. Set Vercel env: `APNS_KEY_ID`, `APNS_TEAM_ID` (team id in Xcode),
+     `APNS_PRIVATE_KEY` (p8 contents), `APNS_TOPIC=com.wunnle.construct`.
+  4. Rebuild to device; pusher registers on next app launch.
 - [ ] Gate `DebugOverlay` (and the tap-version debug trigger) behind a dev flag so
   they stay out of release builds.
 

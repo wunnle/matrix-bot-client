@@ -6,6 +6,8 @@
  * to the subscription stored under push_subscriptions/{hash}.json in Vercel Blob.
  */
 import webpush from "web-push";
+import crypto from "node:crypto";
+import http2 from "node:http2";
 
 
 const ROOM_AVATARS = {
@@ -27,6 +29,58 @@ webpush.setVapidDetails(
   process.env.VAPID_PUBLIC_KEY,
   process.env.VAPID_PRIVATE_KEY
 );
+
+/* ── APNs (native iOS app) ─────────────────────────────────────────────
+   Pushkeys that don't parse as a Web Push subscription are APNs device
+   tokens. Delivery uses token-based auth (ES256 JWT from the .p8 key).
+   Env: APNS_KEY_ID, APNS_TEAM_ID, APNS_PRIVATE_KEY, APNS_TOPIC. */
+
+let apnsJwtCache = { token: null, iat: 0 };
+function apnsJwt() {
+  const now = Math.floor(Date.now() / 1000);
+  // Apple requires JWTs between 20 and 60 minutes old; refresh at ~45.
+  if (apnsJwtCache.token && now - apnsJwtCache.iat < 2700) return apnsJwtCache.token;
+  const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64url");
+  const unsigned = `${b64({ alg: "ES256", kid: process.env.APNS_KEY_ID })}.${b64({ iss: process.env.APNS_TEAM_ID, iat: now })}`;
+  const key = process.env.APNS_PRIVATE_KEY.replace(/\\n/g, "\n");
+  const sig = crypto
+    .sign("sha256", Buffer.from(unsigned), { key, dsaEncoding: "ieee-p1363" })
+    .toString("base64url");
+  apnsJwtCache = { token: `${unsigned}.${sig}`, iat: now };
+  return apnsJwtCache.token;
+}
+
+function apnsSend(host, deviceToken, payload) {
+  return new Promise((resolve) => {
+    const client = http2.connect(`https://${host}`);
+    client.on("error", () => resolve({ status: 0, body: "connect error" }));
+    const req = client.request({
+      ":method": "POST",
+      ":path": `/3/device/${deviceToken}`,
+      authorization: `bearer ${apnsJwt()}`,
+      "apns-topic": process.env.APNS_TOPIC || "com.wunnle.construct",
+      "apns-push-type": "alert",
+      "apns-priority": "10",
+    });
+    let status = 0;
+    let body = "";
+    req.on("response", (headers) => { status = headers[":status"]; });
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => { client.close(); resolve({ status, body }); });
+    req.on("error", () => { client.close(); resolve({ status: 0, body: "stream error" }); });
+    req.setTimeout(10_000, () => { req.close(); client.close(); resolve({ status: 0, body: "timeout" }); });
+    req.end(JSON.stringify(payload));
+  });
+}
+
+function parseWebPushKey(pushkey) {
+  try {
+    const sub = JSON.parse(pushkey);
+    return sub?.endpoint ? sub : null;
+  } catch {
+    return null;
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
@@ -58,16 +112,32 @@ export default async function handler(req, res) {
       const pushkey = device.pushkey;
       if (!pushkey) return;
 
-      let subscription;
-      try {
-        subscription = JSON.parse(pushkey);
-      } catch {
-        rejected.push(pushkey);
-        return;
-      }
+      const subscription = parseWebPushKey(pushkey);
 
-      if (!subscription?.endpoint) {
-        rejected.push(pushkey);
+      if (!subscription) {
+        // APNs device token (native iOS app)
+        if (!process.env.APNS_KEY_ID || !process.env.APNS_TEAM_ID || !process.env.APNS_PRIVATE_KEY) {
+          return; // APNs not configured — don't reject, token may be valid later
+        }
+        const apnsPayload = {
+          aps: {
+            alert: { title, body },
+            sound: "default",
+            "thread-id": room_id,
+            ...(counts?.unread != null ? { badge: counts.unread } : {}),
+          },
+          roomId: room_id,
+        };
+        // Dev builds register sandbox tokens; production/TestFlight builds
+        // register production ones. Try production first, fall back on the
+        // token-mismatch error.
+        let r = await apnsSend("api.push.apple.com", pushkey, apnsPayload);
+        if (r.status === 400 && r.body.includes("BadDeviceToken")) {
+          r = await apnsSend("api.sandbox.push.apple.com", pushkey, apnsPayload);
+        }
+        if (r.status === 410 || (r.status === 400 && r.body.includes("BadDeviceToken"))) {
+          rejected.push(pushkey);
+        }
         return;
       }
 

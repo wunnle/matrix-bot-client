@@ -1,1 +1,4 @@
 CAPACITOR_DEBUG = true
+// Push entitlement requires paid Apple Developer Program enrollment —
+// uncomment once the account is enrolled (see TODO.md).
+// CODE_SIGN_ENTITLEMENTS = App/App.entitlements

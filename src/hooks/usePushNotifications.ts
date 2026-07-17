@@ -1,4 +1,6 @@
 import { useEffect } from "react";
+import { Capacitor } from "@capacitor/core";
+import { PushNotifications } from "@capacitor/push-notifications";
 
 const VAPID_PUBLIC_KEY = "BHAWGVTndxe9FH-hZmiPSoLsts1NOJLIx9uwVlJIXwDYf8JeXFb1xrKvCLIR5We0djZcWlXIvwiWW2DPLQ8SHdA";
 const APP_ACTIVE_CACHE = "construct-app-state";
@@ -76,8 +78,69 @@ export function usePushNotifications(enabled: boolean) {
     return () => navigator.serviceWorker.removeEventListener("message", onServiceWorkerMessage);
   }, [enabled]);
 
+  // Native (Capacitor): APNs token → Matrix pusher. The push gateway
+  // (api/matrix-push.js) detects non-JSON pushkeys and delivers via APNs.
   useEffect(() => {
     if (!enabled) return;
+    if (!Capacitor.isNativePlatform()) return;
+
+    let cancelled = false;
+
+    const registerNativePusher = async () => {
+      try {
+        let perm = await PushNotifications.checkPermissions();
+        if (perm.receive === "prompt") perm = await PushNotifications.requestPermissions();
+        if (perm.receive !== "granted" || cancelled) return;
+
+        const token = await new Promise<string>((resolve, reject) => {
+          PushNotifications.addListener("registration", (t) => resolve(t.value));
+          PushNotifications.addListener("registrationError", (e) =>
+            reject(new Error(`APNs registration failed: ${JSON.stringify(e)}`)),
+          );
+          PushNotifications.register().catch(reject);
+        });
+        if (cancelled) return;
+
+        const { loadAuth } = await import("../lib/auth");
+        const auth = loadAuth();
+        if (!auth) return;
+
+        await fetch(`${auth.homeserver}/_matrix/client/v3/pushers/set`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${auth.accessToken}`,
+          },
+          body: JSON.stringify({
+            kind: "http",
+            app_id: "com.wunnle.construct.ios",
+            app_display_name: "Construct",
+            device_display_name: "iPhone (native)",
+            pushkey: token,
+            lang: "en",
+            data: {
+              url: "https://construct.kafagoz.com/_matrix/push/v1/notify",
+              format: "event_notification",
+            },
+          }),
+        });
+        console.log("Native push pusher registered");
+      } catch (err) {
+        console.warn("Native push setup failed:", err);
+      }
+    };
+
+    registerNativePusher();
+
+    return () => {
+      cancelled = true;
+      PushNotifications.removeAllListeners().catch(() => {});
+    };
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (Capacitor.isNativePlatform()) return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
 
     const registerPusher = async () => {

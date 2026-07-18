@@ -8,7 +8,11 @@ import MicDemo from './components/MicDemo'
 import RoomsLayout from './components/RoomsLayout'
 import DebugOverlay from './components/DebugOverlay'
 import { usePushNotifications } from './hooks/usePushNotifications'
+import { saveIntentConfig } from './lib/liveActivity'
 import './App.css'
+
+// Default room the "Ask Construct" Shortcut targets (Bender).
+const DEFAULT_INTENT_ROOM = '!DpRWqhWOHJAxyvjOGI:matrix.org'
 
 export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null)
@@ -21,6 +25,7 @@ export default function App() {
     const stored = loadAuth()
     if (stored) setAuth(stored)
     setReady(true)
+    void saveIntentConfig(DEFAULT_INTENT_ROOM)
   }, [])
 
   function handleLogin(a: AuthState) {

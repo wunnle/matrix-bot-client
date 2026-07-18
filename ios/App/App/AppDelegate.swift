@@ -3,6 +3,7 @@ import Capacitor
 import ActivityKit
 import Speech
 import AVFoundation
+import AppIntents
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -57,6 +58,105 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+}
+
+// MARK: - App Intents
+
+/// App-side twin of the widget extension's ListenIntent (same type name =
+/// same action identifier). The control launches the app because this copy
+/// exists in the app's AppIntents metadata; perform() then runs here and
+/// re-enters the normal deep-link path (appUrlOpen → navigate → dictate).
+@available(iOS 16.0, *)
+struct ListenIntent: AppIntent {
+    static let title: LocalizedStringResource = "Listen"
+    static let description = IntentDescription("Open Construct and start dictating a message.")
+    static let openAppWhenRun = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        if let url = URL(string: "construct://listen?room=%21DpRWqhWOHJAxyvjOGI%3Amatrix.org") {
+            await UIApplication.shared.open(url)
+        }
+        return .result()
+    }
+}
+
+/// Config the app writes for background intents to read (they run without the
+/// webview, so they can't reach import.meta.env). Persisted in UserDefaults.
+enum IntentConfig {
+    static let secret = "construct.intentSecret"
+    static let apiBase = "construct.apiBase"
+    static let room = "construct.defaultRoom"
+}
+
+private func intentPost(_ urlString: String, secret: String, body: [String: Any]) async -> [String: Any]? {
+    guard let url = URL(string: urlString),
+          let data = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+    var req = URLRequest(url: url)
+    req.httpMethod = "POST"
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.setValue(secret, forHTTPHeaderField: "x-intent-secret")
+    req.httpBody = data
+    req.timeoutInterval = 12
+    guard let (respData, _) = try? await URLSession.shared.data(for: req) else { return nil }
+    return (try? JSONSerialization.jsonObject(with: respData)) as? [String: Any]
+}
+
+/// Shortcut entry point: send a dictated message and surface the reply in a
+/// Live Activity — no app launch. LiveActivityIntent grants the background
+/// permission to start/update Live Activities.
+@available(iOS 17.0, *)
+struct AskConstructIntent: AppIntent, LiveActivityIntent {
+    static let title: LocalizedStringResource = "Ask Construct"
+    static let description = IntentDescription("Send a message to Construct and watch for the reply on the lock screen.")
+
+    @Parameter(title: "Message")
+    var message: String
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        let d = UserDefaults.standard
+        guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else {
+            throw $message.needsValueError("Open Construct once to enable Shortcut sending.")
+        }
+        let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
+        let room = d.string(forKey: IntentConfig.room) ?? "!DpRWqhWOHJAxyvjOGI:matrix.org"
+
+        // 1. Start the Live Activity ("Thinking…").
+        let attributes = ConstructActivityAttributes(roomName: "Bender")
+        let thinking = ConstructActivityAttributes.ContentState(status: "Thinking…", detail: message)
+        let activity = try? Activity.request(attributes: attributes, content: .init(state: thinking, staleDate: nil))
+
+        let since = Int(Date().timeIntervalSince1970 * 1000)
+
+        // 2. Send the message.
+        _ = await intentPost("\(apiBase)/api/send-message", secret: secret,
+                             body: ["room": room, "text": message, "source": "shortcut"])
+
+        // 3. Watch for the reply (each call long-polls ~9s server-side).
+        var reply: String?
+        for _ in 0..<2 {
+            if let r = await intentPost("\(apiBase)/api/wait-reply", secret: secret,
+                                        body: ["room": room, "since": since]),
+               let body = r["reply"] as? String {
+                reply = body
+                break
+            }
+        }
+
+        // 4. Update + wind down the activity.
+        if let activity = activity {
+            let final = ConstructActivityAttributes.ContentState(
+                status: reply != nil ? "Reply" : "Still thinking…",
+                detail: reply ?? "Open Construct to see the reply."
+            )
+            await activity.update(.init(state: final, staleDate: nil))
+            await activity.end(.init(state: final, staleDate: nil), dismissalPolicy: .after(.now + 30))
+        }
+
+        return .result()
+    }
 }
 
 // MARK: - Live Activities
@@ -214,8 +314,19 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isSupported", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "update", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "saveIntentConfig", returnType: CAPPluginReturnPromise)
     ]
+
+    /// Persist the config the background AskConstructIntent needs (it has no
+    /// access to the webview's env). Called once per launch from JS.
+    @objc func saveIntentConfig(_ call: CAPPluginCall) {
+        let d = UserDefaults.standard
+        if let s = call.getString("secret") { d.set(s, forKey: IntentConfig.secret) }
+        if let a = call.getString("apiBase") { d.set(a, forKey: IntentConfig.apiBase) }
+        if let r = call.getString("room") { d.set(r, forKey: IntentConfig.room) }
+        call.resolve()
+    }
 
     @objc func isSupported(_ call: CAPPluginCall) {
         if #available(iOS 16.2, *) {

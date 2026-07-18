@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom'
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
 import type { AuthState } from '../types'
@@ -112,14 +112,27 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
 
   // Native deep links (construct://listen?room=...) — from the Control
   // Center "Listen" control. Mirrors the room-intent voice action.
+  // The listener attaches immediately (a cold launch from the control can
+  // deliver the URL before the client is ready); the navigation is queued
+  // in pendingListenRef and applied once clientReady flips true.
+  const pendingListenRef = useRef<string | null>(null)
+  const clientReadyRef = useRef(false)
+  clientReadyRef.current = clientReady
+
+  const goListen = useCallback((room: string) => {
+    navigate(`/rooms/${encodeURIComponent(room)}?listen=${Date.now()}`, { replace: true })
+  }, [navigate])
+
   useEffect(() => {
-    if (!Capacitor.isNativePlatform() || !clientReady) return
+    if (!Capacitor.isNativePlatform()) return
 
     const handleUrl = (url: string) => {
       const match = url.match(/^construct:\/\/listen\?room=([^&]+)/)
       if (!match) return
       const room = decodeURIComponent(match[1]!)
-      navigate(`/rooms/${encodeURIComponent(room)}?listen=${Date.now()}`, { replace: true })
+      // Ready → navigate now (warm); otherwise queue for the drain effect (cold).
+      if (clientReadyRef.current) goListen(room)
+      else pendingListenRef.current = room
     }
 
     const sub = CapacitorApp.addListener('appUrlOpen', ({ url }) => handleUrl(url))
@@ -129,7 +142,14 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     return () => {
       sub.then((h) => h.remove())
     }
-  }, [clientReady, navigate])
+  }, [goListen])
+
+  useEffect(() => {
+    if (!clientReady || !pendingListenRef.current) return
+    const room = pendingListenRef.current
+    pendingListenRef.current = null
+    goListen(room)
+  }, [clientReady, goListen])
 
   return (
     <div className={`layout ${activeRoomId ? 'room-open' : ''}`}>

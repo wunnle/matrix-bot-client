@@ -26,6 +26,10 @@
 	<true/>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Construct uses the microphone to dictate messages.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

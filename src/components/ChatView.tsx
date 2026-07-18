@@ -34,7 +34,7 @@ import { loadPills, savePills } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { Capacitor } from '@capacitor/core'
 import { isMobileSafari } from '../lib/isMobileSafari'
-import { startAwaitingReply, maybeShowReply } from '../lib/liveActivity'
+import { startAwaitingReply, maybeShowReply, startListening, updateListeningTranscript, stopListening, awaitingReply } from '../lib/liveActivity'
 import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
 import { useActiveRoom } from '../hooks/useActiveRoom'
@@ -966,6 +966,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     void autoSendToMessage.current?.(text)
   }, [])
 
+  // Feed dictation text to the compose box and (native) the island transcript.
+  const onDictationText = useCallback((full: string) => {
+    setInput(full)
+    updateListeningTranscript(full)
+  }, [])
+
   const {
     dictating,
     userSpeaking,
@@ -974,8 +980,23 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     error: dictationError,
     clearError: clearDictationError,
     supported: dictationSupported,
-  } = useSpeechDictation(setInput, { onAutoSend })
+  } = useSpeechDictation(onDictationText, { onAutoSend })
   const showDictation = useMemo(() => isMobileSafari() || Capacitor.isNativePlatform(), [])
+
+  // Drive the "Listening…" Live Activity from dictation state (native only).
+  const dictatingRef = useRef(false)
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    if (dictating && !dictatingRef.current) {
+      dictatingRef.current = true
+      void startListening(roomName)
+    } else if (!dictating && dictatingRef.current) {
+      dictatingRef.current = false
+      // If an auto-send fired, startAwaitingReply already took over the
+      // activity; stopListening only ends it when still in the listen phase.
+      void stopListening()
+    }
+  }, [dictating, roomName])
 
   useEffect(() => {
     stopDictation()
@@ -1148,9 +1169,29 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const onDecrypted = (event: sdk.MatrixEvent) => feed(event)
     client.on(sdk.RoomEvent.Timeline, onTimeline)
     client.on(sdk.MatrixEventEvent.Decrypted, onDecrypted)
+
+    // Resume catch-up: while backgrounded, the WebView's JS/sync is
+    // suspended even though the audio session keeps the process alive, so
+    // the reply that arrived is only seen on return. On foreground, scan the
+    // room for bender's latest message newer than when the wait began.
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      const awaiting = awaitingReply()
+      if (!awaiting || awaiting.roomId !== roomId) return
+      const events = client.getRoom(roomId)?.getLiveTimeline().getEvents() ?? []
+      for (let i = events.length - 1; i >= 0; i--) {
+        const ev = events[i]!
+        if (ev.getType() !== 'm.room.message' || ev.getSender() === userId) continue
+        if (ev.getTs() < awaiting.since) break
+        maybeShowReply(roomId, (ev.getContent().body as string | undefined) ?? '')
+        break
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
       client.off(sdk.RoomEvent.Timeline, onTimeline)
       client.off(sdk.MatrixEventEvent.Decrypted, onDecrypted)
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [client, roomId, userId])
 

@@ -1162,7 +1162,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       if (event.getRoomId() !== roomId) return
       if (event.getType() !== 'm.room.message') return
       if (event.getSender() === userId) return
-      const body = (event.getContent().body as string | undefined) ?? ''
+      const content = event.getContent() as { body?: string; 'm.new_content'?: { body?: string } }
+      // Streamed edits (m.replace) carry the real text in m.new_content.
+      const body = content['m.new_content']?.body ?? content.body ?? ''
       maybeShowReply(roomId, body)
     }
     const onTimeline = (event: sdk.MatrixEvent) => feed(event)

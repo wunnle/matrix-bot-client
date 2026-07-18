@@ -34,7 +34,10 @@ async function latestReply(room, since, selfId) {
     if (ev.type !== 'm.room.message') continue
     if (ev.sender === selfId) continue
     if ((ev.origin_server_ts ?? 0) <= since) break // older than the wait window
-    const body = ev.content?.body
+    // Streamed edits (m.replace) carry the real text in m.new_content;
+    // the plain body is a "* ..." fallback.
+    const content = ev.content?.['m.new_content'] ?? ev.content
+    const body = content?.body
     if (body) return { reply: body, sender: ev.sender, ts: ev.origin_server_ts }
   }
   return null

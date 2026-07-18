@@ -80,13 +80,19 @@ export async function endLiveActivity(): Promise<void> {
    mode) keeps it alive through the awaiting phase. Fully-closed updates
    still need APNs liveactivity pushes (post-enrollment). */
 
-type Phase = 'idle' | 'listening' | 'awaiting'
+type Phase = 'idle' | 'listening' | 'awaiting' | 'replied'
 let phase: Phase = 'idle'
 let hasActivity = false
 let awaitingRoomId: string | null = null
 let awaitingSince = 0
 let endTimer: ReturnType<typeof setTimeout> | null = null
+let replyWindowTimer: ReturnType<typeof setTimeout> | null = null
 let lastTranscriptAt = 0
+
+/** How long after the last reply we keep listening for follow-up messages. */
+const REPLY_WINDOW_MS = 30_000
+/** How long the finished activity lingers on the lock screen. */
+const LINGER_MS = 10 * 60_000
 
 /** The room currently awaiting a reply, and when the wait began (ms). */
 export function awaitingReply(): { roomId: string; since: number } | null {
@@ -142,15 +148,51 @@ export async function startAwaitingReply(roomId: string, roomName: string, quest
   }
 }
 
-/** Feed incoming room messages; the first one for the awaited room becomes the island reply. */
+/* Streamed edits can arrive several times a second; iOS rate-limits Live
+   Activity updates, so throttle to ~1/s with a trailing update so the final
+   text always lands. */
+let lastReplyUpdateAt = 0
+let pendingReplyBody: string | null = null
+let replyUpdateTimer: ReturnType<typeof setTimeout> | null = null
+
+function pushReplyUpdate(body: string): void {
+  const now = Date.now()
+  const elapsed = now - lastReplyUpdateAt
+  if (elapsed >= 900) {
+    lastReplyUpdateAt = now
+    void updateLiveActivity('Reply', body.slice(0, 160))
+    return
+  }
+  pendingReplyBody = body
+  if (!replyUpdateTimer) {
+    replyUpdateTimer = setTimeout(() => {
+      replyUpdateTimer = null
+      lastReplyUpdateAt = Date.now()
+      if (pendingReplyBody) void updateLiveActivity('Reply', pendingReplyBody.slice(0, 160))
+      pendingReplyBody = null
+    }, 900 - elapsed)
+  }
+}
+
+/** Feed incoming room messages. Each message for the awaited room updates the
+    island; follow-ups keep landing for REPLY_WINDOW_MS after the last one. */
 export function maybeShowReply(roomId: string, body: string): void {
-  if (!Capacitor.isNativePlatform() || phase !== 'awaiting' || awaitingRoomId !== roomId || !body) return
-  phase = 'idle'
-  awaitingRoomId = null
-  void updateLiveActivity('Reply', body.slice(0, 160))
+  if (!Capacitor.isNativePlatform() || awaitingRoomId !== roomId || !body) return
+  if (phase !== 'awaiting' && phase !== 'replied') return
+  phase = 'replied'
+  pushReplyUpdate(body)
+
+  // Follow-up window: another bot message within 30s replaces the shown reply.
+  if (replyWindowTimer) clearTimeout(replyWindowTimer)
+  replyWindowTimer = setTimeout(() => {
+    phase = 'idle'
+    awaitingRoomId = null
+  }, REPLY_WINDOW_MS)
+
+  // Keep the finished activity visible for a while.
   clearEndTimer()
   endTimer = setTimeout(() => {
     hasActivity = false
     void endLiveActivity()
-  }, 25_000)
+  }, LINGER_MS)
 }

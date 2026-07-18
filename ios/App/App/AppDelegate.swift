@@ -134,25 +134,32 @@ struct AskConstructIntent: AppIntent, LiveActivityIntent {
         _ = await intentPost("\(apiBase)/api/send-message", secret: secret,
                              body: ["room": room, "text": message, "source": "shortcut"])
 
-        // 3. Watch for the reply (each call long-polls ~9s server-side).
-        var reply: String?
-        for _ in 0..<2 {
-            if let r = await intentPost("\(apiBase)/api/wait-reply", secret: secret,
-                                        body: ["room": room, "since": since]),
-               let body = r["reply"] as? String {
-                reply = body
-                break
+        // 3. Watch ~30s: bender often sends several messages (progress lines,
+        //    then the answer) — surface each one as it lands. wait-reply
+        //    long-polls ~9s server-side per call.
+        var lastTs = since
+        var lastReply: String?
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline {
+            guard let r = await intentPost("\(apiBase)/api/wait-reply", secret: secret,
+                                           body: ["room": room, "since": lastTs]) else { break }
+            guard let body = r["reply"] as? String, !body.isEmpty else { continue }
+            lastReply = body
+            if let ts = r["ts"] as? Double { lastTs = max(lastTs, Int(ts)) }
+            if let activity = activity {
+                let state = ConstructActivityAttributes.ContentState(
+                    status: "Reply", detail: String(body.prefix(300)))
+                await activity.update(.init(state: state, staleDate: nil))
             }
         }
 
-        // 4. Update + wind down the activity.
+        // 4. Wind down, but keep it on the lock screen for a while.
         if let activity = activity {
             let final = ConstructActivityAttributes.ContentState(
-                status: reply != nil ? "Reply" : "Still thinking…",
-                detail: reply ?? "Open Construct to see the reply."
+                status: lastReply != nil ? "Reply" : "Still thinking…",
+                detail: lastReply.map { String($0.prefix(300)) } ?? "Open Construct to see the reply."
             )
-            await activity.update(.init(state: final, staleDate: nil))
-            await activity.end(.init(state: final, staleDate: nil), dismissalPolicy: .after(.now + 30))
+            await activity.end(.init(state: final, staleDate: nil), dismissalPolicy: .after(.now + 600))
         }
 
         return .result()

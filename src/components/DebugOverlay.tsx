@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { Capacitor } from '@capacitor/core'
 import { isDebugEnabled } from '../lib/debug'
+import { liveActivityPlugin, updateLiveActivity, endLiveActivity } from '../lib/liveActivity'
 
 /** Measure a CSS length by probing a throwaway fixed-position element. */
 function probe(height: string): number {
@@ -65,6 +67,17 @@ export default function DebugOverlay() {
 
   if (!enabled || lines.length === 0) return null
 
+  const btn = {
+    pointerEvents: 'auto' as const,
+    background: 'rgba(124,58,237,0.9)',
+    color: '#fff',
+    font: '12px/1 ui-monospace, monospace',
+    border: 'none',
+    borderRadius: 6,
+    padding: '8px 10px',
+    cursor: 'pointer',
+  }
+
   return (
     <>
     {/* Paint probe: drawn just below the reported viewport bottom. If the
@@ -100,6 +113,31 @@ export default function DebugOverlay() {
     >
       {lines.join('\n')}
     </div>
+    {Capacitor.isNativePlatform() && (
+      <div
+        style={{
+          position: 'fixed',
+          top: top + 130,
+          left: 8,
+          zIndex: 9999,
+          display: 'flex',
+          gap: 6,
+        }}
+      >
+        <button
+          style={btn}
+          onClick={async () => {
+            try {
+              await liveActivityPlugin.start({ roomName: 'Bender', status: 'Thinking…', detail: 'starting up' })
+            } catch (e) {
+              alert(`LA start failed: ${e instanceof Error ? e.message : JSON.stringify(e)}`)
+            }
+          }}
+        >LA start</button>
+        <button style={btn} onClick={() => updateLiveActivity('Running tool', 'read_file src/App.tsx')}>update</button>
+        <button style={btn} onClick={() => endLiveActivity()}>end</button>
+      </div>
+    )}
     </>
   )
 }

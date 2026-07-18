@@ -1,5 +1,7 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { useCallback, useState, useEffect } from 'react'
+import { Capacitor } from '@capacitor/core'
+import { App as CapacitorApp } from '@capacitor/app'
 import type { AuthState } from '../types'
 import RoomList from './RoomList'
 import ChatView from './ChatView'
@@ -107,6 +109,27 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [clientReady, fetchIntent])
+
+  // Native deep links (construct://listen?room=...) — from the Control
+  // Center "Listen" control. Mirrors the room-intent voice action.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || !clientReady) return
+
+    const handleUrl = (url: string) => {
+      const match = url.match(/^construct:\/\/listen\?room=([^&]+)/)
+      if (!match) return
+      const room = decodeURIComponent(match[1]!)
+      navigate(`/rooms/${encodeURIComponent(room)}?listen=${Date.now()}`, { replace: true })
+    }
+
+    const sub = CapacitorApp.addListener('appUrlOpen', ({ url }) => handleUrl(url))
+    CapacitorApp.getLaunchUrl().then((launch) => {
+      if (launch?.url) handleUrl(launch.url)
+    }).catch(() => {})
+    return () => {
+      sub.then((h) => h.remove())
+    }
+  }, [clientReady, navigate])
 
   return (
     <div className={`layout ${activeRoomId ? 'room-open' : ''}`}>

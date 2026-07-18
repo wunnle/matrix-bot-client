@@ -1,4 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Capacitor, registerPlugin } from '@capacitor/core'
+import type { PluginListenerHandle } from '@capacitor/core'
+
+// Native SFSpeechRecognizer bridge (SpeechRecognitionPlugin in
+// AppDelegate.swift). transcript is cumulative for the session.
+interface NativeSpeechPlugin {
+  available(): Promise<{ available: boolean }>
+  start(options?: { lang?: string }): Promise<void>
+  stop(): Promise<void>
+  addListener(event: 'result', cb: (e: { transcript: string; isFinal: boolean }) => void): Promise<PluginListenerHandle>
+  addListener(event: 'end', cb: () => void): Promise<PluginListenerHandle>
+  removeAllListeners(): Promise<void>
+}
+
+const nativeSpeech: NativeSpeechPlugin | null = Capacitor.isNativePlatform()
+  ? registerPlugin<NativeSpeechPlugin>('SpeechRecognition')
+  : null
 
 type WebSttEvent = {
   resultIndex: number
@@ -124,10 +141,19 @@ export function useSpeechDictation(
     }, 100)
   }, [])
 
+  const nativeActiveRef = useRef(false)
+
   const stop = useCallback(() => {
     setDictationMode('off')
     autoModeRef.current = false
     hadSttThisSessionRef.current = false
+    if (nativeSpeech && nativeActiveRef.current) {
+      nativeActiveRef.current = false
+      nativeSpeech.stop().catch(() => {})
+      nativeSpeech.removeAllListeners().catch(() => {})
+      endHearingWatch()
+      return
+    }
     const r = recRef.current
     recRef.current = null
     if (!r) {
@@ -159,6 +185,53 @@ export function useSpeechDictation(
   type StartOptions = { autoSend?: boolean }
   const start = useCallback(
     (prefix: string, startOptions?: StartOptions) => {
+      // Native path: SFSpeechRecognizer via the SpeechRecognition plugin.
+      if (nativeSpeech) {
+        setError(null)
+        stop()
+        const isAuto = !!startOptions?.autoSend
+        autoModeRef.current = isAuto
+        setDictationMode(isAuto ? 'auto' : 'manual')
+        hadSttThisSessionRef.current = false
+        lastEmittedTextRef.current = prefix
+        prefixRef.current = prefix
+        nativeActiveRef.current = true
+
+        nativeSpeech.addListener('result', ({ transcript }) => {
+          if (!nativeActiveRef.current) return
+          hadSttThisSessionRef.current = true
+          bumpSpeechActivity()
+          const p = prefixRef.current
+          const full = p + (p && !p.endsWith(' ') ? ' ' : '') + transcript
+          lastEmittedTextRef.current = full
+          onText(full)
+        })
+        nativeSpeech.addListener('end', () => {
+          if (!nativeActiveRef.current) return
+          nativeActiveRef.current = false
+          nativeSpeech.removeAllListeners().catch(() => {})
+          setDictationMode('off')
+          autoModeRef.current = false
+          hadSttThisSessionRef.current = false
+          endHearingWatch()
+        })
+        nativeSpeech.start({ lang: typeof navigator !== 'undefined' ? navigator.language : undefined })
+          .then(() => {
+            lastHearingUIReturnedRef.current = false
+            setUserSpeaking(false)
+            startHearingWatch()
+          })
+          .catch((e) => {
+            nativeActiveRef.current = false
+            nativeSpeech.removeAllListeners().catch(() => {})
+            setError(e instanceof Error ? e.message : String(e))
+            setDictationMode('off')
+            autoModeRef.current = false
+            endHearingWatch()
+          })
+        return
+      }
+
       const Ctor = getSpeechRecognitionCtor()
       if (!Ctor) {
         setError('Speech recognition is not available in this context.')
@@ -244,6 +317,6 @@ export function useSpeechDictation(
     stop,
     error,
     clearError,
-    supported: getSpeechRecognitionCtor() !== null,
+    supported: nativeSpeech !== null || getSpeechRecognitionCtor() !== null,
   }
 }

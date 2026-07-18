@@ -32,7 +32,9 @@ import { getClient } from '../lib/matrix'
 import { pinRoomEvent, unpinRoomEvent } from '../lib/pinRoomMessage'
 import { loadPills, savePills } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
+import { Capacitor } from '@capacitor/core'
 import { isMobileSafari } from '../lib/isMobileSafari'
+import { startAwaitingReply, maybeShowReply } from '../lib/liveActivity'
 import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
 import { useActiveRoom } from '../hooks/useActiveRoom'
@@ -973,7 +975,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     clearError: clearDictationError,
     supported: dictationSupported,
   } = useSpeechDictation(setInput, { onAutoSend })
-  const showDictation = useMemo(() => isMobileSafari(), [])
+  const showDictation = useMemo(() => isMobileSafari() || Capacitor.isNativePlatform(), [])
 
   useEffect(() => {
     stopDictation()
@@ -1125,8 +1127,32 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [sendFile])
 
   useLayoutEffect(() => {
-    autoSendToMessage.current = (t) => { void sendMessage(t) }
-  }, [sendMessage])
+    autoSendToMessage.current = (t) => {
+      void sendMessage(t)
+      // Dictated sends surface the reply in the Dynamic Island (native only)
+      void startAwaitingReply(roomId, roomName, t)
+    }
+  }, [sendMessage, roomId, roomName])
+
+  // Feed incoming messages to the Live Activity reply flow (native only).
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    const feed = (event: sdk.MatrixEvent) => {
+      if (event.getRoomId() !== roomId) return
+      if (event.getType() !== 'm.room.message') return
+      if (event.getSender() === userId) return
+      const body = (event.getContent().body as string | undefined) ?? ''
+      maybeShowReply(roomId, body)
+    }
+    const onTimeline = (event: sdk.MatrixEvent) => feed(event)
+    const onDecrypted = (event: sdk.MatrixEvent) => feed(event)
+    client.on(sdk.RoomEvent.Timeline, onTimeline)
+    client.on(sdk.MatrixEventEvent.Decrypted, onDecrypted)
+    return () => {
+      client.off(sdk.RoomEvent.Timeline, onTimeline)
+      client.off(sdk.MatrixEventEvent.Decrypted, onDecrypted)
+    }
+  }, [client, roomId, userId])
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {

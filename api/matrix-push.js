@@ -166,7 +166,11 @@ export default async function handler(req, res) {
           aps: {
             alert: {
               title: sender_display_name || title,
-              ...(sender_display_name && room_name ? { subtitle: room_name } : {}),
+              // Only when it adds something: in a one-bot room the sender and
+              // the room are both "Bender", which rendered the name twice.
+              ...(sender_display_name && room_name && room_name !== sender_display_name
+                ? { subtitle: room_name }
+                : {}),
               body,
             },
             sound: "default",

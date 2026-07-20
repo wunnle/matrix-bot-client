@@ -57,15 +57,17 @@ struct ContructWidgetsLiveActivity: Widget {
         ActivityConfiguration(for: ConstructActivityAttributes.self) { context in
             // Lock screen / banner
             let reply = isReply(context.state.status)
-            HStack(alignment: .center, spacing: 12) {
+            // The room name is not shown: the avatar already identifies the
+            // room, and in a one-bot room it only repeated what the reply
+            // itself makes obvious. That space goes to the message.
+            HStack(alignment: .top, spacing: 12) {
                 RoomAvatar(size: 44)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(context.attributes.roomName)
-                        .font(.headline)
                     if reply {
                         Text(context.state.detail)
                             .font(.subheadline)
-                            .lineLimit(3)
+                            .lineLimit(8)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else {
                         Text(context.state.status)
                             .font(.subheadline)
@@ -74,7 +76,8 @@ struct ContructWidgetsLiveActivity: Widget {
                             Text(context.state.detail)
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
-                                .lineLimit(1)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
@@ -99,14 +102,12 @@ struct ContructWidgetsLiveActivity: Widget {
                         .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.center) {
-                    VStack(spacing: 2) {
-                        Text(context.attributes.roomName)
-                            .font(.headline)
-                        if !reply {
-                            Text(context.state.status)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                    // Only the working status needs a centre line; on a reply
+                    // the text below is the content and a header just crowds it.
+                    if !reply {
+                        Text(context.state.status)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -123,7 +124,8 @@ struct ContructWidgetsLiveActivity: Widget {
                     if reply {
                         Text(context.state.detail)
                             .font(.subheadline)
-                            .lineLimit(3)
+                            .lineLimit(6)
+                            .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else if !context.state.detail.isEmpty {
                         Text(context.state.detail)

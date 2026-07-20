@@ -320,8 +320,17 @@ private func runAskWatch(room: String, apiBase: String, secret: String,
     // Reuse a running activity rather than stacking a second one: asking again
     // while an activity is on screen should replace its content, not leave the
     // previous one orphaned.
+    // Reuse an active or stale activity; dismiss anything else still on screen.
+    // An ended activity lingers for its dismissal window and is still visible,
+    // so leaving it there while starting a new one is what produced duplicates.
+    let all = Activity<ConstructActivityAttributes>.activities
+    let reusable = all.first { $0.activityState == .active || $0.activityState == .stale }
+    for other in all where other.id != reusable?.id {
+        await other.end(nil, dismissalPolicy: .immediate)
+    }
+
     let activity: Activity<ConstructActivityAttributes>?
-    if let existing = Activity<ConstructActivityAttributes>.activities.first(where: { $0.activityState == .active }) {
+    if let existing = reusable {
         await existing.update(.init(state: thinking, staleDate: nil))
         activity = existing
     } else {

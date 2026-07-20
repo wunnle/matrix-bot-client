@@ -82,13 +82,20 @@ export default async function handler(req, res) {
   // values are credentials. Without this there is no way to tell a token that
   // never registered from a push that failed to deliver.
   if (req.method === "GET") {
-    const roomId = req.query?.roomId;
-    if (!roomId) return res.status(400).json({ error: "missing roomId" });
     try {
       const rooms = await readRooms();
+      const roomId = req.query?.roomId;
+      // Without a roomId, list which rooms actually hold a token. A token
+      // registered under a different room id than the one being queried looks
+      // identical to no registration at all.
+      if (!roomId) {
+        return res.status(200).json({
+          rooms: Object.entries(rooms).map(([id, v]) => ({ roomId: id, ageMs: Date.now() - (v.ts ?? 0) })),
+        });
+      }
       return res.status(200).json({ roomId, count: rooms[roomId] ? 1 : 0 });
     } catch (err) {
-      return res.status(200).json({ roomId, count: 0, error: String(err?.message || err) });
+      return res.status(200).json({ error: String(err?.message || err) });
     }
   }
 

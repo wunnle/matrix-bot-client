@@ -233,31 +233,39 @@ private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<
 @available(iOS 16.2, *)
 private func awaitLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<T>,
                                                            room: String,
-                                                           timeout: Duration = .seconds(8)) async {
-    await withTaskGroup(of: Bool.self) { group in
+                                                           timeout: Duration = .seconds(8)) async -> String {
+    return await withTaskGroup(of: String.self) { group -> String in
         group.addTask {
             for await tokenData in activity.pushTokenUpdates {
-                await postLiveActivityToken(tokenData, room: room)
-                return true
+                return await postLiveActivityToken(tokenData, room: room)
             }
-            return false
+            return "stream-ended"
         }
         group.addTask {
             try? await Task.sleep(for: timeout)
-            return false
+            return "no-token"
         }
-        _ = await group.next()
+        let first = await group.next() ?? "none"
         group.cancelAll()
+        return first
     }
 }
 
-private func postLiveActivityToken(_ tokenData: Data, room: String) async {
+/// Returns a short status string. NSLog from app code is not relayed to the
+/// device syslog on iOS 26, so the only reliable way to see what happened here
+/// is to surface it — currently into the Live Activity's own text.
+private func postLiveActivityToken(_ tokenData: Data, room: String) async -> String {
     let d = UserDefaults.standard
-    guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
+    guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else {
+        return "no-secret"
+    }
     let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
     let token = tokenData.map { String(format: "%02x", $0) }.joined()
-    _ = await intentPost("\(apiBase)/api/live-activity", secret: secret,
-                         body: ["roomId": room, "token": token])
+    guard let result = await intentPost("\(apiBase)/api/live-activity", secret: secret,
+                                        body: ["roomId": room, "token": token]) else {
+        return "post-failed"
+    }
+    return (result["ok"] as? Bool) == true ? "registered" : "rejected:\(result)"
 }
 
 /// Clears the room's tokens once an activity ends, so the gateway stops pushing
@@ -309,11 +317,20 @@ private func runAskWatch(room: String, apiBase: String, secret: String,
                          initialDetail: String, send: () async -> Void) async {
     let attributes = ConstructActivityAttributes(roomName: "Bender")
     let thinking = ConstructActivityAttributes.ContentState(status: "Thinking…", detail: initialDetail)
-    // pushType: .token is what makes ActivityKit mint a push token; without it
-    // the activity can only ever be updated from a running app.
-    let activity = try? Activity.request(attributes: attributes,
+    // Reuse a running activity rather than stacking a second one: asking again
+    // while an activity is on screen should replace its content, not leave the
+    // previous one orphaned.
+    let activity: Activity<ConstructActivityAttributes>?
+    if let existing = Activity<ConstructActivityAttributes>.activities.first(where: { $0.activityState == .active }) {
+        await existing.update(.init(state: thinking, staleDate: nil))
+        activity = existing
+    } else {
+        // pushType: .token is what makes ActivityKit mint a push token; without
+        // it the activity can only ever be updated from a running app.
+        activity = try? Activity.request(attributes: attributes,
                                          content: .init(state: thinking, staleDate: nil),
                                          pushType: .token)
+    }
     let since = Int(Date().timeIntervalSince1970 * 1000)
     // Send first. Registering the push token used to run before this, which
     // delayed the message by up to 8s and pushed perform() past the Shortcuts
@@ -324,7 +341,7 @@ private func runAskWatch(room: String, apiBase: String, secret: String,
     // Registration runs alongside the poll loop rather than before it, but is
     // still awaited below: this process is torn down when perform() returns, so
     // a fire-and-forget task can die before it registers.
-    let tokenTask: Task<Void, Never>? = activity.map { a in
+    let tokenTask: Task<String, Never>? = activity.map { a in
         Task { await awaitLiveActivityToken(a, room: room) }
     }
 
@@ -350,8 +367,9 @@ private func runAskWatch(room: String, apiBase: String, secret: String,
     }
 
     // Registration has had the whole poll window to finish; make sure it has
-    // before this process goes away.
-    await tokenTask?.value
+    // before this process goes away. TEMPORARY: its outcome is surfaced in the
+    // activity text below, because app NSLog is invisible in the device log.
+    let tokenStatus = await tokenTask?.value ?? "no-activity"
 
     // Wind down only if the reply arrived in-window; otherwise leave it live for
     // the gateway's "end" push (api/matrix-push.js) to deliver the answer.
@@ -363,7 +381,7 @@ private func runAskWatch(room: String, apiBase: String, secret: String,
             await activity.end(.init(state: final, staleDate: nil), dismissalPolicy: .after(.now + 600))
         } else {
             let waiting = ConstructActivityAttributes.ContentState(
-                status: "Still thinking…", detail: "Waiting for the reply.")
+                status: "Still thinking…", detail: "push: \(tokenStatus)")
             await activity.update(.init(state: waiting, staleDate: .now + 900))
         }
     }

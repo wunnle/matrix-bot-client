@@ -7,7 +7,7 @@
  * Live Activity — which is the only way to update one while the app is
  * suspended.
  *
- * State is encoded in the blob path, like active-room.js:
+ * State is encoded in the blob path:
  *   live_activity/{sha256(roomId)}/{apnsToken}_{ts}
  * so matrix-push.js only needs list() — no blob content fetch.
  *

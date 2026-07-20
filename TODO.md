@@ -22,11 +22,8 @@
 - [ ] Point client API calls at an absolute base URL when running native.
   Relative `/api/...` fetches resolve against the local webview origin, so
   room-intent polling and the active-room beacon silently no-op in the app.
-- [ ] Push notifications for the native app — **server side verified 2026-07-20**,
-  device side untested. Enrollment done, entitlement enabled, APNs key + the four
-  `APNS_*` env vars live in Vercel. Remaining: build to device, confirm the pusher
-  registers (`app_id com.wunnle.construct.ios`, 64-char hex pushkey), send a real
-  message.
+- [x] Push notifications for the native app — **working end to end 2026-07-20**
+  (alert delivery, inline reply, markdown-stripped body, custom expanded view).
   - **Gotcha that cost a session:** the first auth key was created as a
     *Sandbox-only* APNs key. developer.apple.com → Keys offers a sandbox-restricted
     variant alongside the normal one; the normal key works for **both**
@@ -40,6 +37,39 @@
     authenticated the JWT and only refused the fake token — credentials are good.
     `rejected: []` means missing env vars, a bad JWT, or a connection failure; the
     handler cannot distinguish them from outside.
+- [ ] Richer rendering in the expanded notification view
+  (`ios/App/ConstructNotificationContent/NotificationViewController.swift`).
+  Currently renders bold, italic, inline code, links and fenced code blocks into
+  a single `UILabel`. Not handled: cards, accordions/disclosure groups, tables,
+  blockquote styling, images, and bullet/numbered list indentation — bender
+  emits these and they flatten to plain paragraphs.
+  - A `UILabel` is the ceiling here. Anything with structure wants a stack of
+    views (or SwiftUI via `UIHostingController`), plus a real block-level parse
+    rather than the current split-on-fences approach.
+  - The view is sized by `preferredContentSize`, so growing content needs that
+    recomputed; `UNNotificationExtensionInitialContentSizeRatio` only sets the
+    starting height.
+  - Interactive elements (a tappable accordion) need
+    `UNNotificationExtensionUserInteractionEnabled`, already set — but iOS only
+    allows limited interaction, so an accordion may have to render expanded.
+
+- [ ] Notification content extension — **gotchas, both cost hours on 2026-07-20**:
+  1. **Link the extension point's framework explicitly.** Swift's
+     `import UserNotificationsUI` does *not* autolink it. Without it the
+     extension launches, then fails with `Unable to find NSExtensionContextClass
+     (_UNNotificationContentExtensionVendorContext)` and iOS renders an **empty
+     panel with no crash**. Fixed via `OTHER_LDFLAGS` on the target.
+  2. **An empty expanded view gives you nothing to go on** — no crash report, no
+     visible error. Get the device log instead of guessing:
+     `idevicesyslog -u <udid> > log.txt`, then grep for the extension name.
+     Do this *first*; the failure reason is stated plainly in the log.
+  3. **Test with a freshly delivered notification.** iOS binds a notification to
+     the content extension present at delivery time, so long-pressing an older
+     notification won't exercise a newly installed extension.
+  4. The extension loads via `NSExtensionMainStoryboard` (`MainInterface`).
+     `NSExtensionPrincipalClass` also launched fine, so it is not required —
+     but the storyboard matches Apple's template and is what's proven here.
+
 - [ ] Gate `DebugOverlay` (and the tap-version debug trigger) behind a dev flag so
   they stay out of release builds.
 
@@ -47,6 +77,13 @@
 
 - [x] Enroll in Apple Developer Program (done 2026-07-20).
 - [ ] Archive and upload first TestFlight build.
+- [ ] Push-driven Live Activity updates — **shipped 2026-07-20, untested end to
+  end**. Activity push tokens register via `api/live-activity.js`; the gateway
+  pushes the reply as an `end` event so a reply slower than `AskConstructIntent`'s
+  30s polling window still lands. Verify: ask via Shortcut, lock, wait past 30s.
+  - The gateway sends `event: "end"`, not `"update"`. Correct while streaming is
+    off (one answer per ask) — but if bender ever sends two messages for one
+    ask, the first ends the activity and the second is lost.
 - [ ] **Flip `aps-environment` to `production`** in `ios/App/App/App.entitlements`
   before any TestFlight/App Store build — it is `development` for on-device debug
   builds, and TestFlight uses the production APNs environment. Getting this wrong

@@ -4,15 +4,18 @@ import { Capacitor, registerPlugin } from '@capacitor/core'
  * Live Activity (Dynamic Island / lock screen) bridge — native iOS only.
  * Implemented by LiveActivityPlugin in ios/App/App/AppDelegate.swift.
  *
- * Activities started here are local: they can be updated only while the app
- * is running. Updating a backgrounded activity needs APNs liveactivity
- * pushes, which require paid Developer Program enrollment (see TODO.md).
+ * Pass a roomId when starting: the native side registers the activity's APNs
+ * push token against that room, which is what lets api/matrix-push.js update
+ * the activity once the app is suspended. Without it the activity still works,
+ * but can only be updated while the app is running.
  */
 interface LiveActivityPlugin {
   isSupported(): Promise<{ supported: boolean }>
-  start(options: { roomName: string; status: string; detail?: string }): Promise<{ activityId: string }>
+  // roomId is what lets the native side register the activity's push token
+  // against a room; without it the activity can only be updated in-app.
+  start(options: { roomName: string; status: string; detail?: string; roomId?: string }): Promise<{ activityId: string }>
   update(options: { status: string; detail?: string }): Promise<void>
-  end(): Promise<void>
+  end(options?: { roomId?: string }): Promise<void>
   saveIntentConfig(options: { secret: string; apiBase: string; room: string }): Promise<void>
 }
 
@@ -48,10 +51,14 @@ export async function liveActivitySupported(): Promise<boolean> {
   }
 }
 
-export async function startLiveActivity(roomName: string, status: string, detail = ''): Promise<string | null> {
+/** Room the current activity belongs to, so end() can clear its push token. */
+let currentRoomId: string | null = null
+
+export async function startLiveActivity(roomName: string, status: string, detail = '', roomId?: string): Promise<string | null> {
   if (!Capacitor.isNativePlatform()) return null
   try {
-    const { activityId } = await plugin.start({ roomName, status, detail })
+    currentRoomId = roomId ?? null
+    const { activityId } = await plugin.start({ roomName, status, detail, roomId })
     return activityId
   } catch {
     return null
@@ -65,7 +72,9 @@ export async function updateLiveActivity(status: string, detail = ''): Promise<v
 
 export async function endLiveActivity(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return
-  await plugin.end().catch(() => {})
+  const roomId = currentRoomId ?? undefined
+  currentRoomId = null
+  await plugin.end({ roomId }).catch(() => {})
 }
 
 /* ── Listen → reply flow (Dynamic Island) ────────────────────────────────
@@ -104,7 +113,7 @@ function clearEndTimer() {
 }
 
 /** Dictation started — open a "Listening…" activity. */
-export async function startListening(roomName: string): Promise<void> {
+export async function startListening(roomName: string, roomId: string): Promise<void> {
   if (!Capacitor.isNativePlatform()) return
   clearEndTimer()
   phase = 'listening'
@@ -112,7 +121,7 @@ export async function startListening(roomName: string): Promise<void> {
   await endLiveActivity()
   hasActivity = true
   lastTranscriptAt = 0
-  await startLiveActivity(roomName, 'Listening…', '')
+  await startLiveActivity(roomName, 'Listening…', '', roomId)
 }
 
 /** Live partial transcript — throttled; Live Activity updates are rate-limited. */
@@ -144,7 +153,7 @@ export async function startAwaitingReply(roomId: string, roomName: string, quest
     await updateLiveActivity('Waiting for reply…', q)
   } else {
     hasActivity = true
-    await startLiveActivity(roomName, 'Waiting for reply…', q)
+    await startLiveActivity(roomName, 'Waiting for reply…', q, roomId)
   }
 }
 

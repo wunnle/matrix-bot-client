@@ -958,7 +958,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     if (!Capacitor.isNativePlatform()) return
     if (dictating && !dictatingRef.current) {
       dictatingRef.current = true
-      void startListening(roomName)
+      void startListening(roomName, roomId)
     } else if (!dictating && dictatingRef.current) {
       dictatingRef.current = false
       // If an auto-send fired, startAwaitingReply already took over the

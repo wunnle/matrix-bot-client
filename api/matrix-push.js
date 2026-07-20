@@ -73,6 +73,32 @@ function apnsSend(host, deviceToken, payload) {
   });
 }
 
+/* Bender writes markdown into `body`; notifications are plain text everywhere
+   (APNs and Web Push both), so "**9-4**" would render literally. Strip the
+   common markers rather than ship the syntax to the lock screen.
+
+   Deliberately does NOT touch `_underscores_`: bender talks about code, and
+   stripping those would mangle snake_case identifiers. Asterisk italics are
+   only stripped when they aren't adjacent to word characters, for the same
+   reason. */
+function stripMarkdown(text) {
+  return text
+    .replace(/```[\s\S]*?```/g, "[code]")            // fenced blocks
+    .replace(/`([^`\n]+)`/g, "$1")                   // inline code
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")        // images
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")         // links → link text
+    // Bold, `**` only — `__bold__` is excluded so Python dunders survive.
+    .replace(/(?<![\w*])\*\*(?!\s)(.+?)(?<!\s)\*\*(?![\w*])/g, "$1")
+    // Italic. The (?!\s) / (?<!\s) guards match real markdown rules and keep
+    // "5 * 3 = 15 and 2 * 4" from being read as an emphasis span.
+    .replace(/(?<![\w*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![\w*])/g, "$1")
+    .replace(/~~(.+?)~~/g, "$1")                     // strikethrough
+    .replace(/^#{1,6}\s+/gm, "")                     // headings
+    .replace(/^>\s?/gm, "")                          // blockquotes
+    .replace(/^\s*[-*+]\s+/gm, "• ")                 // bullets
+    .trim();
+}
+
 function parseWebPushKey(pushkey) {
   try {
     const sub = JSON.parse(pushkey);
@@ -99,8 +125,10 @@ export default async function handler(req, res) {
   if (isThinking) return res.status(200).json({ rejected: [] });
 
   const title = room_name || "Hermes";
+  // Strip before truncating, so the 100-char cut can't land mid-marker and
+  // leave a dangling "**".
   const body = content?.body
-    ? content.body.slice(0, 100)
+    ? stripMarkdown(content.body).slice(0, 100)
     : sender_display_name
     ? `New message from ${sender_display_name}`
     : "New message";
@@ -119,11 +147,22 @@ export default async function handler(req, res) {
         if (!process.env.APNS_KEY_ID || !process.env.APNS_TEAM_ID || !process.env.APNS_PRIVATE_KEY) {
           return; // APNs not configured — don't reject, token may be valid later
         }
+        // Sender as the title reads better than the room on iOS; the room
+        // becomes the subtitle. Falls back to the web-push title when the
+        // notification carries no sender.
         const apnsPayload = {
           aps: {
-            alert: { title, body },
+            alert: {
+              title: sender_display_name || title,
+              ...(sender_display_name && room_name ? { subtitle: room_name } : {}),
+              body,
+            },
             sound: "default",
             "thread-id": room_id,
+            // Surfaces through Focus/DND — an agent reply is worth interrupting for.
+            "interruption-level": "time-sensitive",
+            // Enables the inline Reply action registered in AppDelegate.swift.
+            category: "MESSAGE",
             ...(counts?.unread != null ? { badge: counts.unread } : {}),
           },
           roomId: room_id,

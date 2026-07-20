@@ -11,7 +11,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Must be in place before iOS delivers a notification action to a
+        // cold-launched app; re-asserted in didBecomeActive once Capacitor's
+        // push plugin has installed its own delegate.
+        if #available(iOS 15.0, *) { NotificationActionRouter.shared.install() }
         return true
     }
 
@@ -31,6 +34,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        // Capacitor's push plugin claims the notification delegate when it
+        // loads; take it back (chaining to it) so Reply keeps working.
+        if #available(iOS 15.0, *) { NotificationActionRouter.shared.install() }
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -58,6 +64,115 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+}
+
+// MARK: - Notification reply
+
+/// Inline "Reply" on push notifications, handled natively so it works with the
+/// app not running — the webview (and Capacitor's JS bridge) may not exist when
+/// a notification action fires.
+///
+/// Capacitor's PushNotificationsHandler also wants to be the notification centre
+/// delegate, so this installs itself in front and forwards everything it doesn't
+/// consume, leaving the plugin's `pushNotificationActionPerformed` events intact.
+@available(iOS 15.0, *)
+final class NotificationActionRouter: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = NotificationActionRouter()
+
+    static let categoryId = "MESSAGE"   // must match `category` in api/matrix-push.js
+    static let replyActionId = "REPLY"
+
+    private weak var chained: UNUserNotificationCenterDelegate?
+
+    /// Idempotent, and safe to call repeatedly: Capacitor assigns its own
+    /// delegate when the plugin loads (after `didFinishLaunching`), so this is
+    /// called again on `didBecomeActive` to move back in front and pick the
+    /// plugin up as the chained delegate.
+    func install() {
+        let center = UNUserNotificationCenter.current()
+        if !(center.delegate is NotificationActionRouter) {
+            chained = center.delegate
+            center.delegate = self
+        }
+        let reply = UNTextInputNotificationAction(
+            identifier: Self.replyActionId,
+            title: "Reply",
+            options: [],                       // no .foreground — stay out of the app
+            textInputButtonTitle: "Send",
+            textInputPlaceholder: "Message…"
+        )
+        center.setNotificationCategories([
+            UNNotificationCategory(identifier: Self.categoryId,
+                                   actions: [reply],
+                                   intentIdentifiers: [],
+                                   options: [])
+        ])
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        guard response.actionIdentifier == Self.replyActionId,
+              let textResponse = response as? UNTextInputNotificationResponse else {
+            forward(center, didReceive: response, completionHandler: completionHandler)
+            return
+        }
+
+        let room = response.notification.request.content.userInfo["roomId"] as? String
+        let text = textResponse.userText
+
+        // The action handler gets a limited window; keep the app alive across
+        // the send so a backgrounded reply isn't cut off mid-request.
+        var bgTask: UIBackgroundTaskIdentifier = .invalid
+        bgTask = UIApplication.shared.beginBackgroundTask(withName: "notification-reply") {
+            UIApplication.shared.endBackgroundTask(bgTask)
+            bgTask = .invalid
+        }
+
+        Task {
+            await Self.sendReply(text: text, room: room)
+            if bgTask != .invalid { UIApplication.shared.endBackgroundTask(bgTask) }
+            await MainActor.run {
+                self.forward(center, didReceive: response, completionHandler: completionHandler)
+            }
+        }
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        guard let chained,
+              chained.responds(to: #selector(UNUserNotificationCenterDelegate.userNotificationCenter(_:willPresent:withCompletionHandler:))) else {
+            completionHandler([])
+            return
+        }
+        chained.userNotificationCenter?(center, willPresent: notification, withCompletionHandler: completionHandler)
+    }
+
+    private func forward(_ center: UNUserNotificationCenter,
+                         didReceive response: UNNotificationResponse,
+                         completionHandler: @escaping () -> Void) {
+        guard let chained,
+              chained.responds(to: #selector(UNUserNotificationCenterDelegate.userNotificationCenter(_:didReceive:withCompletionHandler:))) else {
+            completionHandler()
+            return
+        }
+        chained.userNotificationCenter?(center, didReceive: response, withCompletionHandler: completionHandler)
+    }
+
+    /// Same route the Shortcut path uses — `IntentConfig` values the app
+    /// persisted to UserDefaults, posted with the intent secret.
+    private static func sendReply(text: String, room: String?) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let d = UserDefaults.standard
+        // Only set once the app has run; a reply before first launch is dropped.
+        guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
+        let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
+        let target = room ?? d.string(forKey: IntentConfig.room) ?? "!DpRWqhWOHJAxyvjOGI:matrix.org"
+        _ = await intentPost("\(apiBase)/api/send-message", secret: secret,
+                             body: ["room": target, "text": trimmed, "source": "notification"])
+    }
 }
 
 // MARK: - App Intents

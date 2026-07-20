@@ -58,6 +58,29 @@
 - [ ] App Review prep: privacy policy URL, App Privacy questionnaire, and UGC
   guideline 1.2 — report-content and block-user affordances.
 
+## Mac app (later)
+
+- [ ] Construct on macOS. Four routes, cheapest first — try them in this order:
+  1. **PWA, "Add to Dock" in Safari** — zero code. The deployed web app already
+     has a service worker + VAPID, and macOS Safari 16.4+ supports Web Push, so
+     the existing web path in `api/matrix-push.js` delivers to the Mac with no
+     new key, target, or infra. Registers as another device under
+     `app_id com.kafagoz.construct`.
+  2. **"Designed for iPad"** — `TARGETED_DEVICE_FAMILY` is already `"1,2"`, so
+     the current binary runs on Apple Silicon; a checkbox at distribution time.
+     iPad-shaped window and iPad idioms.
+  3. **Mac Catalyst** — a real Mac app (resizable windows, menu bar). Needs
+     `SUPPORTS_MACCATALYST`, a macOS provisioning profile, and native auditing:
+     `@capacitor/keyboard` is iOS-only, and **ActivityKit is unavailable on
+     Catalyst** — the Live Activity code in `AppDelegate.swift` needs
+     `#if !targetEnvironment(macCatalyst)` guards, not just its current
+     `#available(iOS 16.2)` ones, which compile and then fail to link. Widget
+     extension needs excluding. ~a day.
+  4. **Electron/Tauri** — most control, hard to justify against route 1.
+  - **Live Activities do not exist on macOS in any form.** If the Mac experience
+    should centre on ambient agent progress the way iOS does, none of these give
+    that — the equivalent is a menu bar item, which is a different app.
+
 ## Server / infra
 
 - [ ] Rotate `MATRIX_ACCESS_TOKEN` in Vercel — the pre-fix media proxy would send it

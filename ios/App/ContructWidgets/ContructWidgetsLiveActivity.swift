@@ -44,6 +44,29 @@ private extension View {
     }
 }
 
+/// The reply, faded at the bottom ONLY when it's too long to fit. ViewThatFits
+/// shows the full text at natural size when it fits the available height, and
+/// falls back to the shrunk-and-faded version only when it doesn't — so a short
+/// reply has no fade.
+private struct ReplyText: View {
+    let text: String
+    var lines: Int
+    var scale: CGFloat
+    var body: some View {
+        ViewThatFits(in: .vertical) {
+            Text(text)
+                .font(.subheadline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(text)
+                .font(.subheadline)
+                .lineLimit(lines)
+                .minimumScaleFactor(scale)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .bottomFade()
+        }
+    }
+}
+
 /// Circular room avatar.
 private struct RoomAvatar: View {
     var size: CGFloat
@@ -81,17 +104,9 @@ struct ContructWidgetsLiveActivity: Widget {
             HStack(alignment: .top, spacing: 12) {
                 RoomAvatar(size: 40)
                 if reply {
-                    // Answer phase: the reply gets the whole container. No
-                    // fixedSize — that forced the text to its full intrinsic
-                    // height and overflowed the fixed banner. It shrinks a little
-                    // (minimumScaleFactor) then fades out at the bottom if still
-                    // too long, rather than spilling past the edges.
-                    Text(context.state.detail)
-                        .font(.subheadline)
-                        .lineLimit(6)
-                        .minimumScaleFactor(0.7)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .bottomFade()
+                    // Answer phase: reply gets the whole container. Fades only
+                    // when it's actually too long to fit (see ReplyText).
+                    ReplyText(text: context.state.detail, lines: 6, scale: 0.7)
                 } else {
                     // Loading phase: the question, faded, with a working
                     // indicator beneath it.
@@ -139,15 +154,10 @@ struct ContructWidgetsLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     if reply {
-                        // Answer phase: reply only, full width. Shrinks a little,
-                        // then fades at the bottom instead of a hard crop.
-                        Text(context.state.detail)
-                            .font(.subheadline)
-                            .lineLimit(8)
-                            .minimumScaleFactor(0.75)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        // Answer phase: reply only, full width. Fades only when
+                        // too long to fit.
+                        ReplyText(text: context.state.detail, lines: 8, scale: 0.75)
                             .padding(.horizontal, 4)
-                            .bottomFade()
                     } else {
                         // Loading phase: the faded question.
                         Text(context.state.question.isEmpty ? context.state.status : context.state.question)

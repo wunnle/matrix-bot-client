@@ -13,6 +13,10 @@ import SwiftUI
 struct ConstructActivityAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
         var status: String
+        // The user's own message, shown faded above the reply. Defaulted so a
+        // push whose content-state omits it (or an in-flight older activity)
+        // still decodes.
+        var question: String = ""
         var detail: String
     }
 
@@ -57,23 +61,29 @@ struct ContructWidgetsLiveActivity: Widget {
         ActivityConfiguration(for: ConstructActivityAttributes.self) { context in
             // Lock screen / banner
             let reply = isReply(context.state.status)
-            // The room name is not shown: the avatar already identifies the
-            // room, and in a one-bot room it only repeated what the reply
-            // itself makes obvious. That space goes to the message.
+            // The user's message sits faded on top; bender's reply below in full
+            // colour. No room name (the avatar covers that) and no status icon —
+            // the presence of the reply is the state. A small ring shows only
+            // while still waiting.
             HStack(alignment: .top, spacing: 12) {
-                RoomAvatar(size: 44)
-                VStack(alignment: .leading, spacing: 3) {
+                RoomAvatar(size: 40)
+                VStack(alignment: .leading, spacing: 5) {
+                    if !context.state.question.isEmpty {
+                        Text(context.state.question)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if reply {
                         Text(context.state.detail)
                             .font(.subheadline)
-                            .lineLimit(8)
+                            .lineLimit(10)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
-                        Text(context.state.status)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        if !context.state.detail.isEmpty {
-                            Text(context.state.detail)
+                        HStack(alignment: .top, spacing: 8) {
+                            WorkingRing(size: 14)
+                            Text(context.state.detail.isEmpty ? context.state.status : context.state.detail)
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
                                 .lineLimit(3)
@@ -81,14 +91,7 @@ struct ContructWidgetsLiveActivity: Widget {
                         }
                     }
                 }
-                Spacer(minLength: 8)
-                if reply {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(.green)
-                } else {
-                    WorkingRing(size: 18)
-                }
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 16)
@@ -103,39 +106,29 @@ struct ContructWidgetsLiveActivity: Widget {
                 // single status/reply row with the indicator on the trailing
                 // side reads cleaner.
                 DynamicIslandExpandedRegion(.center) {
-                    // Only the working status needs a centre line; on a reply
-                    // the text below is the content and a header just crowds it.
-                    if !reply {
-                        HStack {
-                            Text(context.state.status)
-                                .font(.caption)
+                    // Faded question on top, working ring only while waiting.
+                    HStack(spacing: 8) {
+                        if !context.state.question.isEmpty {
+                            Text(context.state.question)
+                                .font(.footnote)
                                 .foregroundStyle(.secondary)
-                            Spacer()
-                            WorkingRing(size: 15)
+                                .lineLimit(2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        if !reply { WorkingRing(size: 15) }
                     }
+                    .padding(.horizontal, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    if reply {
-                        HStack(alignment: .top, spacing: 8) {
-                            Text(context.state.detail)
-                                .font(.subheadline)
-                                .lineLimit(8)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                        }
+                    let text = reply ? context.state.detail
+                                     : (context.state.detail.isEmpty ? context.state.status : context.state.detail)
+                    Text(text)
+                        .font(reply ? .subheadline : .caption)
+                        .foregroundStyle(reply ? .primary : .secondary)
+                        .lineLimit(reply ? 8 : 2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 4)
-                    } else if !context.state.detail.isEmpty {
-                        Text(context.state.detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 4)
-                    }
                 }
             } compactLeading: {
                 RoomAvatar(size: 20)

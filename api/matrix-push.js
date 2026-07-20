@@ -7,7 +7,7 @@
  */
 import webpush from "web-push";
 import { apnsSend, apnsSendWithFallback, apnsConfigured, isEnvMismatch, APNS_BUNDLE_ID, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
-import { liveActivityTokens, clearTokens, recordPushResult } from "./live-activity.js";
+import { liveActivityEntry, clearTokens, recordPushResult } from "./live-activity.js";
 
 
 const ROOM_AVATARS = {
@@ -106,8 +106,8 @@ export default async function handler(req, res) {
   // Matrix device, so they aren't in `devices`.
   const liveActivityUpdate = (async () => {
     if (!apnsConfigured()) return;
-    const tokens = await liveActivityTokens(room_id);
-    if (!tokens.length) return;
+    const entry = await liveActivityEntry(room_id);
+    if (!entry) return;
 
     // `update`, not `end`: ending finishes the activity after a single reply,
     // so a follow-up message had nothing left to update. Every message for the
@@ -127,21 +127,20 @@ export default async function handler(req, res) {
         event: "update",
         "stale-date": nowSec + 900,
         // Keys must match ConstructActivityAttributes.ContentState exactly —
-        // a mismatch is dropped silently by ActivityKit.
-        "content-state": { status: "Reply", detail: body.slice(0, 300) },
+        // a mismatch is dropped silently by ActivityKit. `question` is echoed
+        // from the registry so it stays visible (faded) above the reply.
+        "content-state": { status: "Reply", question: entry.question || "", detail: body.slice(0, 300) },
       },
     };
 
-    const results = await Promise.all(
-      tokens.map(async (token) => {
-        const r = await apnsSendWithFallback(token, payload, {
-          topic: LIVE_ACTIVITY_TOPIC,
-          pushType: "liveactivity",
-        });
-        return { env: r.env, status: r.status, body: r.body, apnsId: r.apnsId };
-      })
-    );
-    await recordPushResult(room_id, { results, topic: LIVE_ACTIVITY_TOPIC });
+    const r = await apnsSendWithFallback(entry.token, payload, {
+      topic: LIVE_ACTIVITY_TOPIC,
+      pushType: "liveactivity",
+    });
+    await recordPushResult(room_id, {
+      results: [{ env: r.env, status: r.status, body: r.body, apnsId: r.apnsId }],
+      topic: LIVE_ACTIVITY_TOPIC,
+    });
     // Token deliberately NOT cleared: it is what lets the next message update
     // the same activity. It expires with the registry TTL, is replaced when a
     // new activity starts, and is dropped when the app ends one.

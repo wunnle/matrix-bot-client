@@ -212,10 +212,10 @@ enum IntentConfig {
 /// The token is per-activity and rotates, so this observes `pushTokenUpdates`
 /// for the activity's lifetime rather than reading it once.
 @available(iOS 16.2, *)
-private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<T>, room: String) {
+private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<T>, room: String, question: String = "") {
     Task {
         for await tokenData in activity.pushTokenUpdates {
-            _ = await postLiveActivityToken(tokenData, room: room)
+            _ = await postLiveActivityToken(tokenData, room: room, question: question)
         }
     }
 }
@@ -233,11 +233,12 @@ private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<
 @available(iOS 16.2, *)
 private func awaitLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<T>,
                                                            room: String,
+                                                           question: String = "",
                                                            timeout: Duration = .seconds(5)) async -> String {
     return await withTaskGroup(of: String.self) { group -> String in
         group.addTask {
             for await tokenData in activity.pushTokenUpdates {
-                return await postLiveActivityToken(tokenData, room: room)
+                return await postLiveActivityToken(tokenData, room: room, question: question)
             }
             return "stream-ended"
         }
@@ -254,15 +255,18 @@ private func awaitLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<
 /// Returns a short status string. NSLog from app code is not relayed to the
 /// device syslog on iOS 26, so the only reliable way to see what happened here
 /// is to surface it — currently into the Live Activity's own text.
-private func postLiveActivityToken(_ tokenData: Data, room: String) async -> String {
+private func postLiveActivityToken(_ tokenData: Data, room: String, question: String = "") async -> String {
     let d = UserDefaults.standard
     guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else {
         return "no-secret"
     }
     let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
     let token = tokenData.map { String(format: "%02x", $0) }.joined()
+    // question travels with the token so the gateway can echo it in the reply's
+    // content-state — the gateway only knows the room and bender's reply, not
+    // what was asked.
     guard let result = await intentPost("\(apiBase)/api/live-activity", secret: secret,
-                                        body: ["roomId": room, "token": token]) else {
+                                        body: ["roomId": room, "token": token, "question": question]) else {
         return "post-failed"
     }
     return (result["ok"] as? Bool) == true ? "registered" : "rejected:\(result)"
@@ -316,7 +320,9 @@ private func intentUpload(_ urlString: String, secret: String, room: String,
 private func runAskWatch(room: String, apiBase: String, secret: String,
                          initialDetail: String, send: () async -> Void) async {
     let attributes = ConstructActivityAttributes(roomName: "Bender")
-    let thinking = ConstructActivityAttributes.ContentState(status: "Thinking…", detail: initialDetail)
+    // The question rides in its own field so it stays visible (faded) once the
+    // reply replaces `detail`; `detail` is empty while waiting.
+    let thinking = ConstructActivityAttributes.ContentState(status: "Thinking…", question: initialDetail, detail: "")
     // Reuse a running activity rather than stacking a second one: asking again
     // while an activity is on screen should replace its content, not leave the
     // previous one orphaned.
@@ -364,17 +370,17 @@ private func runAskWatch(room: String, apiBase: String, secret: String,
     // Awaited rather than detached: this process is torn down when perform()
     // returns, which would kill a fire-and-forget registration.
     let tokenStatus = activity == nil ? "no-activity"
-                                      : await awaitLiveActivityToken(activity!, room: room)
+                                      : await awaitLiveActivityToken(activity!, room: room, question: initialDetail)
 
     // staleDate dims the activity if the push never lands, rather than leaving a
-    // confident "Thinking…" on the lock screen indefinitely.
+    // confident working state on the lock screen indefinitely.
     if let activity {
         // Registration failures leave the activity unreachable by push, so
-        // say so rather than showing a confident "Thinking…" that will never
-        // resolve.
+        // say so rather than waiting forever on a reply that can't arrive.
         let waiting = ConstructActivityAttributes.ContentState(
             status: "Thinking…",
-            detail: tokenStatus == "registered" ? initialDetail : "push unavailable (\(tokenStatus))")
+            question: initialDetail,
+            detail: tokenStatus == "registered" ? "" : "push unavailable (\(tokenStatus))")
         await activity.update(.init(state: waiting, staleDate: .now + 900))
     }
 }
@@ -609,6 +615,7 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
 struct ConstructActivityAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
         var status: String
+        var question: String = ""
         var detail: String
     }
 
@@ -654,8 +661,10 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         let attributes = ConstructActivityAttributes(roomName: call.getString("roomName") ?? "Construct")
+        let question = call.getString("question") ?? ""
         let state = ConstructActivityAttributes.ContentState(
             status: call.getString("status") ?? "",
+            question: question,
             detail: call.getString("detail") ?? ""
         )
         do {
@@ -667,7 +676,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             // Only rooms we can address can receive pushed updates; without a
             // roomId the activity still works, just app-driven as before.
             if let room = call.getString("roomId") {
-                trackLiveActivityToken(activity, room: room)
+                trackLiveActivityToken(activity, room: room, question: question)
             }
             call.resolve(["activityId": activity.id])
         } catch {
@@ -682,6 +691,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let state = ConstructActivityAttributes.ContentState(
             status: call.getString("status") ?? "",
+            question: call.getString("question") ?? "",
             detail: call.getString("detail") ?? ""
         )
         Task {

@@ -13,8 +13,8 @@ interface LiveActivityPlugin {
   isSupported(): Promise<{ supported: boolean }>
   // roomId is what lets the native side register the activity's push token
   // against a room; without it the activity can only be updated in-app.
-  start(options: { roomName: string; status: string; detail?: string; roomId?: string }): Promise<{ activityId: string }>
-  update(options: { status: string; detail?: string }): Promise<void>
+  start(options: { roomName: string; status: string; detail?: string; roomId?: string; question?: string }): Promise<{ activityId: string }>
+  update(options: { status: string; detail?: string; question?: string }): Promise<void>
   end(options?: { roomId?: string }): Promise<void>
   saveIntentConfig(options: { secret: string; apiBase: string; room: string }): Promise<void>
 }
@@ -53,12 +53,15 @@ export async function liveActivitySupported(): Promise<boolean> {
 
 /** Room the current activity belongs to, so end() can clear its push token. */
 let currentRoomId: string | null = null
+/** The user's message, shown faded above the reply and kept across updates. */
+let currentQuestion = ''
 
-export async function startLiveActivity(roomName: string, status: string, detail = '', roomId?: string): Promise<string | null> {
+export async function startLiveActivity(roomName: string, status: string, detail = '', roomId?: string, question = ''): Promise<string | null> {
   if (!Capacitor.isNativePlatform()) return null
   try {
     currentRoomId = roomId ?? null
-    const { activityId } = await plugin.start({ roomName, status, detail, roomId })
+    currentQuestion = question
+    const { activityId } = await plugin.start({ roomName, status, detail, roomId, question })
     return activityId
   } catch {
     return null
@@ -67,7 +70,8 @@ export async function startLiveActivity(roomName: string, status: string, detail
 
 export async function updateLiveActivity(status: string, detail = ''): Promise<void> {
   if (!Capacitor.isNativePlatform()) return
-  await plugin.update({ status, detail }).catch(() => {})
+  // Carry the question forward so an update doesn't wipe it.
+  await plugin.update({ status, detail, question: currentQuestion }).catch(() => {})
 }
 
 export async function endLiveActivity(): Promise<void> {
@@ -148,12 +152,15 @@ export async function startAwaitingReply(roomId: string, roomName: string, quest
   phase = 'awaiting'
   awaitingRoomId = roomId
   awaitingSince = Date.now()
-  const q = question.slice(0, 80)
+  // The question now lives in its own field (shown faded) rather than in the
+  // detail line, so it survives once the reply fills detail in.
+  const q = question.slice(0, 120)
+  currentQuestion = q
   if (hasActivity) {
-    await updateLiveActivity('Waiting for reply…', q)
+    await updateLiveActivity('Waiting for reply…', '')
   } else {
     hasActivity = true
-    await startLiveActivity(roomName, 'Waiting for reply…', q, roomId)
+    await startLiveActivity(roomName, 'Waiting for reply…', '', roomId, q)
   }
 }
 

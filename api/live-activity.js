@@ -126,7 +126,7 @@ export default async function handler(req, res) {
     const aps = {
       timestamp: nowSec,
       event,
-      "content-state": { status: stateStatus, detail },
+      "content-state": { status: stateStatus, question: entry.question || "", detail },
     };
     if (event === "end" && withDismissal) aps["dismissal-date"] = nowSec + 600;
 
@@ -149,8 +149,9 @@ export default async function handler(req, res) {
       delete rooms[roomId];
     } else {
       // One activity per room: a restarted activity replaces the previous
-      // token so the gateway can't push into a dead one.
-      rooms[roomId] = { token, ts: Date.now() };
+      // token so the gateway can't push into a dead one. The question is kept
+      // so the gateway can echo it (faded) alongside the reply.
+      rooms[roomId] = { token, ts: Date.now(), question: req.body.question || "" };
     }
     await writeRooms(rooms);
   } catch (err) {
@@ -170,14 +171,14 @@ export async function recordPushResult(roomId, result) {
   } catch {}
 }
 
-/** Live tokens for a room. Used by matrix-push.js. */
-export async function liveActivityTokens(roomId) {
+/** Live token + stored question for a room. Used by matrix-push.js. */
+export async function liveActivityEntry(roomId) {
   try {
     const rooms = await readRooms();
     const entry = rooms[roomId];
-    return entry?.token ? [entry.token] : [];
+    return entry?.token ? { token: entry.token, question: entry.question || "" } : null;
   } catch {
-    return [];
+    return null;
   }
 }
 

@@ -7,110 +7,134 @@
  * Live Activity — which is the only way to update one while the app is
  * suspended.
  *
- * State is encoded in the blob path:
- *   live_activity/{sha256(roomId)}/{apnsToken}_{ts}
- * so matrix-push.js only needs list() — no blob content fetch.
+ * The token has to outlive the request that created it: the ask and the push
+ * are separate stateless invocations, minutes apart. Storage is Matrix account
+ * data rather than a blob/KV store — the homeserver is already this app's
+ * source of truth and needs no separate vendor, quota, or billing. Both the
+ * read and the write use MATRIX_ACCESS_TOKEN, so there is no cross-account
+ * visibility question.
+ *
+ * Shape, under account data type `com.construct.live_activity`:
+ *   { rooms: { "<roomId>": { token, ts } } }
  *
  * Auth: x-intent-secret header — never the URL or body.
  */
-import { put, list, del } from "@vercel/blob";
-import crypto from "node:crypto";
-
-/** Room IDs contain `!` and `:`; percent-encoding them puts a literal `%` in the
-    blob pathname, which the store rejects. Hash instead — deterministic, and
-    path-safe by construction. */
-function roomKey(roomId) {
-  return crypto.createHash("sha256").update(roomId).digest("hex").slice(0, 32);
-}
-
 const SECRET = process.env.INTENT_SECRET;
-const PREFIX = "live_activity/";
+const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
+const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN;
+const ACCOUNT_DATA_TYPE = "com.construct.live_activity";
+
 // Activities are short-lived; a token outliving this is stale and its pushes
 // would be rejected by APNs anyway.
 const TTL_MS = 60 * 60 * 1000;
 
+let cachedUserId = null;
+async function userId() {
+  if (cachedUserId) return cachedUserId;
+  const r = await fetch(`${HOMESERVER}/_matrix/client/v3/account/whoami`, {
+    headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+  });
+  if (!r.ok) throw new Error(`whoami failed: ${r.status}`);
+  const { user_id } = await r.json();
+  cachedUserId = user_id;
+  return user_id;
+}
+
+async function accountDataUrl() {
+  return `${HOMESERVER}/_matrix/client/v3/user/${encodeURIComponent(await userId())}/account_data/${ACCOUNT_DATA_TYPE}`;
+}
+
+/** Current map, with expired entries dropped. `{}` when unset — a 404 here
+    just means no activity has ever registered. */
+async function readRooms() {
+  const r = await fetch(await accountDataUrl(), {
+    headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+  });
+  if (r.status === 404) return {};
+  if (!r.ok) throw new Error(`read account data failed: ${r.status}`);
+  const data = await r.json();
+  const rooms = data?.rooms ?? {};
+  const now = Date.now();
+  return Object.fromEntries(
+    Object.entries(rooms).filter(([, v]) => v?.token && now - (v.ts ?? 0) <= TTL_MS)
+  );
+}
+
+async function writeRooms(rooms) {
+  const r = await fetch(await accountDataUrl(), {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ rooms }),
+  });
+  if (!r.ok) throw new Error(`write account data failed: ${r.status}`);
+}
+
 export default async function handler(req, res) {
-  if (!SECRET) return res.status(500).json({ error: "server not configured" });
+  if (!SECRET || !ACCESS_TOKEN) return res.status(500).json({ error: "server not configured" });
   if (req.headers["x-intent-secret"] !== SECRET) {
     return res.status(403).json({ error: "forbidden" });
   }
+
   // Diagnostic: how many tokens are registered for a room. Counts only — token
   // values are credentials. Without this there is no way to tell a token that
   // never registered from a push that failed to deliver.
   if (req.method === "GET") {
     const roomId = req.query?.roomId;
     if (!roomId) return res.status(400).json({ error: "missing roomId" });
-    const tokens = await liveActivityTokens(roomId);
-    return res.status(200).json({ roomId, count: tokens.length });
+    try {
+      const rooms = await readRooms();
+      return res.status(200).json({ roomId, count: rooms[roomId] ? 1 : 0 });
+    } catch (err) {
+      return res.status(200).json({ roomId, count: 0, error: String(err?.message || err) });
+    }
   }
 
   if (req.method !== "POST") return res.status(405).end();
 
   const { roomId, token, action } = req.body || {};
   if (!roomId) return res.status(400).json({ error: "missing roomId" });
+  if (action !== "end" && !token) return res.status(400).json({ error: "missing token" });
 
-  const key = roomKey(roomId);
-
-  // "end" clears every token for the room — the activity is over, and a stale
-  // token would keep the gateway pushing into a dismissed activity.
-  if (action === "end") {
-    try {
-      const { blobs } = await list({ prefix: `${PREFIX}${key}/` });
-      if (blobs.length) await del(blobs.map((b) => b.url));
-    } catch {}
-    return res.status(200).json({ ok: true });
-  }
-
-  if (!token) return res.status(400).json({ error: "missing token" });
-
+  // Errors are reported, not swallowed: a silent storage failure here is
+  // indistinguishable from a client that never registered, which is exactly
+  // what made this hard to diagnose the first time round.
   try {
-    // Drop expired entries and any prior token for this room, so a restarted
-    // activity doesn't leave the previous one being pushed to.
-    const { blobs } = await list({ prefix: `${PREFIX}${key}/` });
-    const now = Date.now();
-    const stale = blobs.filter((b) => {
-      const ts = Number(b.pathname.split("_").pop());
-      return !Number.isFinite(ts) || now - ts > TTL_MS;
-    });
-    if (stale.length) await del(stale.map((b) => b.url));
-
-    await put(`${PREFIX}${key}/${token}_${Date.now()}`, "1", {
-      access: "public",
-      addRandomSuffix: false,
-      contentType: "text/plain",
-    });
+    const rooms = await readRooms();
+    if (action === "end") {
+      delete rooms[roomId];
+    } else {
+      // One activity per room: a restarted activity replaces the previous
+      // token so the gateway can't push into a dead one.
+      rooms[roomId] = { token, ts: Date.now() };
+    }
+    await writeRooms(rooms);
   } catch (err) {
-    // Report the reason: a silently-swallowed blob failure here is
-    // indistinguishable from a client that never registered.
     return res.status(200).json({ ok: false, error: String(err?.message || err) });
   }
 
   res.status(200).json({ ok: true });
 }
 
-/** Drop every token for a room. Called after an "end" push is delivered. */
-export async function clearTokens(roomId) {
-  try {
-    const { blobs } = await list({ prefix: `${PREFIX}${roomKey(roomId)}/` });
-    if (blobs.length) await del(blobs.map((b) => b.url));
-  } catch {}
-}
-
-/** Live tokens for a room, newest first. Used by matrix-push.js. */
+/** Live tokens for a room. Used by matrix-push.js. */
 export async function liveActivityTokens(roomId) {
   try {
-    const { blobs } = await list({ prefix: `${PREFIX}${roomKey(roomId)}/` });
-    const now = Date.now();
-    return blobs
-      .map((b) => {
-        const name = b.pathname.split("/").pop() || "";
-        const sep = name.lastIndexOf("_");
-        return { token: name.slice(0, sep), ts: Number(name.slice(sep + 1)) };
-      })
-      .filter((t) => t.token && Number.isFinite(t.ts) && now - t.ts <= TTL_MS)
-      .sort((a, b) => b.ts - a.ts)
-      .map((t) => t.token);
+    const rooms = await readRooms();
+    const entry = rooms[roomId];
+    return entry?.token ? [entry.token] : [];
   } catch {
     return [];
   }
+}
+
+/** Drop a room's token. Called after an "end" push is delivered. */
+export async function clearTokens(roomId) {
+  try {
+    const rooms = await readRooms();
+    if (!rooms[roomId]) return;
+    delete rooms[roomId];
+    await writeRooms(rooms);
+  } catch {}
 }

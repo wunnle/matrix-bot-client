@@ -27,6 +27,23 @@ struct ConstructActivityAttributes: ActivityAttributes {
 /// (Listening…/Waiting…/Thinking…) shows the working ring.
 private func isReply(_ status: String) -> Bool { status == "Reply" }
 
+/// Fades the bottom edge to transparent, so a reply too long for the fixed
+/// height trails off rather than being cut with a hard line.
+private extension View {
+    func bottomFade() -> some View {
+        mask(
+            LinearGradient(
+                stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black, location: 0.82),
+                    .init(color: .clear, location: 1),
+                ],
+                startPoint: .top, endPoint: .bottom
+            )
+        )
+    }
+}
+
 /// Circular room avatar.
 private struct RoomAvatar: View {
     var size: CGFloat
@@ -64,15 +81,17 @@ struct ContructWidgetsLiveActivity: Widget {
             HStack(alignment: .top, spacing: 12) {
                 RoomAvatar(size: 40)
                 if reply {
-                    // Answer phase: the reply gets the whole container — no faded
-                    // question competing for height. minimumScaleFactor lets a
-                    // long answer shrink to fit before it has to truncate.
+                    // Answer phase: the reply gets the whole container. No
+                    // fixedSize — that forced the text to its full intrinsic
+                    // height and overflowed the fixed banner. It shrinks a little
+                    // (minimumScaleFactor) then fades out at the bottom if still
+                    // too long, rather than spilling past the edges.
                     Text(context.state.detail)
                         .font(.subheadline)
-                        .lineLimit(12)
-                        .minimumScaleFactor(0.8)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(6)
+                        .minimumScaleFactor(0.7)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .bottomFade()
                 } else {
                     // Loading phase: the question, faded, with a working
                     // indicator beneath it.
@@ -108,7 +127,8 @@ struct ContructWidgetsLiveActivity: Widget {
                 // sits top-right while waiting.
                 DynamicIslandExpandedRegion(.leading) {
                     Text(context.attributes.roomName)
-                        .font(.headline)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.secondary)
                         .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -119,14 +139,15 @@ struct ContructWidgetsLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     if reply {
-                        // Answer phase: reply only, full width, shrink-to-fit.
+                        // Answer phase: reply only, full width. Shrinks a little,
+                        // then fades at the bottom instead of a hard crop.
                         Text(context.state.detail)
                             .font(.subheadline)
-                            .lineLimit(10)
-                            .minimumScaleFactor(0.8)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(8)
+                            .minimumScaleFactor(0.75)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 4)
+                            .bottomFade()
                     } else {
                         // Loading phase: the faded question.
                         Text(context.state.question.isEmpty ? context.state.status : context.state.question)

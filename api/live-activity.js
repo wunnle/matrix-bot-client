@@ -19,6 +19,8 @@
  *
  * Auth: x-intent-secret header — never the URL or body.
  */
+import { apnsSendWithFallback, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
+
 const SECRET = process.env.INTENT_SECRET;
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN;
@@ -107,6 +109,35 @@ export default async function handler(req, res) {
 
   const { roomId, token, action } = req.body || {};
   if (!roomId) return res.status(400).json({ error: "missing roomId" });
+
+  // Fire a Live Activity push at the registered token, without consuming it, so
+  // payload variants can be tried against a live activity in seconds instead of
+  // one round trip per hypothesis. APNs returns 200 for a push that never
+  // reaches the activity, so the apns-unique-id is returned too — it's the only
+  // handle Apple gives for tracing a delivery.
+  if (action === "test-push") {
+    const { event = "update", detail = "test push", withDismissal = false,
+            priority = 10, status: stateStatus = "Reply" } = req.body;
+    const rooms = await readRooms();
+    const entry = rooms[roomId];
+    if (!entry?.token) return res.status(200).json({ error: "no token registered for room" });
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const aps = {
+      timestamp: nowSec,
+      event,
+      "content-state": { status: stateStatus, detail },
+    };
+    if (event === "end" && withDismissal) aps["dismissal-date"] = nowSec + 600;
+
+    const r = await apnsSendWithFallback(entry.token, { aps }, {
+      topic: LIVE_ACTIVITY_TOPIC,
+      pushType: "liveactivity",
+      priority,
+    });
+    return res.status(200).json({ sent: { event, priority, withDismissal }, result: r });
+  }
+
   if (action !== "end" && !token) return res.status(400).json({ error: "missing token" });
 
   // Errors are reported, not swallowed: a silent storage failure here is

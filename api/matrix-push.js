@@ -6,8 +6,7 @@
  * to the subscription stored under push_subscriptions/{hash}.json in Vercel Blob.
  */
 import webpush from "web-push";
-import crypto from "node:crypto";
-import http2 from "node:http2";
+import { apnsSend, apnsSendWithFallback, apnsConfigured, isEnvMismatch, APNS_BUNDLE_ID, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
 import { liveActivityTokens, clearTokens, recordPushResult } from "./live-activity.js";
 
 
@@ -36,49 +35,6 @@ webpush.setVapidDetails(
    tokens. Delivery uses token-based auth (ES256 JWT from the .p8 key).
    Env: APNS_KEY_ID, APNS_TEAM_ID, APNS_PRIVATE_KEY, APNS_TOPIC. */
 
-let apnsJwtCache = { token: null, iat: 0 };
-function apnsJwt() {
-  const now = Math.floor(Date.now() / 1000);
-  // Apple requires JWTs between 20 and 60 minutes old; refresh at ~45.
-  if (apnsJwtCache.token && now - apnsJwtCache.iat < 2700) return apnsJwtCache.token;
-  const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64url");
-  const unsigned = `${b64({ alg: "ES256", kid: process.env.APNS_KEY_ID })}.${b64({ iss: process.env.APNS_TEAM_ID, iat: now })}`;
-  const key = process.env.APNS_PRIVATE_KEY.replace(/\\n/g, "\n");
-  const sig = crypto
-    .sign("sha256", Buffer.from(unsigned), { key, dsaEncoding: "ieee-p1363" })
-    .toString("base64url");
-  apnsJwtCache = { token: `${unsigned}.${sig}`, iat: now };
-  return apnsJwtCache.token;
-}
-
-const APNS_BUNDLE_ID = process.env.APNS_TOPIC || "com.wunnle.construct";
-
-/** Live Activity pushes use a distinct topic suffix and push type. */
-const LIVE_ACTIVITY_TOPIC = `${APNS_BUNDLE_ID}.push-type.liveactivity`;
-
-function apnsSend(host, deviceToken, payload, { topic, pushType } = {}) {
-  return new Promise((resolve) => {
-    const client = http2.connect(`https://${host}`);
-    client.on("error", () => resolve({ status: 0, body: "connect error" }));
-    const req = client.request({
-      ":method": "POST",
-      ":path": `/3/device/${deviceToken}`,
-      authorization: `bearer ${apnsJwt()}`,
-      "apns-topic": topic || APNS_BUNDLE_ID,
-      "apns-push-type": pushType || "alert",
-      "apns-priority": "10",
-    });
-    let status = 0;
-    let body = "";
-    req.on("response", (headers) => { status = headers[":status"]; });
-    req.on("data", (chunk) => { body += chunk; });
-    req.on("end", () => { client.close(); resolve({ status, body }); });
-    req.on("error", () => { client.close(); resolve({ status: 0, body: "stream error" }); });
-    req.setTimeout(10_000, () => { req.close(); client.close(); resolve({ status: 0, body: "timeout" }); });
-    req.end(JSON.stringify(payload));
-  });
-}
-
 /* Bender writes markdown into `body`; notifications are plain text everywhere
    (APNs and Web Push both), so "**9-4**" would render literally. Strip the
    common markers rather than ship the syntax to the lock screen.
@@ -103,20 +59,6 @@ function stripMarkdown(text) {
     .replace(/^>\s?/gm, "")                          // blockquotes
     .replace(/^\s*[-*+]\s+/gm, "• ")                 // bullets
     .trim();
-}
-
-function apnsConfigured() {
-  return !!(process.env.APNS_KEY_ID && process.env.APNS_TEAM_ID && process.env.APNS_PRIVATE_KEY);
-}
-
-/** Apple reporting the token belongs to the other environment. Two spellings:
-    BadDeviceToken           — production key, sandbox token
-    BadEnvironmentKeyInToken — sandbox-only auth key hitting production */
-function isEnvMismatch(r) {
-  return (
-    (r.status === 400 && r.body.includes("BadDeviceToken")) ||
-    (r.status === 403 && r.body.includes("BadEnvironmentKeyInToken"))
-  );
 }
 
 function parseWebPushKey(pushkey) {

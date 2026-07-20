@@ -20,10 +20,13 @@
 			<key>UNNotificationExtensionUserInteractionEnabled</key>
 			<true/>
 		</dict>
+		<!-- Notification content extensions load through a storyboard, not
+		     NSExtensionPrincipalClass: with the principal class the extension
+		     never loaded and iOS drew an empty panel. -->
+		<key>NSExtensionMainStoryboard</key>
+		<string>MainInterface</string>
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.usernotifications.content-extension</string>
-		<key>NSExtensionPrincipalClass</key>
-		<string>$(PRODUCT_MODULE_NAME).NotificationViewController</string>
 	</dict>
 </dict>
 </plist>

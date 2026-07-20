@@ -32,6 +32,11 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         // A header label here duplicates them.
         bodyLabel.numberOfLines = 0
         bodyLabel.lineBreakMode = .byWordWrapping
+        bodyLabel.font = .systemFont(ofSize: Metrics.bodySize)
+        bodyLabel.textColor = .label
+        // Diagnostic placeholder: if this text is what shows, the extension
+        // loaded but didReceive never ran.
+        bodyLabel.text = "(waiting for content)"
         bodyLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bodyLabel)
 
@@ -50,16 +55,24 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         // Prefer the original markdown; fall back to the stripped body if the
         // gateway didn't send it (older payloads).
         let source = (info["md"] as? String) ?? content.body
+
+        // Plain text first, so the message is on screen regardless of what the
+        // renderer does next. Anything that goes wrong below leaves this
+        // standing rather than blanking the view.
+        bodyLabel.text = source.isEmpty ? "(empty message)" : source
+
         let rendered = Self.render(source)
-        // Never show an empty panel: fall back to the plain body if rendering
-        // produced nothing.
         if rendered.length > 0 {
             bodyLabel.attributedText = rendered
-        } else {
-            bodyLabel.font = .systemFont(ofSize: Metrics.bodySize)
-            bodyLabel.textColor = .label
-            bodyLabel.text = content.body.isEmpty ? source : content.body
         }
+
+        // Content extensions are sized by UNNotificationExtensionInitialContent-
+        // SizeRatio until told otherwise; without this the view can end up far
+        // shorter than its text.
+        let width = view.bounds.width > 0 ? view.bounds.width : UIScreen.main.bounds.width
+        let fitted = bodyLabel.sizeThatFits(
+            CGSize(width: width - Metrics.margin * 2, height: .greatestFiniteMagnitude))
+        preferredContentSize = CGSize(width: width, height: fitted.height + Metrics.margin * 2)
     }
 
     // MARK: - Markdown rendering

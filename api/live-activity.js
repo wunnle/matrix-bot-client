@@ -117,7 +117,8 @@ export default async function handler(req, res) {
   // handle Apple gives for tracing a delivery.
   if (action === "test-push") {
     const { event = "update", detail = "test push", withDismissal = false,
-            priority = 10, status: stateStatus = "Reply" } = req.body;
+            priority = 10, status: stateStatus = "Reply", alert = false,
+            question } = req.body;
     const rooms = await readRooms();
     const entry = rooms[roomId];
     if (!entry?.token) return res.status(200).json({ error: "no token registered for room" });
@@ -126,8 +127,13 @@ export default async function handler(req, res) {
     const aps = {
       timestamp: nowSec,
       event,
-      "content-state": { status: stateStatus, question: entry.question || "", detail },
+      "content-state": {
+        status: stateStatus,
+        question: question ?? entry.question ?? "",
+        detail,
+      },
     };
+    if (alert) aps.alert = { title: "Bender", body: detail.slice(0, 150), sound: "default" };
     if (event === "end" && withDismissal) aps["dismissal-date"] = nowSec + 600;
 
     const r = await apnsSendWithFallback(entry.token, { aps }, {

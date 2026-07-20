@@ -130,6 +130,16 @@ export default async function handler(req, res) {
         // a mismatch is dropped silently by ActivityKit. `question` is echoed
         // from the registry so it stays visible (faded) above the reply.
         "content-state": { status: "Reply", question: entry.question || "", detail: body.slice(0, 300) },
+        // An `alert` block turns this into an alerting update: iOS plays sound
+        // and a haptic and surfaces the activity prominently (Dynamic Island
+        // expands) instead of updating it silently. The push-payload equivalent
+        // of ActivityKit's alertConfiguration, which the app can't set while
+        // suspended.
+        alert: {
+          title: title,
+          body: body.slice(0, 150),
+          sound: "default",
+        },
       },
     };
 

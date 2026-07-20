@@ -94,7 +94,8 @@ struct ContructWidgetsLiveActivity: Widget {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 18)
-            .padding(.vertical, 16)
+            .padding(.vertical, 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .activityBackgroundTint(Color(red: 0.07, green: 0.07, blue: 0.1))
             .activitySystemActionForegroundColor(Color.white)
 

@@ -14,9 +14,7 @@ import UserNotificationsUI
 /// this view keeps working untouched.
 class NotificationViewController: UIViewController, UNNotificationContentExtension {
 
-    private let headerLabel = UILabel()
     private let bodyLabel = UILabel()
-    private let stack = UIStackView()
 
     private enum Metrics {
         static let bodySize: CGFloat = 16
@@ -28,35 +26,26 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        headerLabel.font = .preferredFont(forTextStyle: .caption1)
-        headerLabel.textColor = .secondaryLabel
-        headerLabel.numberOfLines = 1
-
+        // Sender and room are NOT drawn here: the system renders the title and
+        // subtitle in the notification header above this view even when
+        // UNNotificationExtensionDefaultContentHidden hides the default body.
+        // A header label here duplicates them.
         bodyLabel.numberOfLines = 0
         bodyLabel.lineBreakMode = .byWordWrapping
-
-        stack.axis = .vertical
-        stack.spacing = 6
-        stack.addArrangedSubview(headerLabel)
-        stack.addArrangedSubview(bodyLabel)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
+        bodyLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bodyLabel)
 
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: Metrics.margin),
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.margin),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.margin),
-            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -Metrics.margin),
+            bodyLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: Metrics.margin),
+            bodyLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.margin),
+            bodyLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.margin),
+            bodyLabel.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -Metrics.margin),
         ])
     }
 
     func didReceive(_ notification: UNNotification) {
         let content = notification.request.content
         let info = content.userInfo
-
-        let sender = info["sender"] as? String
-        let room = content.subtitle.isEmpty ? content.title : content.subtitle
-        headerLabel.text = [sender, room].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
 
         // Prefer the original markdown; fall back to the stripped body if the
         // gateway didn't send it (older payloads).

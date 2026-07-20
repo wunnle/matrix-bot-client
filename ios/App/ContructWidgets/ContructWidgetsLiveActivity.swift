@@ -90,49 +90,51 @@ struct ContructWidgetsLiveActivity: Widget {
                     WorkingRing(size: 18)
                 }
             }
-            .padding()
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
             .activityBackgroundTint(Color(red: 0.07, green: 0.07, blue: 0.1))
             .activitySystemActionForegroundColor(Color.white)
 
         } dynamicIsland: { context in
             let reply = isReply(context.state.status)
             return DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) {
-                    RoomAvatar(size: 36)
-                        .padding(.leading, 4)
-                }
+                // No leading avatar in the expanded view: it duplicates the
+                // compact/minimal icon and steals width the reply wants. A
+                // single status/reply row with the indicator on the trailing
+                // side reads cleaner.
                 DynamicIslandExpandedRegion(.center) {
                     // Only the working status needs a centre line; on a reply
                     // the text below is the content and a header just crowds it.
                     if !reply {
-                        Text(context.state.status)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                DynamicIslandExpandedRegion(.trailing) {
-                    if reply {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                            .padding(.trailing, 4)
-                    } else {
-                        WorkingRing(size: 16)
-                            .padding(.trailing, 4)
+                        HStack {
+                            Text(context.state.status)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            WorkingRing(size: 15)
+                        }
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     if reply {
-                        Text(context.state.detail)
-                            .font(.subheadline)
-                            .lineLimit(6)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(context.state.detail)
+                                .font(.subheadline)
+                                .lineLimit(8)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                        .padding(.horizontal, 4)
                     } else if !context.state.detail.isEmpty {
                         Text(context.state.detail)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 4)
                     }
                 }
             } compactLeading: {

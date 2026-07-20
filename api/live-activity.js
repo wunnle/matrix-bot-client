@@ -26,6 +26,16 @@ export default async function handler(req, res) {
   if (req.headers["x-intent-secret"] !== SECRET) {
     return res.status(403).json({ error: "forbidden" });
   }
+  // Diagnostic: how many tokens are registered for a room. Counts only — token
+  // values are credentials. Without this there is no way to tell a token that
+  // never registered from a push that failed to deliver.
+  if (req.method === "GET") {
+    const roomId = req.query?.roomId;
+    if (!roomId) return res.status(400).json({ error: "missing roomId" });
+    const tokens = await liveActivityTokens(roomId);
+    return res.status(200).json({ roomId, count: tokens.length });
+  }
+
   if (req.method !== "POST") return res.status(405).end();
 
   const { roomId, token, action } = req.body || {};

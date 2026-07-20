@@ -4,6 +4,7 @@ import ActivityKit
 import Speech
 import AVFoundation
 import AppIntents
+import UniformTypeIdentifiers
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -213,15 +214,50 @@ enum IntentConfig {
 @available(iOS 16.2, *)
 private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<T>, room: String) {
     Task {
-        let d = UserDefaults.standard
-        guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
-        let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
         for await tokenData in activity.pushTokenUpdates {
-            let token = tokenData.map { String(format: "%02x", $0) }.joined()
-            _ = await intentPost("\(apiBase)/api/live-activity", secret: secret,
-                                 body: ["roomId": room, "token": token])
+            await postLiveActivityToken(tokenData, room: room)
         }
     }
+}
+
+/// Registers the activity's first push token and *waits* for it.
+///
+/// `AskConstructIntent` runs in a background shortcut process that is torn down
+/// as soon as `perform()` returns, so a detached observer task can be killed
+/// before it ever POSTs — leaving the server with no token and the activity
+/// unreachable by push. Awaiting the first token inline closes that window;
+/// `trackLiveActivityToken` then handles later rotations.
+///
+/// Bounded, because `pushTokenUpdates` never finishes on its own: if APNs is
+/// slow or unavailable we give up rather than stall the intent.
+@available(iOS 16.2, *)
+private func awaitLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<T>,
+                                                           room: String,
+                                                           timeout: Duration = .seconds(8)) async {
+    await withTaskGroup(of: Bool.self) { group in
+        group.addTask {
+            for await tokenData in activity.pushTokenUpdates {
+                await postLiveActivityToken(tokenData, room: room)
+                return true
+            }
+            return false
+        }
+        group.addTask {
+            try? await Task.sleep(for: timeout)
+            return false
+        }
+        _ = await group.next()
+        group.cancelAll()
+    }
+}
+
+private func postLiveActivityToken(_ tokenData: Data, room: String) async {
+    let d = UserDefaults.standard
+    guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
+    let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
+    let token = tokenData.map { String(format: "%02x", $0) }.joined()
+    _ = await intentPost("\(apiBase)/api/live-activity", secret: secret,
+                         body: ["roomId": room, "token": token])
 }
 
 /// Clears the room's tokens once an activity ends, so the gateway stops pushing
@@ -247,6 +283,77 @@ private func intentPost(_ urlString: String, secret: String, body: [String: Any]
     return (try? JSONSerialization.jsonObject(with: respData)) as? [String: Any]
 }
 
+/// Upload raw file bytes to send-file (room + filename in the query, secret in
+/// the header, body is the bytes). Used by the screenshot intent.
+private func intentUpload(_ urlString: String, secret: String, room: String,
+                          filename: String, contentType: String, body: Data) async {
+    let q = CharacterSet.alphanumerics
+    let encRoom = room.addingPercentEncoding(withAllowedCharacters: q) ?? room
+    let encName = filename.addingPercentEncoding(withAllowedCharacters: q) ?? filename
+    guard let url = URL(string: "\(urlString)?room=\(encRoom)&filename=\(encName)&source=shortcut") else { return }
+    var req = URLRequest(url: url)
+    req.httpMethod = "POST"
+    req.setValue(contentType, forHTTPHeaderField: "Content-Type")
+    req.setValue(secret, forHTTPHeaderField: "x-intent-secret")
+    req.httpBody = body
+    req.timeoutInterval = 20
+    _ = try? await URLSession.shared.data(for: req)
+}
+
+/// Shared "ask" flow behind the message and screenshot intents: start a
+/// push-token Live Activity, run the caller's `send`, then watch the room ~30s
+/// and update/wind down the activity (leaving it live for the gateway's push
+/// if the reply is slower than the polling window).
+@available(iOS 17.0, *)
+private func runAskWatch(room: String, apiBase: String, secret: String,
+                         initialDetail: String, send: () async -> Void) async {
+    let attributes = ConstructActivityAttributes(roomName: "Bender")
+    let thinking = ConstructActivityAttributes.ContentState(status: "Thinking…", detail: initialDetail)
+    // pushType: .token is what makes ActivityKit mint a push token; without it
+    // the activity can only ever be updated from a running app.
+    let activity = try? Activity.request(attributes: attributes,
+                                         content: .init(state: thinking, staleDate: nil),
+                                         pushType: .token)
+    // Awaited, not detached: this runs in a background shortcut process that is
+    // torn down when perform() returns, which can kill a detached task before it
+    // registers the token — leaving the activity unreachable by push.
+    if let activity { await awaitLiveActivityToken(activity, room: room) }
+
+    let since = Int(Date().timeIntervalSince1970 * 1000)
+    await send()
+
+    var lastTs = since
+    var lastReply: String?
+    let deadline = Date().addingTimeInterval(30)
+    while Date() < deadline {
+        guard let r = await intentPost("\(apiBase)/api/wait-reply", secret: secret,
+                                       body: ["room": room, "since": lastTs]) else { break }
+        guard let body = r["reply"] as? String, !body.isEmpty else { continue }
+        lastReply = body
+        if let ts = r["ts"] as? Double { lastTs = max(lastTs, Int(ts)) }
+        if let activity = activity {
+            let state = ConstructActivityAttributes.ContentState(
+                status: "Reply", detail: String(body.prefix(300)))
+            await activity.update(.init(state: state, staleDate: nil))
+        }
+    }
+
+    // Wind down only if the reply arrived in-window; otherwise leave it live for
+    // the gateway's "end" push (api/matrix-push.js) to deliver the answer.
+    if let activity = activity {
+        if let lastReply {
+            await clearLiveActivityTokens(room: room)
+            let final = ConstructActivityAttributes.ContentState(
+                status: "Reply", detail: String(lastReply.prefix(300)))
+            await activity.end(.init(state: final, staleDate: nil), dismissalPolicy: .after(.now + 600))
+        } else {
+            let waiting = ConstructActivityAttributes.ContentState(
+                status: "Still thinking…", detail: "Waiting for the reply.")
+            await activity.update(.init(state: waiting, staleDate: .now + 900))
+        }
+    }
+}
+
 /// Shortcut entry point: send a dictated message and surface the reply in a
 /// Live Activity — no app launch. LiveActivityIntent grants the background
 /// permission to start/update Live Activities.
@@ -268,62 +375,73 @@ struct AskConstructIntent: AppIntent, LiveActivityIntent {
         let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
         let room = d.string(forKey: IntentConfig.room) ?? "!DpRWqhWOHJAxyvjOGI:matrix.org"
 
-        // 1. Start the Live Activity ("Thinking…").
-        let attributes = ConstructActivityAttributes(roomName: "Bender")
-        let thinking = ConstructActivityAttributes.ContentState(status: "Thinking…", detail: message)
-        // pushType: .token is what makes ActivityKit mint a push token; without
-        // it the activity can only ever be updated from a running app.
-        let activity = try? Activity.request(attributes: attributes,
-                                             content: .init(state: thinking, staleDate: nil),
-                                             pushType: .token)
-        if let activity { trackLiveActivityToken(activity, room: room) }
-
-        let since = Int(Date().timeIntervalSince1970 * 1000)
-
-        // 2. Send the message.
-        _ = await intentPost("\(apiBase)/api/send-message", secret: secret,
-                             body: ["room": room, "text": message, "source": "shortcut"])
-
-        // 3. Watch ~30s: bender often sends several messages (progress lines,
-        //    then the answer) — surface each one as it lands. wait-reply
-        //    long-polls ~9s server-side per call.
-        var lastTs = since
-        var lastReply: String?
-        let deadline = Date().addingTimeInterval(30)
-        while Date() < deadline {
-            guard let r = await intentPost("\(apiBase)/api/wait-reply", secret: secret,
-                                           body: ["room": room, "since": lastTs]) else { break }
-            guard let body = r["reply"] as? String, !body.isEmpty else { continue }
-            lastReply = body
-            if let ts = r["ts"] as? Double { lastTs = max(lastTs, Int(ts)) }
-            if let activity = activity {
-                let state = ConstructActivityAttributes.ContentState(
-                    status: "Reply", detail: String(body.prefix(300)))
-                await activity.update(.init(state: state, staleDate: nil))
-            }
+        await runAskWatch(room: room, apiBase: apiBase, secret: secret, initialDetail: message) {
+            _ = await intentPost("\(apiBase)/api/send-message", secret: secret,
+                                 body: ["room": room, "text": message, "source": "shortcut"])
         }
+        return .result()
+    }
+}
 
-        // 4. Wind down — but only if the reply actually arrived inside the
-        //    polling window. If it didn't, leave the activity running: the
-        //    gateway pushes an "end" event with the answer whenever bender
-        //    finally responds (api/matrix-push.js). Ending here would close the
-        //    activity that push is aimed at, which is the whole point of
-        //    registering the token.
-        if let activity = activity {
-            if let lastReply {
-                await clearLiveActivityTokens(room: room)
-                let final = ConstructActivityAttributes.ContentState(
-                    status: "Reply", detail: String(lastReply.prefix(300)))
-                await activity.end(.init(state: final, staleDate: nil), dismissalPolicy: .after(.now + 600))
-            } else {
-                // staleDate dims it if the push never lands, rather than leaving
-                // a confidently-wrong "Thinking…" on the lock screen for hours.
-                let waiting = ConstructActivityAttributes.ContentState(
-                    status: "Still thinking…", detail: "Waiting for the reply.")
-                await activity.update(.init(state: waiting, staleDate: .now + 900))
-            }
+/// Shortcut entry point: send a screenshot (or any image) to Construct and
+/// surface bender's reply in a Live Activity — no app launch. Pair with the
+/// Shortcuts "Take Screenshot" action, which is the only thing that can capture
+/// the screen (an intent can't screenshot other apps).
+@available(iOS 17.0, *)
+struct SendScreenshotIntent: AppIntent, LiveActivityIntent {
+    static let title: LocalizedStringResource = "Send Screenshot to Construct"
+    static let description = IntentDescription("Send an image to Construct and watch for the reply on the lock screen.")
+
+    // supportedContentTypes: on a file parameter is iOS 18+, so this stays a
+    // plain IntentFile — the Shortcuts "Take Screenshot" output passes fine.
+    @Parameter(title: "Image")
+    var image: IntentFile
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        let d = UserDefaults.standard
+        guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else {
+            throw $image.needsValueError("Open Construct once to enable Shortcut sending.")
         }
+        let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
+        let room = d.string(forKey: IntentConfig.room) ?? "!DpRWqhWOHJAxyvjOGI:matrix.org"
 
+        let bytes = image.data
+        let mime = image.type?.preferredMIMEType ?? "image/jpeg"
+        let ext = image.type?.preferredFilenameExtension ?? "jpg"
+
+        await runAskWatch(room: room, apiBase: apiBase, secret: secret, initialDetail: "Screenshot") {
+            await intentUpload("\(apiBase)/api/send-file", secret: secret, room: room,
+                               filename: "screenshot.\(ext)", contentType: mime, body: bytes)
+        }
+        return .result()
+    }
+}
+
+/// Reliable companion to the screenshot flow: this takes no file parameter, so
+/// it sidesteps the iOS-17 Shortcuts friction with IntentFile inputs. Pair it
+/// with an upload done in the Shortcut itself (Take Screenshot → Get Contents
+/// of URL → send-file) — this just shows the "Thinking…" Live Activity and
+/// watches for bender's reply.
+@available(iOS 17.0, *)
+struct WatchConstructReplyIntent: AppIntent, LiveActivityIntent {
+    static let title: LocalizedStringResource = "Watch Construct Reply"
+    static let description = IntentDescription("Show a Live Activity and watch for Construct's reply on the lock screen.")
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        let d = UserDefaults.standard
+        guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else {
+            throw NSError(domain: "construct", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Open Construct once to enable this."])
+        }
+        let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
+        let room = d.string(forKey: IntentConfig.room) ?? "!DpRWqhWOHJAxyvjOGI:matrix.org"
+
+        // The upload already happened in the Shortcut; just watch for the reply.
+        await runAskWatch(room: room, apiBase: apiBase, secret: secret, initialDetail: "Screenshot") {}
         return .result()
     }
 }

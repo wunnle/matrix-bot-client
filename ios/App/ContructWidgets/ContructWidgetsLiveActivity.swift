@@ -61,37 +61,39 @@ struct ContructWidgetsLiveActivity: Widget {
         ActivityConfiguration(for: ConstructActivityAttributes.self) { context in
             // Lock screen / banner
             let reply = isReply(context.state.status)
-            // The user's message sits faded on top; bender's reply below in full
-            // colour. No room name (the avatar covers that) and no status icon —
-            // the presence of the reply is the state. A small ring shows only
-            // while still waiting.
             HStack(alignment: .top, spacing: 12) {
                 RoomAvatar(size: 40)
-                VStack(alignment: .leading, spacing: 5) {
-                    if !context.state.question.isEmpty {
-                        Text(context.state.question)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if reply {
-                        Text(context.state.detail)
-                            .font(.subheadline)
-                            .lineLimit(10)
-                            .fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        HStack(alignment: .top, spacing: 8) {
+                if reply {
+                    // Answer phase: the reply gets the whole container — no faded
+                    // question competing for height. minimumScaleFactor lets a
+                    // long answer shrink to fit before it has to truncate.
+                    Text(context.state.detail)
+                        .font(.subheadline)
+                        .lineLimit(12)
+                        .minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    // Loading phase: the question, faded, with a working
+                    // indicator beneath it.
+                    VStack(alignment: .leading, spacing: 6) {
+                        if !context.state.question.isEmpty {
+                            Text(context.state.question)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        HStack(spacing: 8) {
                             WorkingRing(size: 14)
                             Text(context.state.detail.isEmpty ? context.state.status : context.state.detail)
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
-                                .lineLimit(3)
-                                .fixedSize(horizontal: false, vertical: true)
+                                .lineLimit(2)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Spacer(minLength: 0)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 20)
@@ -102,41 +104,46 @@ struct ContructWidgetsLiveActivity: Widget {
         } dynamicIsland: { context in
             let reply = isReply(context.state.status)
             return DynamicIsland {
-                // No leading avatar in the expanded view: it duplicates the
-                // compact/minimal icon and steals width the reply wants. A
-                // single status/reply row with the indicator on the trailing
-                // side reads cleaner.
-                DynamicIslandExpandedRegion(.center) {
-                    // Faded question on top, working ring only while waiting.
-                    HStack(spacing: 8) {
-                        if !context.state.question.isEmpty {
-                            Text(context.state.question)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        if !reply { WorkingRing(size: 15) }
+                // Room name fills the otherwise-empty top-left; the working ring
+                // sits top-right while waiting.
+                DynamicIslandExpandedRegion(.leading) {
+                    Text(context.attributes.roomName)
+                        .font(.headline)
+                        .padding(.leading, 4)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    if !reply {
+                        WorkingRing(size: 16)
+                            .padding(.trailing, 4)
                     }
-                    .padding(.horizontal, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    let text = reply ? context.state.detail
-                                     : (context.state.detail.isEmpty ? context.state.status : context.state.detail)
-                    Text(text)
-                        .font(reply ? .subheadline : .caption)
-                        .foregroundStyle(reply ? .primary : .secondary)
-                        .lineLimit(reply ? 8 : 2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 4)
+                    if reply {
+                        // Answer phase: reply only, full width, shrink-to-fit.
+                        Text(context.state.detail)
+                            .font(.subheadline)
+                            .lineLimit(10)
+                            .minimumScaleFactor(0.8)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 4)
+                    } else {
+                        // Loading phase: the faded question.
+                        Text(context.state.question.isEmpty ? context.state.status : context.state.question)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 4)
+                    }
                 }
             } compactLeading: {
                 RoomAvatar(size: 20)
             } compactTrailing: {
                 if reply {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(.green)
+                    Image(systemName: "bubble.left.fill")
+                        .foregroundStyle(.purple)
                 } else {
                     WorkingRing(size: 14)
                 }

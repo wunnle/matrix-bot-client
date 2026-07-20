@@ -314,13 +314,19 @@ private func runAskWatch(room: String, apiBase: String, secret: String,
     let activity = try? Activity.request(attributes: attributes,
                                          content: .init(state: thinking, staleDate: nil),
                                          pushType: .token)
-    // Awaited, not detached: this runs in a background shortcut process that is
-    // torn down when perform() returns, which can kill a detached task before it
-    // registers the token — leaving the activity unreachable by push.
-    if let activity { await awaitLiveActivityToken(activity, room: room) }
-
     let since = Int(Date().timeIntervalSince1970 * 1000)
+    // Send first. Registering the push token used to run before this, which
+    // delayed the message by up to 8s and pushed perform() past the Shortcuts
+    // background execution budget — Shortcuts then reports "an unknown error
+    // occurred" even though the work completes.
     await send()
+
+    // Registration runs alongside the poll loop rather than before it, but is
+    // still awaited below: this process is torn down when perform() returns, so
+    // a fire-and-forget task can die before it registers.
+    let tokenTask: Task<Void, Never>? = activity.map { a in
+        Task { await awaitLiveActivityToken(a, room: room) }
+    }
 
     var lastTs = since
     var lastReply: String?
@@ -337,6 +343,10 @@ private func runAskWatch(room: String, apiBase: String, secret: String,
             await activity.update(.init(state: state, staleDate: nil))
         }
     }
+
+    // Registration has had the whole poll window to finish; make sure it has
+    // before this process goes away.
+    await tokenTask?.value
 
     // Wind down only if the reply arrived in-window; otherwise leave it live for
     // the gateway's "end" push (api/matrix-push.js) to deliver the answer.

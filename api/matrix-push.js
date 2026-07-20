@@ -125,10 +125,14 @@ export default async function handler(req, res) {
   if (isThinking) return res.status(200).json({ rejected: [] });
 
   const title = room_name || "Hermes";
-  // Strip before truncating, so the 100-char cut can't land mid-marker and
-  // leave a dangling "**".
+  // Strip before truncating, so the cut can't land mid-marker and leave a
+  // dangling "**".
+  //
+  // iOS collapses this to a few lines and reveals the rest on long-press, so
+  // the limit only needs to respect the APNs 4KB payload ceiling — cutting at
+  // 100 meant expanding a notification showed nothing extra.
   const body = content?.body
-    ? stripMarkdown(content.body).slice(0, 100)
+    ? stripMarkdown(content.body).slice(0, 1200)
     : sender_display_name
     ? `New message from ${sender_display_name}`
     : "New message";

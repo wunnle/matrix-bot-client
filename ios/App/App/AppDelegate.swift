@@ -330,7 +330,12 @@ private func runAskWatch(room: String, apiBase: String, secret: String,
 
     var lastTs = since
     var lastReply: String?
-    let deadline = Date().addingTimeInterval(30)
+    // Shortcuts gives a background action roughly 30s; polling for the full
+    // budget leaves no headroom for the send, the activity update and teardown,
+    // and Shortcuts reports "an unknown error occurred" when it overruns — even
+    // though the work completes. 15s leaves room, and a reply arriving after the
+    // window is delivered by the gateway's push instead of being lost.
+    let deadline = Date().addingTimeInterval(15)
     while Date() < deadline {
         guard let r = await intentPost("\(apiBase)/api/wait-reply", secret: secret,
                                        body: ["room": room, "since": lastTs]) else { break }

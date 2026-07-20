@@ -53,6 +53,7 @@ async function readRooms() {
   if (r.status === 404) return {};
   if (!r.ok) throw new Error(`read account data failed: ${r.status}`);
   const data = await r.json();
+  if (data?.lastPush !== undefined) lastPushCache = data.lastPush;
   const rooms = data?.rooms ?? {};
   const now = Date.now();
   return Object.fromEntries(
@@ -60,14 +61,16 @@ async function readRooms() {
   );
 }
 
-async function writeRooms(rooms) {
+let lastPushCache = null;
+async function writeRooms(rooms, lastPush) {
+  if (lastPush !== undefined) lastPushCache = lastPush;
   const r = await fetch(await accountDataUrl(), {
     method: "PUT",
     headers: {
       Authorization: `Bearer ${ACCESS_TOKEN}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ rooms }),
+    body: JSON.stringify({ rooms, lastPush: lastPushCache }),
   });
   if (!r.ok) throw new Error(`write account data failed: ${r.status}`);
 }
@@ -91,6 +94,7 @@ export default async function handler(req, res) {
       if (!roomId) {
         return res.status(200).json({
           rooms: Object.entries(rooms).map(([id, v]) => ({ roomId: id, ageMs: Date.now() - (v.ts ?? 0) })),
+          lastPush: lastPushCache,
         });
       }
       return res.status(200).json({ roomId, count: rooms[roomId] ? 1 : 0 });
@@ -123,6 +127,16 @@ export default async function handler(req, res) {
   }
 
   res.status(200).json({ ok: true });
+}
+
+/** Record what APNs said about the last Live Activity push, so a push that is
+    sent but never lands can be told apart from one that was never sent. Read
+    back via GET /api/live-activity. */
+export async function recordPushResult(roomId, result) {
+  try {
+    const rooms = await readRooms();
+    await writeRooms(rooms, { roomId, at: Date.now(), ...result });
+  } catch {}
 }
 
 /** Live tokens for a room. Used by matrix-push.js. */

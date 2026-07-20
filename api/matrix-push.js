@@ -8,7 +8,7 @@
 import webpush from "web-push";
 import crypto from "node:crypto";
 import http2 from "node:http2";
-import { liveActivityTokens, clearTokens } from "./live-activity.js";
+import { liveActivityTokens, clearTokens, recordPushResult } from "./live-activity.js";
 
 
 const ROOM_AVATARS = {
@@ -182,15 +182,19 @@ export default async function handler(req, res) {
       },
     };
 
-    await Promise.all(
+    const results = await Promise.all(
       tokens.map(async (token) => {
         const opts = { topic: LIVE_ACTIVITY_TOPIC, pushType: "liveactivity" };
         let r = await apnsSend("api.push.apple.com", token, payload, opts);
+        let env = "production";
         if (isEnvMismatch(r)) {
-          await apnsSend("api.sandbox.push.apple.com", token, payload, opts);
+          r = await apnsSend("api.sandbox.push.apple.com", token, payload, opts);
+          env = "sandbox";
         }
+        return { env, status: r.status, body: r.body };
       })
     );
+    await recordPushResult(room_id, { results, topic: LIVE_ACTIVITY_TOPIC });
     await clearTokens(room_id);
   })();
 

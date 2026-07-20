@@ -22,21 +22,35 @@
 - [ ] Point client API calls at an absolute base URL when running native.
   Relative `/api/...` fetches resolve against the local webview origin, so
   room-intent polling and the active-room beacon silently no-op in the app.
-- [ ] Push notifications for the native app — **code done, blocked on paid Apple
-  Developer Program enrollment** (free personal teams can't have the push
-  capability). Client, AppDelegate, entitlements file, and APNs delivery in
-  `api/matrix-push.js` are all in place. Once enrolled:
-  1. Uncomment `CODE_SIGN_ENTITLEMENTS` in `ios/debug.xcconfig`.
-  2. Create an APNs auth key at developer.apple.com → Keys, download the `.p8`.
-  3. Set Vercel env: `APNS_KEY_ID`, `APNS_TEAM_ID` (team id in Xcode),
-     `APNS_PRIVATE_KEY` (p8 contents), `APNS_TOPIC=com.wunnle.construct`.
-  4. Rebuild to device; pusher registers on next app launch.
+- [ ] Push notifications for the native app — **server side verified 2026-07-20**,
+  device side untested. Enrollment done, entitlement enabled, APNs key + the four
+  `APNS_*` env vars live in Vercel. Remaining: build to device, confirm the pusher
+  registers (`app_id com.wunnle.construct.ios`, 64-char hex pushkey), send a real
+  message.
+  - **Gotcha that cost a session:** the first auth key was created as a
+    *Sandbox-only* APNs key. developer.apple.com → Keys offers a sandbox-restricted
+    variant alongside the normal one; the normal key works for **both**
+    environments and is the one you want. A sandbox-only key returns
+    `403 BadEnvironmentKeyInToken` from `api.push.apple.com`, which the gateway's
+    original fallback (`400 BadDeviceToken` only) did not catch — so every push was
+    dropped silently and the endpoint still answered `200 {"rejected":[]}`.
+    `matrix-push.js` now falls back on both errors.
+  - **Probing the gateway without a device:** POST a notification with a bogus
+    64-zero pushkey to `/_matrix/push/v1/notify`. `rejected: [token]` means Apple
+    authenticated the JWT and only refused the fake token — credentials are good.
+    `rejected: []` means missing env vars, a bad JWT, or a connection failure; the
+    handler cannot distinguish them from outside.
 - [ ] Gate `DebugOverlay` (and the tap-version debug trigger) behind a dev flag so
   they stay out of release builds.
 
 ## Release / App Store
 
-- [ ] Enroll in Apple Developer Program; archive and upload first TestFlight build.
+- [x] Enroll in Apple Developer Program (done 2026-07-20).
+- [ ] Archive and upload first TestFlight build.
+- [ ] **Flip `aps-environment` to `production`** in `ios/App/App/App.entitlements`
+  before any TestFlight/App Store build — it is `development` for on-device debug
+  builds, and TestFlight uses the production APNs environment. Getting this wrong
+  fails silently, exactly like the sandbox-key issue above.
 - [ ] Public build config: build **without** `VITE_INTENT_SECRET` (personal endpoints
   off), personal build keeps it via local `.env`. Never ship the secret in the
   public binary.

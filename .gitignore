@@ -32,3 +32,6 @@ indexeddb
 ios/App/App/public/
 dist/
 .env
+
+# APNs signing key — never commit
+*.p8

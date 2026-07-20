@@ -129,10 +129,15 @@ export default async function handler(req, res) {
           roomId: room_id,
         };
         // Dev builds register sandbox tokens; production/TestFlight builds
-        // register production ones. Try production first, fall back on the
-        // token-mismatch error.
+        // register production ones. Try production first, fall back to sandbox
+        // on either mismatch Apple reports:
+        //   BadDeviceToken          — production key, but a sandbox token
+        //   BadEnvironmentKeyInToken — sandbox-only auth key hitting production
         let r = await apnsSend("api.push.apple.com", pushkey, apnsPayload);
-        if (r.status === 400 && r.body.includes("BadDeviceToken")) {
+        const envMismatch =
+          (r.status === 400 && r.body.includes("BadDeviceToken")) ||
+          (r.status === 403 && r.body.includes("BadEnvironmentKeyInToken"));
+        if (envMismatch) {
           r = await apnsSend("api.sandbox.push.apple.com", pushkey, apnsPayload);
         }
         if (r.status === 410 || (r.status === 400 && r.body.includes("BadDeviceToken"))) {

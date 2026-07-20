@@ -8,12 +8,20 @@
  * suspended.
  *
  * State is encoded in the blob path, like active-room.js:
- *   live_activity/{encoded roomId}/{apnsToken}_{ts}
+ *   live_activity/{sha256(roomId)}/{apnsToken}_{ts}
  * so matrix-push.js only needs list() — no blob content fetch.
  *
  * Auth: x-intent-secret header — never the URL or body.
  */
 import { put, list, del } from "@vercel/blob";
+import crypto from "node:crypto";
+
+/** Room IDs contain `!` and `:`; percent-encoding them puts a literal `%` in the
+    blob pathname, which the store rejects. Hash instead — deterministic, and
+    path-safe by construction. */
+function roomKey(roomId) {
+  return crypto.createHash("sha256").update(roomId).digest("hex").slice(0, 32);
+}
 
 const SECRET = process.env.INTENT_SECRET;
 const PREFIX = "live_activity/";
@@ -41,13 +49,13 @@ export default async function handler(req, res) {
   const { roomId, token, action } = req.body || {};
   if (!roomId) return res.status(400).json({ error: "missing roomId" });
 
-  const roomKey = encodeURIComponent(roomId);
+  const key = roomKey(roomId);
 
   // "end" clears every token for the room — the activity is over, and a stale
   // token would keep the gateway pushing into a dismissed activity.
   if (action === "end") {
     try {
-      const { blobs } = await list({ prefix: `${PREFIX}${roomKey}/` });
+      const { blobs } = await list({ prefix: `${PREFIX}${key}/` });
       if (blobs.length) await del(blobs.map((b) => b.url));
     } catch {}
     return res.status(200).json({ ok: true });
@@ -58,7 +66,7 @@ export default async function handler(req, res) {
   try {
     // Drop expired entries and any prior token for this room, so a restarted
     // activity doesn't leave the previous one being pushed to.
-    const { blobs } = await list({ prefix: `${PREFIX}${roomKey}/` });
+    const { blobs } = await list({ prefix: `${PREFIX}${key}/` });
     const now = Date.now();
     const stale = blobs.filter((b) => {
       const ts = Number(b.pathname.split("_").pop());
@@ -66,15 +74,15 @@ export default async function handler(req, res) {
     });
     if (stale.length) await del(stale.map((b) => b.url));
 
-    await put(`${PREFIX}${roomKey}/${token}_${Date.now()}`, "1", {
+    await put(`${PREFIX}${key}/${token}_${Date.now()}`, "1", {
       access: "public",
       addRandomSuffix: false,
       contentType: "text/plain",
     });
-  } catch {
-    // Blob unavailable — the Live Activity simply won't receive push updates
-    // and falls back to the intent's own 30s polling window.
-    return res.status(200).json({ ok: false });
+  } catch (err) {
+    // Report the reason: a silently-swallowed blob failure here is
+    // indistinguishable from a client that never registered.
+    return res.status(200).json({ ok: false, error: String(err?.message || err) });
   }
 
   res.status(200).json({ ok: true });
@@ -83,7 +91,7 @@ export default async function handler(req, res) {
 /** Drop every token for a room. Called after an "end" push is delivered. */
 export async function clearTokens(roomId) {
   try {
-    const { blobs } = await list({ prefix: `${PREFIX}${encodeURIComponent(roomId)}/` });
+    const { blobs } = await list({ prefix: `${PREFIX}${roomKey(roomId)}/` });
     if (blobs.length) await del(blobs.map((b) => b.url));
   } catch {}
 }
@@ -91,7 +99,7 @@ export async function clearTokens(roomId) {
 /** Live tokens for a room, newest first. Used by matrix-push.js. */
 export async function liveActivityTokens(roomId) {
   try {
-    const { blobs } = await list({ prefix: `${PREFIX}${encodeURIComponent(roomId)}/` });
+    const { blobs } = await list({ prefix: `${PREFIX}${roomKey(roomId)}/` });
     const now = Date.now();
     return blobs
       .map((b) => {

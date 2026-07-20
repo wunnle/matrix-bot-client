@@ -50,7 +50,16 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         // Prefer the original markdown; fall back to the stripped body if the
         // gateway didn't send it (older payloads).
         let source = (info["md"] as? String) ?? content.body
-        bodyLabel.attributedText = Self.render(source)
+        let rendered = Self.render(source)
+        // Never show an empty panel: fall back to the plain body if rendering
+        // produced nothing.
+        if rendered.length > 0 {
+            bodyLabel.attributedText = rendered
+        } else {
+            bodyLabel.font = .systemFont(ofSize: Metrics.bodySize)
+            bodyLabel.textColor = .label
+            bodyLabel.text = content.body.isEmpty ? source : content.body
+        }
     }
 
     // MARK: - Markdown rendering
@@ -133,11 +142,16 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         let result = NSMutableAttributedString(parsed)
         result.addAttributes(base, range: NSRange(location: 0, length: result.length))
 
-        // Re-apply the styling the parser recorded as intent but did not draw.
+        // Collect first, apply after: mutating an NSMutableAttributedString
+        // inside its own enumerateAttribute is undefined behaviour.
+        var styling: [(NSRange, InlinePresentationIntent)] = []
         result.enumerateAttribute(.inlinePresentationIntent,
                                   in: NSRange(location: 0, length: result.length)) { value, range, _ in
             guard let raw = value as? NSNumber else { return }
-            let intent = InlinePresentationIntent(rawValue: raw.uintValue)
+            styling.append((range, InlinePresentationIntent(rawValue: raw.uintValue)))
+        }
+
+        for (range, intent) in styling {
             var traits: UIFontDescriptor.SymbolicTraits = []
             if intent.contains(.stronglyEmphasized) { traits.insert(.traitBold) }
             if intent.contains(.emphasized) { traits.insert(.traitItalic) }
@@ -147,12 +161,10 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                                     value: UIFont.monospacedSystemFont(ofSize: Metrics.codeSize, weight: .regular),
                                     range: range)
                 result.addAttribute(.foregroundColor, value: UIColor.secondaryLabel, range: range)
-            } else if !traits.isEmpty {
-                let descriptor = UIFont.systemFont(ofSize: Metrics.bodySize)
-                    .fontDescriptor.withSymbolicTraits(traits)
-                if let descriptor {
-                    result.addAttribute(.font, value: UIFont(descriptor: descriptor, size: Metrics.bodySize), range: range)
-                }
+            } else if !traits.isEmpty,
+                      let descriptor = UIFont.systemFont(ofSize: Metrics.bodySize)
+                          .fontDescriptor.withSymbolicTraits(traits) {
+                result.addAttribute(.font, value: UIFont(descriptor: descriptor, size: Metrics.bodySize), range: range)
             }
         }
         return result

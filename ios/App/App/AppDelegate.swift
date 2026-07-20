@@ -369,8 +369,12 @@ private func runAskWatch(room: String, apiBase: String, secret: String,
     // staleDate dims the activity if the push never lands, rather than leaving a
     // confident "Thinking…" on the lock screen indefinitely.
     if let activity {
+        // Registration failures leave the activity unreachable by push, so
+        // say so rather than showing a confident "Thinking…" that will never
+        // resolve.
         let waiting = ConstructActivityAttributes.ContentState(
-            status: "Thinking…", detail: "push: \(tokenStatus)")
+            status: "Thinking…",
+            detail: tokenStatus == "registered" ? initialDetail : "push unavailable (\(tokenStatus))")
         await activity.update(.init(state: waiting, staleDate: .now + 900))
     }
 }

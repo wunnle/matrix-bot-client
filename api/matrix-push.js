@@ -109,19 +109,23 @@ export default async function handler(req, res) {
     const tokens = await liveActivityTokens(room_id);
     if (!tokens.length) return;
 
-    // The reply IS the end of the activity: with streaming off there is one
-    // answer per ask, and tool progress never reaches here (suppressed above).
+    // `update`, not `end`: ending finishes the activity after a single reply,
+    // so a follow-up message had nothing left to update. Every message for the
+    // room now refreshes the activity, and the token is kept (see below).
     //
-    // No `dismissal-date`. This payload previously carried one and never once
-    // delivered — APNs returns 200 for a Live Activity push that never reaches
-    // the device, so it failed silently for hours. Tested directly against a
-    // live activity, `event: "end"` without a dismissal date lands; with one it
-    // did not. Ending without it uses the default policy, so the reply stays on
-    // the Lock Screen until dismissed rather than self-clearing after 10 min.
+    // No `dismissal-date` — it is only meaningful for `end`, and the one time
+    // this payload carried one it never delivered. Worth revisiting with the
+    // test endpoint if auto-dismissal is wanted; the earlier reading of it was
+    // confounded by a test that ended the activity first.
+    //
+    // stale-date is pushed forward on every update so the activity dims only
+    // after a genuine lull rather than 15 minutes after the ask.
+    const nowSec = Math.floor(Date.now() / 1000);
     const payload = {
       aps: {
-        timestamp: Math.floor(Date.now() / 1000),
-        event: "end",
+        timestamp: nowSec,
+        event: "update",
+        "stale-date": nowSec + 900,
         // Keys must match ConstructActivityAttributes.ContentState exactly —
         // a mismatch is dropped silently by ActivityKit.
         "content-state": { status: "Reply", detail: body.slice(0, 300) },
@@ -138,7 +142,9 @@ export default async function handler(req, res) {
       })
     );
     await recordPushResult(room_id, { results, topic: LIVE_ACTIVITY_TOPIC });
-    await clearTokens(room_id);
+    // Token deliberately NOT cleared: it is what lets the next message update
+    // the same activity. It expires with the registry TTL, is replaced when a
+    // new activity starts, and is dropped when the app ends one.
   })();
 
   await Promise.all(

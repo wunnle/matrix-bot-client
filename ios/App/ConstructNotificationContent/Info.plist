@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<!-- Must match `category` in api/matrix-push.js and the category
+			     registered by NotificationActionRouter in AppDelegate.swift. -->
+			<key>UNNotificationExtensionCategory</key>
+			<string>MESSAGE</string>
+			<!-- Hide the system's plain-text body: this view renders the same
+			     message with formatting, and showing both duplicates it. -->
+			<key>UNNotificationExtensionDefaultContentHidden</key>
+			<true/>
+			<key>UNNotificationExtensionInitialContentSizeRatio</key>
+			<real>0.5</real>
+			<!-- Keep the Reply action usable without dismissing this view. -->
+			<key>UNNotificationExtensionUserInteractionEnabled</key>
+			<true/>
+		</dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.usernotifications.content-extension</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).NotificationViewController</string>
+	</dict>
+</dict>
+</plist>

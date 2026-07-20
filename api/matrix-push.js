@@ -170,6 +170,12 @@ export default async function handler(req, res) {
             ...(counts?.unread != null ? { badge: counts.unread } : {}),
           },
           roomId: room_id,
+          // Original markdown for the notification content extension to render
+          // on long-press. aps.alert.body stays stripped for the collapsed
+          // view, which is plain text only. Both capped well inside the 4KB
+          // APNs payload ceiling.
+          md: content.body ? content.body.slice(0, 1200) : null,
+          sender: sender_display_name || null,
         };
         // Dev builds register sandbox tokens; production/TestFlight builds
         // register production ones. Try production first, fall back to sandbox

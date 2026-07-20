@@ -111,13 +111,17 @@ export default async function handler(req, res) {
 
     // The reply IS the end of the activity: with streaming off there is one
     // answer per ask, and tool progress never reaches here (suppressed above).
-    // Ending with a dismissal-date matches what AskConstructIntent does on the
-    // fast path — show the answer, linger ~10 minutes, self-dismiss.
+    //
+    // No `dismissal-date`. This payload previously carried one and never once
+    // delivered — APNs returns 200 for a Live Activity push that never reaches
+    // the device, so it failed silently for hours. Tested directly against a
+    // live activity, `event: "end"` without a dismissal date lands; with one it
+    // did not. Ending without it uses the default policy, so the reply stays on
+    // the Lock Screen until dismissed rather than self-clearing after 10 min.
     const payload = {
       aps: {
         timestamp: Math.floor(Date.now() / 1000),
         event: "end",
-        "dismissal-date": Math.floor(Date.now() / 1000) + 600,
         // Keys must match ConstructActivityAttributes.ContentState exactly —
         // a mismatch is dropped silently by ActivityKit.
         "content-state": { status: "Reply", detail: body.slice(0, 300) },
@@ -126,14 +130,11 @@ export default async function handler(req, res) {
 
     const results = await Promise.all(
       tokens.map(async (token) => {
-        const opts = { topic: LIVE_ACTIVITY_TOPIC, pushType: "liveactivity" };
-        let r = await apnsSend("api.push.apple.com", token, payload, opts);
-        let env = "production";
-        if (isEnvMismatch(r)) {
-          r = await apnsSend("api.sandbox.push.apple.com", token, payload, opts);
-          env = "sandbox";
-        }
-        return { env, status: r.status, body: r.body };
+        const r = await apnsSendWithFallback(token, payload, {
+          topic: LIVE_ACTIVITY_TOPIC,
+          pushType: "liveactivity",
+        });
+        return { env: r.env, status: r.status, body: r.body, apnsId: r.apnsId };
       })
     );
     await recordPushResult(room_id, { results, topic: LIVE_ACTIVITY_TOPIC });

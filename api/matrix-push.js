@@ -8,6 +8,7 @@
 import webpush from "web-push";
 import crypto from "node:crypto";
 import http2 from "node:http2";
+import { liveActivityTokens, clearTokens } from "./live-activity.js";
 
 
 const ROOM_AVATARS = {
@@ -50,7 +51,12 @@ function apnsJwt() {
   return apnsJwtCache.token;
 }
 
-function apnsSend(host, deviceToken, payload) {
+const APNS_BUNDLE_ID = process.env.APNS_TOPIC || "com.wunnle.construct";
+
+/** Live Activity pushes use a distinct topic suffix and push type. */
+const LIVE_ACTIVITY_TOPIC = `${APNS_BUNDLE_ID}.push-type.liveactivity`;
+
+function apnsSend(host, deviceToken, payload, { topic, pushType } = {}) {
   return new Promise((resolve) => {
     const client = http2.connect(`https://${host}`);
     client.on("error", () => resolve({ status: 0, body: "connect error" }));
@@ -58,8 +64,8 @@ function apnsSend(host, deviceToken, payload) {
       ":method": "POST",
       ":path": `/3/device/${deviceToken}`,
       authorization: `bearer ${apnsJwt()}`,
-      "apns-topic": process.env.APNS_TOPIC || "com.wunnle.construct",
-      "apns-push-type": "alert",
+      "apns-topic": topic || APNS_BUNDLE_ID,
+      "apns-push-type": pushType || "alert",
       "apns-priority": "10",
     });
     let status = 0;
@@ -97,6 +103,20 @@ function stripMarkdown(text) {
     .replace(/^>\s?/gm, "")                          // blockquotes
     .replace(/^\s*[-*+]\s+/gm, "• ")                 // bullets
     .trim();
+}
+
+function apnsConfigured() {
+  return !!(process.env.APNS_KEY_ID && process.env.APNS_TEAM_ID && process.env.APNS_PRIVATE_KEY);
+}
+
+/** Apple reporting the token belongs to the other environment. Two spellings:
+    BadDeviceToken           — production key, sandbox token
+    BadEnvironmentKeyInToken — sandbox-only auth key hitting production */
+function isEnvMismatch(r) {
+  return (
+    (r.status === 400 && r.body.includes("BadDeviceToken")) ||
+    (r.status === 403 && r.body.includes("BadEnvironmentKeyInToken"))
+  );
 }
 
 function parseWebPushKey(pushkey) {
@@ -139,6 +159,41 @@ export default async function handler(req, res) {
 
   const rejected = [];
 
+  // Push the reply into any running Live Activity for this room. Independent of
+  // the per-device loop below: Live Activity tokens are per-activity, not per
+  // Matrix device, so they aren't in `devices`.
+  const liveActivityUpdate = (async () => {
+    if (!apnsConfigured()) return;
+    const tokens = await liveActivityTokens(room_id);
+    if (!tokens.length) return;
+
+    // The reply IS the end of the activity: with streaming off there is one
+    // answer per ask, and tool progress never reaches here (suppressed above).
+    // Ending with a dismissal-date matches what AskConstructIntent does on the
+    // fast path — show the answer, linger ~10 minutes, self-dismiss.
+    const payload = {
+      aps: {
+        timestamp: Math.floor(Date.now() / 1000),
+        event: "end",
+        "dismissal-date": Math.floor(Date.now() / 1000) + 600,
+        // Keys must match ConstructActivityAttributes.ContentState exactly —
+        // a mismatch is dropped silently by ActivityKit.
+        "content-state": { status: "Reply", detail: body.slice(0, 300) },
+      },
+    };
+
+    await Promise.all(
+      tokens.map(async (token) => {
+        const opts = { topic: LIVE_ACTIVITY_TOPIC, pushType: "liveactivity" };
+        let r = await apnsSend("api.push.apple.com", token, payload, opts);
+        if (isEnvMismatch(r)) {
+          await apnsSend("api.sandbox.push.apple.com", token, payload, opts);
+        }
+      })
+    );
+    await clearTokens(room_id);
+  })();
+
   await Promise.all(
     devices.map(async (device) => {
       const pushkey = device.pushkey;
@@ -148,7 +203,7 @@ export default async function handler(req, res) {
 
       if (!subscription) {
         // APNs device token (native iOS app)
-        if (!process.env.APNS_KEY_ID || !process.env.APNS_TEAM_ID || !process.env.APNS_PRIVATE_KEY) {
+        if (!apnsConfigured()) {
           return; // APNs not configured — don't reject, token may be valid later
         }
         // Sender as the title reads better than the room on iOS; the room
@@ -183,10 +238,7 @@ export default async function handler(req, res) {
         //   BadDeviceToken          — production key, but a sandbox token
         //   BadEnvironmentKeyInToken — sandbox-only auth key hitting production
         let r = await apnsSend("api.push.apple.com", pushkey, apnsPayload);
-        const envMismatch =
-          (r.status === 400 && r.body.includes("BadDeviceToken")) ||
-          (r.status === 403 && r.body.includes("BadEnvironmentKeyInToken"));
-        if (envMismatch) {
+        if (isEnvMismatch(r)) {
           r = await apnsSend("api.sandbox.push.apple.com", pushkey, apnsPayload);
         }
         if (r.status === 410 || (r.status === 400 && r.body.includes("BadDeviceToken"))) {
@@ -213,6 +265,8 @@ export default async function handler(req, res) {
       }
     })
   );
+
+  await liveActivityUpdate;
 
   // Matrix spec requires returning rejected pushkeys so the homeserver unregisters them
   res.status(200).json({ rejected });

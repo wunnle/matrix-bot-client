@@ -204,6 +204,36 @@ enum IntentConfig {
     static let room = "construct.defaultRoom"
 }
 
+/// Registers an Activity's APNs push token with the server so `matrix-push.js`
+/// can update the Live Activity while the app is suspended — the only way to
+/// move it past whatever state the app last set.
+///
+/// The token is per-activity and rotates, so this observes `pushTokenUpdates`
+/// for the activity's lifetime rather than reading it once.
+@available(iOS 16.2, *)
+private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<T>, room: String) {
+    Task {
+        let d = UserDefaults.standard
+        guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
+        let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
+        for await tokenData in activity.pushTokenUpdates {
+            let token = tokenData.map { String(format: "%02x", $0) }.joined()
+            _ = await intentPost("\(apiBase)/api/live-activity", secret: secret,
+                                 body: ["roomId": room, "token": token])
+        }
+    }
+}
+
+/// Clears the room's tokens once an activity ends, so the gateway stops pushing
+/// into a dismissed activity.
+private func clearLiveActivityTokens(room: String) async {
+    let d = UserDefaults.standard
+    guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
+    let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
+    _ = await intentPost("\(apiBase)/api/live-activity", secret: secret,
+                         body: ["roomId": room, "action": "end"])
+}
+
 private func intentPost(_ urlString: String, secret: String, body: [String: Any]) async -> [String: Any]? {
     guard let url = URL(string: urlString),
           let data = try? JSONSerialization.data(withJSONObject: body) else { return nil }
@@ -241,7 +271,12 @@ struct AskConstructIntent: AppIntent, LiveActivityIntent {
         // 1. Start the Live Activity ("Thinking…").
         let attributes = ConstructActivityAttributes(roomName: "Bender")
         let thinking = ConstructActivityAttributes.ContentState(status: "Thinking…", detail: message)
-        let activity = try? Activity.request(attributes: attributes, content: .init(state: thinking, staleDate: nil))
+        // pushType: .token is what makes ActivityKit mint a push token; without
+        // it the activity can only ever be updated from a running app.
+        let activity = try? Activity.request(attributes: attributes,
+                                             content: .init(state: thinking, staleDate: nil),
+                                             pushType: .token)
+        if let activity { trackLiveActivityToken(activity, room: room) }
 
         let since = Int(Date().timeIntervalSince1970 * 1000)
 
@@ -268,13 +303,25 @@ struct AskConstructIntent: AppIntent, LiveActivityIntent {
             }
         }
 
-        // 4. Wind down, but keep it on the lock screen for a while.
+        // 4. Wind down — but only if the reply actually arrived inside the
+        //    polling window. If it didn't, leave the activity running: the
+        //    gateway pushes an "end" event with the answer whenever bender
+        //    finally responds (api/matrix-push.js). Ending here would close the
+        //    activity that push is aimed at, which is the whole point of
+        //    registering the token.
         if let activity = activity {
-            let final = ConstructActivityAttributes.ContentState(
-                status: lastReply != nil ? "Reply" : "Still thinking…",
-                detail: lastReply.map { String($0.prefix(300)) } ?? "Open Construct to see the reply."
-            )
-            await activity.end(.init(state: final, staleDate: nil), dismissalPolicy: .after(.now + 600))
+            if let lastReply {
+                await clearLiveActivityTokens(room: room)
+                let final = ConstructActivityAttributes.ContentState(
+                    status: "Reply", detail: String(lastReply.prefix(300)))
+                await activity.end(.init(state: final, staleDate: nil), dismissalPolicy: .after(.now + 600))
+            } else {
+                // staleDate dims it if the push never lands, rather than leaving
+                // a confidently-wrong "Thinking…" on the lock screen for hours.
+                let waiting = ConstructActivityAttributes.ContentState(
+                    status: "Still thinking…", detail: "Waiting for the reply.")
+                await activity.update(.init(state: waiting, staleDate: .now + 900))
+            }
         }
 
         return .result()
@@ -471,8 +518,14 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         do {
             let activity = try Activity.request(
                 attributes: attributes,
-                content: .init(state: state, staleDate: nil)
+                content: .init(state: state, staleDate: nil),
+                pushType: .token
             )
+            // Only rooms we can address can receive pushed updates; without a
+            // roomId the activity still works, just app-driven as before.
+            if let room = call.getString("roomId") {
+                trackLiveActivityToken(activity, room: room)
+            }
             call.resolve(["activityId": activity.id])
         } catch {
             call.reject("Failed to start Live Activity: \(error.localizedDescription)")
@@ -502,6 +555,11 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         Task {
+            // Clear tokens first, so the gateway can't push into an activity
+            // that is about to be dismissed.
+            if let room = call.getString("roomId") {
+                await clearLiveActivityTokens(room: room)
+            }
             for activity in Activity<ConstructActivityAttributes>.activities {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }

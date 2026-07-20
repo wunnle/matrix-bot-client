@@ -329,6 +329,13 @@ private func runAskWatch(room: String, apiBase: String, secret: String,
         await other.end(nil, dismissalPolicy: .immediate)
     }
 
+    // Drop the stored token before registering a new one. Ending an activity
+    // does not invalidate its push token server-side, so a token belonging to
+    // the activity just dismissed would linger for its full TTL — and APNs
+    // returns 200 for a push aimed at a dead activity, so the failure is
+    // completely silent. Better to hold no token than a stale one.
+    if reusable == nil { await clearLiveActivityTokens(room: room) }
+
     let activity: Activity<ConstructActivityAttributes>?
     if let existing = reusable {
         await existing.update(.init(state: thinking, staleDate: nil))

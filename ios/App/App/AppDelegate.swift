@@ -215,7 +215,7 @@ enum IntentConfig {
 private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<T>, room: String) {
     Task {
         for await tokenData in activity.pushTokenUpdates {
-            await postLiveActivityToken(tokenData, room: room)
+            _ = await postLiveActivityToken(tokenData, room: room)
         }
     }
 }
@@ -233,7 +233,7 @@ private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<
 @available(iOS 16.2, *)
 private func awaitLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<T>,
                                                            room: String,
-                                                           timeout: Duration = .seconds(8)) async -> String {
+                                                           timeout: Duration = .seconds(5)) async -> String {
     return await withTaskGroup(of: String.self) { group -> String in
         group.addTask {
             for await tokenData in activity.pushTokenUpdates {
@@ -331,59 +331,31 @@ private func runAskWatch(room: String, apiBase: String, secret: String,
                                          content: .init(state: thinking, staleDate: nil),
                                          pushType: .token)
     }
-    let since = Int(Date().timeIntervalSince1970 * 1000)
-    // Send first. Registering the push token used to run before this, which
-    // delayed the message by up to 8s and pushed perform() past the Shortcuts
-    // background execution budget — Shortcuts then reports "an unknown error
-    // occurred" even though the work completes.
     await send()
 
-    // Registration runs alongside the poll loop rather than before it, but is
-    // still awaited below: this process is torn down when perform() returns, so
-    // a fire-and-forget task can die before it registers.
-    let tokenTask: Task<String, Never>? = activity.map { a in
-        Task { await awaitLiveActivityToken(a, room: room) }
-    }
+    // Register the activity's push token, then return. The intent's job is done
+    // once the message is sent and the gateway knows where to push: the reply is
+    // delivered by api/matrix-push.js whenever bender answers, however long that
+    // takes.
+    //
+    // This used to poll wait-reply for 15–30s before returning, which was only
+    // ever a stand-in for push. It cost a visible hang in the Dynamic Island, it
+    // ran the action against the Shortcuts background budget (producing "an
+    // unknown error occurred"), and its clear-on-reply deleted the token before
+    // any push could use it — so the fast path actively prevented the slow path
+    // from ever working.
+    //
+    // Awaited rather than detached: this process is torn down when perform()
+    // returns, which would kill a fire-and-forget registration.
+    let tokenStatus = activity == nil ? "no-activity"
+                                      : await awaitLiveActivityToken(activity!, room: room)
 
-    var lastTs = since
-    var lastReply: String?
-    // Shortcuts gives a background action roughly 30s; polling for the full
-    // budget leaves no headroom for the send, the activity update and teardown,
-    // and Shortcuts reports "an unknown error occurred" when it overruns — even
-    // though the work completes. 15s leaves room, and a reply arriving after the
-    // window is delivered by the gateway's push instead of being lost.
-    let deadline = Date().addingTimeInterval(15)
-    while Date() < deadline {
-        guard let r = await intentPost("\(apiBase)/api/wait-reply", secret: secret,
-                                       body: ["room": room, "since": lastTs]) else { break }
-        guard let body = r["reply"] as? String, !body.isEmpty else { continue }
-        lastReply = body
-        if let ts = r["ts"] as? Double { lastTs = max(lastTs, Int(ts)) }
-        if let activity = activity {
-            let state = ConstructActivityAttributes.ContentState(
-                status: "Reply", detail: String(body.prefix(300)))
-            await activity.update(.init(state: state, staleDate: nil))
-        }
-    }
-
-    // Registration has had the whole poll window to finish; make sure it has
-    // before this process goes away. TEMPORARY: its outcome is surfaced in the
-    // activity text below, because app NSLog is invisible in the device log.
-    let tokenStatus = await tokenTask?.value ?? "no-activity"
-
-    // Wind down only if the reply arrived in-window; otherwise leave it live for
-    // the gateway's "end" push (api/matrix-push.js) to deliver the answer.
-    if let activity = activity {
-        if let lastReply {
-            await clearLiveActivityTokens(room: room)
-            let final = ConstructActivityAttributes.ContentState(
-                status: "Reply", detail: String(lastReply.prefix(300)))
-            await activity.end(.init(state: final, staleDate: nil), dismissalPolicy: .after(.now + 600))
-        } else {
-            let waiting = ConstructActivityAttributes.ContentState(
-                status: "Still thinking…", detail: "push: \(tokenStatus)")
-            await activity.update(.init(state: waiting, staleDate: .now + 900))
-        }
+    // staleDate dims the activity if the push never lands, rather than leaving a
+    // confident "Thinking…" on the lock screen indefinitely.
+    if let activity {
+        let waiting = ConstructActivityAttributes.ContentState(
+            status: "Thinking…", detail: "push: \(tokenStatus)")
+        await activity.update(.init(state: waiting, staleDate: .now + 900))
     }
 }
 

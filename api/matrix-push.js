@@ -101,13 +101,15 @@ export default async function handler(req, res) {
 
   const rejected = [];
 
-  // Push the reply into any running Live Activity for this room. Independent of
-  // the per-device loop below: Live Activity tokens are per-activity, not per
-  // Matrix device, so they aren't in `devices`.
-  const liveActivityUpdate = (async () => {
-    if (!apnsConfigured()) return;
+  // Push the reply into any running Live Activity for this room, and report
+  // whether it was delivered. Independent of the per-device loop below: Live
+  // Activity tokens are per-activity, not per Matrix device, so they aren't in
+  // `devices`. Awaited before that loop so a delivered Live Activity can
+  // suppress the duplicate alert on the same phone.
+  const liveActivityDelivered = await (async () => {
+    if (!apnsConfigured()) return false;
     const entry = await liveActivityEntry(room_id);
-    if (!entry) return;
+    if (!entry) return false;
 
     // `update`, not `end`: ending finishes the activity after a single reply,
     // so a follow-up message had nothing left to update. Every message for the
@@ -154,6 +156,7 @@ export default async function handler(req, res) {
     // Token deliberately NOT cleared: it is what lets the next message update
     // the same activity. It expires with the registry TTL, is replaced when a
     // new activity starts, and is dropped when the app ends one.
+    return r.status === 200;
   })();
 
   await Promise.all(
@@ -168,6 +171,12 @@ export default async function handler(req, res) {
         if (!apnsConfigured()) {
           return; // APNs not configured — don't reject, token may be valid later
         }
+        // Suppress the alert on the phone that is showing the Live Activity: it
+        // already got an alerting Live Activity push (sound + haptic) for this
+        // same message, so a banner here is a second buzz. Web Push (other
+        // devices, e.g. desktop) is untouched — this only skips the native
+        // iOS alert, and only when the Live Activity push actually landed.
+        if (liveActivityDelivered) return;
         // Sender as the title reads better than the room on iOS; the room
         // becomes the subtitle. Falls back to the web-push title when the
         // notification carries no sender.
@@ -231,8 +240,6 @@ export default async function handler(req, res) {
       }
     })
   );
-
-  await liveActivityUpdate;
 
   // Matrix spec requires returning rejected pushkeys so the homeserver unregisters them
   res.status(200).json({ rejected });

@@ -38,6 +38,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Capacitor's push plugin claims the notification delegate when it
         // loads; take it back (chaining to it) so Reply keeps working.
         if #available(iOS 15.0, *) { NotificationActionRouter.shared.install() }
+        // Clear any Live Activity token left over from a dismissed/killed
+        // activity, so a stale token doesn't keep suppressing this room's
+        // notifications.
+        if #available(iOS 16.2, *) { Task { await reconcileLiveActivityTokens() } }
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -218,6 +222,20 @@ private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<
             _ = await postLiveActivityToken(tokenData, room: room, question: question)
         }
     }
+    // When the activity ends or the user dismisses it, drop the server token.
+    // A lingering token makes the gateway suppress the phone notification for
+    // this room (it assumes a Live Activity will surface the message), so a
+    // dismissed activity would silently swallow notifications until the token
+    // expired. Only terminal states clear it — a `.stale` activity is still on
+    // screen (dimmed) and should keep receiving pushes.
+    Task {
+        for await state in activity.activityStateUpdates {
+            if state == .ended || state == .dismissed {
+                await clearLiveActivityTokens(room: room)
+                break
+            }
+        }
+    }
 }
 
 /// Registers the activity's first push token and *waits* for it.
@@ -306,6 +324,38 @@ private func intentPost(_ urlString: String, secret: String, body: [String: Any]
     req.timeoutInterval = 12
     guard let (respData, _) = try? await URLSession.shared.data(for: req) else { return nil }
     return (try? JSONSerialization.jsonObject(with: respData)) as? [String: Any]
+}
+
+private func intentGet(_ urlString: String, secret: String) async -> [String: Any]? {
+    guard let url = URL(string: urlString) else { return nil }
+    var req = URLRequest(url: url)
+    req.setValue(secret, forHTTPHeaderField: "x-intent-secret")
+    req.timeoutInterval = 12
+    guard let (data, _) = try? await URLSession.shared.data(for: req) else { return nil }
+    return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+}
+
+/// On app foreground, drop server-side Live Activity tokens whose activity is no
+/// longer on screen — otherwise the gateway keeps suppressing this room's phone
+/// notifications, thinking a Live Activity will show the message.
+///
+/// Only reconciles when NO activity is active: the loading ("Thinking…") state
+/// carries no roomId, so an active activity can't be reliably mapped to a room,
+/// and we won't risk clearing a live one. With none active, every registered
+/// token is stale and safe to clear.
+@available(iOS 16.2, *)
+private func reconcileLiveActivityTokens() async {
+    guard Activity<ConstructActivityAttributes>.activities.allSatisfy({ $0.activityState != .active }) else { return }
+    let d = UserDefaults.standard
+    guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
+    let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
+    guard let result = await intentGet("\(apiBase)/api/live-activity", secret: secret),
+          let rooms = result["rooms"] as? [[String: Any]] else { return }
+    for entry in rooms {
+        if let roomId = entry["roomId"] as? String {
+            await clearLiveActivityTokens(room: roomId)
+        }
+    }
 }
 
 /// Upload raw file bytes to send-file (room + filename in the query, secret in

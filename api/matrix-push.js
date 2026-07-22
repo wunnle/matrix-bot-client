@@ -182,9 +182,14 @@ export default async function handler(req, res) {
       results: [{ env: r.env, status: r.status, body: r.body, apnsId: r.apnsId }],
       topic: LIVE_ACTIVITY_TOPIC,
     });
-    // Token deliberately NOT cleared: it is what lets the next message update
-    // the same activity. It expires with the registry TTL, is replaced when a
-    // new activity starts, and is dropped when the app ends one.
+    // A dead token (activity ended/dismissed, grace window passed) comes back
+    // 410 Unregistered — clear it so it can't linger and suppress this room's
+    // notifications. Otherwise the token is kept: it's what lets the next
+    // message update the same activity.
+    if (r.status === 410 || (r.status === 400 && (r.body || "").includes("BadDeviceToken"))) {
+      await clearTokens(room_id);
+      return false;
+    }
     return r.status === 200;
   })();
 

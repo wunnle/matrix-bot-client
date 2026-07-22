@@ -193,8 +193,11 @@ struct LockScreenView: View {
                 // sit beneath it when bender suggests any.
                 VStack(alignment: .leading, spacing: 12) {
                     Text(state.detail)
+                        // The banner hard-caps at 160pt. With chips below, a tall
+                        // reply would push them past the clip, so cap the reply's
+                        // lines when actions are present to reserve room for them.
                         .font(.body)
-                        .lineLimit(10)
+                        .lineLimit(state.actions.isEmpty ? 10 : 3)
                         .minimumScaleFactor(0.85)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if #available(iOS 17.0, *) {
@@ -238,8 +241,9 @@ struct IslandBottomView: View {
     var body: some View {
         if isReply(state.status) {
             // Answer phase: reply, full width, with quick-reply chips beneath.
+            // Fewer reply lines when chips are present so they aren't clipped.
             VStack(alignment: .leading, spacing: 12) {
-                ReplyText(text: state.detail, lines: 8, scale: 0.75)
+                ReplyText(text: state.detail, lines: state.actions.isEmpty ? 8 : 4, scale: 0.75)
                 if #available(iOS 17.0, *) {
                     if !state.actions.isEmpty {
                         QuickReplyButtons(actions: state.actions, roomId: state.roomId)

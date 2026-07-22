@@ -282,6 +282,19 @@ private func clearLiveActivityTokens(room: String) async {
                          body: ["roomId": room, "action": "end"])
 }
 
+/// Flips the room's Live Activity to the "Thinking…" loading state, echoing the
+/// just-tapped quick reply as the question. Gives instant "sent" feedback (the
+/// working ring appears) before bender's reply pushes in and replaces it.
+@available(iOS 16.2, *)
+private func markActivitySending(room: String, question: String) async {
+    for activity in Activity<ConstructActivityAttributes>.activities
+    where activity.content.state.roomId == room || activity.content.state.roomId.isEmpty {
+        let sending = ConstructActivityAttributes.ContentState(
+            status: "Thinking…", question: question, detail: "", roomId: room)
+        await activity.update(.init(state: sending, staleDate: .now + 900))
+    }
+}
+
 private func intentPost(_ urlString: String, secret: String, body: [String: Any]) async -> [String: Any]? {
     guard let url = URL(string: urlString),
           let data = try? JSONSerialization.data(withJSONObject: body) else { return nil }
@@ -447,6 +460,8 @@ struct QuickReplyIntent: AppIntent, LiveActivityIntent {
         let room = roomId.isEmpty
             ? (d.string(forKey: IntentConfig.room) ?? "!DpRWqhWOHJAxyvjOGI:matrix.org")
             : roomId
+        // Instant feedback before the network round-trip and bender's reply.
+        await markActivitySending(room: room, question: trimmed)
         _ = await intentPost("\(apiBase)/api/send-message", secret: secret,
                              body: ["room": room, "text": trimmed, "source": "live-activity"])
         return .result()

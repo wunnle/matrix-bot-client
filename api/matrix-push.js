@@ -111,11 +111,14 @@ export default async function handler(req, res) {
   // iOS collapses this to a few lines and reveals the rest on long-press, so
   // the limit only needs to respect the APNs 4KB payload ceiling — cutting at
   // 100 meant expanding a notification showed nothing extra.
-  const body = content?.body
+  const rawBody = content?.body
     ? stripMarkdown(content.body).slice(0, 1200)
     : sender_display_name
     ? `New message from ${sender_display_name}`
     : "New message";
+  // Pull the [[CTA]] chips out once — reused for the Live Activity content-state
+  // and the notification's quick-reply buttons. `body` is the marker-free text.
+  const { text: body, actions } = parseActions(rawBody);
 
   const rejected = [];
 
@@ -141,10 +144,6 @@ export default async function handler(req, res) {
     // stale-date is pushed forward on every update so the activity dims only
     // after a genuine lull rather than 15 minutes after the ask.
     const nowSec = Math.floor(Date.now() / 1000);
-    // Pull any [[CTA]] chips out of the reply: the labels become tap-to-send
-    // buttons in the Live Activity (QuickReplyIntent), and the marker-free text
-    // is what the banner shows. Cap the buttons to what fits the banner/island.
-    const { text: replyText, actions } = parseActions(body);
     const payload = {
       aps: {
         timestamp: nowSec,
@@ -157,7 +156,7 @@ export default async function handler(req, res) {
         "content-state": {
           status: "Reply",
           question: entry.question || "",
-          detail: replyText.slice(0, 300),
+          detail: body.slice(0, 300),
           roomId: room_id,
           actions: actions.slice(0, 3),
         },
@@ -168,7 +167,7 @@ export default async function handler(req, res) {
         // suspended.
         alert: {
           title: title,
-          body: replyText.slice(0, 150),
+          body: body.slice(0, 150),
           sound: "default",
         },
       },
@@ -235,10 +234,15 @@ export default async function handler(req, res) {
           },
           roomId: room_id,
           // Original markdown for the notification content extension to render
-          // on long-press. aps.alert.body stays stripped for the collapsed
-          // view, which is plain text only. Both capped well inside the 4KB
-          // APNs payload ceiling.
-          md: content.body ? content.body.slice(0, 1200) : null,
+          // on long-press, with the [[CTA]] markers stripped (the extension
+          // draws those as buttons instead). aps.alert.body stays stripped for
+          // the collapsed view, which is plain text only. Both capped well
+          // inside the 4KB APNs payload ceiling.
+          md: content.body ? parseActions(content.body.slice(0, 1200)).text : null,
+          // Quick-reply chips for the content extension to render as one-tap
+          // buttons (long-press the notification). Same labels as the Live
+          // Activity's; only present when bender suggested any.
+          ...(actions.length ? { actions: actions.slice(0, 3) } : {}),
           sender: sender_display_name || null,
         };
         // Dev builds register sandbox tokens; production/TestFlight builds

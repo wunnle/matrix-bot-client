@@ -15,6 +15,21 @@ import UserNotificationsUI
 class NotificationViewController: UIViewController, UNNotificationContentExtension {
 
     private let bodyLabel = UILabel()
+    // Quick-reply chips (bender's [[CTA]]s), drawn beneath the body.
+    private let actionsStack = UIStackView()
+    private let container = UIStackView()
+    private var roomId: String?
+
+    // Shared with the app via the App Group so this extension can read the
+    // intent secret and send a quick reply without opening the app.
+    private enum Shared {
+        static let appGroup = "group.com.wunnle.construct"
+        static let secret = "construct.intentSecret"
+        static let apiBase = "construct.apiBase"
+        static let room = "construct.defaultRoom"
+        static let defaultApiBase = "https://construct.kafagoz.com"
+        static let defaultRoom = "!DpRWqhWOHJAxyvjOGI:matrix.org"
+    }
 
     private enum Metrics {
         static let bodySize: CGFloat = 16
@@ -37,14 +52,25 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         // Diagnostic placeholder: if this text is what shows, the extension
         // loaded but didReceive never ran.
         bodyLabel.text = "(waiting for content)"
-        bodyLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(bodyLabel)
+
+        actionsStack.axis = .horizontal
+        actionsStack.spacing = 8
+        actionsStack.distribution = .fillEqually
+        actionsStack.isHidden = true
+
+        container.axis = .vertical
+        container.spacing = 14
+        container.alignment = .fill
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addArrangedSubview(bodyLabel)
+        container.addArrangedSubview(actionsStack)
+        view.addSubview(container)
 
         NSLayoutConstraint.activate([
-            bodyLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: Metrics.margin),
-            bodyLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.margin),
-            bodyLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.margin),
-            bodyLabel.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -Metrics.margin),
+            container.topAnchor.constraint(equalTo: view.topAnchor, constant: Metrics.margin),
+            container.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.margin),
+            container.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.margin),
+            container.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -Metrics.margin),
         ])
     }
 
@@ -66,13 +92,67 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             bodyLabel.attributedText = rendered
         }
 
+        // Quick-reply chips: bender's [[CTA]] labels, sent as one-tap buttons.
+        roomId = info["roomId"] as? String
+        actionsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        let actions = (info["actions"] as? [String])?.prefix(3) ?? []
+        for action in actions {
+            actionsStack.addArrangedSubview(makeChipButton(title: action))
+        }
+        actionsStack.isHidden = actions.isEmpty
+
         // Content extensions are sized by UNNotificationExtensionInitialContent-
         // SizeRatio until told otherwise; without this the view can end up far
-        // shorter than its text.
+        // shorter than its content. Measure the whole stack (body + chips).
         let width = view.bounds.width > 0 ? view.bounds.width : UIScreen.main.bounds.width
-        let fitted = bodyLabel.sizeThatFits(
-            CGSize(width: width - Metrics.margin * 2, height: .greatestFiniteMagnitude))
+        let fitted = container.systemLayoutSizeFitting(
+            CGSize(width: width - Metrics.margin * 2, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
         preferredContentSize = CGSize(width: width, height: fitted.height + Metrics.margin * 2)
+    }
+
+    // MARK: - Quick replies
+
+    private func makeChipButton(title: String) -> UIButton {
+        var config = UIButton.Configuration.gray()
+        config.title = title
+        config.cornerStyle = .capsule
+        config.buttonSize = .small
+        config.titleLineBreakMode = .byTruncatingTail
+        let button = UIButton(configuration: config)
+        button.titleLabel?.adjustsFontSizeToFitWidth = true
+        button.titleLabel?.minimumScaleFactor = 0.8
+        button.addAction(UIAction { [weak self] _ in self?.send(title, from: button) }, for: .touchUpInside)
+        return button
+    }
+
+    /// POST the tapped label to the room in the background, reading the secret
+    /// from the shared App Group suite, then collapse the expanded view.
+    private func send(_ text: String, from button: UIButton) {
+        let suite = UserDefaults(suiteName: Shared.appGroup)
+        guard let secret = suite?.string(forKey: Shared.secret), !secret.isEmpty else { return }
+        let apiBase = suite?.string(forKey: Shared.apiBase) ?? Shared.defaultApiBase
+        let room = (roomId?.isEmpty == false ? roomId : nil)
+            ?? suite?.string(forKey: Shared.room) ?? Shared.defaultRoom
+        guard let url = URL(string: "\(apiBase)/api/send-message"),
+              let payload = try? JSONSerialization.data(withJSONObject:
+                ["room": room, "text": text, "source": "notification"]) else { return }
+
+        // Disable the row so a double-tap can't double-send.
+        actionsStack.arrangedSubviews.forEach { ($0 as? UIButton)?.isEnabled = false }
+        button.configuration?.showsActivityIndicator = true
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(secret, forHTTPHeaderField: "x-intent-secret")
+        req.httpBody = payload
+        req.timeoutInterval = 12
+        URLSession.shared.dataTask(with: req) { [weak self] _, _, _ in
+            DispatchQueue.main.async {
+                self?.extensionContext?.dismissNotificationContentExtension()
+            }
+        }.resume()
     }
 
     // MARK: - Markdown rendering

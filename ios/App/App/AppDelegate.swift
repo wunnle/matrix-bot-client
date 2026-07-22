@@ -170,7 +170,7 @@ final class NotificationActionRouter: NSObject, UNUserNotificationCenterDelegate
     private static func sendReply(text: String, room: String?) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let d = UserDefaults.standard
+        let d = IntentConfig.defaults
         // Only set once the app has run; a reply before first launch is dropped.
         guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
         let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
@@ -202,11 +202,18 @@ struct ListenIntent: AppIntent {
 }
 
 /// Config the app writes for background intents to read (they run without the
-/// webview, so they can't reach import.meta.env). Persisted in UserDefaults.
+/// webview, so they can't reach import.meta.env). Persisted in the shared App
+/// Group suite so extensions in their own processes (e.g. the notification
+/// content extension) can read the secret too, not just the app process.
 enum IntentConfig {
+    static let appGroup = "group.com.wunnle.construct"
     static let secret = "construct.intentSecret"
     static let apiBase = "construct.apiBase"
     static let room = "construct.defaultRoom"
+
+    /// Shared across the app and its extensions. Falls back to `.standard` if the
+    /// App Group container is somehow unavailable.
+    static var defaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
 }
 
 /// Registers an Activity's APNs push token with the server so `matrix-push.js`
@@ -274,7 +281,7 @@ private func awaitLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<
 /// device syslog on iOS 26, so the only reliable way to see what happened here
 /// is to surface it — currently into the Live Activity's own text.
 private func postLiveActivityToken(_ tokenData: Data, room: String, question: String = "") async -> String {
-    let d = UserDefaults.standard
+    let d = IntentConfig.defaults
     guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else {
         return "no-secret"
     }
@@ -293,7 +300,7 @@ private func postLiveActivityToken(_ tokenData: Data, room: String, question: St
 /// Clears the room's tokens once an activity ends, so the gateway stops pushing
 /// into a dismissed activity.
 private func clearLiveActivityTokens(room: String) async {
-    let d = UserDefaults.standard
+    let d = IntentConfig.defaults
     guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
     let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
     _ = await intentPost("\(apiBase)/api/live-activity", secret: secret,
@@ -346,7 +353,7 @@ private func intentGet(_ urlString: String, secret: String) async -> [String: An
 @available(iOS 16.2, *)
 private func reconcileLiveActivityTokens() async {
     guard Activity<ConstructActivityAttributes>.activities.allSatisfy({ $0.activityState != .active }) else { return }
-    let d = UserDefaults.standard
+    let d = IntentConfig.defaults
     guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
     let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
     guard let result = await intentGet("\(apiBase)/api/live-activity", secret: secret),
@@ -462,7 +469,7 @@ struct AskConstructIntent: AppIntent, LiveActivityIntent {
     init() {}
 
     func perform() async throws -> some IntentResult {
-        let d = UserDefaults.standard
+        let d = IntentConfig.defaults
         guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else {
             throw $message.needsValueError("Open Construct once to enable Shortcut sending.")
         }
@@ -504,7 +511,7 @@ struct QuickReplyIntent: AppIntent, LiveActivityIntent {
     func perform() async throws -> some IntentResult {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .result() }
-        let d = UserDefaults.standard
+        let d = IntentConfig.defaults
         guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return .result() }
         let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
         let room = roomId.isEmpty
@@ -535,7 +542,7 @@ struct SendScreenshotIntent: AppIntent, LiveActivityIntent {
     init() {}
 
     func perform() async throws -> some IntentResult {
-        let d = UserDefaults.standard
+        let d = IntentConfig.defaults
         guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else {
             throw $image.needsValueError("Open Construct once to enable Shortcut sending.")
         }
@@ -567,7 +574,7 @@ struct WatchConstructReplyIntent: AppIntent, LiveActivityIntent {
     init() {}
 
     func perform() async throws -> some IntentResult {
-        let d = UserDefaults.standard
+        let d = IntentConfig.defaults
         guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else {
             throw NSError(domain: "construct", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Open Construct once to enable this."])
@@ -749,7 +756,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     /// Persist the config the background AskConstructIntent needs (it has no
     /// access to the webview's env). Called once per launch from JS.
     @objc func saveIntentConfig(_ call: CAPPluginCall) {
-        let d = UserDefaults.standard
+        let d = IntentConfig.defaults
         if let s = call.getString("secret") { d.set(s, forKey: IntentConfig.secret) }
         if let a = call.getString("apiBase") { d.set(a, forKey: IntentConfig.apiBase) }
         if let r = call.getString("room") { d.set(r, forKey: IntentConfig.room) }

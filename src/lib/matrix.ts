@@ -9,6 +9,21 @@ export function getClient(): sdk.MatrixClient {
   return client
 }
 
+/**
+ * Force an immediate sync catch-up — call on app foreground. iOS suspends the
+ * WebView, killing the in-flight /sync long-poll; without this the SDK waits out
+ * a timeout + backoff before recovering, so the UI shows stale (cached) state
+ * for seconds after opening. retryImmediately() short-circuits that wait. No-op
+ * (returns false) if the client isn't started or the sync is already healthy.
+ */
+export function resyncNow(): boolean {
+  try {
+    return client?.retryImmediately() ?? false
+  } catch {
+    return false
+  }
+}
+
 export function destroyClient() {
   if (client) {
     client.stopClient()

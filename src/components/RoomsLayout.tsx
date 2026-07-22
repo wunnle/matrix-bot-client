@@ -9,7 +9,7 @@ import ConnectionBanner from './ConnectionBanner'
 import RoomToast from './RoomToast'
 import { useRoomNotifications } from '../hooks/useRoomNotifications'
 import { useVisualViewportVars } from '../hooks/useVisualViewport'
-import { getClient, getCachedRooms } from '../lib/matrix'
+import { getClient, getCachedRooms, resyncNow } from '../lib/matrix'
 import { getDictationAutoSend, setDictationAutoSend } from '../lib/clientSettings'
 import { resolveRoomIdFromParam } from '../lib/roomAliases'
 
@@ -103,11 +103,23 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
 
   useEffect(() => {
     if (!clientReady) return
+    // On foreground, force a sync catch-up before anything else: iOS suspended
+    // the WebView (killing the /sync long-poll), so without this the app shows
+    // stale cached state for seconds while the SDK waits out its backoff.
+    // Hooked to both signals — appStateChange is the reliable native one,
+    // visibilitychange also fires for web/tab cases.
+    const onForeground = () => { resyncNow(); fetchIntent() }
     const onVisible = () => {
-      if (document.visibilityState === 'visible') fetchIntent()
+      if (document.visibilityState === 'visible') onForeground()
     }
     document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
+    const sub = CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) onForeground()
+    })
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      void sub.then((s) => s.remove())
+    }
   }, [clientReady, fetchIntent])
 
   // Native deep links (construct://listen?room=...) — from the Control

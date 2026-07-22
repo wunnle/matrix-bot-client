@@ -414,6 +414,45 @@ struct AskConstructIntent: AppIntent, LiveActivityIntent {
     }
 }
 
+/// One-tap quick reply from a Live Activity button: sends the chip's text back
+/// to its room in the background — no app launch — over the same send-message
+/// route the notification reply uses. The widget target holds a no-op twin
+/// (ContructWidgetsLiveActivity.swift) that the button references; this copy is
+/// what actually performs, resolved by type name in the app's AppIntents
+/// metadata (same mechanism as ListenIntent).
+@available(iOS 17.0, *)
+struct QuickReplyIntent: AppIntent, LiveActivityIntent {
+    static let title: LocalizedStringResource = "Quick Reply"
+    static let description = IntentDescription("Send a suggested quick reply to Construct.")
+
+    @Parameter(title: "Text")
+    var text: String
+
+    // Empty falls back to the default room, matching the other intents.
+    @Parameter(title: "Room")
+    var roomId: String
+
+    init() {}
+    init(text: String, roomId: String) {
+        self.text = text
+        self.roomId = roomId
+    }
+
+    func perform() async throws -> some IntentResult {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .result() }
+        let d = UserDefaults.standard
+        guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return .result() }
+        let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
+        let room = roomId.isEmpty
+            ? (d.string(forKey: IntentConfig.room) ?? "!DpRWqhWOHJAxyvjOGI:matrix.org")
+            : roomId
+        _ = await intentPost("\(apiBase)/api/send-message", secret: secret,
+                             body: ["room": room, "text": trimmed, "source": "live-activity"])
+        return .result()
+    }
+}
+
 /// Shortcut entry point: send a screenshot (or any image) to Construct and
 /// surface bender's reply in a Live Activity — no app launch. Pair with the
 /// Shortcuts "Take Screenshot" action, which is the only thing that can capture
@@ -617,6 +656,11 @@ struct ConstructActivityAttributes: ActivityAttributes {
         var status: String
         var question: String = ""
         var detail: String
+        // Room the reply came from, so a quick-reply button can send back to it.
+        // Empty until the gateway's reply push fills it. Defaulted for decode.
+        var roomId: String = ""
+        // Bender's [[CTA]] chips, sent as one-tap QuickReplyIntent buttons.
+        var actions: [String] = []
     }
 
     var roomName: String

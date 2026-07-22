@@ -118,7 +118,7 @@ export default async function handler(req, res) {
   if (action === "test-push") {
     const { event = "update", detail = "test push", withDismissal = false,
             priority = 10, status: stateStatus = "Reply", alert = false,
-            question } = req.body;
+            question, actions = [], roomId: stateRoomId } = req.body;
     const rooms = await readRooms();
     const entry = rooms[roomId];
     if (!entry?.token) return res.status(200).json({ error: "no token registered for room" });
@@ -131,6 +131,8 @@ export default async function handler(req, res) {
         status: stateStatus,
         question: question ?? entry.question ?? "",
         detail,
+        roomId: stateRoomId ?? roomId,
+        actions: Array.isArray(actions) ? actions.slice(0, 3) : [],
       },
     };
     if (alert) aps.alert = { title: "Bender", body: detail.slice(0, 150), sound: "default" };

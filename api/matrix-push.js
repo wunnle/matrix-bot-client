@@ -61,6 +61,24 @@ function stripMarkdown(text) {
     .trim();
 }
 
+/* Bender marks quick-reply CTAs in the body as [[label]]. Mirror the web app's
+   parseActions (src/components/ChatView.tsx) so the Live Activity can render the
+   same one-tap buttons: pull the labels out and strip the markers from the text.
+   [[label]] / [[button]] are the doc-example placeholders and aren't real CTAs. */
+function parseActions(text) {
+  const actions = [];
+  const stripped = text
+    .replace(/\[\[([^\]]{1,40})\]\]/g, (match, label) => {
+      const t = label.trim().toLowerCase();
+      if (t === "label" || t === "button") return match;
+      actions.push(label.trim());
+      return "";
+    })
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+  return { text: stripped, actions };
+}
+
 function parseWebPushKey(pushkey) {
   try {
     const sub = JSON.parse(pushkey);
@@ -123,6 +141,10 @@ export default async function handler(req, res) {
     // stale-date is pushed forward on every update so the activity dims only
     // after a genuine lull rather than 15 minutes after the ask.
     const nowSec = Math.floor(Date.now() / 1000);
+    // Pull any [[CTA]] chips out of the reply: the labels become tap-to-send
+    // buttons in the Live Activity (QuickReplyIntent), and the marker-free text
+    // is what the banner shows. Cap the buttons to what fits the banner/island.
+    const { text: replyText, actions } = parseActions(body);
     const payload = {
       aps: {
         timestamp: nowSec,
@@ -131,7 +153,14 @@ export default async function handler(req, res) {
         // Keys must match ConstructActivityAttributes.ContentState exactly —
         // a mismatch is dropped silently by ActivityKit. `question` is echoed
         // from the registry so it stays visible (faded) above the reply.
-        "content-state": { status: "Reply", question: entry.question || "", detail: body.slice(0, 300) },
+        // `roomId` rides along so a button can send back to this room.
+        "content-state": {
+          status: "Reply",
+          question: entry.question || "",
+          detail: replyText.slice(0, 300),
+          roomId: room_id,
+          actions: actions.slice(0, 3),
+        },
         // An `alert` block turns this into an alerting update: iOS plays sound
         // and a haptic and surfaces the activity prominently (Dynamic Island
         // expands) instead of updating it silently. The push-payload equivalent
@@ -139,7 +168,7 @@ export default async function handler(req, res) {
         // suspended.
         alert: {
           title: title,
-          body: body.slice(0, 150),
+          body: replyText.slice(0, 150),
           sound: "default",
         },
       },

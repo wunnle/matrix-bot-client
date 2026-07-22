@@ -60,13 +60,16 @@ const PIN_LONG_PRESS_MS = 500
 const PIN_MOVE_CANCEL_PX = 10
 const MENU_DISMISS_GRACE_MS = 350
 
-// Our swipe-back gesture is only useful in standalone/PWA mode. In a
-// regular browser (iOS Safari, most Android browsers) the OS/browser
-// already provides an edge-swipe-back whose animation fights ours and
-// makes the transition feel glitchy. Detect once at module load.
-const isStandalonePwa =
+// Our swipe-back gesture is only useful where nothing else owns the edge
+// swipe. In a regular browser (iOS Safari, most Android browsers) the
+// OS/browser already provides an edge-swipe-back whose animation fights
+// ours and makes the transition feel glitchy. Enable it in the native app
+// (Capacitor WKWebView has no back gesture of its own) and in an installed
+// PWA. Detect once at module load.
+const enableSwipeBack =
   typeof window !== 'undefined' &&
-  (window.matchMedia?.('(display-mode: standalone)').matches ||
+  (Capacitor.isNativePlatform() ||
+    window.matchMedia?.('(display-mode: standalone)').matches ||
     // iOS-specific standalone flag (non-standard, still used)
     (navigator as unknown as { standalone?: boolean }).standalone === true)
 
@@ -1307,8 +1310,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   return (
     <div
       className="chat-view"
-      onTouchStart={isStandalonePwa ? handleTouchStart : undefined}
-      onTouchEnd={isStandalonePwa ? handleTouchEnd : undefined}
+      onTouchStart={enableSwipeBack ? handleTouchStart : undefined}
+      onTouchEnd={enableSwipeBack ? handleTouchEnd : undefined}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}

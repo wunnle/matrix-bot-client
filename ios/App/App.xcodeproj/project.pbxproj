@@ -18,6 +18,7 @@
 		9E039D3E300AA852005980AA /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9E039D3D300AA852005980AA /* WidgetKit.framework */; };
 		9E039D40300AA852005980AA /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9E039D3F300AA852005980AA /* SwiftUI.framework */; };
 		9E039D51300AA854005980AA /* ContructWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9E039D3B300AA851005980AA /* ContructWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9E039E8F30118779005980AA /* ContructShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9E039E8530118779005980AA /* ContructShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A100000D300AA900005980AA /* ConstructNotificationContent.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A1000002300AA900005980AA /* ConstructNotificationContent.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -28,6 +29,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 9E039D3A300AA851005980AA;
 			remoteInfo = ContructWidgetsExtension;
+		};
+		9E039E8D30118779005980AA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9E039E8430118779005980AA;
+			remoteInfo = ContructShare;
 		};
 		A100000B300AA900005980AA /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -47,6 +55,7 @@
 			files = (
 				9E039D51300AA854005980AA /* ContructWidgetsExtension.appex in Embed Foundation Extensions */,
 				A100000D300AA900005980AA /* ConstructNotificationContent.appex in Embed Foundation Extensions */,
+				9E039E8F30118779005980AA /* ContructShare.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -67,6 +76,7 @@
 		9E039D3B300AA851005980AA /* ContructWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ContructWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		9E039D3D300AA852005980AA /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		9E039D3F300AA852005980AA /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		9E039E8530118779005980AA /* ContructShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ContructShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000002300AA900005980AA /* ConstructNotificationContent.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ConstructNotificationContent.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -77,6 +87,13 @@
 				Info.plist,
 			);
 			target = 9E039D3A300AA851005980AA /* ContructWidgetsExtension */;
+		};
+		9E039E9230118779005980AA /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 9E039E8430118779005980AA /* ContructShare */;
 		};
 		A100000A300AA900005980AA /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -89,6 +106,7 @@
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		9E039D41300AA852005980AA /* ContructWidgets */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (9E039D52300AA854005980AA /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ContructWidgets; sourceTree = "<group>"; };
+		9E039E8630118779005980AA /* ContructShare */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (9E039E9230118779005980AA /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ContructShare; sourceTree = "<group>"; };
 		A1000009300AA900005980AA /* ConstructNotificationContent */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (A100000A300AA900005980AA /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ConstructNotificationContent; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
@@ -110,6 +128,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9E039E8230118779005980AA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A1000007300AA900005980AA /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -127,6 +152,7 @@
 				504EC3061FED79650016851F /* App */,
 				9E039D41300AA852005980AA /* ContructWidgets */,
 				A1000009300AA900005980AA /* ConstructNotificationContent */,
+				9E039E8630118779005980AA /* ContructShare */,
 				9E039D3C300AA851005980AA /* Frameworks */,
 				504EC3051FED79650016851F /* Products */,
 			);
@@ -138,6 +164,7 @@
 				504EC3041FED79650016851F /* App.app */,
 				9E039D3B300AA851005980AA /* ContructWidgetsExtension.appex */,
 				A1000002300AA900005980AA /* ConstructNotificationContent.appex */,
+				9E039E8530118779005980AA /* ContructShare.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -183,6 +210,7 @@
 			dependencies = (
 				9E039D50300AA854005980AA /* PBXTargetDependency */,
 				A100000C300AA900005980AA /* PBXTargetDependency */,
+				9E039E8E30118779005980AA /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -212,6 +240,28 @@
 			);
 			productName = ContructWidgetsExtension;
 			productReference = 9E039D3B300AA851005980AA /* ContructWidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		9E039E8430118779005980AA /* ContructShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9E039E9330118779005980AA /* Build configuration list for PBXNativeTarget "ContructShare" */;
+			buildPhases = (
+				9E039E8130118779005980AA /* Sources */,
+				9E039E8230118779005980AA /* Frameworks */,
+				9E039E8330118779005980AA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				9E039E8630118779005980AA /* ContructShare */,
+			);
+			name = ContructShare;
+			packageProductDependencies = (
+			);
+			productName = ContructShare;
+			productReference = 9E039E8530118779005980AA /* ContructShare.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		A1000001300AA900005980AA /* ConstructNotificationContent */ = {
@@ -253,6 +303,9 @@
 					9E039D3A300AA851005980AA = {
 						CreatedOnToolsVersion = 26.6;
 					};
+					9E039E8430118779005980AA = {
+						CreatedOnToolsVersion = 26.6;
+					};
 					A1000001300AA900005980AA = {
 						CreatedOnToolsVersion = 26.6;
 					};
@@ -277,6 +330,7 @@
 				504EC3031FED79650016851F /* App */,
 				9E039D3A300AA851005980AA /* ContructWidgetsExtension */,
 				A1000001300AA900005980AA /* ConstructNotificationContent */,
+				9E039E8430118779005980AA /* ContructShare */,
 			);
 		};
 /* End PBXProject section */
@@ -296,6 +350,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		9E039D39300AA851005980AA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9E039E8330118779005980AA /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -327,6 +388,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9E039E8130118779005980AA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A1000006300AA900005980AA /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -341,6 +409,11 @@
 			isa = PBXTargetDependency;
 			target = 9E039D3A300AA851005980AA /* ContructWidgetsExtension */;
 			targetProxy = 9E039D4F300AA854005980AA /* PBXContainerItemProxy */;
+		};
+		9E039E8E30118779005980AA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9E039E8430118779005980AA /* ContructShare */;
+			targetProxy = 9E039E8D30118779005980AA /* PBXContainerItemProxy */;
 		};
 		A100000C300AA900005980AA /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -608,15 +681,97 @@
 			};
 			name = Release;
 		};
+		9E039E9030118779005980AA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 92P3G6TJP3;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				CODE_SIGN_ENTITLEMENTS = ContructShare/ContructShare.entitlements;
+				INFOPLIST_FILE = ContructShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Construct;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wunnle.construct.ContructShare;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		9E039E9130118779005980AA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 92P3G6TJP3;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				CODE_SIGN_ENTITLEMENTS = ContructShare/ContructShare.entitlements;
+				INFOPLIST_FILE = ContructShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Construct;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wunnle.construct.ContructShare;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		A1000004300AA900005980AA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_ENTITLEMENTS = ConstructNotificationContent/ConstructNotificationContent.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 92P3G6TJP3;
 				GENERATE_INFOPLIST_FILE = YES;
-				CODE_SIGN_ENTITLEMENTS = ConstructNotificationContent/ConstructNotificationContent.entitlements;
 				INFOPLIST_FILE = ConstructNotificationContent/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Construct;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -646,11 +801,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_ENTITLEMENTS = ConstructNotificationContent/ConstructNotificationContent.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 92P3G6TJP3;
 				GENERATE_INFOPLIST_FILE = YES;
-				CODE_SIGN_ENTITLEMENTS = ConstructNotificationContent/ConstructNotificationContent.entitlements;
 				INFOPLIST_FILE = ConstructNotificationContent/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Construct;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -701,6 +856,15 @@
 			buildConfigurations = (
 				9E039D54300AA854005980AA /* Debug */,
 				9E039D55300AA854005980AA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9E039E9330118779005980AA /* Build configuration list for PBXNativeTarget "ContructShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9E039E9030118779005980AA /* Debug */,
+				9E039E9130118779005980AA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

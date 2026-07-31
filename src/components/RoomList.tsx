@@ -114,7 +114,10 @@ export default function RoomList({
     const sig = enabled.map(r => `${r.roomId}:${r.name}`).join('|')
     if (sig === donatedSigRef.current) return
     donatedSigRef.current = sig
-    void donateShareTargets(enabled.map(r => ({ roomId: r.roomId, name: r.name, avatarMxc: r.avatarMxc })))
+    void donateShareTargets(
+      enabled.map(r => ({ roomId: r.roomId, name: r.name, avatarMxc: r.avatarMxc })),
+      [...disabled],
+    )
   }, [rooms, auth.userId])
 
   // Resolve room avatars

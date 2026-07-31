@@ -768,11 +768,15 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             let avatar = (room["avatar"] as? String).flatMap { Data(base64Encoded: $0) }
             return (roomId, name, avatar)
         }
+        // Rooms turned off in Settings — delete just these by group id rather
+        // than deleteAll'ing (which wiped every suggestion + its avatar and
+        // reset iOS's ranking on every app open).
+        let remove = call.getArray("remove", String.self) ?? []
         call.resolve()
         DispatchQueue.global(qos: .utility).async {
-            // Resync: drop previous donations so rooms the user turned off in
-            // Settings stop appearing, then donate the current enabled set.
-            INInteraction.deleteAll { _ in }
+            if !remove.isEmpty { INInteraction.delete(with: remove) { _ in } }
+            // Re-donating the same groupIdentifier updates that room's donation
+            // in place (refreshing its avatar) without disturbing the others.
             for (roomId, name, avatar) in items {
                 let intent = INSendMessageIntent(
                     recipients: nil,

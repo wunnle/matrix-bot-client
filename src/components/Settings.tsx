@@ -23,6 +23,7 @@ export default function Settings({ auth }: { auth: AuthState }) {
     setDisabledShareRooms(auth.userId, next)
     void donateShareTargets(
       rooms.filter(r => !next.has(r.roomId)).map(r => ({ roomId: r.roomId, name: r.name, avatarMxc: r.avatarMxc })),
+      [...next],
     )
   }
 

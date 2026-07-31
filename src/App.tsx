@@ -6,6 +6,7 @@ import type { AuthState } from './types'
 import LoginScreen from './components/LoginScreen'
 import MicDemo from './components/MicDemo'
 import RoomsLayout from './components/RoomsLayout'
+import Settings from './components/Settings'
 import DebugOverlay from './components/DebugOverlay'
 import { usePushNotifications } from './hooks/usePushNotifications'
 import { saveIntentConfig } from './lib/liveActivity'
@@ -58,6 +59,10 @@ export default function App() {
       <Route
         path="/rooms/:roomId"
         element={auth ? <RoomsLayout auth={auth} onSignOut={handleSignOut} /> : <Navigate to="/" replace />}
+      />
+      <Route
+        path="/settings"
+        element={auth ? <Settings auth={auth} /> : <Navigate to="/" replace />}
       />
       <Route path="/mic-demo" element={<MicDemo />} />
       <Route path="*" element={<Navigate to="/" replace />} />

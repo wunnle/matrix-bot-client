@@ -762,14 +762,18 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func donateShareTargets(_ call: CAPPluginCall) {
         // Pull the values on the bridge thread, then donate off the main thread
         // — donating a dozen intents inline was hitching the UI.
-        let items: [(String, String)] = (call.getArray("rooms", JSObject.self) ?? []).compactMap { room in
+        let items: [(String, String, Data?)] = (call.getArray("rooms", JSObject.self) ?? []).compactMap { room in
             guard let roomId = room["roomId"] as? String, !roomId.isEmpty,
                   let name = room["name"] as? String, !name.isEmpty else { return nil }
-            return (roomId, name)
+            let avatar = (room["avatar"] as? String).flatMap { Data(base64Encoded: $0) }
+            return (roomId, name, avatar)
         }
         call.resolve()
         DispatchQueue.global(qos: .utility).async {
-            for (roomId, name) in items {
+            // Resync: drop previous donations so rooms the user turned off in
+            // Settings stop appearing, then donate the current enabled set.
+            INInteraction.deleteAll { _ in }
+            for (roomId, name, avatar) in items {
                 let intent = INSendMessageIntent(
                     recipients: nil,
                     outgoingMessageType: .outgoingMessageText,
@@ -780,6 +784,9 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                     sender: nil,
                     attachments: nil
                 )
+                if let avatar {
+                    intent.setImage(INImage(imageData: avatar), forParameterNamed: \.speakableGroupName)
+                }
                 let interaction = INInteraction(intent: intent, response: nil)
                 interaction.groupIdentifier = roomId
                 interaction.donate(completion: nil)

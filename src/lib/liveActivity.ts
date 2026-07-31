@@ -1,4 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
+import { getClient } from './matrix'
+import { resolveMediaBase64 } from './mediaUrl'
 
 /**
  * Live Activity (Dynamic Island / lock screen) bridge — native iOS only.
@@ -17,7 +19,7 @@ interface LiveActivityPlugin {
   update(options: { status: string; detail?: string; question?: string }): Promise<void>
   end(options?: { roomId?: string }): Promise<void>
   saveIntentConfig(options: { secret: string; apiBase: string; room: string }): Promise<void>
-  donateShareTargets(options: { rooms: { roomId: string; name: string }[] }): Promise<void>
+  donateShareTargets(options: { rooms: { roomId: string; name: string; avatar?: string }[] }): Promise<void>
 }
 
 const plugin = registerPlugin<LiveActivityPlugin>('LiveActivity')
@@ -43,9 +45,18 @@ export async function saveIntentConfig(room: string): Promise<void> {
  * in the share sheet's suggestions row. The Share Extension reads the picked
  * room from the intent. No-op off native.
  */
-export async function donateShareTargets(rooms: { roomId: string; name: string }[]): Promise<void> {
+export async function donateShareTargets(rooms: { roomId: string; name: string; avatarMxc?: string }[]): Promise<void> {
   if (!Capacitor.isNativePlatform() || rooms.length === 0) return
-  await plugin.donateShareTargets({ rooms: rooms.slice(0, 12) }).catch(() => {})
+  let client: ReturnType<typeof getClient> | null
+  try { client = getClient() } catch { client = null }
+  const payload = await Promise.all(rooms.slice(0, 12).map(async r => ({
+    roomId: r.roomId,
+    name: r.name,
+    avatar: client && r.avatarMxc
+      ? (await resolveMediaBase64(client, r.avatarMxc, 96, 96, 'crop')) ?? undefined
+      : undefined,
+  })))
+  await plugin.donateShareTargets({ rooms: payload }).catch(() => {})
 }
 
 /** Raw plugin access — errors propagate. For diagnostics/tests. */

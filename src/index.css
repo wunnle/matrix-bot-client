@@ -2481,3 +2481,88 @@ a.msg-card-link:hover {
   padding: 4px 0 6px;
   border-top: 1px solid rgba(0,0,0,0.08);
 }
+
+/* ── Settings screen ─────────────────────────────────────────────────── */
+.settings-screen {
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  padding: max(env(safe-area-inset-top), 12px) 16px calc(env(safe-area-inset-bottom) + 24px);
+}
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0 16px;
+}
+.settings-back {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.settings-back:hover { background: var(--bg-hover); }
+.settings-title { font-size: 20px; font-weight: 600; margin: 0; }
+.settings-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+}
+.settings-section-title { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+.settings-section-hint { font-size: 13px; color: var(--text-muted); margin: 0 0 12px; }
+.settings-empty { font-size: 13px; color: var(--text-faint); margin: 0; }
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+.settings-row-label {
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* iOS-style switch (shared by settings + profile-menu toggles). */
+.settings-row-toggle,
+.user-menu-toggle-input {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 51px;
+  height: 31px;
+  margin: 0;
+  border-radius: 16px;
+  background: var(--bg-active);
+  transition: background 0.2s ease;
+  cursor: pointer;
+}
+.settings-row-toggle::after,
+.user-menu-toggle-input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s ease;
+}
+.settings-row-toggle:checked,
+.user-menu-toggle-input:checked { background: #34c759; }
+.settings-row-toggle:checked::after,
+.user-menu-toggle-input:checked::after { transform: translateX(20px); }
+.settings-row-toggle:disabled,
+.user-menu-toggle-input:disabled { opacity: 0.5; }

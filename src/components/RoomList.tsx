@@ -5,8 +5,10 @@ import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@d
 import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
 import { fetchJoinedRooms, getCachedRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, getRoomUnreadCount, type RoomSummary } from '../lib/matrix'
+import { useNavigate } from 'react-router-dom'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { donateShareTargets } from '../lib/liveActivity'
+import { getDisabledShareRooms } from '../lib/shareRooms'
 import NotificationCenter from './NotificationCenter'
 import { toggleDebug } from '../lib/debug'
 import type { RoomNotification } from '../hooks/useRoomNotifications'
@@ -82,6 +84,7 @@ export default function RoomList({
   const [profileOpen, setProfileOpen] = useState(false)
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null)
   const profileRef = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate()
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -99,17 +102,20 @@ export default function RoomList({
       .catch((e) => { setError(e.message); setLoading(false); onReady() })
   }, [auth])
 
-  // Donate rooms as share-sheet direct-share targets (native iOS only). Only
-  // re-donate when the set of rooms or their names changes — `rooms` also
-  // updates on every unread/timestamp change, and re-donating each time hitches.
+  // Donate rooms as share-sheet direct-share targets (native iOS only), minus
+  // any the user turned off in Settings. Only re-donate when the enabled set or
+  // their names change — `rooms` also updates on every unread/timestamp change,
+  // and re-donating each time hitches.
   const donatedSigRef = useRef('')
   useEffect(() => {
     if (rooms.length === 0) return
-    const sig = rooms.map(r => `${r.roomId}:${r.name}`).join('|')
+    const disabled = getDisabledShareRooms(auth.userId)
+    const enabled = rooms.filter(r => !disabled.has(r.roomId))
+    const sig = enabled.map(r => `${r.roomId}:${r.name}`).join('|')
     if (sig === donatedSigRef.current) return
     donatedSigRef.current = sig
-    void donateShareTargets(rooms.map(r => ({ roomId: r.roomId, name: r.name })))
-  }, [rooms])
+    void donateShareTargets(enabled.map(r => ({ roomId: r.roomId, name: r.name, avatarMxc: r.avatarMxc })))
+  }, [rooms, auth.userId])
 
   // Resolve room avatars
   useEffect(() => {
@@ -386,6 +392,9 @@ export default function RoomList({
                 }
               }}>
                 Debug notifications
+              </button>
+              <button className="user-menu-item" onClick={() => navigate('/settings')}>
+                Settings
               </button>
               <button className="user-menu-item" onClick={() => window.location.reload()}>
                 Reload app

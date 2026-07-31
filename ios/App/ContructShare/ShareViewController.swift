@@ -17,6 +17,7 @@ import UIKit
 import Social
 import UniformTypeIdentifiers
 import ImageIO
+import Intents
 
 class ShareViewController: SLComposeServiceViewController {
 
@@ -111,10 +112,17 @@ class ShareViewController: SLComposeServiceViewController {
 
     private var suite: UserDefaults? { UserDefaults(suiteName: Shared.appGroup) }
 
+    /// If launched from a share-sheet suggestion (a donated room), that room's
+    /// id rides in on the intent's conversationIdentifier; otherwise nil and we
+    /// fall back to the default room.
+    private var pickedRoomId: String? {
+        (extensionContext?.intent as? INSendMessageIntent)?.conversationIdentifier
+    }
+
     private func creds() -> (secret: String, apiBase: String, room: String)? {
         guard let secret = suite?.string(forKey: Shared.secret), !secret.isEmpty else { return nil }
         let apiBase = suite?.string(forKey: Shared.apiBase) ?? Shared.defaultApiBase
-        let room = suite?.string(forKey: Shared.room) ?? Shared.defaultRoom
+        let room = pickedRoomId ?? suite?.string(forKey: Shared.room) ?? Shared.defaultRoom
         return (secret, apiBase, room)
     }
 

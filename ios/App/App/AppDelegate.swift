@@ -5,6 +5,7 @@ import Speech
 import AVFoundation
 import AppIntents
 import UniformTypeIdentifiers
+import Intents
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -750,8 +751,41 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "update", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "saveIntentConfig", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "saveIntentConfig", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "donateShareTargets", returnType: CAPPluginReturnPromise)
     ]
+
+    /// Donate an INSendMessageIntent per room so iOS surfaces the rooms as
+    /// direct-share targets (avatars + names) in the share sheet's suggestions
+    /// row. The share extension reads the picked room from the intent's
+    /// conversationIdentifier. Called from JS with the current room list.
+    @objc func donateShareTargets(_ call: CAPPluginCall) {
+        // Pull the values on the bridge thread, then donate off the main thread
+        // — donating a dozen intents inline was hitching the UI.
+        let items: [(String, String)] = (call.getArray("rooms", JSObject.self) ?? []).compactMap { room in
+            guard let roomId = room["roomId"] as? String, !roomId.isEmpty,
+                  let name = room["name"] as? String, !name.isEmpty else { return nil }
+            return (roomId, name)
+        }
+        call.resolve()
+        DispatchQueue.global(qos: .utility).async {
+            for (roomId, name) in items {
+                let intent = INSendMessageIntent(
+                    recipients: nil,
+                    outgoingMessageType: .outgoingMessageText,
+                    content: nil,
+                    speakableGroupName: INSpeakableString(spokenPhrase: name),
+                    conversationIdentifier: roomId,
+                    serviceName: nil,
+                    sender: nil,
+                    attachments: nil
+                )
+                let interaction = INInteraction(intent: intent, response: nil)
+                interaction.groupIdentifier = roomId
+                interaction.donate(completion: nil)
+            }
+        }
+    }
 
     /// Persist the config the background AskConstructIntent needs (it has no
     /// access to the webview's env). Called once per launch from JS.

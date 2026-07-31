@@ -6,6 +6,7 @@ import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
 import { fetchJoinedRooms, getCachedRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, getRoomUnreadCount, type RoomSummary } from '../lib/matrix'
 import { resolveMediaUrl } from '../lib/mediaUrl'
+import { donateShareTargets } from '../lib/liveActivity'
 import NotificationCenter from './NotificationCenter'
 import { toggleDebug } from '../lib/debug'
 import type { RoomNotification } from '../hooks/useRoomNotifications'
@@ -97,6 +98,18 @@ export default function RoomList({
       })
       .catch((e) => { setError(e.message); setLoading(false); onReady() })
   }, [auth])
+
+  // Donate rooms as share-sheet direct-share targets (native iOS only). Only
+  // re-donate when the set of rooms or their names changes — `rooms` also
+  // updates on every unread/timestamp change, and re-donating each time hitches.
+  const donatedSigRef = useRef('')
+  useEffect(() => {
+    if (rooms.length === 0) return
+    const sig = rooms.map(r => `${r.roomId}:${r.name}`).join('|')
+    if (sig === donatedSigRef.current) return
+    donatedSigRef.current = sig
+    void donateShareTargets(rooms.map(r => ({ roomId: r.roomId, name: r.name })))
+  }, [rooms])
 
   // Resolve room avatars
   useEffect(() => {

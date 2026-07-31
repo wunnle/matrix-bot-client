@@ -17,6 +17,7 @@ interface LiveActivityPlugin {
   update(options: { status: string; detail?: string; question?: string }): Promise<void>
   end(options?: { roomId?: string }): Promise<void>
   saveIntentConfig(options: { secret: string; apiBase: string; room: string }): Promise<void>
+  donateShareTargets(options: { rooms: { roomId: string; name: string }[] }): Promise<void>
 }
 
 const plugin = registerPlugin<LiveActivityPlugin>('LiveActivity')
@@ -35,6 +36,16 @@ export async function saveIntentConfig(room: string): Promise<void> {
     apiBase: 'https://construct.kafagoz.com',
     room,
   }).catch(() => {})
+}
+
+/**
+ * Donate the user's rooms as direct-share targets so they appear (with names)
+ * in the share sheet's suggestions row. The Share Extension reads the picked
+ * room from the intent. No-op off native.
+ */
+export async function donateShareTargets(rooms: { roomId: string; name: string }[]): Promise<void> {
+  if (!Capacitor.isNativePlatform() || rooms.length === 0) return
+  await plugin.donateShareTargets({ rooms: rooms.slice(0, 12) }).catch(() => {})
 }
 
 /** Raw plugin access — errors propagate. For diagnostics/tests. */

@@ -43,9 +43,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // activity, so a stale token doesn't keep suppressing this room's
         // notifications.
         if #available(iOS 16.2, *) { Task { await reconcileLiveActivityTokens() } }
-        // On Mac (Designed for iPad), suppress the blank software keyboard that
-        // pops up for web inputs. No-op on iPhone/iPad.
-        if #available(iOS 14.0, *) { suppressMacSoftwareKeyboardOnce() }
+        // Hide the assistant/"language" bar on iPad + Mac (and the blank software
+        // keyboard on Mac). No-op on iPhone.
+        if #available(iOS 14.0, *) { configureWebKeyboardOnce() }
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -205,33 +205,62 @@ struct ListenIntent: AppIntent {
     }
 }
 
-/// iPad apps on a Mac pop a blank software keyboard whenever a WKWebView input
-/// is focused (there's no touch keyboard to actually use). Swizzle WebKit's
-/// private content view so its `inputView` is an empty zero-size view — the
-/// keyboard collapses to nothing while the hardware keyboard still types.
+/// Web-keyboard tweaks for the larger-screen idioms, applied by swizzling
+/// WebKit's private content view once. iPhone is left completely untouched.
 ///
-/// Strictly gated to `isiOSAppOnMac`, so nothing changes on a real device.
-private var didSuppressMacKeyboard = false
+/// - iPad (and Mac): drop the `inputAccessoryView` — the assistant/"language"
+///   bar that otherwise floats over the composer with a hardware keyboard.
+///   Native apps like Messages hide it too.
+/// - Mac only: also replace `inputView` with an empty zero-size view, so the
+///   blank software keyboard (useless with no touch input) collapses. The
+///   hardware keyboard still types.
+private var didConfigureWebKeyboard = false
 @available(iOS 14.0, *)
-private func suppressMacSoftwareKeyboardOnce() {
-    guard !didSuppressMacKeyboard,
-          ProcessInfo.processInfo.isiOSAppOnMac,
-          let cls = NSClassFromString("WKContentView") else { return }
-    didSuppressMacKeyboard = true
+private func configureWebKeyboardOnce() {
+    guard !didConfigureWebKeyboard, let cls = NSClassFromString("WKContentView") else { return }
+    let isMac = ProcessInfo.processInfo.isiOSAppOnMac
+    let isPad = UIDevice.current.userInterfaceIdiom == .pad
+    guard isPad || isMac else { return }   // iPhone unaffected
+    didConfigureWebKeyboard = true
 
-    let emptyInputView = UIView(frame: .zero)
-    let inputBlock: @convention(block) (AnyObject) -> UIView? = { _ in emptyInputView }
-    let inputSel = NSSelectorFromString("inputView")
-    if let m = class_getInstanceMethod(cls, inputSel) {
-        method_setImplementation(m, imp_implementationWithBlock(inputBlock))
-    } else {
-        class_addMethod(cls, inputSel, imp_implementationWithBlock(inputBlock), "@@:")
-    }
-
-    let accessoryBlock: @convention(block) (AnyObject) -> UIView? = { _ in nil }
+    // An empty zero-size view is more reliable than nil: returning nil lets iOS
+    // fall back to the default assistant bar on a fresh input session (e.g.
+    // after switching rooms), whereas an empty view stays empty.
+    let emptyAccessory = UIView(frame: .zero)
+    let accessoryBlock: @convention(block) (AnyObject) -> UIView? = { _ in emptyAccessory }
     let accessorySel = NSSelectorFromString("inputAccessoryView")
     if let m = class_getInstanceMethod(cls, accessorySel) {
         method_setImplementation(m, imp_implementationWithBlock(accessoryBlock))
+    } else {
+        class_addMethod(cls, accessorySel, imp_implementationWithBlock(accessoryBlock), "@@:")
+    }
+
+    // The iPad hardware-keyboard shortcuts bar (undo/redo + the language
+    // selector) is the `inputAssistantItem`, repopulated on later input
+    // sessions — so the accessory swizzle alone let it come back after the first
+    // focus. Empty its button groups on every fetch to keep it hidden.
+    let assistantSel = NSSelectorFromString("inputAssistantItem")
+    if let m = class_getInstanceMethod(cls, assistantSel) {
+        typealias AssistantGetter = @convention(c) (AnyObject, Selector) -> UITextInputAssistantItem
+        let original = unsafeBitCast(method_getImplementation(m), to: AssistantGetter.self)
+        let assistantBlock: @convention(block) (AnyObject) -> UITextInputAssistantItem = { receiver in
+            let item = original(receiver, assistantSel)
+            item.leadingBarButtonGroups = []
+            item.trailingBarButtonGroups = []
+            return item
+        }
+        method_setImplementation(m, imp_implementationWithBlock(assistantBlock))
+    }
+
+    if isMac {
+        let emptyInputView = UIView(frame: .zero)
+        let inputBlock: @convention(block) (AnyObject) -> UIView? = { _ in emptyInputView }
+        let inputSel = NSSelectorFromString("inputView")
+        if let m = class_getInstanceMethod(cls, inputSel) {
+            method_setImplementation(m, imp_implementationWithBlock(inputBlock))
+        } else {
+            class_addMethod(cls, inputSel, imp_implementationWithBlock(inputBlock), "@@:")
+        }
     }
 }
 

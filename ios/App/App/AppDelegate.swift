@@ -43,6 +43,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // activity, so a stale token doesn't keep suppressing this room's
         // notifications.
         if #available(iOS 16.2, *) { Task { await reconcileLiveActivityTokens() } }
+        // On Mac (Designed for iPad), suppress the blank software keyboard that
+        // pops up for web inputs. No-op on iPhone/iPad.
+        if #available(iOS 14.0, *) { suppressMacSoftwareKeyboardOnce() }
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -199,6 +202,36 @@ struct ListenIntent: AppIntent {
             await UIApplication.shared.open(url)
         }
         return .result()
+    }
+}
+
+/// iPad apps on a Mac pop a blank software keyboard whenever a WKWebView input
+/// is focused (there's no touch keyboard to actually use). Swizzle WebKit's
+/// private content view so its `inputView` is an empty zero-size view — the
+/// keyboard collapses to nothing while the hardware keyboard still types.
+///
+/// Strictly gated to `isiOSAppOnMac`, so nothing changes on a real device.
+private var didSuppressMacKeyboard = false
+@available(iOS 14.0, *)
+private func suppressMacSoftwareKeyboardOnce() {
+    guard !didSuppressMacKeyboard,
+          ProcessInfo.processInfo.isiOSAppOnMac,
+          let cls = NSClassFromString("WKContentView") else { return }
+    didSuppressMacKeyboard = true
+
+    let emptyInputView = UIView(frame: .zero)
+    let inputBlock: @convention(block) (AnyObject) -> UIView? = { _ in emptyInputView }
+    let inputSel = NSSelectorFromString("inputView")
+    if let m = class_getInstanceMethod(cls, inputSel) {
+        method_setImplementation(m, imp_implementationWithBlock(inputBlock))
+    } else {
+        class_addMethod(cls, inputSel, imp_implementationWithBlock(inputBlock), "@@:")
+    }
+
+    let accessoryBlock: @convention(block) (AnyObject) -> UIView? = { _ in nil }
+    let accessorySel = NSSelectorFromString("inputAccessoryView")
+    if let m = class_getInstanceMethod(cls, accessorySel) {
+        method_setImplementation(m, imp_implementationWithBlock(accessoryBlock))
     }
 }
 
@@ -752,8 +785,16 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "update", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "saveIntentConfig", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "donateShareTargets", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "donateShareTargets", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "isMacApp", returnType: CAPPluginReturnPromise)
     ]
+
+    /// True when this iPad app is running on a Mac (Designed for iPad). The web
+    /// layer uses it to scale the mobile-first UI up and hide the phantom
+    /// software keyboard.
+    @objc func isMacApp(_ call: CAPPluginCall) {
+        call.resolve(["value": ProcessInfo.processInfo.isiOSAppOnMac])
+    }
 
     /// Donate an INSendMessageIntent per room so iOS surfaces the rooms as
     /// direct-share targets (avatars + names) in the share sheet's suggestions

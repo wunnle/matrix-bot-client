@@ -2566,3 +2566,8 @@ a.msg-card-link:hover {
 .user-menu-toggle-input:checked::after { transform: translateX(20px); }
 .settings-row-toggle:disabled,
 .user-menu-toggle-input:disabled { opacity: 0.5; }
+
+/* iPad app running on a Mac (Designed for iPad). `zoom` here breaks the
+   composer (its position is computed from JS visual-viewport measurements that
+   aren't zoom-aware), so scaling the whole UI up needs a proper responsive pass
+   rather than a blunt zoom. The .mac-app class is kept for the keyboard tweak. */

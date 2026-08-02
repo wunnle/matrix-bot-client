@@ -8,8 +8,9 @@ import MicDemo from './components/MicDemo'
 import RoomsLayout from './components/RoomsLayout'
 import Settings from './components/Settings'
 import DebugOverlay from './components/DebugOverlay'
+import { Keyboard } from '@capacitor/keyboard'
 import { usePushNotifications } from './hooks/usePushNotifications'
-import { saveIntentConfig } from './lib/liveActivity'
+import { saveIntentConfig, isMacApp } from './lib/liveActivity'
 import './App.css'
 
 // Default room the "Ask Construct" Shortcut targets (Bender).
@@ -27,6 +28,13 @@ export default function App() {
     if (stored) setAuth(stored)
     setReady(true)
     void saveIntentConfig(DEFAULT_INTENT_ROOM)
+    // Running as an iPad app on a Mac: scale the mobile-first UI up and stop the
+    // phantom software keyboard's accessory bar from popping up over inputs.
+    void isMacApp().then(mac => {
+      if (!mac) return
+      document.documentElement.classList.add('mac-app')
+      Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => {})
+    })
   }, [])
 
   function handleLogin(a: AuthState) {

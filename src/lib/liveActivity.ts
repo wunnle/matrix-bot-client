@@ -20,6 +20,7 @@ interface LiveActivityPlugin {
   end(options?: { roomId?: string }): Promise<void>
   saveIntentConfig(options: { secret: string; apiBase: string; room: string }): Promise<void>
   donateShareTargets(options: { rooms: { roomId: string; name: string; avatar?: string }[]; remove?: string[] }): Promise<void>
+  isMacApp(): Promise<{ value: boolean }>
 }
 
 const plugin = registerPlugin<LiveActivityPlugin>('LiveActivity')
@@ -60,6 +61,16 @@ export async function donateShareTargets(
       : undefined,
   })))
   await plugin.donateShareTargets({ rooms: payload, remove: removeRoomIds }).catch(() => {})
+}
+
+/** True when running as an iPad app on a Mac (Designed for iPad). */
+export async function isMacApp(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false
+  try {
+    return (await plugin.isMacApp()).value
+  } catch {
+    return false
+  }
 }
 
 /** Raw plugin access — errors propagate. For diagnostics/tests. */

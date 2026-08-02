@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { AuthState } from '../types'
-import { getCachedRooms } from '../lib/matrix'
+import { getCachedRooms, isInvite } from '../lib/matrix'
 import { getDisabledShareRooms, setDisabledShareRooms } from '../lib/shareRooms'
 import { donateShareTargets } from '../lib/liveActivity'
 
@@ -12,7 +12,11 @@ import { donateShareTargets } from '../lib/liveActivity'
  */
 export default function Settings({ auth }: { auth: AuthState }) {
   const navigate = useNavigate()
-  const rooms = useMemo(() => getCachedRooms(auth.userId) ?? [], [auth.userId])
+  // Pending invites can't be share targets — you haven't joined them yet.
+  const rooms = useMemo(
+    () => (getCachedRooms(auth.userId) ?? []).filter((r) => !isInvite(r)),
+    [auth.userId],
+  )
   const [disabled, setDisabled] = useState<Set<string>>(() => getDisabledShareRooms(auth.userId))
 
   function toggle(roomId: string) {

@@ -1,10 +1,10 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
-import { fetchJoinedRooms, getCachedRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, getRoomUnreadCount, type RoomSummary } from '../lib/matrix'
+import { fetchJoinedRooms, getCachedRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, getRoomUnreadCount, isInvite, acceptInvite, declineInvite, toRoomSummary, type RoomSummary } from '../lib/matrix'
 import { useNavigate } from 'react-router-dom'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { donateShareTargets } from '../lib/liveActivity'
@@ -62,6 +62,30 @@ const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar
   )
 })
 
+const InviteCard = memo(function InviteCard({ room, busy, onAccept, onDecline }: {
+  room: RoomSummary
+  busy: boolean
+  onAccept: (roomId: string, name: string) => void
+  onDecline: (roomId: string) => void
+}) {
+  return (
+    <div className="invite-card">
+      <div className="invite-card-name">{room.name}</div>
+      {room.invitedBy && (
+        <div className="invite-card-from">from {shortUserId(room.invitedBy)}</div>
+      )}
+      <div className="invite-card-actions">
+        <button disabled={busy} onClick={() => onAccept(room.roomId, room.name)}>
+          {busy ? '…' : 'Accept'}
+        </button>
+        <button disabled={busy} className="invite-card-decline" onClick={() => onDecline(room.roomId)}>
+          Decline
+        </button>
+      </div>
+    </div>
+  )
+})
+
 export default function RoomList({
   auth,
   activeRoomId,
@@ -85,6 +109,11 @@ export default function RoomList({
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null)
   const profileRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  const [invitesBusy, setInvitesBusy] = useState<Record<string, boolean>>({})
+  const [inviteError, setInviteError] = useState('')
+
+  const invites = useMemo(() => rooms.filter(isInvite), [rooms])
+  const joinedRooms = useMemo(() => rooms.filter((r) => !isInvite(r)), [rooms])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -108,9 +137,10 @@ export default function RoomList({
   // and re-donating each time hitches.
   const donatedSigRef = useRef('')
   useEffect(() => {
-    if (rooms.length === 0) return
+    if (joinedRooms.length === 0) return
     const disabled = getDisabledShareRooms(auth.userId)
-    const enabled = rooms.filter(r => !disabled.has(r.roomId))
+    // Invites are excluded: you cannot send to a room you have not joined.
+    const enabled = joinedRooms.filter(r => !disabled.has(r.roomId))
     const sig = enabled.map(r => `${r.roomId}:${r.name}`).join('|')
     if (sig === donatedSigRef.current) return
     donatedSigRef.current = sig
@@ -118,7 +148,7 @@ export default function RoomList({
       enabled.map(r => ({ roomId: r.roomId, name: r.name, avatarMxc: r.avatarMxc })),
       [...disabled],
     )
-  }, [rooms, auth.userId])
+  }, [joinedRooms, auth.userId])
 
   // Resolve room avatars
   useEffect(() => {
@@ -295,6 +325,53 @@ export default function RoomList({
     })
   }, [activeRoomId])
 
+  // Keep the list in step with invites arriving, being accepted, or being
+  // revoked while the app is open.
+  useEffect(() => {
+    if (loading) return
+    let client: ReturnType<typeof getClient>
+    try { client = getClient() } catch { return }
+
+    const onMembership = (room: sdk.Room, membership: string) => {
+      setRooms((prev) => {
+        const without = prev.filter((r) => r.roomId !== room.roomId)
+        if (membership !== 'join' && membership !== 'invite') return without
+        const summary = toRoomSummary(room, auth.userId)
+        // Newly joined rooms keep their place; new invites go to the front.
+        return membership === 'invite' ? [summary, ...without] : [...without, summary]
+      })
+    }
+
+    client.on(sdk.RoomEvent.MyMembership, onMembership)
+    return () => { client.off(sdk.RoomEvent.MyMembership, onMembership) }
+  }, [loading, auth.userId])
+
+  async function handleAcceptInvite(roomId: string, name: string) {
+    setInviteError('')
+    setInvitesBusy((p) => ({ ...p, [roomId]: true }))
+    try {
+      await acceptInvite(roomId)
+      // MyMembership fires on join and refreshes the entry; open it right away.
+      onSelectRoom(roomId, name)
+    } catch (e) {
+      setInviteError((e as Error).message ?? 'Could not join room')
+    } finally {
+      setInvitesBusy((p) => ({ ...p, [roomId]: false }))
+    }
+  }
+
+  async function handleDeclineInvite(roomId: string) {
+    setInviteError('')
+    setInvitesBusy((p) => ({ ...p, [roomId]: true }))
+    try {
+      await declineInvite(roomId)
+    } catch (e) {
+      setInviteError((e as Error).message ?? 'Could not decline invite')
+    } finally {
+      setInvitesBusy((p) => ({ ...p, [roomId]: false }))
+    }
+  }
+
   function handleDragEnd(event: { active: { id: string | number }, over: { id: string | number } | null }) {
     const { active, over } = event
     if (!over || active.id === over.id) return
@@ -323,10 +400,28 @@ export default function RoomList({
         )}
         {error && <p className="error">{error}</p>}
 
+        {invites.length > 0 && (
+          <div className="invite-section">
+            <div className="invite-section-label">
+              {invites.length === 1 ? 'Invitation' : `${invites.length} invitations`}
+            </div>
+            {invites.map((room) => (
+              <InviteCard
+                key={room.roomId}
+                room={room}
+                busy={invitesBusy[room.roomId] ?? false}
+                onAccept={handleAcceptInvite}
+                onDecline={handleDeclineInvite}
+              />
+            ))}
+            {inviteError && <p className="error">{inviteError}</p>}
+          </div>
+        )}
+
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={rooms.map(r => r.roomId)} strategy={rectSortingStrategy}>
+          <SortableContext items={joinedRooms.map(r => r.roomId)} strategy={rectSortingStrategy}>
             <div className="room-grid">
-              {rooms.map((room) => (
+              {joinedRooms.map((room) => (
                 <SortableRoomCard
                   key={room.roomId}
                   room={room}

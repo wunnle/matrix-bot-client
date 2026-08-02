@@ -39,6 +39,22 @@ export interface RoomSummary {
   lastTs?: number
   unreadCount: number
   avatarMxc?: string
+  // Absent in caches written before invites were supported — treat as 'join'.
+  membership?: 'join' | 'invite'
+  // Who sent the invite, for 'invite' rooms only.
+  invitedBy?: string
+}
+
+export function isInvite(room: RoomSummary): boolean {
+  return room.membership === 'invite'
+}
+
+export async function acceptInvite(roomId: string): Promise<void> {
+  await getClient().joinRoom(roomId)
+}
+
+export async function declineInvite(roomId: string): Promise<void> {
+  await getClient().leave(roomId)
 }
 
 // Count unread messages using the local read receipt position rather than
@@ -65,23 +81,33 @@ function getRooms(c: sdk.MatrixClient, userId: string): RoomSummary[] {
   return c.getRooms()
     .filter((room) => {
       const createEvent = room.currentState.getStateEvents('m.room.create', '')
-      return createEvent?.getContent()?.type !== 'm.space'
+      if (createEvent?.getContent()?.type === 'm.space') return false
+      const membership = room.getMyMembership()
+      return membership === 'join' || membership === 'invite'
     })
-    .map((room) => {
-      const timeline = room.getLiveTimeline().getEvents()
-      const last = [...timeline].reverse().find((e) => e.getType() === 'm.room.message')
-      const avatarEvent = room.currentState.getStateEvents('m.room.avatar', '')
-      const avatarMxc = avatarEvent?.getContent()?.url ?? undefined
-      return {
-        roomId: room.roomId,
-        name: room.name,
-        lastMessage: last?.getContent()?.body,
-        lastTs: last?.getTs(),
-        unreadCount: getRoomUnreadCount(room, userId),
-        avatarMxc,
-      }
-    })
+    .map((room) => toRoomSummary(room, userId))
     .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export function toRoomSummary(room: sdk.Room, userId: string): RoomSummary {
+  const invited = room.getMyMembership() === 'invite'
+  const timeline = room.getLiveTimeline().getEvents()
+  const last = [...timeline].reverse().find((e) => e.getType() === 'm.room.message')
+  const avatarEvent = room.currentState.getStateEvents('m.room.avatar', '')
+  const avatarMxc = avatarEvent?.getContent()?.url ?? undefined
+  return {
+    roomId: room.roomId,
+    name: room.name,
+    lastMessage: invited ? undefined : last?.getContent()?.body,
+    lastTs: invited ? undefined : last?.getTs(),
+    // An unjoined room has no readable timeline, so a count would be meaningless.
+    unreadCount: invited ? 0 : getRoomUnreadCount(room, userId),
+    avatarMxc,
+    membership: invited ? 'invite' : 'join',
+    invitedBy: invited
+      ? room.currentState.getStateEvents('m.room.member', userId)?.getSender()
+      : undefined,
+  }
 }
 
 // Derive a stable 32-byte key deterministically from userId+deviceId.

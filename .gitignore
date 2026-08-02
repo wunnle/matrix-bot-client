@@ -14,6 +14,7 @@ dist-ssr
 scripts/.env
 scripts/.pingpong-store-*
 scripts/.echo-bot-store
+scripts/.claude-bot-store
 scripts/.late-joiner-*
 scripts/.multimsg-store-*
 scripts/.resume-store-*

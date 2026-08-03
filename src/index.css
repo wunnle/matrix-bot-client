@@ -1405,6 +1405,30 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   -webkit-tap-highlight-color: transparent;
 }
 
+.message-ctx-menu-meta {
+  padding: 8px 14px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  /* The menu is only as wide as its widest item; a long display name should
+     ellipsize rather than stretch the whole menu. */
+  max-width: 240px;
+}
+
+.message-ctx-menu-sender {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-ctx-menu-sent {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: 1px;
+}
+
 .message-ctx-menu-item {
   display: block;
   width: 100%;

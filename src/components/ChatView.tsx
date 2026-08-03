@@ -261,7 +261,9 @@ function openPinContextMenu(
   clearLongPress()
   const pad = 8
   const mw = 180
-  const mh = 80
+  // Approximate menu height used only to keep it on screen: sender/time header
+  // + reaction row + Copy/Inspect/Pin.
+  const mh = 210
   const x = Math.min(window.innerWidth - mw - pad, Math.max(pad, clientX - mw / 2))
   const y = Math.min(window.innerHeight - mh - pad, Math.max(pad, clientY + 4))
   const now = Date.now()
@@ -1201,6 +1203,22 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     longPressStartRef.current = null
   }, [])
 
+  // Sender + send time shown at the top of the message context menu. Resolved
+  // from the live event rather than threaded through the open handlers, so it
+  // stays correct for edited and late-decrypted messages.
+  const messageMenuMeta = useMemo(() => {
+    if (!messageMenu) return null
+    const room = client.getRoom(roomId)
+    const ev = room?.findEventById(messageMenu.eventId)
+    if (!ev) return null
+    const sender = ev.getSender() ?? ''
+    return {
+      name: room?.getMember(sender)?.name || shortUserId(sender),
+      userId: sender,
+      sentAt: formatSentAt(ev.getTs()),
+    }
+  }, [messageMenu, roomId])
+
   const showMessageMenuAt = useCallback(
     (eventId: string, body: string, clientX: number, clientY: number) => {
       openPinContextMenu(
@@ -1692,6 +1710,14 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           role="menu"
           onPointerDown={(e) => e.stopPropagation()}
         >
+          {messageMenuMeta && (
+            <div className="message-ctx-menu-meta">
+              <div className="message-ctx-menu-sender" title={messageMenuMeta.userId}>
+                {messageMenuMeta.name}
+              </div>
+              <div className="message-ctx-menu-sent">{messageMenuMeta.sentAt}</div>
+            </div>
+          )}
           <div className="message-ctx-menu-reactions">
             {['✅', '❎'].map(emoji => (
               <button
@@ -2172,6 +2198,17 @@ function sameDay(a: number, b: number): boolean {
   return da.getFullYear() === db.getFullYear() &&
     da.getMonth() === db.getMonth() &&
     da.getDate() === db.getDate()
+}
+
+// "Today at 14:23" / "3 August at 14:23" — reuses formatDate so the day label
+// reads the same as the timeline's date dividers.
+function formatSentAt(ts: number): string {
+  const time = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return `${formatDate(ts)} at ${time}`
+}
+
+function shortUserId(userId: string): string {
+  return userId.replace(/^@/, '').split(':')[0] ?? userId
 }
 
 function formatDate(ts: number): string {

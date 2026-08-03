@@ -622,6 +622,30 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [roomId, userId, client])
 
+  // Last resort for the model tag. In an encrypted room, history is often
+  // decrypted during sync before this component mounts, so the Decrypted
+  // listener never fires for it and the open-time scan sees only ciphertext.
+  // Deriving from the rendered list re-runs on every update, so it does not
+  // depend on catching any particular event at the right moment.
+  const scannedModel = useMemo(() => {
+    const room = client.getRoom(roomId)
+    if (!room) return null
+    const events = room.getLiveTimeline().getEvents()
+    for (let i = events.length - 1; i >= 0; i--) {
+      const ev = events[i]
+      if (ev.getSender() === userId) continue
+      const tagged = ev.getContent()?.['com.construct.model']
+      if (typeof tagged === 'string' && tagged) return tagged
+    }
+    return null
+  }, [messages, roomId, userId])
+
+  const shownModel = currentModel ?? scannedModel
+
+  useEffect(() => {
+    if (scannedModel) setRoomModel(roomId, scannedModel)
+  }, [scannedModel, roomId])
+
   // Compute bot info reactively — members may be lazy-loaded. Listen on
   // room.currentState rather than the client so we don't wake up for
   // every member change in every other joined room.
@@ -1385,9 +1409,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 : (roomTopic || (bot?.name ?? null))}
             </span>
           </div>
-          {currentModel && (
-            <span className="chat-header-model" title={`Model: ${currentModel}`}>
-              {currentModel}
+          {shownModel && (
+            <span className="chat-header-model" title={`Model: ${shownModel}`}>
+              {shownModel}
             </span>
           )}
           {pinnedEventIds.length > 0 && (

@@ -17,8 +17,9 @@ const { calculateKeyCheck } = await import('matrix-js-sdk/lib/secret-storage.js'
 const HOMESERVER = process.env.HOMESERVER
 const USER_ID = process.env.USER_ID_C ?? process.env.USER_ID_B
 const PASSWORD = process.env.PASSWORD_C ?? process.env.PASSWORD_B
-// Who gets invited to spawned rooms.
-const OWNER_ID = process.env.USER_ID
+// Who gets invited to spawned rooms. Deliberately NOT USER_ID — that is a bot
+// account in this .env, not the human, so spawned rooms would invite a bot.
+const OWNER_ID = process.env.AGENT_OWNER_ID ?? '@wunnle:matrix.org'
 // cwd for rooms that were not spawned with an explicit path.
 const DEFAULT_CWD = process.env.AGENT_CWD ?? path.join(os.homedir(), 'matrix-pwa')
 

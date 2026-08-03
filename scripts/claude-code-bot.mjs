@@ -232,16 +232,14 @@ function askForApproval(roomId, { toolName, summary }) {
 
     const timer = setTimeout(() => {
       pendingApprovals.delete(roomId)
-      client.sendTextMessage(roomId, `⏱️ No answer — denied \`${toolName}\`.`).catch(() => {})
+      sendRoomText(roomId,`⏱️ No answer — denied \`${toolName}\`.`).catch(() => {})
       resolve({ decision: 'deny', reason: 'Timed out waiting for approval.' })
     }, APPROVAL_TIMEOUT_MS)
 
     pendingApprovals.set(roomId, { resolve, timer })
 
     const body = `🔐 Approve \`${toolName}\`?\n\n${summary}\n\n[[Approve]] [[Deny]]`
-    client.sendMessage(roomId, {
-      msgtype: 'm.text',
-      body,
+    sendRoomText(roomId, body, {
       format: 'org.matrix.custom.html',
       formatted_body:
         `<p>🔐 Approve <code>${escapeHtml(toolName)}</code>?</p>` +
@@ -251,6 +249,20 @@ function askForApproval(roomId, { toolName, summary }) {
       // If we can't ask, we must not proceed as though we had.
       settleApproval(roomId, 'deny', `Could not post the approval request: ${e.message}`)
     })
+  })
+}
+
+// Construct reads com.construct.model off incoming messages and shows it in the
+// chat header (see ChatView.tsx). Hermes tags its messages the same way, so
+// agent rooms get the model indicator for free — including rooms spawned before
+// the model was part of the room name.
+function sendRoomText(roomId, text, extra = {}) {
+  const model = sessions[roomId]?.model
+  return client.sendMessage(roomId, {
+    msgtype: 'm.text',
+    body: text,
+    ...(model ? { 'com.construct.model': model } : {}),
+    ...extra,
   })
 }
 
@@ -412,14 +424,14 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     const arg = parts.join(' ')
     const cwd = arg ? path.resolve(arg.replace(/^~/, os.homedir())) : DEFAULT_CWD
     if (!fs.existsSync(cwd)) {
-      await client.sendTextMessage(roomId, `No such directory: ${cwd}`)
+      await sendRoomText(roomId,`No such directory: ${cwd}`)
       return
     }
     try {
       await spawnRoom(cwd, model)
-      await client.sendTextMessage(roomId, `Spawned agent room for ${cwd} on ${model} — check your invites.`)
+      await sendRoomText(roomId,`Spawned agent room for ${cwd} on ${model} — check your invites.`)
     } catch (e) {
-      await client.sendTextMessage(roomId, `Spawn failed: ${e.message}`)
+      await sendRoomText(roomId,`Spawn failed: ${e.message}`)
     }
     return
   }
@@ -428,22 +440,22 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   if (body.startsWith('!model')) {
     const entry = sessions[roomId]
     if (!entry) {
-      await client.sendTextMessage(roomId, 'Not an agent room.')
+      await sendRoomText(roomId,'Not an agent room.')
       return
     }
     const arg = body.slice('!model'.length).trim()
     if (!arg) {
-      await client.sendTextMessage(roomId, `Model: ${entry.model ?? DEFAULT_MODEL}`)
+      await sendRoomText(roomId,`Model: ${entry.model ?? DEFAULT_MODEL}`)
       return
     }
     const resolved = resolveModel(arg)
     if (!resolved) {
-      await client.sendTextMessage(roomId, `Unknown model "${arg}". Try: ${Object.keys(MODEL_ALIASES).join(', ')}`)
+      await sendRoomText(roomId,`Unknown model "${arg}". Try: ${Object.keys(MODEL_ALIASES).join(', ')}`)
       return
     }
     entry.model = resolved
     saveSessions()
-    await client.sendTextMessage(roomId, `Model set to ${resolved} — takes effect on your next message.`)
+    await sendRoomText(roomId,`Model set to ${resolved} — takes effect on your next message.`)
     return
   }
 
@@ -455,19 +467,19 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   const answer = body.toLowerCase()
   if (answer === 'approve' || answer === 'yes' || answer === 'y') {
     if (settleApproval(roomId, 'allow', 'Approved in chat.')) {
-      await client.sendTextMessage(roomId, '✅ Approved — continuing.')
+      await sendRoomText(roomId,'✅ Approved — continuing.')
       return
     }
   }
   if (answer === 'deny' || answer === 'no' || answer === 'n') {
     if (settleApproval(roomId, 'deny', 'Denied in chat.')) {
-      await client.sendTextMessage(roomId, '🚫 Denied.')
+      await sendRoomText(roomId,'🚫 Denied.')
       return
     }
   }
 
   if (busy.has(roomId)) {
-    await client.sendTextMessage(roomId, 'Still working on the previous message — hold on.')
+    await sendRoomText(roomId,'Still working on the previous message — hold on.')
     return
   }
   busy.add(roomId)
@@ -480,9 +492,9 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
 
   try {
     const res = await runClaude(roomId, body)
-    await client.sendTextMessage(roomId, res.error ? `⚠️ ${res.error}` : res.text)
+    await sendRoomText(roomId,res.error ? `⚠️ ${res.error}` : res.text)
   } catch (e) {
-    await client.sendTextMessage(roomId, `⚠️ ${e.message}`).catch(() => {})
+    await sendRoomText(roomId,`⚠️ ${e.message}`).catch(() => {})
   } finally {
     clearInterval(keepAlive)
     await client.sendTyping(roomId, false).catch(() => {})

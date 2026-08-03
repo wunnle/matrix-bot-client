@@ -5,6 +5,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
+import * as http from 'node:http'
 import { execFile } from 'node:child_process'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
@@ -31,6 +32,19 @@ const MODEL_ALIASES = {
   fable: 'claude-fable-5',
 }
 const DEFAULT_MODEL = process.env.AGENT_MODEL ?? MODEL_ALIASES.opus
+
+// Loopback only — the broker decides what the agent may do, so it must not be
+// reachable from anywhere but the hook running on this host.
+const APPROVAL_PORT = Number(process.env.AGENT_APPROVAL_PORT ?? 8787)
+const APPROVAL_TIMEOUT_MS = Number(process.env.AGENT_APPROVAL_TIMEOUT_MS ?? 10 * 60 * 1000)
+const HOOK_PATH = path.join(import.meta.dirname, 'claude-approval-hook.mjs')
+const APPROVAL_SETTINGS = JSON.stringify({
+  hooks: {
+    PreToolUse: [
+      { matcher: '*', hooks: [{ type: 'command', command: `node ${HOOK_PATH}` }] },
+    ],
+  },
+})
 
 function resolveModel(name) {
   const key = name.toLowerCase()
@@ -187,6 +201,101 @@ client.on(sdk.RoomEvent.MyMembership, async (room, membership) => {
   }
 })
 
+// roomId -> { resolve, timer }. At most one outstanding approval per room:
+// Claude is blocked inside the hook, so it cannot ask a second question.
+const pendingApprovals = new Map()
+
+function roomForSession(sessionId) {
+  return Object.keys(sessions).find((id) => sessions[id].sessionId === sessionId)
+}
+
+// Resolves a room's outstanding approval, if any. Returns false when there was
+// nothing pending, so the caller can treat the message as an ordinary prompt.
+function settleApproval(roomId, decision, reason) {
+  const pending = pendingApprovals.get(roomId)
+  if (!pending) return false
+  clearTimeout(pending.timer)
+  pendingApprovals.delete(roomId)
+  pending.resolve({ decision, reason })
+  return true
+}
+
+// Blocks the hook's HTTP request until the human answers in the room.
+function askForApproval(roomId, { toolName, summary }) {
+  return new Promise((resolve) => {
+    // A second request for a room that is already waiting would strand the
+    // first; refuse rather than lose track of it.
+    if (pendingApprovals.has(roomId)) {
+      resolve({ decision: 'deny', reason: 'Another approval is already pending in this room.' })
+      return
+    }
+
+    const timer = setTimeout(() => {
+      pendingApprovals.delete(roomId)
+      client.sendTextMessage(roomId, `⏱️ No answer — denied \`${toolName}\`.`).catch(() => {})
+      resolve({ decision: 'deny', reason: 'Timed out waiting for approval.' })
+    }, APPROVAL_TIMEOUT_MS)
+
+    pendingApprovals.set(roomId, { resolve, timer })
+
+    const body = `🔐 Approve \`${toolName}\`?\n\n${summary}\n\n[[Approve]] [[Deny]]`
+    client.sendMessage(roomId, {
+      msgtype: 'm.text',
+      body,
+      format: 'org.matrix.custom.html',
+      formatted_body:
+        `<p>🔐 Approve <code>${escapeHtml(toolName)}</code>?</p>` +
+        `<pre><code>${escapeHtml(summary)}</code></pre>` +
+        '<p>[[Approve]] [[Deny]]</p>',
+    }).catch((e) => {
+      // If we can't ask, we must not proceed as though we had.
+      settleApproval(roomId, 'deny', `Could not post the approval request: ${e.message}`)
+    })
+  })
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function startApprovalBroker() {
+  const server = http.createServer((req, res) => {
+    if (req.method !== 'POST' || !req.url.startsWith('/approve')) {
+      res.writeHead(404).end()
+      return
+    }
+    let raw = ''
+    req.on('data', (c) => { raw += c })
+    req.on('end', async () => {
+      let payload
+      try { payload = JSON.parse(raw) } catch {
+        res.writeHead(400, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ decision: 'deny', reason: 'Malformed approval request.' }))
+        return
+      }
+      const roomId = roomForSession(payload.sessionId)
+      if (!roomId) {
+        // No room means no one to ask — the safe answer is no.
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ decision: 'deny', reason: 'No Matrix room is bound to this session.' }))
+        return
+      }
+      log(`[${roomId}] approval requested: ${payload.toolName} — ${payload.summary}`)
+      const result = await askForApproval(roomId, payload)
+      log(`[${roomId}] approval ${result.decision}: ${payload.toolName}`)
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(result))
+    })
+  })
+  server.listen(APPROVAL_PORT, '127.0.0.1', () => {
+    log(`Approval broker on 127.0.0.1:${APPROVAL_PORT}`)
+  })
+  server.on('error', (e) => {
+    log(`Approval broker failed: ${e.message} — tool calls needing approval will be denied.`)
+  })
+}
+
 // Runs one Claude Code turn, resuming the room's session if it has one.
 function runClaude(roomId, prompt) {
   const entry = sessions[roomId] ?? { sessionId: null, cwd: DEFAULT_CWD, model: DEFAULT_MODEL }
@@ -196,14 +305,25 @@ function runClaude(roomId, prompt) {
     '--output-format', 'json',
     '--permission-mode', 'acceptEdits',
     '--model', model,
+    // The PreToolUse hook is the real gate; see claude-approval-hook.mjs.
+    '--settings', APPROVAL_SETTINGS,
   ]
   if (entry.sessionId) args.push('--resume', entry.sessionId)
 
   return new Promise((resolve) => {
     execFile('claude', args, {
       cwd: entry.cwd,
-      timeout: 15 * 60 * 1000,
+      // A turn can now block on a human answering an approval, so this must
+      // exceed the approval timeout rather than race it.
+      timeout: APPROVAL_TIMEOUT_MS + 15 * 60 * 1000,
       maxBuffer: 32 * 1024 * 1024,
+      // The hook runs as a grandchild of this process; hand it the broker
+      // address so an overridden port stays consistent.
+      env: {
+        ...process.env,
+        AGENT_APPROVAL_URL: `http://127.0.0.1:${APPROVAL_PORT}/approve`,
+        AGENT_APPROVAL_TIMEOUT_MS: String(APPROVAL_TIMEOUT_MS),
+      },
     }, (err, stdout, stderr) => {
       if (err && !stdout) return resolve({ error: stderr?.trim() || err.message })
       try {
@@ -330,6 +450,22 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   // Only act as an agent in rooms that were spawned as agent rooms.
   if (!sessions[roomId]) return
 
+  // Approval answers must be handled before the busy check — the room is always
+  // busy when one is outstanding, since the turn is blocked inside the hook.
+  const answer = body.toLowerCase()
+  if (answer === 'approve' || answer === 'yes' || answer === 'y') {
+    if (settleApproval(roomId, 'allow', 'Approved in chat.')) {
+      await client.sendTextMessage(roomId, '✅ Approved — continuing.')
+      return
+    }
+  }
+  if (answer === 'deny' || answer === 'no' || answer === 'n') {
+    if (settleApproval(roomId, 'deny', 'Denied in chat.')) {
+      await client.sendTextMessage(roomId, '🚫 Denied.')
+      return
+    }
+  }
+
   if (busy.has(roomId)) {
     await client.sendTextMessage(roomId, 'Still working on the previous message — hold on.')
     return
@@ -353,6 +489,8 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     busy.delete(roomId)
   }
 })
+
+startApprovalBroker()
 
 log(`Listening… default cwd: ${DEFAULT_CWD}, model: ${DEFAULT_MODEL}.`)
 log('Send "!spawn [path] [model]" to create an agent room; "!model [name]" inside one to switch.')

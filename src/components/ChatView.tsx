@@ -461,6 +461,22 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const room = client.getRoom(roomId)
     if (!room) return
 
+    // The listener below only sees events that arrive while the room is open,
+    // so a room opened cold showed no model until the bot happened to reply
+    // again. Recover it from the most recent tagged message already loaded.
+    const harvestModel = (events: sdk.MatrixEvent[]) => {
+      for (let i = events.length - 1; i >= 0; i--) {
+        const ev = events[i]
+        if (ev.getSender() === userId) continue
+        const tagged = ev.getContent()?.['com.construct.model']
+        if (typeof tagged === 'string' && tagged) {
+          setRoomModel(roomId, tagged)
+          setCurrentModel(tagged)
+          return
+        }
+      }
+    }
+
     // Block rendering until we have a stable first batch to avoid jump cascades.
     const populate = (msgs: ReturnType<typeof eventsToMessages>) => {
       setMessages(msgs)
@@ -469,11 +485,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
     const existing = room.getLiveTimeline().getEvents()
     if (existing.length >= 20) {
+      harvestModel(existing)
       populate(eventsToMessages(existing, userId, room))
     } else {
-      client.scrollback(room, 20)
-        .then(() => populate(eventsToMessages(room.getLiveTimeline().getEvents(), userId, room)))
-        .catch(() => populate(eventsToMessages(room.getLiveTimeline().getEvents(), userId, room)))
+      const load = () => {
+        const events = room.getLiveTimeline().getEvents()
+        harvestModel(events)
+        populate(eventsToMessages(events, userId, room))
+      }
+      client.scrollback(room, 20).then(load).catch(load)
     }
 
     const onEvent = (event: sdk.MatrixEvent, room_: sdk.Room | undefined) => {
@@ -525,6 +545,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         client.getCrypto()?.checkKeyBackupAndEnable().catch(() => {})
       }
       const room_ = client.getRoom(roomId)
+      // History loaded before decryption finished carries no readable tag, so
+      // pick the model up here once the content is actually available.
+      if (event.getSender() !== userId) {
+        const tagged = event.getContent()?.['com.construct.model']
+        if (typeof tagged === 'string' && tagged) {
+          setRoomModel(roomId, tagged)
+          setCurrentModel(tagged)
+        }
+      }
       const maxReadTs = room_ ? getMaxReadTs(room_, userId) : 0
       const decrypted = eventToMessage(event, userId, maxReadTs)
       const rel = event.getRelation()

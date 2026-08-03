@@ -23,6 +23,23 @@ const OWNER_ID = process.env.AGENT_OWNER_ID ?? '@wunnle:matrix.org'
 // cwd for rooms that were not spawned with an explicit path.
 const DEFAULT_CWD = process.env.AGENT_CWD ?? path.join(os.homedir(), 'matrix-pwa')
 
+// Short names accepted in !spawn / !model, mapped to the exact CLI model ids.
+const MODEL_ALIASES = {
+  opus: 'claude-opus-5',
+  sonnet: 'claude-sonnet-5',
+  haiku: 'claude-haiku-4-5',
+  fable: 'claude-fable-5',
+}
+const DEFAULT_MODEL = process.env.AGENT_MODEL ?? MODEL_ALIASES.opus
+
+function resolveModel(name) {
+  const key = name.toLowerCase()
+  // Accept a bare alias or a full id; anything else is rejected by the caller.
+  if (MODEL_ALIASES[key]) return MODEL_ALIASES[key]
+  if (Object.values(MODEL_ALIASES).includes(key)) return key
+  return null
+}
+
 if (!HOMESERVER || !USER_ID || !PASSWORD) {
   console.error('Missing HOMESERVER, USER_ID_C/USER_ID_B, or PASSWORD_C/PASSWORD_B in env')
   process.exit(1)
@@ -154,7 +171,7 @@ await new Promise((resolve, reject) => {
 log('Ready. Joined rooms:')
 client.getRooms().filter((r) => r.getMyMembership() === 'join').forEach((r) => {
   const s = sessions[r.roomId]
-  log(`  ${r.roomId}  ${r.name}${s ? `  [${s.cwd}]` : ''}`)
+  log(`  ${r.roomId}  ${r.name}${s ? `  [${s.cwd} · ${s.model ?? DEFAULT_MODEL}]` : ''}`)
 })
 
 // Auto-accept invites
@@ -172,8 +189,14 @@ client.on(sdk.RoomEvent.MyMembership, async (room, membership) => {
 
 // Runs one Claude Code turn, resuming the room's session if it has one.
 function runClaude(roomId, prompt) {
-  const entry = sessions[roomId] ?? { sessionId: null, cwd: DEFAULT_CWD }
-  const args = ['-p', prompt, '--output-format', 'json', '--permission-mode', 'acceptEdits']
+  const entry = sessions[roomId] ?? { sessionId: null, cwd: DEFAULT_CWD, model: DEFAULT_MODEL }
+  const model = entry.model ?? DEFAULT_MODEL
+  const args = [
+    '-p', prompt,
+    '--output-format', 'json',
+    '--permission-mode', 'acceptEdits',
+    '--model', model,
+  ]
   if (entry.sessionId) args.push('--resume', entry.sessionId)
 
   return new Promise((resolve) => {
@@ -186,7 +209,7 @@ function runClaude(roomId, prompt) {
       try {
         const out = JSON.parse(stdout)
         if (out.session_id) {
-          sessions[roomId] = { sessionId: out.session_id, cwd: entry.cwd }
+          sessions[roomId] = { sessionId: out.session_id, cwd: entry.cwd, model }
           saveSessions()
         }
         resolve({ text: out.result ?? '(no output)', isError: out.is_error })
@@ -198,11 +221,19 @@ function runClaude(roomId, prompt) {
 }
 
 // Creates a fresh agent room bound to `cwd` and invites the owner.
-async function spawnRoom(cwd) {
+// Short alias for a resolved model id, for display.
+function modelLabel(model) {
+  return Object.keys(MODEL_ALIASES).find((k) => MODEL_ALIASES[k] === model) ?? model
+}
+
+async function spawnRoom(cwd, model) {
   const label = path.basename(cwd)
+  // Several agent rooms can share a repo and model, so the time disambiguates
+  // them in the room list.
+  const stamp = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
   const { room_id } = await client.createRoom({
-    name: `agent: ${label}`,
-    topic: cwd,
+    name: `⌁ ${label} · ${modelLabel(model)} · ${stamp}`,
+    topic: `${cwd} · ${model}`,
     invite: OWNER_ID ? [OWNER_ID] : [],
     initial_state: [{
       type: 'm.room.encryption',
@@ -210,9 +241,9 @@ async function spawnRoom(cwd) {
       content: { algorithm: 'm.megolm.v1.aes-sha2' },
     }],
   })
-  sessions[room_id] = { sessionId: null, cwd }
+  sessions[room_id] = { sessionId: null, cwd, model }
   saveSessions()
-  log(`Spawned ${room_id} → ${cwd}`)
+  log(`Spawned ${room_id} → ${cwd} [${model}]`)
   return room_id
 }
 
@@ -251,19 +282,48 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   const roomId = room.roomId
   log(`[${room?.name ?? roomId}] ${event.getSender()}: ${body}`)
 
+  // !spawn [path] [model] — both optional, model recognised by being a known name.
   if (body.startsWith('!spawn')) {
-    const arg = body.slice('!spawn'.length).trim()
+    const parts = body.slice('!spawn'.length).trim().split(/\s+/).filter(Boolean)
+    let model = DEFAULT_MODEL
+    if (parts.length && resolveModel(parts[parts.length - 1])) {
+      model = resolveModel(parts.pop())
+    }
+    const arg = parts.join(' ')
     const cwd = arg ? path.resolve(arg.replace(/^~/, os.homedir())) : DEFAULT_CWD
     if (!fs.existsSync(cwd)) {
       await client.sendTextMessage(roomId, `No such directory: ${cwd}`)
       return
     }
     try {
-      await spawnRoom(cwd)
-      await client.sendTextMessage(roomId, `Spawned agent room for ${cwd} — check your invites.`)
+      await spawnRoom(cwd, model)
+      await client.sendTextMessage(roomId, `Spawned agent room for ${cwd} on ${model} — check your invites.`)
     } catch (e) {
       await client.sendTextMessage(roomId, `Spawn failed: ${e.message}`)
     }
+    return
+  }
+
+  // !model [name] — report or change the model for this agent room.
+  if (body.startsWith('!model')) {
+    const entry = sessions[roomId]
+    if (!entry) {
+      await client.sendTextMessage(roomId, 'Not an agent room.')
+      return
+    }
+    const arg = body.slice('!model'.length).trim()
+    if (!arg) {
+      await client.sendTextMessage(roomId, `Model: ${entry.model ?? DEFAULT_MODEL}`)
+      return
+    }
+    const resolved = resolveModel(arg)
+    if (!resolved) {
+      await client.sendTextMessage(roomId, `Unknown model "${arg}". Try: ${Object.keys(MODEL_ALIASES).join(', ')}`)
+      return
+    }
+    entry.model = resolved
+    saveSessions()
+    await client.sendTextMessage(roomId, `Model set to ${resolved} — takes effect on your next message.`)
     return
   }
 
@@ -294,7 +354,8 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   }
 })
 
-log(`Listening… default cwd: ${DEFAULT_CWD}. Send "!spawn [path]" to create an agent room.`)
+log(`Listening… default cwd: ${DEFAULT_CWD}, model: ${DEFAULT_MODEL}.`)
+log('Send "!spawn [path] [model]" to create an agent room; "!model [name]" inside one to switch.')
 
 process.on('SIGINT', async () => {
   log('Stopping…')

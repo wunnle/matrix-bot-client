@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "sync:ios": "npm run build && npx cap sync ios",
+    "sync:ios:remote": "npm run build && CAP_SERVER_URL=https://construct.kafagoz.com npx cap sync ios",
     "lint": "eslint .",
     "preview": "vite preview"
   },

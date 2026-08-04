@@ -336,9 +336,9 @@ export default function RoomList({
       setRooms((prev) => {
         const without = prev.filter((r) => r.roomId !== room.roomId)
         if (membership !== 'join' && membership !== 'invite') return without
-        const summary = toRoomSummary(room, auth.userId)
-        // Newly joined rooms keep their place; new invites go to the front.
-        return membership === 'invite' ? [summary, ...without] : [...without, summary]
+        // Anything new — joined or invited — appends, so it never displaces
+        // rooms the user has already arranged.
+        return [...without, toRoomSummary(room, auth.userId)]
       })
     }
 
@@ -352,8 +352,15 @@ export default function RoomList({
         const changed = fresh.length !== prev.length
           || fresh.some((r, i) => r.roomId !== prev[i]?.roomId || r.membership !== prev[i]?.membership)
         if (!changed) return prev
-        const order = getRoomOrder(auth.userId)
-        return order ? applyRoomOrder(fresh, order) : fresh
+        // Keep every room already on screen exactly where it is; anything
+        // new lands at the end. Re-deriving from saved order here would
+        // reshuffle rooms that have no saved position.
+        const seen = new Map(prev.map((r, i) => [r.roomId, i]))
+        return [...fresh].sort((a, b) => {
+          const ai = seen.get(a.roomId) ?? Infinity
+          const bi = seen.get(b.roomId) ?? Infinity
+          return ai - bi
+        })
       })
     }
 
@@ -421,14 +428,6 @@ export default function RoomList({
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={joinedRooms.map(r => r.roomId)} strategy={rectSortingStrategy}>
             <div className="room-grid">
-              {invites.map((room) => (
-                <InviteTile
-                  key={room.roomId}
-                  room={room}
-                  busy={invitesBusy[room.roomId] ?? false}
-                  onAccept={handleAcceptInvite}
-                />
-              ))}
               {joinedRooms.map((room) => (
                 <SortableRoomCard
                   key={room.roomId}
@@ -437,6 +436,16 @@ export default function RoomList({
                   avatar={roomAvatars[room.roomId]}
                   hasNotification={notifications.some(n => n.roomId === room.roomId)}
                   onSelect={onSelectRoom}
+                />
+              ))}
+              {/* Invites sit after the joined rooms: a room you have not opened
+                  yet should never displace one you use. */}
+              {invites.map((room) => (
+                <InviteTile
+                  key={room.roomId}
+                  room={room}
+                  busy={invitesBusy[room.roomId] ?? false}
+                  onAccept={handleAcceptInvite}
                 />
               ))}
             </div>

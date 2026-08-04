@@ -437,6 +437,12 @@ async function spawnRoom(cwd, model) {
     // pills on accept. The bot cannot write them itself — pills live in the
     // user's account data, which only the user's own token may write.
     creation_content: { type: AGENT_ROOM_TYPE },
+    // The creator is admin by default and everyone else PL0, which left the
+    // owner unable to rename their own room (rename needs PL50). It is their
+    // room; give them the same level as the bot.
+    power_level_content_override: {
+      users: { [USER_ID]: 100, ...(OWNER_ID ? { [OWNER_ID]: 100 } : {}) },
+    },
     invite: OWNER_ID ? [OWNER_ID] : [],
     initial_state: [
       {
@@ -683,6 +689,30 @@ async function backfillNames() {
   }
 }
 await backfillNames()
+
+// Rooms spawned before the override left the owner at PL0, so renaming them
+// from Construct failed with user_level(0) < send_level(50). Server-side, so
+// it applies to every device at once.
+async function backfillPowerLevels() {
+  if (!OWNER_ID) return
+  for (const roomId of Object.keys(sessions)) {
+    try {
+      const room = client.getRoom(roomId)
+      if (!room || room.getMyMembership() !== 'join') continue
+      const evt = room.currentState.getStateEvents('m.room.power_levels', '')
+      const content = evt?.getContent()
+      if (!content || content.users?.[OWNER_ID] >= 100) continue
+      await client.sendStateEvent(roomId, 'm.room.power_levels', {
+        ...content,
+        users: { ...content.users, [OWNER_ID]: 100 },
+      }, '')
+      log(`Granted ${OWNER_ID} admin in ${roomId}`)
+    } catch (e) {
+      log(`Could not set power levels in ${roomId}: ${e.message}`)
+    }
+  }
+}
+await backfillPowerLevels()
 
 startApprovalBroker()
 

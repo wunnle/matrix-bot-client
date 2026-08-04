@@ -29,6 +29,10 @@ const SAFE_BASH_BINS = new Set([
   'false', 'test', 'jq', 'shasum', 'md5sum', 'cksum', 'column', 'xxd', 'strings',
   'nl', 'tac', 'comm',
 ])
+// Run another program rather than doing anything themselves, so the wrapper's
+// own name says nothing about what actually executes: `env rm -rf …` must be
+// judged on `rm`, not on `env`.
+const WRAPPERS = new Set(['env', 'command', 'nohup', 'stdbuf'])
 // Programs safe only for specific read-only subcommands.
 const SAFE_SUBCOMMANDS = {
   git: new Set(['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files', 'describe',
@@ -51,7 +55,15 @@ function bashIsSafe(command) {
   return cmd.split(/&&|\|\||\||;|\n/).map((s) => s.trim()).filter(Boolean).every((seg) => {
     let tokens = seg.split(/\s+/)
     while (tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens = tokens.slice(1) // strip VAR=val
-    const base = (tokens[0] ?? '').split('/').pop()
+    let base = (tokens[0] ?? '').split('/').pop()
+    // Unwrap to the program that really runs. Bail on flags (env -i, -S …)
+    // rather than trying to model each wrapper's option grammar.
+    while (WRAPPERS.has(base)) {
+      tokens = tokens.slice(1)
+      while (tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens = tokens.slice(1)
+      if (!tokens.length || tokens[0].startsWith('-')) return false
+      base = tokens[0].split('/').pop()
+    }
     if (SAFE_BASH_BINS.has(base)) return true
     const subs = SAFE_SUBCOMMANDS[base]
     if (!subs || !subs.has(tokens[1])) return false

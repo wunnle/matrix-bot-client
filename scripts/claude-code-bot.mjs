@@ -205,7 +205,11 @@ client.on(sdk.RoomEvent.MyMembership, async (room, membership) => {
 // Claude is blocked inside the hook, so it cannot ask a second question.
 const pendingApprovals = new Map()
 
-function roomForSession(sessionId) {
+// The hook reports its room directly (see AGENT_ROOM_ID below). Session-id
+// lookup is only a fallback: a room's session id is not known until its first
+// turn finishes, so during that first turn it would find nothing and deny.
+function roomForRequest({ roomId, sessionId }) {
+  if (roomId && sessions[roomId]) return roomId
   return Object.keys(sessions).find((id) => sessions[id].sessionId === sessionId)
 }
 
@@ -286,7 +290,7 @@ function startApprovalBroker() {
         res.end(JSON.stringify({ decision: 'deny', reason: 'Malformed approval request.' }))
         return
       }
-      const roomId = roomForSession(payload.sessionId)
+      const roomId = roomForRequest(payload)
       if (!roomId) {
         // No room means no one to ask — the safe answer is no.
         res.writeHead(200, { 'content-type': 'application/json' })
@@ -335,6 +339,9 @@ function runClaude(roomId, prompt) {
         ...process.env,
         AGENT_APPROVAL_URL: `http://127.0.0.1:${APPROVAL_PORT}/approve`,
         AGENT_APPROVAL_TIMEOUT_MS: String(APPROVAL_TIMEOUT_MS),
+        // Which room to ask. Cannot be derived from the session id during a
+        // room's first turn, because that id is only known once it ends.
+        AGENT_ROOM_ID: roomId,
       },
     }, (err, stdout, stderr) => {
       if (err && !stdout) return resolve({ error: stderr?.trim() || err.message })

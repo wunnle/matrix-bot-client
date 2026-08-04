@@ -85,6 +85,8 @@ try {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
+      // The room is authoritative; sessionId is only a fallback for the broker.
+      roomId: process.env.AGENT_ROOM_ID,
       sessionId,
       toolName,
       summary: describe(toolName, toolInput),

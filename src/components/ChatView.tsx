@@ -1071,6 +1071,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || sending) return
+    // Keep the keyboard up only if the composer was already focused (i.e. the
+    // user was typing and hit Enter/Send). Tapping a pill on a blurred input
+    // should send silently without popping the keyboard.
+    const keepFocus = document.activeElement === textareaRef.current
     stopDictation()
     setInput('')
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
@@ -1091,7 +1095,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       setTimeout(() => setSendError(''), 4000)
     } finally {
       setSending(false)
-      textareaRef.current?.focus()
+      if (keepFocus) textareaRef.current?.focus()
     }
   }, [client, roomId, sending, scrollToBottom, stopDictation])
 

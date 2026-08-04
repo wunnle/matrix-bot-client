@@ -523,7 +523,14 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
     const arg = body.slice('!model'.length).trim()
     if (!arg) {
-      await sendRoomText(roomId,`Model: ${entry.model ?? DEFAULT_MODEL}`)
+      // The seeded pill sends a bare !model, so reporting alone left no way to
+      // switch without typing. Offer the alternatives as tappable options.
+      const current = entry.model ?? DEFAULT_MODEL
+      const options = Object.keys(MODEL_ALIASES)
+        .filter((alias) => MODEL_ALIASES[alias] !== current)
+        .map((alias) => `[[!model ${alias}]]`)
+        .join(' ')
+      await sendRoomText(roomId, `Model: ${modelLabel(current)}\n\n${options}`)
       return
     }
     const resolved = resolveModel(arg)
@@ -533,7 +540,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
     entry.model = resolved
     saveSessions()
-    await sendRoomText(roomId,`Model set to ${resolved} — takes effect on your next message.`)
+    await sendRoomText(roomId,`Model: ${modelLabel(resolved)} — from your next message.`)
     return
   }
 

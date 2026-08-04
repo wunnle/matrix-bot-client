@@ -205,6 +205,10 @@ client.on(sdk.RoomEvent.MyMembership, async (room, membership) => {
   }
 })
 
+// Rooms that have asked to end and are awaiting confirmation. Ending is not
+// reversible from chat, and !end sits next to !model on the pill row.
+const pendingEnds = new Set()
+
 // roomId -> { resolve, timer }. At most one outstanding approval per room:
 // Claude is blocked inside the hook, so it cannot ask a second question.
 const pendingApprovals = new Map()
@@ -476,6 +480,58 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
 
   // Only act as an agent in rooms that were spawned as agent rooms.
   if (!sessions[roomId]) return
+
+  // !reset — keep the room, its directory and model; drop the session so the
+  // next message starts fresh. For when the context is poisoned rather than the
+  // room being unwanted. The old transcript stays on disk.
+  if (body === '!reset') {
+    if (settleApproval(roomId, 'deny', 'Session reset.')) {
+      await sendRoomText(roomId, '🚫 Denied the pending approval as part of the reset.')
+    }
+    if (busy.has(roomId)) {
+      await sendRoomText(roomId, 'A turn is still running — try again once it finishes.')
+      return
+    }
+    sessions[roomId] = { ...sessions[roomId], sessionId: null }
+    saveSessions()
+    await sendRoomText(roomId, '↺ Fresh session. Directory and model are unchanged; I have no memory of this conversation now.')
+    return
+  }
+
+  // !end — unbind the room and leave it. Confirmed because it cannot be undone
+  // from chat and the button sits next to the others.
+  if (body === '!end') {
+    if (settleApproval(roomId, 'deny', 'Room is being ended.')) {
+      await sendRoomText(roomId, '🚫 Denied the pending approval. Send !end again once the turn stops.')
+      return
+    }
+    if (busy.has(roomId)) {
+      await sendRoomText(roomId, 'A turn is still running — try again once it finishes.')
+      return
+    }
+    pendingEnds.add(roomId)
+    await sendRoomText(roomId, 'End this room? I will leave and forget the session. The transcript stays on disk.\n\n[[Confirm end]] [[Cancel]]')
+    return
+  }
+
+  if (pendingEnds.has(roomId)) {
+    const reply = body.toLowerCase()
+    if (reply === 'confirm end') {
+      pendingEnds.delete(roomId)
+      delete sessions[roomId]
+      saveSessions()
+      log(`Ended ${roomId}`)
+      // Say goodbye before leaving, or the message lands in a room we have left.
+      await sendRoomText(roomId, '👋 Ended. Spawn a new room when you need me again.').catch(() => {})
+      await client.leave(roomId).catch((e) => log(`Leave failed for ${roomId}: ${e.message}`))
+      return
+    }
+    if (reply === 'cancel') {
+      pendingEnds.delete(roomId)
+      await sendRoomText(roomId, 'Cancelled — room is still active.')
+      return
+    }
+  }
 
   // Approval answers must be handled before the busy check — the room is always
   // busy when one is outstanding, since the turn is blocked inside the hook.

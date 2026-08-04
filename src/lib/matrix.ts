@@ -250,10 +250,22 @@ function setCachedRooms(userId: string, rooms: RoomSummary[]) {
 }
 
 export function fetchJoinedRooms(auth: AuthState): Promise<RoomSummary[]> {
-  // Dedupe: React Strict Mode double-invokes effects in dev. Returning the
-  // same promise prevents a second call from overwriting the module-level
-  // client mid-crypto-init and racing on the shared IndexedDB stores.
-  if (initPromise) return initPromise
+  // Dedupe: React Strict Mode double-invokes effects in dev. Reusing the same
+  // promise prevents a second call from overwriting the module-level client
+  // mid-crypto-init and racing on the shared IndexedDB stores.
+  //
+  // But only the *initialisation* is deduped, not its result: that resolved to
+  // the room list as it was at startup, so a later remount (navigating back
+  // from a chat) re-rendered a stale snapshot and any invite that had arrived
+  // since stayed invisible until a full reload. Recompute from the live client.
+  if (initPromise) {
+    return initPromise.then((initial) => {
+      if (!client) return initial
+      const rooms = getRooms(client, auth.userId)
+      setCachedRooms(auth.userId, rooms)
+      return rooms
+    })
+  }
   initPromise = doInit(auth).catch((e) => {
     initPromise = null
     throw e

@@ -356,7 +356,12 @@ export default function RoomList({
       // by the bot, which cannot write pills — they live in this user's account
       // data. Non-fatal: a failure here should not block opening the room.
       await seedAgentPills(getClient(), roomId).catch(() => {})
-      // MyMembership fires on join and refreshes the entry; open it right away.
+      // Promote it locally rather than waiting for MyMembership: opening the
+      // room unmounts this list, so the event can land with no listener
+      // attached and the card would still read "invite" on the way back.
+      setRooms((prev) => prev.map((r) => (
+        r.roomId === roomId ? { ...r, membership: 'join' as const, invitedBy: undefined } : r
+      )))
       onSelectRoom(roomId, name)
     } catch (e) {
       setInviteError((e as Error).message ?? 'Could not join room')
@@ -370,6 +375,7 @@ export default function RoomList({
     setInvitesBusy((p) => ({ ...p, [roomId]: true }))
     try {
       await declineInvite(roomId)
+      setRooms((prev) => prev.filter((r) => r.roomId !== roomId))
     } catch (e) {
       setInviteError((e as Error).message ?? 'Could not decline invite')
     } finally {

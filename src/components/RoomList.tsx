@@ -559,7 +559,19 @@ export default function RoomList({
               <button className="user-menu-item" onClick={() => navigate('/settings')}>
                 Settings
               </button>
-              <button className="user-menu-item" onClick={() => window.location.reload()}>
+              {/* The web app is served over the network (see capacitor.config.ts),
+                  so this picks up a deploy without reinstalling: the reload is a
+                  navigation, and the service worker fetches those network-first.
+                  Refresh the worker itself first — otherwise a changed sw.js is
+                  only noticed on the browser's own schedule, leaving the caching
+                  rules a deploy behind. */}
+              <button className="user-menu-item" onClick={async () => {
+                try {
+                  const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null
+                  await reg?.update()
+                } catch { /* not fatal — reload anyway */ }
+                window.location.reload()
+              }}>
                 Reload app
               </button>
               <button className="user-menu-item user-menu-item--danger" onClick={onSignOut}>

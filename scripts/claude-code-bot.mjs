@@ -410,6 +410,9 @@ function modelLabel(model) {
 // path, so the name only has to be short and unambiguous in a narrow tile.
 const ROOM_PREFIX = 'BenderDev'
 const ROOM_NAME_RE = /^BenderDev-(\d+)$/
+// Names this bot generated before the current scheme. Only these get rewritten
+// on startup; a name a human picked is never touched.
+const LEGACY_NAME_RE = /^(agent: |⌁ )/
 
 // Counts up from the highest number in use rather than filling gaps, so a
 // number is never reused by a different room.
@@ -659,7 +662,10 @@ async function backfillNames() {
     try {
       const room = client.getRoom(roomId)
       if (!room || room.getMyMembership() !== 'join') continue
-      if (ROOM_NAME_RE.test(room.name ?? '')) continue
+      // Only rewrite the old auto-generated names. Anything else is a name a
+      // human chose — renaming a room to describe its purpose must survive a
+      // bot restart.
+      if (!LEGACY_NAME_RE.test(room.name ?? '')) continue
       const name = nextRoomName(assigned)
       assigned.push(name)
       await client.sendStateEvent(roomId, 'm.room.name', { name }, '')

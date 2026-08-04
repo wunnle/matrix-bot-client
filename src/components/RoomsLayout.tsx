@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { useCallback, useState, useEffect, useRef } from 'react'
+import * as sdk from 'matrix-js-sdk'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
 import type { AuthState } from '../types'
@@ -12,6 +13,7 @@ import { useVisualViewportVars } from '../hooks/useVisualViewport'
 import { getClient, getCachedRooms, resyncNow } from '../lib/matrix'
 import { getDictationAutoSend, setDictationAutoSend } from '../lib/clientSettings'
 import { resolveRoomIdFromParam } from '../lib/roomAliases'
+import { isAgentRoom } from '../lib/roomMeta'
 
 interface Props {
   auth: AuthState
@@ -36,11 +38,42 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     ? resolveRoomIdFromParam(decodeURIComponent(roomId))
     : null
 
+  // Read inside listeners that must not re-subscribe on every navigation.
+  const activeRoomIdRef = useRef<string | null>(activeRoomId)
+  useEffect(() => { activeRoomIdRef.current = activeRoomId }, [activeRoomId])
+
   const { notifications, toasts, dismiss } = useRoomNotifications(activeRoomId, clientReady, auth.userId)
 
   useEffect(() => {
     setDictationAutoSendState(getDictationAutoSend(auth.userId))
   }, [auth.userId])
+
+  // An agent room the bot has left is finished: it can never answer again.
+  // Leave it too, so it disappears from the grid instead of lingering as a
+  // room only you are still in, and step back to the list if it is open.
+  useEffect(() => {
+    if (!clientReady) return
+    let client: ReturnType<typeof getClient>
+    try { client = getClient() } catch { return }
+
+    const onMembership = (_event: sdk.MatrixEvent, member: sdk.RoomMember) => {
+      if (member.userId === auth.userId) return
+      if (member.membership !== 'leave' && member.membership !== 'ban') return
+      const room = client.getRoom(member.roomId)
+      if (!room || room.getMyMembership() !== 'join') return
+      if (!isAgentRoom(client, member.roomId)) return
+      // Only when nobody else is left — a human joining the room shouldn't
+      // trigger this when they later leave.
+      const others = room.getMembersWithMembership('join').filter((m) => m.userId !== auth.userId)
+      if (others.length > 0) return
+
+      if (activeRoomIdRef.current === member.roomId) navigate('/', { replace: true })
+      client.leave(member.roomId).catch(() => {})
+    }
+
+    client.on(sdk.RoomMemberEvent.Membership, onMembership)
+    return () => { client.off(sdk.RoomMemberEvent.Membership, onMembership) }
+  }, [clientReady, auth.userId, navigate])
 
   const onDictationAutoSendChange = useCallback((value: boolean) => {
     setDictationAutoSendState(value)

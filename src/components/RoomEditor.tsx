@@ -19,6 +19,8 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
   const [inviteInput, setInviteInput] = useState('')
   const [inviting, setInviting] = useState(false)
   const [inviteStatus, setInviteStatus] = useState('')
+  const [name, setName] = useState(() => client.getRoom(roomId)?.name ?? '')
+  const [renaming, setRenaming] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const { toast, showToast } = useToast()
 
@@ -47,6 +49,23 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
     }
     loadPushRule()
   }, [client, roomId])
+
+  async function renameRoom() {
+    const wanted = name.trim()
+    const current = client.getRoom(roomId)?.name ?? ''
+    if (!wanted || wanted === current) return
+    setRenaming(true)
+    setError('')
+    try {
+      await client.setRoomName(roomId, wanted)
+      showToast('Renamed')
+    } catch (e) {
+      setError((e as Error).message ?? 'Could not rename room')
+      setName(current)
+    } finally {
+      setRenaming(false)
+    }
+  }
 
   async function changeNotifPref(value: 'all' | 'mentions' | 'mute') {
     const prev = notifPref
@@ -151,6 +170,27 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
         </div>
 
         <div className="room-editor-body">
+
+          <div className="editor-section">
+            <div className="editor-section-label">Room name</div>
+            <div className="editor-pill-input">
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); renameRoom() } }}
+                onBlur={renameRoom}
+                placeholder="Room name"
+                enterKeyHint="done"
+              />
+              <button
+                onClick={renameRoom}
+                disabled={renaming || !name.trim() || name.trim() === (client.getRoom(roomId)?.name ?? '')}
+              >
+                {renaming ? '…' : 'Save'}
+              </button>
+            </div>
+          </div>
 
           <div className="editor-section">
             <div className="editor-section-label">Notification preference</div>

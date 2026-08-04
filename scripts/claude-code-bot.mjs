@@ -368,6 +368,38 @@ function runClaude(roomId, prompt) {
 }
 
 // Creates a fresh agent room bound to `cwd` and invites the owner.
+// Avatar for spawned rooms. Uploaded once and the resulting mxc:// cached, so
+// every later spawn is just a state event. Absent icon or a failed upload is
+// not fatal — rooms simply get the default letter tile.
+const AVATAR_FILE = path.join(import.meta.dirname, 'agent-avatar.png')
+const AVATAR_CACHE = path.join(STORE_DIR, 'avatar.json')
+let avatarMxc = null
+
+async function ensureAvatar() {
+  try {
+    if (fs.existsSync(AVATAR_CACHE)) {
+      const cached = JSON.parse(fs.readFileSync(AVATAR_CACHE, 'utf8'))
+      // Re-upload if the icon changed since it was cached.
+      if (cached.mxc && cached.size === fs.statSync(AVATAR_FILE).size) {
+        avatarMxc = cached.mxc
+        return
+      }
+    }
+    if (!fs.existsSync(AVATAR_FILE)) return
+    const data = fs.readFileSync(AVATAR_FILE)
+    const res = await client.uploadContent(data, {
+      name: 'agent-avatar.png',
+      type: 'image/png',
+      rawResponse: false,
+    })
+    avatarMxc = res.content_uri
+    fs.writeFileSync(AVATAR_CACHE, JSON.stringify({ mxc: avatarMxc, size: data.length }))
+    log(`Uploaded room avatar: ${avatarMxc}`)
+  } catch (e) {
+    log(`Avatar unavailable (${e.message}) — rooms will use the default tile.`)
+  }
+}
+
 // Short alias for a resolved model id, for display.
 function modelLabel(model) {
   return Object.keys(MODEL_ALIASES).find((k) => MODEL_ALIASES[k] === model) ?? model
@@ -386,11 +418,18 @@ async function spawnRoom(cwd, model) {
     // user's account data, which only the user's own token may write.
     creation_content: { type: AGENT_ROOM_TYPE },
     invite: OWNER_ID ? [OWNER_ID] : [],
-    initial_state: [{
-      type: 'm.room.encryption',
-      state_key: '',
-      content: { algorithm: 'm.megolm.v1.aes-sha2' },
-    }],
+    initial_state: [
+      {
+        type: 'm.room.encryption',
+        state_key: '',
+        content: { algorithm: 'm.megolm.v1.aes-sha2' },
+      },
+      ...(avatarMxc ? [{
+        type: 'm.room.avatar',
+        state_key: '',
+        content: { url: avatarMxc },
+      }] : []),
+    ],
   })
   sessions[room_id] = { sessionId: null, cwd, model }
   saveSessions()
@@ -572,6 +611,27 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     busy.delete(roomId)
   }
 })
+
+await ensureAvatar()
+
+// Rooms spawned before the avatar existed keep the default letter tile, and
+// room state is server-side — so unlike a client change, this reaches every
+// device immediately. Never overwrites an avatar that is already set.
+async function backfillAvatars() {
+  if (!avatarMxc) return
+  for (const roomId of Object.keys(sessions)) {
+    try {
+      const room = client.getRoom(roomId)
+      if (!room || room.getMyMembership() !== 'join') continue
+      if (room.currentState.getStateEvents('m.room.avatar', '')?.getContent()?.url) continue
+      await client.sendStateEvent(roomId, 'm.room.avatar', { url: avatarMxc }, '')
+      log(`Set avatar on ${roomId}`)
+    } catch (e) {
+      log(`Could not set avatar on ${roomId}: ${e.message}`)
+    }
+  }
+}
+await backfillAvatars()
 
 startApprovalBroker()
 

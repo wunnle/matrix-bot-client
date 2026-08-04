@@ -11,18 +11,46 @@ import { apnsSend, apnsSendWithFallback, apnsConfigured, isEnvMismatch, APNS_BUN
 import { liveActivityEntry, clearTokens, recordPushResult } from "./live-activity.js";
 
 
-const ROOM_AVATARS = {
-  "!vjoGMHloXyNobvgGaK:matrix.org": "mxc://matrix.org/tOIBhgtMxpMQMmADcYIcprnh",
-  "!PuoXYYposdTSyiwnkx:matrix.org": "mxc://matrix.org/gEzjnnOcBuppMPJoijpZAkef",
-  "!mhNSsDLFdlzGIGyRgi:matrix.org": "mxc://matrix.org/pqhnMFYAoWmsukcvrjdujQdG",
-  "!iEbYoSfZgfHLeSKLei:matrix.org": "mxc://matrix.org/paDQdclqzpfVYCDZiWPPMzID",
-  "!tCuyENMznYGVHZQiod:matrix.org": "mxc://matrix.org/QcMeBkdMIjZGVOcwNTUkiqnI",
-  "!DpRWqhWOHJAxyvjOGI:matrix.org": "mxc://matrix.org/bAFLWJDiBQExiECpdDNHVOKl",
-};
+const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
+const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN;
 
 function mxcToProxyUrl(mxc) {
   if (!mxc) return null;
   return `https://construct.kafagoz.com/api/media?mxc=${encodeURIComponent(mxc)}`;
+}
+
+// Room avatars are resolved live from the homeserver — the account's own token
+// is a member of every room it receives pushes for. Cached in-memory so warm
+// invocations don't re-query matrix.org for every message; avatars change rarely.
+const avatarCache = new Map(); // roomId -> { mxc, ts }
+const AVATAR_TTL_MS = 10 * 60 * 1000;
+
+async function roomStateEvent(roomId, type, stateKey = "") {
+  if (!ACCESS_TOKEN) return null;
+  const url = `${HOMESERVER}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/${type}/${encodeURIComponent(stateKey)}`;
+  try {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${ACCESS_TOKEN}` } });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
+// The room's own avatar, falling back to the sender's (covers DM-style rooms
+// with no explicit m.room.avatar). null → the notification stays a plain banner.
+async function resolveRoomAvatarMxc(roomId, sender) {
+  const hit = avatarCache.get(roomId);
+  if (hit && Date.now() - hit.ts < AVATAR_TTL_MS) return hit.mxc;
+  let mxc = null;
+  const roomAvatar = await roomStateEvent(roomId, "m.room.avatar");
+  if (roomAvatar?.url) mxc = roomAvatar.url;
+  else if (sender) {
+    const member = await roomStateEvent(roomId, "m.room.member", sender);
+    if (member?.avatar_url) mxc = member.avatar_url;
+  }
+  avatarCache.set(roomId, { mxc, ts: Date.now() });
+  return mxc;
 }
 
 webpush.setVapidDetails(
@@ -95,7 +123,7 @@ export default async function handler(req, res) {
   const { notification } = req.body || {};
   if (!notification) return res.status(400).json({ rejected: [] });
 
-  const { room_id, room_name, content, sender_display_name, devices = [], counts } = notification;
+  const { room_id, room_name, content, sender, sender_display_name, devices = [], counts } = notification;
 
   // Badge-only update — no actual message to show
   if (!room_id || !content?.body) return res.status(200).json({ rejected: [] });
@@ -122,6 +150,10 @@ export default async function handler(req, res) {
   const { text: body, actions } = parseActions(rawBody);
 
   const rejected = [];
+
+  // Resolved once and shared by the APNs payload (service extension) and the
+  // Web Push icon.
+  const avatarUrl = mxcToProxyUrl(await resolveRoomAvatarMxc(room_id, sender));
 
   // Push the reply into any running Live Activity for this room, and report
   // whether it was delivered. Independent of the per-device loop below: Live
@@ -241,9 +273,9 @@ export default async function handler(req, res) {
           roomId: room_id,
           // Proxy (https) URL of the room avatar for the service extension to
           // download and hang on the communication-notification intent. null
-          // when the room has no known avatar — the extension falls back to the
-          // plain alert.
-          avatarUrl: mxcToProxyUrl(ROOM_AVATARS[room_id]),
+          // when the room has no resolvable avatar — the extension falls back to
+          // the plain alert.
+          avatarUrl,
           // Original markdown for the notification content extension to render
           // on long-press, with the [[CTA]] markers stripped (the extension
           // draws those as buttons instead). aps.alert.body stays stripped for
@@ -271,7 +303,7 @@ export default async function handler(req, res) {
         return;
       }
 
-      const icon = mxcToProxyUrl(ROOM_AVATARS[room_id]);
+      const icon = avatarUrl;
       const payload = JSON.stringify({
         title,
         body,

@@ -2,8 +2,9 @@
  * Matrix HTTP Push Gateway — /_matrix/push/v1/notify
  * https://spec.matrix.org/v1.9/push-gateway-api/
  *
- * Receives push notifications from matrix.org and delivers them as Web Push
- * to the subscription stored under push_subscriptions/{hash}.json in Vercel Blob.
+ * Receives push notifications from the homeserver and fans them out to each
+ * pushkey it provides: Web Push subscriptions (browsers/PWA) and APNs device
+ * tokens (native iOS), plus any running Live Activity for the room.
  */
 import webpush from "web-push";
 import { apnsSend, apnsSendWithFallback, apnsConfigured, isEnvMismatch, APNS_BUNDLE_ID, LIVE_ACTIVITY_TOPIC } from "./_apns.js";

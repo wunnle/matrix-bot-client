@@ -6,6 +6,7 @@ import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
 import { fetchJoinedRooms, getCachedRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, getRoomUnreadCount, isInvite, acceptInvite, declineInvite, toRoomSummary, type RoomSummary } from '../lib/matrix'
 import { useNavigate } from 'react-router-dom'
+import { seedAgentPills } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { donateShareTargets } from '../lib/liveActivity'
 import { getDisabledShareRooms } from '../lib/shareRooms'
@@ -351,6 +352,10 @@ export default function RoomList({
     setInvitesBusy((p) => ({ ...p, [roomId]: true }))
     try {
       await acceptInvite(roomId)
+      // Agent rooms ship with a standard command set. Seeded here rather than
+      // by the bot, which cannot write pills — they live in this user's account
+      // data. Non-fatal: a failure here should not block opening the room.
+      await seedAgentPills(getClient(), roomId).catch(() => {})
       // MyMembership fires on join and refreshes the entry; open it right away.
       onSelectRoom(roomId, name)
     } catch (e) {

@@ -33,6 +33,10 @@ const MODEL_ALIASES = {
 }
 const DEFAULT_MODEL = process.env.AGENT_MODEL ?? MODEL_ALIASES.opus
 
+// m.room.create `type` for rooms this bot spawns. Construct keys the standard
+// action pills off this; keep it in sync with AGENT_ROOM_TYPE in src/lib/roomMeta.ts.
+const AGENT_ROOM_TYPE = 'com.construct.agent'
+
 // Loopback only — the broker decides what the agent may do, so it must not be
 // reachable from anywhere but the hook running on this host.
 const APPROVAL_PORT = Number(process.env.AGENT_APPROVAL_PORT ?? 8787)
@@ -373,6 +377,10 @@ async function spawnRoom(cwd, model) {
   const { room_id } = await client.createRoom({
     name: `⌁ ${label} · ${modelLabel(model)} · ${stamp}`,
     topic: `${cwd} · ${model}`,
+    // Marks this as an agent room so Construct can seed the standard action
+    // pills on accept. The bot cannot write them itself — pills live in the
+    // user's account data, which only the user's own token may write.
+    creation_content: { type: AGENT_ROOM_TYPE },
     invite: OWNER_ID ? [OWNER_ID] : [],
     initial_state: [{
       type: 'm.room.encryption',

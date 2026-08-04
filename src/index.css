@@ -108,6 +108,13 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   flex-direction: column;
   background: var(--bg-surface);
   overflow: hidden;
+  /* The WebView draws under the status bar (contentInset: 'never') and this is
+     the only chrome at the top of the home screen, so it owns the inset. Was
+     scoped to the mobile breakpoint, which left iPad — on the sidebar layout at
+     820pt — with its first row of tiles tucked under the status bar. The floor
+     gives the same breathing room where there is no inset to speak of (Mac,
+     web). */
+  padding-top: max(env(safe-area-inset-top), 10px);
 }
 
 .main {
@@ -130,7 +137,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
     inset: 0;
     z-index: 10;
     transition: transform 0.25s ease;
-    padding-top: env(safe-area-inset-top);
   }
 
   .layout.room-open .sidebar {
@@ -247,8 +253,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding-top: 8px;
-  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  padding-top: 10px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
 }
@@ -256,8 +262,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 6px 8px;
-  padding: 10px;
+  gap: 8px;
+  padding: 12px;
 }
 
 /* An invite is the room tile it will become, faded until accepted. */
@@ -277,12 +283,12 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 6px 4px;
-  border-radius: 12px;
+  padding: 8px 6px;
+  border-radius: 14px;
   transition: background 0.1s;
   width: 100%;
 }
@@ -365,8 +371,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 6px 4px;
+  gap: 6px;
+  padding: 8px 6px;
 }
 
 .skeleton-avatar {

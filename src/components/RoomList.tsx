@@ -514,38 +514,45 @@ export default function RoomList({
                 />
               </label>
               <button className="user-menu-item" onClick={async () => {
-                try {
-                  const client = getClient()
-                  const pushers = await client.getPushers()
-                  const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null
-                  const sub = reg ? await reg.pushManager.getSubscription() : null
-                  const subEndpoint = sub?.endpoint?.slice(-20) ?? 'none'
-                  const pusherList = (pushers?.pushers ?? []).map((p: any) =>
-                    `${p.app_display_name} / ${p.device_display_name}: ...${String(p.pushkey).slice(-20)}`
-                  ).join('\n') || 'none'
-                  // Whether the offline shell is actually in place. In WKWebView
-                  // this only works on app-bound domains, so it's the quickest
-                  // way to tell a native build can survive a cold start offline.
-                  const swState = !('serviceWorker' in navigator)
-                    ? 'unsupported (no offline shell)'
-                    : reg
-                    ? `${reg.active ? 'active' : reg.installing ? 'installing' : 'registered'} @ ${reg.scope}`
-                    : 'not registered'
-                  let shell = 'n/a'
-                  try {
-                    const cache = await caches.open('construct-shell-v1')
-                    const keys = await cache.keys()
-                    shell = keys.length ? `${keys.length} entries` : 'empty'
-                  } catch { shell = 'unavailable' }
-                  alert(
-                    `Origin: ${location.origin}\n` +
-                    `Service worker: ${swState}\n` +
-                    `Shell cache: ${shell}\n\n` +
-                    `Push subscription: ...${subEndpoint}\n\nRegistered pushers:\n${pusherList}`
-                  )
-                } catch (e: any) {
-                  alert(`Debug error: ${e?.message}`)
+                // Each probe reports on its own: this runs in two very different
+                // environments (Safari/PWA and WKWebView, which has no Web Push
+                // and no Matrix client until sync), and one missing API used to
+                // throw away the whole report.
+                const line = async (label: string, probe: () => Promise<string>) => {
+                  try { return `${label}: ${await probe()}` } catch (e: any) { return `${label}: error — ${e?.message}` }
                 }
+                const report = [
+                  `Origin: ${location.origin}`,
+                  // Whether the offline shell is in place. In WKWebView a
+                  // service worker only runs on app-bound domains, so this is
+                  // the quickest way to tell a native build can cold-start offline.
+                  await line('Service worker', async () => {
+                    if (!('serviceWorker' in navigator)) return 'unsupported (no offline shell)'
+                    const reg = await navigator.serviceWorker.getRegistration()
+                    if (!reg) return 'not registered'
+                    const state = reg.active ? 'active' : reg.installing ? 'installing' : 'registered'
+                    return `${state} @ ${reg.scope}`
+                  }),
+                  await line('Shell cache', async () => {
+                    if (!('caches' in window)) return 'unsupported'
+                    const keys = await (await caches.open('construct-shell-v1')).keys()
+                    return keys.length ? `${keys.length} entries` : 'empty'
+                  }),
+                  // Absent in WKWebView — the native app is pushed via APNs.
+                  await line('Push subscription', async () => {
+                    const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null
+                    if (!reg?.pushManager) return 'n/a (native push)'
+                    const sub = await reg.pushManager.getSubscription()
+                    return sub?.endpoint ? `...${sub.endpoint.slice(-20)}` : 'none'
+                  }),
+                  await line('Registered pushers', async () => {
+                    const pushers = await getClient().getPushers()
+                    return '\n' + ((pushers?.pushers ?? []).map((p: any) =>
+                      `  ${p.app_display_name} / ${p.device_display_name}: ...${String(p.pushkey).slice(-20)}`
+                    ).join('\n') || '  none')
+                  }),
+                ]
+                alert(report.join('\n'))
               }}>
                 Debug notifications
               </button>

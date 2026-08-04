@@ -322,11 +322,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     void copyTextToClipboard(text).then(() => showToast('Copied'))
   }, [showToast])
 
+  // Action pills reflect the very last message only: once you reply (or the bot
+  // sends anything after), the previous message's [[buttons]] should clear.
   const lastActions = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (!messages[i].isOwnMessage) return parseActions(messages[i].body).actions
-    }
-    return []
+    const last = messages[messages.length - 1]
+    if (!last || last.isOwnMessage) return []
+    return parseActions(last.body).actions
   }, [messages])
   const [addingPill, setAddingPill] = useState(false)
   const [newPillInput, setNewPillInput] = useState('')

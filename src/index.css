@@ -917,9 +917,12 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 .message.other .message-body { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; }
-/* Full-row so code blocks span the width instead of clipping into a narrow
-   box on short messages (the <pre>'s min-width:100% needs a full-width parent). */
-.message.other .bot-text { width: 100%; }
+/* Full-row so a code block spans the width instead of clipping into a narrow box
+   on short messages. The .bot-text wrapper (.message-pin-surface) is a shrink-to-
+   fit flex item, so it (and the <pre> inside) only got as wide as the text.
+   Scoped to :has(pre) so plain-text messages keep their tight long-press highlight. */
+.message.other .message-pin-surface:has(pre) { width: 100%; }
+.message.other .message-pin-surface:has(pre) .bot-text { width: 100%; }
 
 .message.own .message-body { align-items: flex-end; }
 .message.other .message-body { align-items: flex-start; }

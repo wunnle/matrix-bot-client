@@ -14,9 +14,53 @@ const BROKER_URL = process.env.AGENT_APPROVAL_URL ?? 'http://127.0.0.1:8787/appr
 const TIMEOUT_MS = Number(process.env.AGENT_APPROVAL_TIMEOUT_MS ?? 10 * 60 * 1000)
 
 // Read-only inspection of the local checkout — no side effects worth a prompt.
-const AUTO_ALLOW = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'NotebookRead', 'WebSearch'])
+const AUTO_ALLOW = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'NotebookRead', 'WebSearch', 'WebFetch'])
 // Writes are fine inside the room's own directory; outside it they need a human.
 const PATH_SCOPED = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit'])
+
+// Bash commands that only read state run without a prompt. Anything unrecognised
+// — or any sign of mutation (write redirects, sudo, command substitution, find
+// -delete/-exec) — falls through to the human approval broker.
+const SAFE_BASH_BINS = new Set([
+  'ls', 'cat', 'head', 'tail', 'pwd', 'echo', 'printf', 'grep', 'egrep', 'fgrep',
+  'rg', 'find', 'wc', 'which', 'type', 'whoami', 'id', 'date', 'env', 'sort',
+  'uniq', 'cut', 'tr', 'diff', 'stat', 'file', 'du', 'df', 'tree', 'basename',
+  'dirname', 'realpath', 'readlink', 'uname', 'hostname', 'sleep', 'true',
+  'false', 'test', 'jq', 'shasum', 'md5sum', 'cksum', 'column', 'xxd', 'strings',
+  'nl', 'tac', 'comm',
+])
+// Programs safe only for specific read-only subcommands.
+const SAFE_SUBCOMMANDS = {
+  git: new Set(['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files', 'describe',
+    'blame', 'cat-file', 'shortlog', 'symbolic-ref', 'for-each-ref', 'branch', 'remote']),
+  npm: new Set(['test', 'ls', 'list', 'outdated', 'view', 'why', 'run']),
+  node: new Set(['--version', '-v']),
+}
+const SAFE_NPM_SCRIPTS = new Set(['build', 'test', 'lint', 'typecheck'])
+
+function bashIsSafe(command) {
+  const cmd = (command ?? '').trim()
+  if (!cmd) return false
+  if (/\$\(|`|<\(|>\(/.test(cmd)) return false                 // command/process substitution
+  if (/(^|\s)sudo(\s|$)/.test(cmd)) return false               // privilege escalation
+  if (/-delete\b|-exec(dir)?\b|-ok\b|-fprint\b/.test(cmd)) return false // find mutations
+  // Write redirects, allowing only >/dev/null and fd merges (2>&1).
+  const noHarmless = cmd.replace(/\d*>&\d+/g, '').replace(/[&\d]*>\s*\/dev\/null/g, '')
+  if (noHarmless.includes('>')) return false
+  // Every pipeline/sequence segment must be a recognised read-only program.
+  return cmd.split(/&&|\|\||\||;|\n/).map((s) => s.trim()).filter(Boolean).every((seg) => {
+    let tokens = seg.split(/\s+/)
+    while (tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens = tokens.slice(1) // strip VAR=val
+    const base = (tokens[0] ?? '').split('/').pop()
+    if (SAFE_BASH_BINS.has(base)) return true
+    const subs = SAFE_SUBCOMMANDS[base]
+    if (!subs || !subs.has(tokens[1])) return false
+    if (base === 'npm' && tokens[1] === 'run') return SAFE_NPM_SCRIPTS.has(tokens[2])
+    // `git branch`/`git remote` list only with no extra args (branch -d, remote add mutate).
+    if (base === 'git' && (tokens[1] === 'branch' || tokens[1] === 'remote')) return tokens.length === 2
+    return true
+  })
+}
 
 function decide(decision, reason) {
   process.stdout.write(JSON.stringify({
@@ -76,7 +120,11 @@ if (PATH_SCOPED.has(toolName)) {
   }
 }
 
-// Everything else — Bash, writes outside the directory, unknown tools — asks.
+if (toolName === 'Bash' && bashIsSafe(toolInput.command)) {
+  decide('allow', 'Read-only Bash command (allowlist).')
+}
+
+// Everything else — mutating Bash, writes outside the directory, unknown tools — asks.
 let res
 try {
   const ctrl = new AbortController()

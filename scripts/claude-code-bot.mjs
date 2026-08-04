@@ -375,10 +375,16 @@ const AVATAR_FILE = path.join(import.meta.dirname, 'agent-avatar.png')
 const AVATAR_CACHE = path.join(STORE_DIR, 'avatar.json')
 let avatarMxc = null
 
+// Every avatar this bot has ever uploaded. Used to tell "the icon we set last
+// time" from "an avatar the user chose", so a new icon replaces the former
+// without ever overwriting the latter.
+let knownAvatars = []
+
 async function ensureAvatar() {
   try {
     if (fs.existsSync(AVATAR_CACHE)) {
       const cached = JSON.parse(fs.readFileSync(AVATAR_CACHE, 'utf8'))
+      knownAvatars = cached.known ?? (cached.mxc ? [cached.mxc] : [])
       // Re-upload if the icon changed since it was cached.
       if (cached.mxc && cached.size === fs.statSync(AVATAR_FILE).size) {
         avatarMxc = cached.mxc
@@ -393,7 +399,10 @@ async function ensureAvatar() {
       rawResponse: false,
     })
     avatarMxc = res.content_uri
-    fs.writeFileSync(AVATAR_CACHE, JSON.stringify({ mxc: avatarMxc, size: data.length }))
+    if (!knownAvatars.includes(avatarMxc)) knownAvatars.push(avatarMxc)
+    fs.writeFileSync(AVATAR_CACHE, JSON.stringify({
+      mxc: avatarMxc, size: data.length, known: knownAvatars,
+    }))
     log(`Uploaded room avatar: ${avatarMxc}`)
   } catch (e) {
     log(`Avatar unavailable (${e.message}) — rooms will use the default tile.`)
@@ -656,7 +665,10 @@ async function backfillAvatars() {
     try {
       const room = client.getRoom(roomId)
       if (!room || room.getMyMembership() !== 'join') continue
-      if (room.currentState.getStateEvents('m.room.avatar', '')?.getContent()?.url) continue
+      const current = room.currentState.getStateEvents('m.room.avatar', '')?.getContent()?.url
+      if (current === avatarMxc) continue
+      // Replace an icon we set previously, but never one the user chose.
+      if (current && !knownAvatars.includes(current)) continue
       await client.sendStateEvent(roomId, 'm.room.avatar', { url: avatarMxc }, '')
       log(`Set avatar on ${roomId}`)
     } catch (e) {

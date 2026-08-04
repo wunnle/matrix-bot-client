@@ -48,6 +48,22 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     setDictationAutoSendState(getDictationAutoSend(auth.userId))
   }, [auth.userId])
 
+  // getRoomName reads the live room object, but nothing re-renders this
+  // component when a name changes — so a rename only appeared after navigating
+  // away and back. Mirror it into state instead.
+  useEffect(() => {
+    if (!clientReady) return
+    let client: ReturnType<typeof getClient>
+    try { client = getClient() } catch { return }
+
+    const onName = (room: sdk.Room) => {
+      setRoomNames((prev) => (prev[room.roomId] === room.name ? prev : { ...prev, [room.roomId]: room.name }))
+    }
+
+    client.on(sdk.RoomEvent.Name, onName)
+    return () => { client.off(sdk.RoomEvent.Name, onName) }
+  }, [clientReady])
+
   // An agent room the bot has left is finished: it can never answer again.
   // Leave it too, so it disappears from the grid instead of lingering as a
   // room only you are still in, and step back to the list if it is open.

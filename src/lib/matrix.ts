@@ -249,6 +249,14 @@ export function getCachedRooms(userId: string): RoomSummary[] | null {
   }
 }
 
+/** Keep the cold-start snapshot current. Without this the cache only ever held
+    the list as it looked at the previous launch's PREPARED — which comes from
+    the persisted store, so invites and rooms created on another device stayed
+    invisible on first paint until a sync landed. */
+export function cacheRooms(userId: string, rooms: RoomSummary[]) {
+  setCachedRooms(userId, rooms)
+}
+
 function setCachedRooms(userId: string, rooms: RoomSummary[]) {
   try {
     localStorage.setItem(ROOMS_CACHE_KEY(userId), JSON.stringify(rooms))

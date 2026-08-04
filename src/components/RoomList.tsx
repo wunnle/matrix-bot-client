@@ -4,7 +4,7 @@ import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSe
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
-import { fetchJoinedRooms, getCachedRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, type RoomSummary } from '../lib/matrix'
+import { fetchJoinedRooms, getCachedRooms, cacheRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, type RoomSummary } from '../lib/matrix'
 import { useNavigate } from 'react-router-dom'
 import { seedAgentPills } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
@@ -102,6 +102,12 @@ export default function RoomList({
   const initialRooms = cached ? (savedOrder ? applyRoomOrder(cached, savedOrder) : cached) : []
   const [rooms, setRooms] = useState<RoomSummary[]>(initialRooms)
   const [loading, setLoading] = useState(cached === null)
+  // The live-update subscriptions below need the client to exist, which happens
+  // asynchronously inside fetchJoinedRooms. `loading` can't stand in for that:
+  // with a warm cache it starts false, so effects keyed on it ran once before
+  // the client existed, bailed, and — since it never changed — never re-ran,
+  // leaving the list with no sync/membership listeners for the whole session.
+  const [clientReady, setClientReady] = useState(false)
   const [error, setError] = useState('')
   const [roomAvatars, setRoomAvatars] = useState<Record<string, string>>({})
   const [userAvatarUrl, setUserAvatarUrl] = useState<string | null>(null)
@@ -126,9 +132,18 @@ export default function RoomList({
         const order = getRoomOrder(auth.userId)
         setRooms(order ? applyRoomOrder(r, order) : r)
         setLoading(false)
+        setClientReady(true)
         onReady()
       })
-      .catch((e) => { setError(e.message); setLoading(false); onReady() })
+      .catch((e) => {
+        setError(e.message)
+        setLoading(false)
+        onReady()
+        // A failed *initial sync* (e.g. timeout) still leaves a live client
+        // behind, and the SDK keeps retrying — so attach the listeners anyway
+        // and let the list correct itself once a sync lands.
+        try { getClient(); setClientReady(true) } catch {}
+      })
   }, [auth])
 
   // Donate rooms as share-sheet direct-share targets (native iOS only), minus
@@ -150,6 +165,13 @@ export default function RoomList({
     )
   }, [joinedRooms, auth.userId])
 
+  // Persist the live list so the next cold start paints what was last on screen
+  // (invites included) instead of the previous launch's startup snapshot.
+  useEffect(() => {
+    if (!clientReady || rooms.length === 0) return
+    cacheRooms(auth.userId, rooms)
+  }, [rooms, clientReady, auth.userId])
+
   // Resolve room avatars
   useEffect(() => {
     if (rooms.length === 0) return
@@ -169,11 +191,11 @@ export default function RoomList({
         localStorage.setItem('room_avatars', JSON.stringify({ ...existing, ...updates }))
       }
     })
-  }, [rooms])
+  }, [rooms, clientReady])
 
   // Own profile picture (from homeserver; client is ready after room list fetch)
   useEffect(() => {
-    if (loading) return
+    if (!clientReady) return
     let cancelled = false
     let client: ReturnType<typeof getClient>
     try { client = getClient() } catch { return }
@@ -195,7 +217,7 @@ export default function RoomList({
       }
     })()
     return () => { cancelled = true }
-  }, [auth.userId, loading])
+  }, [auth.userId, clientReady])
 
   // Keep active room in a ref so the timeline subscription below doesn't
   // tear down and re-subscribe every time the active room changes.
@@ -242,7 +264,7 @@ export default function RoomList({
 
   // Update unread counts on new messages (no reorder)
   useEffect(() => {
-    if (loading) return
+    if (!clientReady) return
     let client: ReturnType<typeof getClient>
     try { client = getClient() } catch { return }
 
@@ -282,11 +304,11 @@ export default function RoomList({
       client.off(sdk.RoomEvent.Timeline, onEvent)
       client.off(sdk.RoomEvent.Receipt, onReceipt)
     }
-  }, [loading])
+  }, [clientReady])
 
   // Update unread count when a push notification arrives for a room
   useEffect(() => {
-    if (loading) return
+    if (!clientReady) return
     let client: ReturnType<typeof getClient>
     try { client = getClient() } catch { return }
 
@@ -309,7 +331,7 @@ export default function RoomList({
 
     window.addEventListener("matrix-push", onPush)
     return () => window.removeEventListener("matrix-push", onPush)
-  }, [loading])
+  }, [clientReady])
 
   // Clear unread when active room changes
   useEffect(() => {
@@ -328,7 +350,7 @@ export default function RoomList({
   // Keep the list in step with invites arriving, being accepted, or being
   // revoked while the app is open.
   useEffect(() => {
-    if (loading) return
+    if (!clientReady) return
     let client: ReturnType<typeof getClient>
     try { client = getClient() } catch { return }
 
@@ -370,7 +392,7 @@ export default function RoomList({
       client.off(sdk.RoomEvent.MyMembership, onMembership)
       client.off(sdk.ClientEvent.Sync, onSync)
     }
-  }, [loading, auth.userId])
+  }, [clientReady, auth.userId])
 
   async function handleAcceptInvite(roomId: string, name: string) {
     setInviteError('')

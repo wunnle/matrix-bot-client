@@ -916,7 +916,10 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   max-width: 78%;
 }
 
-.message.other .message-body { max-width: 100%; min-width: 0; overflow: hidden; }
+.message.other .message-body { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; }
+/* Full-row so code blocks span the width instead of clipping into a narrow
+   box on short messages (the <pre>'s min-width:100% needs a full-width parent). */
+.message.other .bot-text { width: 100%; }
 
 .message.own .message-body { align-items: flex-end; }
 .message.other .message-body { align-items: flex-start; }

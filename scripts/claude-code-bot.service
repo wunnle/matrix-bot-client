@@ -1,0 +1,46 @@
+# Claude Code Matrix agent bot — systemd user unit.
+#
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   ln -sf ~/matrix-pwa/scripts/claude-code-bot.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now claude-code-bot
+#
+# Logs:  journalctl --user-unit=claude-code-bot -f
+#        (the `--user -u NAME` form finds nothing here; use --user-unit=)
+# Runs as a user unit (no sudo). Survives logout/reboot because lingering is
+# enabled for this user; check with: loginctl show-user "$USER" -p Linger
+
+[Unit]
+Description=Claude Code Matrix agent bot
+Documentation=https://linear.app/wunnle/project/claude-code-agent-rooms-b37c0dda717a
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/wunnle/matrix-pwa
+
+# The bot shells out to `claude`, which lives in ~/.local/bin — not on the
+# default PATH a systemd unit inherits. Without this every turn fails ENOENT.
+Environment=PATH=/home/wunnle/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+ExecStart=/usr/bin/node --env-file=/home/wunnle/matrix-pwa/scripts/.env /home/wunnle/matrix-pwa/scripts/claude-code-bot.mjs
+
+Restart=always
+RestartSec=5
+# Stop retrying if it dies 5 times in a minute — a crashloop should surface as
+# a failed unit rather than hammer matrix.org with login attempts.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# A turn can block for minutes on a pending approval; let it finish on stop.
+TimeoutStopSec=30
+KillSignal=SIGINT
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-code-bot
+
+[Install]
+WantedBy=default.target

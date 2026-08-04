@@ -946,6 +946,26 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .bot-text-rich code:hover { background: var(--bg-hover); }
 .bot-text-rich pre:hover { background: var(--bg-hover); }
 .bot-text blockquote { border-left: 3px solid var(--border); padding-left: 0.8em; color: var(--text-muted); margin-bottom: 0.5em; }
+/* Tables scroll sideways rather than widening the timeline, the same way <pre>
+   is contained above. display:block is what makes overflow-x apply at all. */
+.bot-text table {
+  display: block;
+  width: 0;
+  min-width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.9em;
+  margin-bottom: 0.5em;
+}
+.bot-text th, .bot-text td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.bot-text th { font-weight: 600; background: var(--bg-active); }
 .bot-text a { color: var(--accent); text-decoration: none; }
 .bot-text a:hover { text-decoration: underline; }
 

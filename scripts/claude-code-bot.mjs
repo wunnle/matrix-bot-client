@@ -405,23 +405,30 @@ function modelLabel(model) {
   return Object.keys(MODEL_ALIASES).find((k) => MODEL_ALIASES[k] === model) ?? model
 }
 
-// Just the directory name. The avatar marks it as an agent room, the header
-// chip shows the model, and the topic carries the full path — so the name
-// itself only has to stay readable in a narrow room-list tile.
-function roomNameFor(cwd) {
-  const base = path.basename(cwd)
-  const taken = new Set(
-    Object.keys(sessions).map((id) => client.getRoom(id)?.name).filter(Boolean),
-  )
-  if (!taken.has(base)) return base
-  for (let n = 2; ; n++) {
-    if (!taken.has(`${base} ${n}`)) return `${base} ${n}`
+// Agent rooms are numbered rather than named after their directory: the avatar
+// marks them, the header chip shows the model, and the topic carries the full
+// path, so the name only has to be short and unambiguous in a narrow tile.
+const ROOM_PREFIX = 'BenderDev'
+const ROOM_NAME_RE = /^BenderDev-(\d+)$/
+
+// Counts up from the highest number in use rather than filling gaps, so a
+// number is never reused by a different room.
+function nextRoomName(extraNames = []) {
+  let max = 0
+  const names = [
+    ...client.getRooms().map((r) => r.name),
+    ...extraNames,
+  ]
+  for (const name of names) {
+    const m = name && ROOM_NAME_RE.exec(name)
+    if (m) max = Math.max(max, Number(m[1]))
   }
+  return `${ROOM_PREFIX}-${max + 1}`
 }
 
 async function spawnRoom(cwd, model) {
   const { room_id } = await client.createRoom({
-    name: roomNameFor(cwd),
+    name: nextRoomName(),
     topic: `${cwd} · ${model}`,
     // Marks this as an agent room so Construct can seed the standard action
     // pills on accept. The bot cannot write them itself — pills live in the
@@ -642,6 +649,27 @@ async function backfillAvatars() {
   }
 }
 await backfillAvatars()
+
+// Rooms spawned under the old naming keep names like "agent: matrix-pwa".
+// Renaming is server-side state, so it lands on every device without a client
+// rebuild. Rooms already following the scheme are left alone.
+async function backfillNames() {
+  const assigned = []
+  for (const roomId of Object.keys(sessions)) {
+    try {
+      const room = client.getRoom(roomId)
+      if (!room || room.getMyMembership() !== 'join') continue
+      if (ROOM_NAME_RE.test(room.name ?? '')) continue
+      const name = nextRoomName(assigned)
+      assigned.push(name)
+      await client.sendStateEvent(roomId, 'm.room.name', { name }, '')
+      log(`Renamed ${roomId} → ${name}`)
+    } catch (e) {
+      log(`Could not rename ${roomId}: ${e.message}`)
+    }
+  }
+}
+await backfillNames()
 
 startApprovalBroker()
 

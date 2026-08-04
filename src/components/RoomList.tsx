@@ -523,7 +523,26 @@ export default function RoomList({
                   const pusherList = (pushers?.pushers ?? []).map((p: any) =>
                     `${p.app_display_name} / ${p.device_display_name}: ...${String(p.pushkey).slice(-20)}`
                   ).join('\n') || 'none'
-                  alert(`Push subscription: ...${subEndpoint}\n\nRegistered pushers:\n${pusherList}`)
+                  // Whether the offline shell is actually in place. In WKWebView
+                  // this only works on app-bound domains, so it's the quickest
+                  // way to tell a native build can survive a cold start offline.
+                  const swState = !('serviceWorker' in navigator)
+                    ? 'unsupported (no offline shell)'
+                    : reg
+                    ? `${reg.active ? 'active' : reg.installing ? 'installing' : 'registered'} @ ${reg.scope}`
+                    : 'not registered'
+                  let shell = 'n/a'
+                  try {
+                    const cache = await caches.open('construct-shell-v1')
+                    const keys = await cache.keys()
+                    shell = keys.length ? `${keys.length} entries` : 'empty'
+                  } catch { shell = 'unavailable' }
+                  alert(
+                    `Origin: ${location.origin}\n` +
+                    `Service worker: ${swState}\n` +
+                    `Shell cache: ${shell}\n\n` +
+                    `Push subscription: ...${subEndpoint}\n\nRegistered pushers:\n${pusherList}`
+                  )
                 } catch (e: any) {
                   alert(`Debug error: ${e?.message}`)
                 }

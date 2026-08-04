@@ -18,6 +18,14 @@ const config: CapacitorConfig = {
     // Draw under the notch/home indicator; the CSS handles safe areas
     // (viewport-fit=cover + env(safe-area-inset-*) padding).
     contentInset: 'never',
+    // Opts the WebView into the Info.plist WKAppBoundDomains list, which is the
+    // only way WKWebView will run a Service Worker — without it the shell cache
+    // never registers and a remote build can't open offline. Not optional once
+    // that key exists: Capacitor requires it or the plugin bridge breaks. The
+    // side effect is that navigation is limited to the listed domains, which
+    // covers both modes (construct.kafagoz.com and localhost); external links
+    // are unaffected because they open in the system browser, not this WebView.
+    limitsNavigationsToAppBoundDomains: true,
   },
   server: {
     // Allow WKWebView to use SharedArrayBuffer (needed for matrix-sdk-crypto-wasm)

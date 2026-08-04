@@ -405,13 +405,23 @@ function modelLabel(model) {
   return Object.keys(MODEL_ALIASES).find((k) => MODEL_ALIASES[k] === model) ?? model
 }
 
+// Just the directory name. The avatar marks it as an agent room, the header
+// chip shows the model, and the topic carries the full path — so the name
+// itself only has to stay readable in a narrow room-list tile.
+function roomNameFor(cwd) {
+  const base = path.basename(cwd)
+  const taken = new Set(
+    Object.keys(sessions).map((id) => client.getRoom(id)?.name).filter(Boolean),
+  )
+  if (!taken.has(base)) return base
+  for (let n = 2; ; n++) {
+    if (!taken.has(`${base} ${n}`)) return `${base} ${n}`
+  }
+}
+
 async function spawnRoom(cwd, model) {
-  const label = path.basename(cwd)
-  // Several agent rooms can share a repo and model, so the time disambiguates
-  // them in the room list.
-  const stamp = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
   const { room_id } = await client.createRoom({
-    name: `⌁ ${label} · ${modelLabel(model)} · ${stamp}`,
+    name: roomNameFor(cwd),
     topic: `${cwd} · ${model}`,
     // Marks this as an agent room so Construct can seed the standard action
     // pills on accept. The bot cannot write them itself — pills live in the
@@ -487,7 +497,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
     try {
       await spawnRoom(cwd, model)
-      await sendRoomText(roomId,`Spawned agent room for ${cwd} on ${model} — check your invites.`)
+      await sendRoomText(roomId,`Spawned ${path.basename(cwd)} on ${modelLabel(model)} — check your invites.`)
     } catch (e) {
       await sendRoomText(roomId,`Spawn failed: ${e.message}`)
     }

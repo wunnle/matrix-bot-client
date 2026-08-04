@@ -69,19 +69,29 @@ const InviteCard = memo(function InviteCard({ room, busy, onAccept, onDecline }:
   onAccept: (roomId: string, name: string) => void
   onDecline: (roomId: string) => void
 }) {
+  // Shares the notification-centre card shape so invites read as the same kind
+  // of transient, actionable item rather than a second visual language.
   return (
-    <div className="invite-card">
-      <div className="invite-card-name">{room.name}</div>
-      {room.invitedBy && (
-        <div className="invite-card-from">from {shortUserId(room.invitedBy)}</div>
-      )}
+    <div className="notif-card invite-card">
+      <div className="notif-card-avatar">
+        <span>{roomInitial(room.name)}</span>
+      </div>
+      <div className="notif-card-content">
+        <div className="notif-card-room">{room.name}</div>
+        <div className="notif-card-body">
+          {room.invitedBy ? `invite from ${shortUserId(room.invitedBy)}` : 'invitation'}
+        </div>
+      </div>
       <div className="invite-card-actions">
         <button disabled={busy} onClick={() => onAccept(room.roomId, room.name)}>
-          {busy ? '…' : 'Accept'}
+          {busy ? '…' : 'Join'}
         </button>
-        <button disabled={busy} className="invite-card-decline" onClick={() => onDecline(room.roomId)}>
-          Decline
-        </button>
+        <button
+          disabled={busy}
+          className="invite-card-decline"
+          onClick={() => onDecline(room.roomId)}
+          aria-label="Decline invitation"
+        >✕</button>
       </div>
     </div>
   )
@@ -412,10 +422,7 @@ export default function RoomList({
         {error && <p className="error">{error}</p>}
 
         {invites.length > 0 && (
-          <div className="invite-section">
-            <div className="invite-section-label">
-              {invites.length === 1 ? 'Invitation' : `${invites.length} invitations`}
-            </div>
+          <div className="notif-center invite-section">
             {invites.map((room) => (
               <InviteCard
                 key={room.roomId}

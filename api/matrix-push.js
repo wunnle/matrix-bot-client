@@ -231,9 +231,19 @@ export default async function handler(req, res) {
             "interruption-level": "time-sensitive",
             // Enables the inline Reply action registered in AppDelegate.swift.
             category: "MESSAGE",
+            // Lets the notification service extension rewrite this into a
+            // communication notification (round room avatar, à la Messages).
+            // Harmless if no service extension is installed — iOS just delivers
+            // the alert as-is.
+            "mutable-content": 1,
             ...(counts?.unread != null ? { badge: counts.unread } : {}),
           },
           roomId: room_id,
+          // Proxy (https) URL of the room avatar for the service extension to
+          // download and hang on the communication-notification intent. null
+          // when the room has no known avatar — the extension falls back to the
+          // plain alert.
+          avatarUrl: mxcToProxyUrl(ROOM_AVATARS[room_id]),
           // Original markdown for the notification content extension to render
           // on long-press, with the [[CTA]] markers stripped (the extension
           // draws those as buttons instead). aps.alert.body stays stripped for

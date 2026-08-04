@@ -89,6 +89,12 @@ function getRooms(c: sdk.MatrixClient, userId: string): RoomSummary[] {
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
+// The room list as it stands right now, for callers that need to re-derive it
+// rather than trust a snapshot taken at startup.
+export function toRoomSummaries(c: sdk.MatrixClient, userId: string): RoomSummary[] {
+  return getRooms(c, userId)
+}
+
 export function toRoomSummary(room: sdk.Room, userId: string): RoomSummary {
   const invited = room.getMyMembership() === 'invite'
   const timeline = room.getLiveTimeline().getEvents()

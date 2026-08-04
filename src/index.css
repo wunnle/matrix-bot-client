@@ -262,49 +262,17 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   padding: 12px;
 }
 
-.invite-section {
-  /* Sits in the room-list flow rather than pinned to the bottom like the
-     notification centre, so it needs its own spacing. */
-  margin: 12px 12px 0;
+/* An invite is the room tile it will become, faded until accepted. */
+.room-card--invite { opacity: 0.45; }
+.room-card--invite:disabled { cursor: progress; }
+
+.room-card--invite .room-card-avatar {
+  border: 1px dashed var(--text-faint);
+  background: transparent;
 }
 
-.invite-card { cursor: default; }
-.invite-card:hover { background: transparent; }
-
-.invite-card-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.invite-card-actions button {
-  border: none;
-  border-radius: 6px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: inherit;
-  padding: 5px 10px;
-  cursor: pointer;
-}
-
-.invite-card-actions button:hover:not(:disabled) { background: var(--accent-hover); }
-.invite-card-actions button:disabled { opacity: 0.5; cursor: default; }
-
-/* Decline mirrors the notification dismiss affordance, not a second CTA. */
-.invite-card-actions .invite-card-decline {
-  background: none;
-  color: #9090a8;
-  font-size: 11px;
-  padding: 4px 6px;
-  font-weight: 400;
-}
-
-.invite-card-actions .invite-card-decline:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.06);
-  color: #5a5a72;
+@media (hover: hover) {
+  .room-card--invite:hover { opacity: 0.75; }
 }
 
 .room-card {

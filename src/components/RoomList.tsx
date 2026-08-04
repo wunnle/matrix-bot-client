@@ -4,7 +4,7 @@ import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSe
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
-import { fetchJoinedRooms, getCachedRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, getRoomUnreadCount, isInvite, acceptInvite, declineInvite, toRoomSummary, type RoomSummary } from '../lib/matrix'
+import { fetchJoinedRooms, getCachedRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, type RoomSummary } from '../lib/matrix'
 import { useNavigate } from 'react-router-dom'
 import { seedAgentPills } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
@@ -63,37 +63,26 @@ const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar
   )
 })
 
-const InviteCard = memo(function InviteCard({ room, busy, onAccept, onDecline }: {
+// An invite renders as a faded version of the room tile it will become.
+// Tapping accepts and opens it — the two-button card was a second visual
+// language for what is really just "a room you have not opened yet".
+const InviteTile = memo(function InviteTile({ room, busy, onAccept }: {
   room: RoomSummary
   busy: boolean
   onAccept: (roomId: string, name: string) => void
-  onDecline: (roomId: string) => void
 }) {
-  // Shares the notification-centre card shape so invites read as the same kind
-  // of transient, actionable item rather than a second visual language.
   return (
-    <div className="notif-card invite-card">
-      <div className="notif-card-avatar">
-        <span>{roomInitial(room.name)}</span>
+    <button
+      className="room-card room-card--invite"
+      onClick={() => onAccept(room.roomId, room.name)}
+      disabled={busy}
+      title={room.invitedBy ? `Invite from ${shortUserId(room.invitedBy)}` : 'Invitation'}
+    >
+      <div className="room-card-avatar">
+        {busy ? <span>…</span> : <span>{roomInitial(room.name)}</span>}
       </div>
-      <div className="notif-card-content">
-        <div className="notif-card-room">{room.name}</div>
-        <div className="notif-card-body">
-          {room.invitedBy ? `invite from ${shortUserId(room.invitedBy)}` : 'invitation'}
-        </div>
-      </div>
-      <div className="invite-card-actions">
-        <button disabled={busy} onClick={() => onAccept(room.roomId, room.name)}>
-          {busy ? '…' : 'Join'}
-        </button>
-        <button
-          disabled={busy}
-          className="invite-card-decline"
-          onClick={() => onDecline(room.roomId)}
-          aria-label="Decline invitation"
-        >✕</button>
-      </div>
-    </div>
+      <div className="room-card-name">{room.name}</div>
+    </button>
   )
 })
 
@@ -353,8 +342,27 @@ export default function RoomList({
       })
     }
 
+    // MyMembership only reaches a listener that happens to be mounted when the
+    // event lands. Recomputing on each sync makes the list self-correcting,
+    // rather than depending on catching that one event.
+    const onSync = (state: string) => {
+      if (state !== 'SYNCING') return
+      const fresh = toRoomSummaries(client, auth.userId)
+      setRooms((prev) => {
+        const changed = fresh.length !== prev.length
+          || fresh.some((r, i) => r.roomId !== prev[i]?.roomId || r.membership !== prev[i]?.membership)
+        if (!changed) return prev
+        const order = getRoomOrder(auth.userId)
+        return order ? applyRoomOrder(fresh, order) : fresh
+      })
+    }
+
     client.on(sdk.RoomEvent.MyMembership, onMembership)
-    return () => { client.off(sdk.RoomEvent.MyMembership, onMembership) }
+    client.on(sdk.ClientEvent.Sync, onSync)
+    return () => {
+      client.off(sdk.RoomEvent.MyMembership, onMembership)
+      client.off(sdk.ClientEvent.Sync, onSync)
+    }
   }, [loading, auth.userId])
 
   async function handleAcceptInvite(roomId: string, name: string) {
@@ -375,19 +383,6 @@ export default function RoomList({
       onSelectRoom(roomId, name)
     } catch (e) {
       setInviteError((e as Error).message ?? 'Could not join room')
-    } finally {
-      setInvitesBusy((p) => ({ ...p, [roomId]: false }))
-    }
-  }
-
-  async function handleDeclineInvite(roomId: string) {
-    setInviteError('')
-    setInvitesBusy((p) => ({ ...p, [roomId]: true }))
-    try {
-      await declineInvite(roomId)
-      setRooms((prev) => prev.filter((r) => r.roomId !== roomId))
-    } catch (e) {
-      setInviteError((e as Error).message ?? 'Could not decline invite')
     } finally {
       setInvitesBusy((p) => ({ ...p, [roomId]: false }))
     }
@@ -421,24 +416,19 @@ export default function RoomList({
         )}
         {error && <p className="error">{error}</p>}
 
-        {invites.length > 0 && (
-          <div className="notif-center invite-section">
-            {invites.map((room) => (
-              <InviteCard
-                key={room.roomId}
-                room={room}
-                busy={invitesBusy[room.roomId] ?? false}
-                onAccept={handleAcceptInvite}
-                onDecline={handleDeclineInvite}
-              />
-            ))}
-            {inviteError && <p className="error">{inviteError}</p>}
-          </div>
-        )}
+        {inviteError && <p className="error">{inviteError}</p>}
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={joinedRooms.map(r => r.roomId)} strategy={rectSortingStrategy}>
             <div className="room-grid">
+              {invites.map((room) => (
+                <InviteTile
+                  key={room.roomId}
+                  room={room}
+                  busy={invitesBusy[room.roomId] ?? false}
+                  onAccept={handleAcceptInvite}
+                />
+              ))}
               {joinedRooms.map((room) => (
                 <SortableRoomCard
                   key={room.roomId}

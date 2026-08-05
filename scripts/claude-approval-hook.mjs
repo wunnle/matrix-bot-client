@@ -28,7 +28,21 @@ const SAFE_BASH_BINS = new Set([
   'dirname', 'realpath', 'readlink', 'uname', 'hostname', 'sleep', 'true',
   'false', 'test', 'jq', 'shasum', 'md5sum', 'cksum', 'column', 'xxd', 'strings',
   'nl', 'tac', 'comm',
+  // Read-only inspection of the machine itself: processes, resources, network,
+  // hardware, clock. None of these change state without a flag we reject below.
+  'ps', 'pgrep', 'top', 'htop', 'free', 'uptime', 'w', 'last', 'lsof', 'ss',
+  'netstat', 'ip', 'ifconfig', 'route', 'arp', 'lsblk', 'lscpu', 'lsusb',
+  'lspci', 'mount', 'vmstat', 'iostat', 'nproc', 'groups', 'users',
+  'getent', 'locale', 'dig', 'host', 'nslookup', 'ping', 'traceroute',
+  'timedatectl', 'hostnamectl', 'localectl', 'vcgencmd',
 ])
+// Read-only by default, but each has flags/subcommands that mutate; the guards
+// below reject those before the binary is accepted.
+const GUARDED_BINS = {
+  // journalctl reads logs; these flags delete, rotate or re-key them.
+  journalctl: /--(vacuum-\w+|rotate|flush|sync|relinquish-var|setup-keys|update-catalog|header)\b/,
+  // systemctl's read-only verbs are handled via SAFE_SUBCOMMANDS.
+}
 // Run another program rather than doing anything themselves, so the wrapper's
 // own name says nothing about what actually executes: `env rm -rf …` must be
 // judged on `rm`, not on `env`.
@@ -42,6 +56,10 @@ const SAFE_SUBCOMMANDS = {
     'blame', 'cat-file', 'shortlog', 'symbolic-ref', 'for-each-ref', 'branch', 'remote']),
   npm: new Set(['test', 'ls', 'list', 'outdated', 'view', 'why', 'run']),
   node: new Set(['--version', '-v']),
+  systemctl: new Set(['status', 'show', 'cat', 'is-active', 'is-enabled', 'is-failed',
+    'list-units', 'list-unit-files', 'list-timers', 'list-sockets', 'list-jobs',
+    'show-environment', 'get-default']),
+  hermes: new Set(['status']),
 }
 const SAFE_NPM_SCRIPTS = new Set(['build', 'test', 'lint', 'typecheck'])
 
@@ -68,6 +86,8 @@ function bashIsSafe(command) {
       base = tokens[0].split('/').pop()
     }
     if (SAFE_BASH_BINS.has(base) || PREAPPROVED_BINS.has(base)) return true
+    const guard = GUARDED_BINS[base]
+    if (guard) return !guard.test(tokens.slice(1).join(' '))
     const subs = SAFE_SUBCOMMANDS[base]
     if (!subs || !subs.has(tokens[1])) return false
     if (base === 'npm' && tokens[1] === 'run') return SAFE_NPM_SCRIPTS.has(tokens[2])

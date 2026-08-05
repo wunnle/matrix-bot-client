@@ -33,6 +33,9 @@ const SAFE_BASH_BINS = new Set([
 // own name says nothing about what actually executes: `env rm -rf …` must be
 // judged on `rm`, not on `env`.
 const WRAPPERS = new Set(['env', 'command', 'nohup', 'stdbuf'])
+// Not read-only, but pre-authorised: the Linear CLI only ever touches Sinan's
+// own issue tracker, and prompting for every search made the bots unusable.
+const PREAPPROVED_BINS = new Set(['linear'])
 // Programs safe only for specific read-only subcommands.
 const SAFE_SUBCOMMANDS = {
   git: new Set(['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files', 'describe',
@@ -64,7 +67,7 @@ function bashIsSafe(command) {
       if (!tokens.length || tokens[0].startsWith('-')) return false
       base = tokens[0].split('/').pop()
     }
-    if (SAFE_BASH_BINS.has(base)) return true
+    if (SAFE_BASH_BINS.has(base) || PREAPPROVED_BINS.has(base)) return true
     const subs = SAFE_SUBCOMMANDS[base]
     if (!subs || !subs.has(tokens[1])) return false
     if (base === 'npm' && tokens[1] === 'run') return SAFE_NPM_SCRIPTS.has(tokens[2])
@@ -133,7 +136,7 @@ if (PATH_SCOPED.has(toolName)) {
 }
 
 if (toolName === 'Bash' && bashIsSafe(toolInput.command)) {
-  decide('allow', 'Read-only Bash command (allowlist).')
+  decide('allow', 'Bash command on the allowlist.')
 }
 
 // Everything else — mutating Bash, writes outside the directory, unknown tools — asks.

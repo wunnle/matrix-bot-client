@@ -12,6 +12,7 @@ const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
 
 const sdk = await import('matrix-js-sdk')
+const { Marked } = await import('marked')
 const { decodeRecoveryKey } = await import('matrix-js-sdk/lib/crypto-api/recovery-key.js')
 const { calculateKeyCheck } = await import('matrix-js-sdk/lib/secret-storage.js')
 
@@ -250,14 +251,8 @@ function askForApproval(roomId, { toolName, summary }) {
 
     pendingApprovals.set(roomId, { resolve, timer })
 
-    const body = `🔐 Approve \`${toolName}\`?\n\n${summary}\n\n[[Approve]] [[Deny]]`
-    sendRoomText(roomId, body, {
-      format: 'org.matrix.custom.html',
-      formatted_body:
-        `<p>🔐 Approve <code>${escapeHtml(toolName)}</code>?</p>` +
-        `<pre><code>${escapeHtml(summary)}</code></pre>` +
-        '<p>[[Approve]] [[Deny]]</p>',
-    }).catch((e) => {
+    const body = `🔐 Approve \`${toolName}\`?\n\n${fencedBlock(summary)}\n\n[[Approve]] [[Deny]]`
+    sendRoomText(roomId, body).catch((e) => {
       // If we can't ask, we must not proceed as though we had.
       settleApproval(roomId, 'deny', `Could not post the approval request: ${e.message}`)
     })
@@ -273,9 +268,34 @@ function sendRoomText(roomId, text, extra = {}) {
   return client.sendMessage(roomId, {
     msgtype: 'm.text',
     body: text,
+    format: 'org.matrix.custom.html',
+    formatted_body: markdownToHtml(text),
     ...(model ? { 'com.construct.model': model } : {}),
     ...extra,
   })
+}
+
+// Claude Code answers in Markdown; Construct only renders rich text from
+// formatted_body (ChatView reads it when format is org.matrix.custom.html) and
+// otherwise prints the plain body verbatim, asterisks and all. The plain body
+// stays as the fallback for clients that ignore the HTML.
+//
+// Raw HTML in the source is escaped rather than passed through, so a reply that
+// discusses markup can't inject it. `[[Label]]` action markers survive as plain
+// text — Construct turns them into buttons, and keeps them literal inside
+// <code>, which is what we want for code blocks that happen to contain them.
+const md = new Marked({ renderer: { html: (token) => escapeHtml(token.raw) } })
+
+function markdownToHtml(text) {
+  return md.parse(String(text), { async: false }).trim()
+}
+
+// Fences `summary` as a Markdown code block, widening the fence so content
+// containing backtick runs can't terminate it early.
+function fencedBlock(summary) {
+  const longest = Math.max(0, ...[...String(summary).matchAll(/`+/g)].map((m) => m[0].length))
+  const fence = '`'.repeat(Math.max(3, longest + 1))
+  return `${fence}\n${summary}\n${fence}`
 }
 
 function escapeHtml(s) {
@@ -320,10 +340,26 @@ function startApprovalBroker() {
   })
 }
 
+// A room's subject is rarely clear from the first message but usually is by the
+// second, so the agent is asked to retitle it exactly once, on that turn. Only
+// while the name is still the auto-generated one — a name someone chose (or the
+// agent already picked) is never revisited, and the ask never repeats.
+const RENAME_TURN = 2
+const RENAME_INSTRUCTION =
+  'This room is still using its placeholder name. If the subject of this ' +
+  'conversation is now clear, invoke the room-rename skill to retitle it ' +
+  'before you answer, and mention the new name in one short closing line. ' +
+  'If it is not yet clear, skip it silently and just answer.'
+
 // Runs one Claude Code turn, resuming the room's session if it has one.
 function runClaude(roomId, prompt) {
   const entry = sessions[roomId] ?? { sessionId: null, cwd: DEFAULT_CWD, model: DEFAULT_MODEL }
   const model = entry.model ?? DEFAULT_MODEL
+  // Counted here rather than after the turn so a turn that crashes still moves
+  // the count along; the nudge is best-effort and must not stick.
+  entry.turns = (entry.turns ?? 0) + 1
+  sessions[roomId] = entry
+  saveSessions()
   const args = [
     '-p', prompt,
     '--output-format', 'json',
@@ -333,6 +369,9 @@ function runClaude(roomId, prompt) {
     '--settings', APPROVAL_SETTINGS,
   ]
   if (entry.sessionId) args.push('--resume', entry.sessionId)
+  if (entry.turns === RENAME_TURN && ROOM_NAME_RE.test(client.getRoom(roomId)?.name ?? '')) {
+    args.push('--append-system-prompt', RENAME_INSTRUCTION)
+  }
 
   return new Promise((resolve) => {
     execFile('claude', args, {
@@ -356,7 +395,7 @@ function runClaude(roomId, prompt) {
       try {
         const out = JSON.parse(stdout)
         if (out.session_id) {
-          sessions[roomId] = { sessionId: out.session_id, cwd: entry.cwd, model }
+          sessions[roomId] = { ...entry, sessionId: out.session_id, cwd: entry.cwd, model }
           saveSessions()
         }
         resolve({ text: out.result ?? '(no output)', isError: out.is_error })
@@ -453,12 +492,12 @@ async function spawnRoom(cwd, model) {
       users: { [USER_ID]: 100, ...(OWNER_ID ? { [OWNER_ID]: 100 } : {}) },
     },
     invite: OWNER_ID ? [OWNER_ID] : [],
+    // Deliberately NOT encrypted. With megolm the homeserver has no plaintext,
+    // so the push it hands the gateway carries no content.body and
+    // api/matrix-push.js drops it as a badge-only update — agent rooms never
+    // pushed. These are bot rooms on a homeserver we control, so plaintext is
+    // the right trade for working notifications.
     initial_state: [
-      {
-        type: 'm.room.encryption',
-        state_key: '',
-        content: { algorithm: 'm.megolm.v1.aes-sha2' },
-      },
       ...(avatarMxc ? [{
         type: 'm.room.avatar',
         state_key: '',
@@ -475,6 +514,51 @@ async function spawnRoom(cwd, model) {
 const startTs = Date.now()
 // Rooms with a turn in flight — Claude Code turns are not concurrency-safe per session.
 const busy = new Set()
+
+// `roomId:cwd` pairs that have been warned about sharing a working tree. A
+// second !spawn for the same pair is the confirmation and goes through.
+const pendingSpawns = new Set()
+
+// Attachments are handed to the agent as files on disk, because the CLI takes a
+// text prompt only — a path it can Read is the sole way an image reaches it.
+const MEDIA_DIR = path.join(STORE_DIR, 'media')
+fs.mkdirSync(MEDIA_DIR, { recursive: true })
+
+// Extension matters: the Read tool decides whether to load a file as an image
+// from it, so a mis-named download silently degrades to "unreadable binary".
+const MEDIA_EXT = {
+  'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif',
+  'image/webp': '.webp', 'image/avif': '.avif', 'application/pdf': '.pdf',
+}
+
+// Downloads an m.image/m.file attachment and returns its local path.
+async function downloadAttachment(event) {
+  const content = event.getContent()
+  // Encrypted attachments arrive as content.file with the AES keys inline and
+  // need a separate decrypt step; the Construct client uploads in the clear, so
+  // this is a diagnostic rather than a path we support.
+  if (content.file && !content.url) throw new Error('encrypted attachment (unsupported)')
+  if (!content.url) throw new Error('no media url')
+
+  // Media is authenticated on modern homeservers (MSC3916): the legacy
+  // unauthenticated /_matrix/media/ route 404s, so the token must be sent.
+  const url = client.mxcUrlToHttp(content.url, null, null, null, false, true, true)
+  if (!url) throw new Error(`unusable media url: ${content.url}`)
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${client.getAccessToken()}` },
+  })
+  if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`)
+  const buf = Buffer.from(await res.arrayBuffer())
+
+  const mime = content.info?.mimetype ?? res.headers.get('content-type') ?? ''
+  // Trust the sender's filename for its extension only, never for the path —
+  // a body of "../../x" would otherwise escape MEDIA_DIR.
+  const ext = MEDIA_EXT[mime.split(';')[0].trim()] ?? path.extname(content.body ?? '') ?? ''
+  const file = path.join(MEDIA_DIR, `${event.getId().replace(/[^\w-]/g, '_')}${ext}`)
+  fs.writeFileSync(file, buf)
+  log(`Saved attachment ${file} (${buf.length} bytes, ${mime || 'unknown type'})`)
+  return file
+}
 
 client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   if (toStartOfTimeline) return                          // skip history
@@ -507,6 +591,40 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   const roomId = room.roomId
   log(`[${room?.name ?? roomId}] ${event.getSender()}: ${body}`)
 
+  // An attachment's body is just the filename, so forwarding it as a prompt
+  // sends the agent a bare name and no picture — the reason images "didn't
+  // arrive". Download it and point the agent at the file instead.
+  const msgtype = event.getContent()?.msgtype
+  if (msgtype === 'm.image' || msgtype === 'm.file') {
+    if (busy.has(roomId)) {
+      await sendRoomText(roomId, 'Still working on the previous message — hold on.')
+      return
+    }
+    busy.add(roomId)
+    await client.sendTyping(roomId, true, 30000)
+    const keepAlive = setInterval(() => {
+      client.sendTyping(roomId, true, 30000).catch(() => {})
+    }, 25000)
+    try {
+      const file = await downloadAttachment(event)
+      // The caption, when the client sends one, is the actual instruction; the
+      // filename alone is not, so it is not repeated as the ask.
+      const caption = event.getContent()?.filename && body !== event.getContent().filename ? body : ''
+      const prompt = caption
+        ? `${caption}\n\n(The attachment for this message is at ${file} — read it first.)`
+        : `I sent you a file at ${file}. Read it and tell me what you see.`
+      const res = await runClaude(roomId, prompt)
+      await sendRoomText(roomId, res.error ? `⚠️ ${res.error}` : res.text)
+    } catch (e) {
+      await sendRoomText(roomId, `⚠️ Could not read that attachment: ${e.message}`).catch(() => {})
+    } finally {
+      clearInterval(keepAlive)
+      await client.sendTyping(roomId, false).catch(() => {})
+      busy.delete(roomId)
+    }
+    return
+  }
+
   // !spawn [path] [model] — both optional, model recognised by being a known name.
   if (body.startsWith('!spawn')) {
     const parts = body.slice('!spawn'.length).trim().split(/\s+/).filter(Boolean)
@@ -520,6 +638,20 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       await sendRoomText(roomId,`No such directory: ${cwd}`)
       return
     }
+    // Rooms sharing a directory share one working tree, so concurrent turns
+    // silently overwrite each other's edits. Warn once and let a repeat
+    // through — sequential use of the same repo is legitimate.
+    const sharing = Object.keys(sessions)
+      .filter((id) => sessions[id].cwd === cwd)
+      .map((id) => client.getRoom(id)?.name ?? id)
+    if (sharing.length > 0 && !pendingSpawns.has(`${roomId}:${cwd}`)) {
+      pendingSpawns.add(`${roomId}:${cwd}`)
+      await sendRoomText(roomId,
+        `⚠️ ${sharing.join(', ')} ${sharing.length === 1 ? 'is' : 'are'} already working in ${path.basename(cwd)}. ` +
+        'Running turns at the same time means both edit the same files.\n\nSend !spawn again to do it anyway.')
+      return
+    }
+    pendingSpawns.delete(`${roomId}:${cwd}`)
     try {
       await spawnRoom(cwd, model)
       await sendRoomText(roomId,`Spawned ${path.basename(cwd)} on ${modelLabel(model)} — check your invites.`)

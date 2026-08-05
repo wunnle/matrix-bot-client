@@ -273,6 +273,11 @@ function openPinContextMenu(
 }
 
 function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictationAutoSend }: Props) {
+  // Read inside the timeline listener, which must not re-subscribe whenever
+  // the active room changes.
+  const isActiveRef = useRef(isActive)
+  useEffect(() => { isActiveRef.current = isActive }, [isActive])
+
   // Keyboard show/hide resizes the layout; keep the tail visible, but only
   // if the user was already at the bottom — never yank them out of history.
   useVisualViewportResize(() => {
@@ -509,6 +514,13 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         if (eventModel) {
           setRoomModel(roomId, eventModel)
           setCurrentModel(eventModel)
+        }
+        // A receipt is otherwise only sent when the room is opened, so anything
+        // arriving while you are sitting in the room stayed unread forever and
+        // the badge climbed. Agent rooms hit this constantly: the bot replies
+        // while you watch.
+        if (isActiveRef.current && document.visibilityState === 'visible') {
+          client.sendReadReceipt(event).catch(() => {})
         }
       }
       setMessages((prev) => {

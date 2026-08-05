@@ -38,6 +38,13 @@ const DEFAULT_MODEL = process.env.AGENT_MODEL ?? MODEL_ALIASES.opus
 // action pills off this; keep it in sync with AGENT_ROOM_TYPE in src/lib/roomMeta.ts.
 const AGENT_ROOM_TYPE = 'com.construct.agent'
 
+// Survives a lost sessions.json, unlike the session map: the marker is in room
+// state on the server. Mirrors isAgentRoom in src/lib/roomMeta.ts.
+function isAgentRoom(roomId) {
+  const create = client.getRoom(roomId)?.currentState?.getStateEvents('m.room.create', '')
+  return create?.getContent()?.type === AGENT_ROOM_TYPE
+}
+
 // Loopback only — the broker decides what the agent may do, so it must not be
 // reachable from anywhere but the hook running on this host.
 const APPROVAL_PORT = Number(process.env.AGENT_APPROVAL_PORT ?? 8787)
@@ -691,13 +698,20 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     return
   }
 
-  // Only act as an agent in rooms that were spawned as agent rooms.
-  if (!sessions[roomId]) return
+  // Only act as an agent in rooms that were spawned as agent rooms. The session
+  // map is the usual answer, but it does not survive a lost sessions.json —
+  // and a room whose entry is gone is precisely the one you want to end, so
+  // fall back to the marker baked into m.room.create.
+  if (!sessions[roomId] && !isAgentRoom(roomId)) return
 
   // !reset — keep the room, its directory and model; drop the session so the
   // next message starts fresh. For when the context is poisoned rather than the
   // room being unwanted. The old transcript stays on disk.
   if (body === '!reset') {
+    if (!sessions[roomId]) {
+      await sendRoomText(roomId, 'No session to reset — this room is already unbound. Use !end to close it.')
+      return
+    }
     if (settleApproval(roomId, 'deny', 'Session reset.')) {
       await sendRoomText(roomId, '🚫 Denied the pending approval as part of the reset.')
     }

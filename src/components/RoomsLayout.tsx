@@ -72,19 +72,28 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     let client: ReturnType<typeof getClient>
     try { client = getClient() } catch { return }
 
-    const onMembership = (_event: sdk.MatrixEvent, member: sdk.RoomMember) => {
-      if (member.userId === auth.userId) return
-      if (member.membership !== 'leave' && member.membership !== 'ban') return
-      const room = client.getRoom(member.roomId)
+    const reapIfFinished = (roomId: string) => {
+      const room = client.getRoom(roomId)
       if (!room || room.getMyMembership() !== 'join') return
-      if (!isAgentRoom(client, member.roomId)) return
+      if (!isAgentRoom(client, roomId)) return
       // Only when nobody else is left — a human joining the room shouldn't
       // trigger this when they later leave.
       const others = room.getMembersWithMembership('join').filter((m) => m.userId !== auth.userId)
       if (others.length > 0) return
 
-      if (activeRoomIdRef.current === member.roomId) navigate('/', { replace: true })
-      client.leave(member.roomId).catch(() => {})
+      if (activeRoomIdRef.current === roomId) navigate('/', { replace: true })
+      client.leave(roomId).catch(() => {})
+    }
+
+    // The bot's leave lands as a live event only if we were running to see it.
+    // End a room with the app closed and that event arrives folded into the
+    // next initial sync, so sweep what we already have before listening.
+    for (const room of client.getRooms()) reapIfFinished(room.roomId)
+
+    const onMembership = (_event: sdk.MatrixEvent, member: sdk.RoomMember) => {
+      if (member.userId === auth.userId) return
+      if (member.membership !== 'leave' && member.membership !== 'ban') return
+      reapIfFinished(member.roomId)
     }
 
     client.on(sdk.RoomMemberEvent.Membership, onMembership)

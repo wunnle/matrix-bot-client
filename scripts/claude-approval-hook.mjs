@@ -17,6 +17,10 @@ const TIMEOUT_MS = Number(process.env.AGENT_APPROVAL_TIMEOUT_MS ?? 10 * 60 * 100
 const AUTO_ALLOW = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'NotebookRead', 'WebSearch', 'WebFetch'])
 // Writes are fine inside the room's own directory; outside it they need a human.
 const PATH_SCOPED = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit'])
+// Invoking one of these only loads its instructions into the turn — every tool
+// call the skill then makes comes back through this hook on its own, so this
+// grants nothing the skill's own calls would not have to earn separately.
+const SAFE_SKILLS = new Set(['linear', 'next'])
 
 // Bash commands that only read state run without a prompt. Anything unrecognised
 // — or any sign of mutation (write redirects, sudo, command substitution, find
@@ -148,6 +152,10 @@ const sessionId = payload.session_id
 const cwd = payload.cwd ?? process.cwd()
 
 if (AUTO_ALLOW.has(toolName)) decide('allow', 'Read-only tool.')
+
+if (toolName === 'Skill' && SAFE_SKILLS.has(toolInput.skill)) {
+  decide('allow', `Pre-approved skill: ${toolInput.skill}.`)
+}
 
 if (PATH_SCOPED.has(toolName)) {
   const target = toolInput.file_path ?? toolInput.path ?? toolInput.notebook_path

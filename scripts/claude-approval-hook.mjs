@@ -50,6 +50,10 @@ const WRAPPERS = new Set(['env', 'command', 'nohup', 'stdbuf'])
 // Not read-only, but pre-authorised: the Linear CLI only ever touches Sinan's
 // own issue tracker, and prompting for every search made the bots unusable.
 const PREAPPROVED_BINS = new Set(['linear'])
+// The same CLIs reached the long way round, as `node /path/to/thing.js …`.
+// Matched on basename so the wrapper and the raw script are judged alike —
+// otherwise the call is judged on `node`, which is only safe for --version.
+const PREAPPROVED_SCRIPTS = new Set(['linear.js'])
 // Programs safe only for specific read-only subcommands.
 const SAFE_SUBCOMMANDS = {
   git: new Set(['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files', 'describe',
@@ -86,6 +90,7 @@ function bashIsSafe(command) {
       base = tokens[0].split('/').pop()
     }
     if (SAFE_BASH_BINS.has(base) || PREAPPROVED_BINS.has(base)) return true
+    if (base === 'node' && PREAPPROVED_SCRIPTS.has((tokens[1] ?? '').split('/').pop())) return true
     const guard = GUARDED_BINS[base]
     if (guard) return !guard.test(tokens.slice(1).join(' '))
     const subs = SAFE_SUBCOMMANDS[base]

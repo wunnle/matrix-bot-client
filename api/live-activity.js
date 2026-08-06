@@ -190,6 +190,20 @@ export default async function handler(req, res) {
     return res.status(200).json({ sent: { event, priority, withDismissal }, result: r });
   }
 
+  // Fire a push-to-start immediately, ignoring the per-room cooldown, and
+  // report what APNs said. Waiting on a real message to retry a start payload
+  // means one attempt every cooldown; this makes it one attempt per second.
+  if (action === "test-start") {
+    const out = await startLiveActivityIfNeeded(roomId, {
+      roomName: req.body.roomName || "Construct",
+      detail: req.body.detail || "test start",
+      question: req.body.question || "",
+      actions: Array.isArray(req.body.actions) ? req.body.actions : [],
+      force: true,
+    });
+    return res.status(200).json(out);
+  }
+
   if (action !== "end" && !token) return res.status(400).json({ error: "missing token" });
 
   // Errors are reported, not swallowed: a silent storage failure here is
@@ -226,7 +240,7 @@ const START_COOLDOWN_MS = 15 * 60 * 1000;
     normal notification. We cannot tell from here whether the activity actually
     started (old iOS, Live Activities disabled, token stale), and suppressing
     the banner on an unconfirmed start is exactly how messages go missing. */
-export async function startLiveActivityIfNeeded(roomId, { roomName, detail, question = "", actions = [] }) {
+export async function startLiveActivityIfNeeded(roomId, { roomName, detail, question = "", actions = [], force = false }) {
   if (!apnsConfigured()) return { skipped: "apns-not-configured" };
   let blob;
   try {
@@ -240,7 +254,7 @@ export async function startLiveActivityIfNeeded(roomId, { roomName, detail, ques
     return { skipped: "already-running" };
   }
   const started = { ...(blob.started ?? {}) };
-  if (Date.now() - (started[roomId] ?? 0) < START_COOLDOWN_MS) return { skipped: "cooldown" };
+  if (!force && Date.now() - (started[roomId] ?? 0) < START_COOLDOWN_MS) return { skipped: "cooldown" };
 
   const tokens = Object.keys(blob.pushToStart ?? {});
   if (!tokens.length) return { skipped: "no-push-to-start-token" };

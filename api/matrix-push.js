@@ -225,17 +225,17 @@ export default async function handler(req, res) {
     return r.status === 200;
   })();
 
-  // Push-to-start (iOS 17.2+) can create an activity for a room the app has
-  // never opened. OFF by default: APNs accepts the start and returns 200 even
-  // when iOS then does nothing with it, so there is no way from here to know an
-  // activity actually appeared. Since a start push must carry an alert, acting
-  // on that 200 meant suppressing the message's own banner — which silently
-  // dropped messages whenever the activity failed to materialise.
+  // Push-to-start (iOS 17.2+) creates an activity for a room the app has never
+  // opened, which is what extends Live Activities beyond the ones the app
+  // starts itself. Set LIVE_ACTIVITY_PUSH_TO_START=0 to switch it off.
   //
-  // The machinery is kept (and reachable via action:"test-start") so this can
-  // be re-enabled once the device side is proven; until then a message always
-  // gets a notification, and Live Activities are the ones the app starts.
-  const activityStarted = process.env.LIVE_ACTIVITY_PUSH_TO_START === "1" && !liveActivityDelivered
+  // Deliberately does NOT suppress this message's notification, even though the
+  // start push carries its own alert: APNs answers 200 whether or not iOS goes
+  // on to create the activity, so "accepted" is not evidence of anything, and
+  // acting on it silently dropped a message. The cost is a double alert on the
+  // first message in a room (once per cooldown); the alternative risks a
+  // message with no surface at all, which is worse.
+  const activityStarted = process.env.LIVE_ACTIVITY_PUSH_TO_START !== "0" && !liveActivityDelivered
     ? await startLiveActivityIfNeeded(room_id, {
         roomName: room_name || title,
         alertTitle: sender_display_name || title,
@@ -261,7 +261,10 @@ export default async function handler(req, res) {
         // same message, so a banner here is a second buzz. Web Push (other
         // devices, e.g. desktop) is untouched — this only skips the native
         // iOS alert, and only when the Live Activity push actually landed.
-        if (liveActivityDelivered || activityStarted) return;
+        // Only a *delivered update* suppresses the banner — an activity that
+        // was already running proved itself by registering its token. A start
+        // is never trusted for this; see the note above.
+        if (liveActivityDelivered) return;
         // Sender as the title reads better than the room on iOS; the room
         // becomes the subtitle. Falls back to the web-push title when the
         // notification carries no sender.
@@ -348,7 +351,7 @@ export default async function handler(req, res) {
     activityStarted,
     devices: devices.length,
     // The alert is suppressed when a Live Activity carried the message instead.
-    alertSuppressed: liveActivityDelivered || activityStarted,
+    alertSuppressed: liveActivityDelivered,
   });
 
   // Matrix spec requires returning rejected pushkeys so the homeserver unregisters them

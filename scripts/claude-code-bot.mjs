@@ -360,6 +360,16 @@ const RENAME_INSTRUCTION =
   'before you answer, and mention the new name in one short closing line. ' +
   'If it is not yet clear, skip it silently and just answer.'
 
+// Construct renders trailing `[[Label]]` tokens as tappable buttons, so a turn
+// that ends in a question is much cheaper to answer from a phone if it offers
+// the likely replies. Applies to every turn, not just the first ones.
+const QUICK_ANSWER_INSTRUCTION =
+  'When your reply ends in a question or offers the user a choice, finish with ' +
+  'two to four short quick-answer options in double-bracket notation on the ' +
+  'last line, e.g. [[yes]] [[no]] [[restart service]]. Each label should be a ' +
+  'few words at most and be a reply the user could plausibly send. Omit them ' +
+  'when you are not asking anything.'
+
 // Runs one Claude Code turn, resuming the room's session if it has one.
 function runClaude(roomId, prompt) {
   const entry = sessions[roomId] ?? { sessionId: null, cwd: DEFAULT_CWD, model: DEFAULT_MODEL }
@@ -378,9 +388,12 @@ function runClaude(roomId, prompt) {
     '--settings', APPROVAL_SETTINGS,
   ]
   if (entry.sessionId) args.push('--resume', entry.sessionId)
+  // One combined flag: repeating --append-system-prompt only keeps the last.
+  const appended = [QUICK_ANSWER_INSTRUCTION]
   if (entry.turns <= RENAME_UNTIL_TURN && ROOM_NAME_RE.test(client.getRoom(roomId)?.name ?? '')) {
-    args.push('--append-system-prompt', RENAME_INSTRUCTION)
+    appended.push(RENAME_INSTRUCTION)
   }
+  args.push('--append-system-prompt', appended.join('\n\n'))
 
   return new Promise((resolve) => {
     execFile('claude', args, {

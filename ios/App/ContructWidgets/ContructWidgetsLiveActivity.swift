@@ -259,14 +259,25 @@ struct LockScreenView: View {
                 // anything longer truncates with an ellipsis. Quick-reply chips
                 // sit beneath it when bender suggests any.
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(state.detail)
-                        // The banner hard-caps at 160pt. With chips below, a tall
-                        // reply would push them past the clip, so cap the reply's
-                        // lines when actions are present to reserve room for them.
-                        .font(.body)
-                        .lineLimit(state.actions.isEmpty ? 10 : 3)
-                        .minimumScaleFactor(0.85)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 2) {
+                        // One activity serves every room now, so the card has to
+                        // say which room this is from. The avatar alone isn't
+                        // enough for agent rooms, whose names carry the task.
+                        if !state.roomName.isEmpty {
+                            Text(state.roomName)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Text(state.detail)
+                            // The banner hard-caps at 160pt. With chips below, a tall
+                            // reply would push them past the clip, so cap the reply's
+                            // lines when actions are present to reserve room for them.
+                            .font(.body)
+                            .lineLimit(state.actions.isEmpty ? 9 : 3)
+                            .minimumScaleFactor(0.85)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     if #available(iOS 17.0, *) {
                         if !state.actions.isEmpty {
                             QuickReplyButtons(actions: state.actions, roomId: state.roomId)

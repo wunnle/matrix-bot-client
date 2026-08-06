@@ -940,6 +940,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "saveIntentConfig", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "donateShareTargets", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cacheRoomAvatars", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isMacApp", returnType: CAPPluginReturnPromise)
     ]
 
@@ -948,6 +949,25 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     /// software keyboard.
     @objc func isMacApp(_ call: CAPPluginCall) {
         call.resolve(["value": ProcessInfo.processInfo.isiOSAppOnMac])
+    }
+
+    /// Store every room's avatar for the Live Activity to draw.
+    ///
+    /// Deliberately separate from donateShareTargets: that one is capped and
+    /// filtered by the share-sheet settings, so rooms excluded from sharing (or
+    /// past the cap) had no avatar and fell back to the bundled placeholder.
+    /// What the lock screen can draw shouldn't depend on sharing preferences.
+    @objc func cacheRoomAvatars(_ call: CAPPluginCall) {
+        let items: [(String, Data)] = (call.getArray("rooms", JSObject.self) ?? []).compactMap { room in
+            guard let roomId = room["roomId"] as? String, !roomId.isEmpty,
+                  let b64 = room["avatar"] as? String,
+                  let data = Data(base64Encoded: b64) else { return nil }
+            return (roomId, data)
+        }
+        call.resolve()
+        DispatchQueue.global(qos: .utility).async {
+            for (roomId, data) in items { AvatarCache.write(data, roomId: roomId) }
+        }
     }
 
     /// Donate an INSendMessageIntent per room so iOS surfaces the rooms as

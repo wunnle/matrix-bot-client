@@ -20,6 +20,9 @@ interface LiveActivityPlugin {
   end(options?: { roomId?: string }): Promise<void>
   saveIntentConfig(options: { secret: string; apiBase: string; room: string }): Promise<void>
   donateShareTargets(options: { rooms: { roomId: string; name: string; avatar?: string }[]; remove?: string[] }): Promise<void>
+  // Separate from the donation above: the Live Activity needs an avatar on disk
+  // for *every* room, not just the ones enabled for sharing.
+  cacheRoomAvatars(options: { rooms: { roomId: string; avatar: string }[] }): Promise<void>
   isMacApp(): Promise<{ value: boolean }>
 }
 
@@ -61,6 +64,29 @@ export async function donateShareTargets(
       : undefined,
   })))
   await plugin.donateShareTargets({ rooms: payload, remove: removeRoomIds }).catch(() => {})
+}
+
+/**
+ * Cache every room's avatar where the Live Activity can read it. It renders
+ * without network access, so the image has to be on disk before a message
+ * arrives — and unlike donateShareTargets this covers all rooms, since what the
+ * lock screen can draw shouldn't depend on the share-sheet settings.
+ */
+export async function cacheRoomAvatars(
+  rooms: { roomId: string; avatarMxc?: string }[],
+): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return
+  let client: ReturnType<typeof getClient> | null
+  try { client = getClient() } catch { return }
+  if (!client) return
+  const withAvatars = rooms.filter(r => r.avatarMxc).slice(0, 50)
+  if (withAvatars.length === 0) return
+  const payload = (await Promise.all(withAvatars.map(async r => {
+    const avatar = await resolveMediaBase64(client!, r.avatarMxc!, 96, 96, 'crop')
+    return avatar ? { roomId: r.roomId, avatar } : null
+  }))).filter(Boolean)
+  if (payload.length === 0) return
+  await plugin.cacheRoomAvatars({ rooms: payload }).catch(() => {})
 }
 
 /** True when running as an iPad app on a Mac (Designed for iPad). */

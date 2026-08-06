@@ -226,16 +226,24 @@ export default async function handler(req, res) {
   })();
 
   // No activity was updated, so there probably isn't one for this room — ask
-  // the device to create one (iOS 17.2+ push-to-start). Additive on purpose:
-  // it sends no alert and does not suppress the notification below, since an
-  // APNs 200 doesn't prove ActivityKit actually started anything.
-  if (!liveActivityDelivered) {
-    await startLiveActivityIfNeeded(room_id, {
-      roomName: room_name || title,
-      detail: body,
-      actions,
-    }).catch(() => {});
-  }
+  // the device to create one (iOS 17.2+ push-to-start), which is what gives
+  // rooms the app has never opened a Live Activity.
+  //
+  // A start push has to carry an alert or iOS discards it, so it arrives as
+  // this message's notification (sound + banner) and the per-device alert below
+  // is skipped when it was accepted — exactly how a delivered Live Activity
+  // update already suppresses its duplicate. iOS only issues a push-to-start
+  // token while Live Activities are enabled for the app, and a revoked one
+  // fails here and is dropped, so this can't leave a message with no surface.
+  const activityStarted = !liveActivityDelivered
+    ? await startLiveActivityIfNeeded(room_id, {
+        roomName: room_name || title,
+        // Match the banner it replaces: sender reads better than the room.
+        alertTitle: sender_display_name || title,
+        detail: body,
+        actions,
+      }).then((r) => r?.accepted === true).catch(() => false)
+    : false;
 
   await Promise.all(
     devices.map(async (device) => {
@@ -254,7 +262,7 @@ export default async function handler(req, res) {
         // same message, so a banner here is a second buzz. Web Push (other
         // devices, e.g. desktop) is untouched — this only skips the native
         // iOS alert, and only when the Live Activity push actually landed.
-        if (liveActivityDelivered) return;
+        if (liveActivityDelivered || activityStarted) return;
         // Sender as the title reads better than the room on iOS; the room
         // becomes the subtitle. Falls back to the web-push title when the
         // notification carries no sender.

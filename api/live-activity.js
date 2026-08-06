@@ -240,7 +240,7 @@ const START_COOLDOWN_MS = 15 * 60 * 1000;
     normal notification. We cannot tell from here whether the activity actually
     started (old iOS, Live Activities disabled, token stale), and suppressing
     the banner on an unconfirmed start is exactly how messages go missing. */
-export async function startLiveActivityIfNeeded(roomId, { roomName, detail, question = "", actions = [], force = false }) {
+export async function startLiveActivityIfNeeded(roomId, { roomName, detail, question = "", actions = [], alertTitle, force = false }) {
   if (!apnsConfigured()) return { skipped: "apns-not-configured" };
   let blob;
   try {
@@ -278,9 +278,11 @@ export async function startLiveActivityIfNeeded(roomId, { roomName, detail, ques
       },
       // Not optional: a start push creates visible UI, and iOS drops one that
       // carries no alert — APNs still answers 200, so the only symptom is an
-      // activity that never appears.
+      // activity that never appears. Since this alerts, it *is* the message's
+      // notification; the caller suppresses its own banner rather than buzzing
+      // twice (see matrix-push.js).
       alert: {
-        title: roomName || "Construct",
+        title: alertTitle || roomName || "Construct",
         body: (detail || "").slice(0, 150),
         sound: "default",
       },

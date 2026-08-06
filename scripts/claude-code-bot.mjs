@@ -1,6 +1,7 @@
-// Claude Code bot — each Matrix room is a persistent Claude Code session.
+// Agent bot — each Matrix room is a persistent coding-agent session.
 // Send `!spawn [path]` in any room it's in to create a fresh agent room. If a
 // room already holds that repo, the new one gets its own git worktree.
+// Which agent runs a room is the provider's business; see providers/index.mjs.
 // Run: node --env-file=scripts/.env scripts/claude-code-bot.mjs
 // Stop with Ctrl+C.
 import * as fs from 'node:fs'
@@ -8,6 +9,7 @@ import * as path from 'node:path'
 import * as os from 'node:os'
 import * as http from 'node:http'
 import { execFile } from 'node:child_process'
+import { providerFor, resolveModel, allModelAliases, DEFAULT_PROVIDER, PROVIDERS } from './providers/index.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
@@ -26,14 +28,14 @@ const OWNER_ID = process.env.AGENT_OWNER_ID ?? '@wunnle:matrix.org'
 // cwd for rooms that were not spawned with an explicit path.
 const DEFAULT_CWD = process.env.AGENT_CWD ?? path.join(os.homedir(), 'matrix-pwa')
 
-// Short names accepted in !spawn / !model, mapped to the exact CLI model ids.
-const MODEL_ALIASES = {
-  opus: 'claude-opus-5',
-  sonnet: 'claude-sonnet-5',
-  haiku: 'claude-haiku-4-5',
-  fable: 'claude-fable-5',
+// Which backend a room gets when it does not name one. AGENT_MODEL may name any
+// provider's model; an unrecognised value falls back rather than being passed
+// through to a CLI that would reject it.
+const DEFAULT = resolveModel(process.env.AGENT_MODEL) ?? {
+  provider: DEFAULT_PROVIDER,
+  model: PROVIDERS[DEFAULT_PROVIDER].defaultModel,
 }
-const DEFAULT_MODEL = process.env.AGENT_MODEL ?? MODEL_ALIASES.opus
+const DEFAULT_MODEL = DEFAULT.model
 
 // m.room.create `type` for rooms this bot spawns. Construct keys the standard
 // action pills off this; keep it in sync with AGENT_ROOM_TYPE in src/lib/roomMeta.ts.
@@ -50,22 +52,6 @@ function isAgentRoom(roomId) {
 // reachable from anywhere but the hook running on this host.
 const APPROVAL_PORT = Number(process.env.AGENT_APPROVAL_PORT ?? 8787)
 const APPROVAL_TIMEOUT_MS = Number(process.env.AGENT_APPROVAL_TIMEOUT_MS ?? 10 * 60 * 1000)
-const HOOK_PATH = path.join(import.meta.dirname, 'claude-approval-hook.mjs')
-const APPROVAL_SETTINGS = JSON.stringify({
-  hooks: {
-    PreToolUse: [
-      { matcher: '*', hooks: [{ type: 'command', command: `node ${HOOK_PATH}` }] },
-    ],
-  },
-})
-
-function resolveModel(name) {
-  const key = name.toLowerCase()
-  // Accept a bare alias or a full id; anything else is rejected by the caller.
-  if (MODEL_ALIASES[key]) return MODEL_ALIASES[key]
-  if (Object.values(MODEL_ALIASES).includes(key)) return key
-  return null
-}
 
 if (!HOMESERVER || !USER_ID || !PASSWORD) {
   console.error('Missing HOMESERVER, USER_ID_C/USER_ID_B, or PASSWORD_C/PASSWORD_B in env')
@@ -76,7 +62,9 @@ function log(...args) {
   console.log(`[${new Date().toISOString().slice(11, 23)}][claude-bot]`, ...args)
 }
 
-// roomId -> { sessionId, cwd }. One Claude Code session per room, forever.
+// roomId -> { sessionId, cwd, model, provider, … }. One agent session per room,
+// forever. `provider` says which backend owns `sessionId`; entries written
+// before providers existed have none and are read as Claude rooms.
 const SESSIONS_FILE = path.join(STORE_DIR, 'sessions.json')
 let sessions = {}
 if (fs.existsSync(SESSIONS_FILE)) {
@@ -370,61 +358,48 @@ const QUICK_ANSWER_INSTRUCTION =
   'few words at most and be a reply the user could plausibly send. Omit them ' +
   'when you are not asking anything.'
 
-// Runs one Claude Code turn, resuming the room's session if it has one.
-function runClaude(roomId, prompt) {
-  const entry = sessions[roomId] ?? { sessionId: null, cwd: DEFAULT_CWD, model: DEFAULT_MODEL }
+// Runs one turn through the room's provider, resuming its session if it has one.
+// Everything provider-specific — how a turn is invoked, how instructions are
+// injected, how the resumable id comes back — lives behind the adapter.
+function runTurn(roomId, prompt) {
+  const entry = sessions[roomId] ?? {
+    sessionId: null, cwd: DEFAULT_CWD, model: DEFAULT_MODEL, provider: DEFAULT.provider,
+  }
   const model = entry.model ?? DEFAULT_MODEL
+  const provider = providerFor(entry)
   // Counted here rather than after the turn so a turn that crashes still moves
   // the count along; the nudge is best-effort and must not stick.
   entry.turns = (entry.turns ?? 0) + 1
   sessions[roomId] = entry
   saveSessions()
-  const args = [
-    '-p', prompt,
-    '--output-format', 'json',
-    '--permission-mode', 'acceptEdits',
-    '--model', model,
-    // The PreToolUse hook is the real gate; see claude-approval-hook.mjs.
-    '--settings', APPROVAL_SETTINGS,
-  ]
-  if (entry.sessionId) args.push('--resume', entry.sessionId)
-  // One combined flag: repeating --append-system-prompt only keeps the last.
-  const appended = [QUICK_ANSWER_INSTRUCTION]
-  if (entry.turns <= RENAME_UNTIL_TURN && ROOM_NAME_RE.test(client.getRoom(roomId)?.name ?? '')) {
-    appended.push(RENAME_INSTRUCTION)
-  }
-  args.push('--append-system-prompt', appended.join('\n\n'))
 
-  return new Promise((resolve) => {
-    execFile('claude', args, {
-      cwd: entry.cwd,
-      // A turn can now block on a human answering an approval, so this must
-      // exceed the approval timeout rather than race it.
-      timeout: APPROVAL_TIMEOUT_MS + 15 * 60 * 1000,
-      maxBuffer: 32 * 1024 * 1024,
-      // The hook runs as a grandchild of this process; hand it the broker
-      // address so an overridden port stays consistent.
-      env: {
-        ...process.env,
-        AGENT_APPROVAL_URL: `http://127.0.0.1:${APPROVAL_PORT}/approve`,
-        AGENT_APPROVAL_TIMEOUT_MS: String(APPROVAL_TIMEOUT_MS),
-        // Which room to ask. Cannot be derived from the session id during a
-        // room's first turn, because that id is only known once it ends.
-        AGENT_ROOM_ID: roomId,
-      },
-    }, (err, stdout, stderr) => {
-      if (err && !stdout) return resolve({ error: stderr?.trim() || err.message })
-      try {
-        const out = JSON.parse(stdout)
-        if (out.session_id) {
-          sessions[roomId] = { ...entry, sessionId: out.session_id, cwd: entry.cwd, model }
-          saveSessions()
-        }
-        resolve({ text: out.result ?? '(no output)', isError: out.is_error })
-      } catch {
-        resolve({ error: `Could not parse output:\n${stdout.slice(0, 500)}` })
-      }
-    })
+  // Room policy, not provider policy: what the agent should be told about this
+  // room. The adapter decides where these end up.
+  const instructions = [QUICK_ANSWER_INSTRUCTION]
+  if (entry.turns <= RENAME_UNTIL_TURN && ROOM_NAME_RE.test(client.getRoom(roomId)?.name ?? '')) {
+    instructions.push(RENAME_INSTRUCTION)
+  }
+
+  return provider.run({
+    roomId,
+    prompt,
+    cwd: entry.cwd,
+    model,
+    sessionId: entry.sessionId,
+    instructions,
+    approval: {
+      url: `http://127.0.0.1:${APPROVAL_PORT}/approve`,
+      timeoutMs: APPROVAL_TIMEOUT_MS,
+    },
+    // A turn can block on a human answering an approval, so this must exceed
+    // the approval timeout rather than race it.
+    timeoutMs: APPROVAL_TIMEOUT_MS + 15 * 60 * 1000,
+    // The id to resume next time. Persisted as it arrives rather than after the
+    // turn resolves, so a crash between the two does not lose the session.
+    onSession: (sessionId) => {
+      sessions[roomId] = { ...entry, sessionId, model }
+      saveSessions()
+    },
   })
 }
 
@@ -470,9 +445,11 @@ async function ensureAvatar() {
   }
 }
 
-// Short alias for a resolved model id, for display.
+// Short alias for a resolved model id, for display. Asks whichever provider
+// owns the model, so an id from any backend renders as its own short name.
 function modelLabel(model) {
-  return Object.keys(MODEL_ALIASES).find((k) => MODEL_ALIASES[k] === model) ?? model
+  const owner = resolveModel(model)
+  return owner ? PROVIDERS[owner.provider].label(model) : model
 }
 
 // Agent rooms are numbered rather than named after their directory: the avatar
@@ -572,7 +549,7 @@ async function removeWorktree(dir, branch) {
   return { removed: true, branchDeleted }
 }
 
-async function spawnRoom(cwd, model, worktreeFrom = null) {
+async function spawnRoom(cwd, model, provider, worktreeFrom = null) {
   // The name is needed before the room exists: it names the worktree and its
   // branch, and the room's topic has to carry the path we actually bind to.
   const name = nextRoomName()
@@ -619,7 +596,7 @@ async function spawnRoom(cwd, model, worktreeFrom = null) {
   })
   // `worktree` marks the cwd as ours to clean up on !end. A room bound to a
   // directory the user chose must never have it removed.
-  sessions[room_id] = { sessionId: null, cwd, model, ...(branch ? { worktree: true, branch } : {}) }
+  sessions[room_id] = { sessionId: null, cwd, model, provider, ...(branch ? { worktree: true, branch } : {}) }
   saveSessions()
   log(`Spawned ${room_id} → ${cwd} [${model}]${branch ? ` on ${branch}` : ''}`)
   return { room_id, cwd, branch }
@@ -727,7 +704,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       const prompt = caption
         ? `${caption}\n\n(The attachment for this message is at ${file} — read it first.)`
         : `I sent you a file at ${file}. Read it and tell me what you see.`
-      const res = await runClaude(roomId, prompt)
+      const res = await runTurn(roomId, prompt)
       await sendRoomText(roomId, res.error ? `⚠️ ${res.error}` : res.text)
     } catch (e) {
       await sendRoomText(roomId, `⚠️ Could not read that attachment: ${e.message}`).catch(() => {})
@@ -742,9 +719,15 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   // !spawn [path] [model] — both optional, model recognised by being a known name.
   if (body.startsWith('!spawn')) {
     const parts = body.slice('!spawn'.length).trim().split(/\s+/).filter(Boolean)
-    let model = DEFAULT_MODEL
-    if (parts.length && resolveModel(parts[parts.length - 1])) {
-      model = resolveModel(parts.pop())
+    // The model name identifies its backend, so naming one is also how a room
+    // picks a provider — no extra argument needed.
+    let { provider, model } = DEFAULT
+    if (parts.length) {
+      const named = resolveModel(parts[parts.length - 1])
+      if (named) {
+        ;({ provider, model } = named)
+        parts.pop()
+      }
     }
     const arg = parts.join(' ')
     const cwd = arg ? path.resolve(arg.replace(/^~/, os.homedir())) : DEFAULT_CWD
@@ -775,7 +758,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
     pendingSpawns.delete(`${roomId}:${cwd}`)
     try {
-      const spawned = await spawnRoom(cwd, model, sharing.length > 0 ? root : null)
+      const spawned = await spawnRoom(cwd, model, provider, sharing.length > 0 ? root : null)
       const where = spawned.branch
         ? `a worktree of ${path.basename(cwd)} on \`${spawned.branch}\``
         : path.basename(cwd)
@@ -798,13 +781,16 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       await sendRoomText(roomId,'Not an agent room.')
       return
     }
+    const provider = providerFor(entry)
     const arg = body.slice('!model'.length).trim()
     if (!arg) {
       // The seeded pill sends a bare !model, so reporting alone left no way to
-      // switch without typing. Offer the alternatives as tappable options.
+      // switch without typing. Offer the alternatives as tappable options —
+      // only this room's provider's, since switching backend is not a model
+      // change and would strand the session.
       const current = entry.model ?? DEFAULT_MODEL
-      const options = Object.keys(MODEL_ALIASES)
-        .filter((alias) => MODEL_ALIASES[alias] !== current)
+      const options = Object.keys(provider.models)
+        .filter((alias) => provider.models[alias] !== current)
         .map((alias) => `[[!model ${alias}]]`)
         .join(' ')
       await sendRoomText(roomId, `Model: ${modelLabel(current)}\n\n${options}`)
@@ -812,12 +798,21 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
     const resolved = resolveModel(arg)
     if (!resolved) {
-      await sendRoomText(roomId,`Unknown model "${arg}". Try: ${Object.keys(MODEL_ALIASES).join(', ')}`)
+      await sendRoomText(roomId, `Unknown model "${arg}". Try: ${allModelAliases().join(', ')}`)
       return
     }
-    entry.model = resolved
+    // A session belongs to the backend that created it, so a model from another
+    // provider cannot be adopted mid-room. Say so rather than silently
+    // continuing on the old one.
+    if (resolved.provider !== provider.name) {
+      await sendRoomText(roomId,
+        `${modelLabel(resolved.model)} runs on ${resolved.provider}, but this room is a ${provider.name} room — ` +
+        'the session cannot move. Spawn a new room with that model instead.')
+      return
+    }
+    entry.model = resolved.model
     saveSessions()
-    await sendRoomText(roomId,`Model: ${modelLabel(resolved)} — from your next message.`)
+    await sendRoomText(roomId, `Model: ${modelLabel(resolved.model)} — from your next message.`)
     return
   }
 
@@ -927,7 +922,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   }, 25000)
 
   try {
-    const res = await runClaude(roomId, body)
+    const res = await runTurn(roomId, body)
     await sendRoomText(roomId,res.error ? `⚠️ ${res.error}` : res.text)
   } catch (e) {
     await sendRoomText(roomId,`⚠️ ${e.message}`).catch(() => {})

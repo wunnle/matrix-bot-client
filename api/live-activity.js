@@ -25,6 +25,11 @@ const SECRET = process.env.INTENT_SECRET;
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN;
 const ACCOUNT_DATA_TYPE = "com.construct.live_activity";
+/** Foreground heartbeats live in their own document, deliberately. Sharing the
+    one above would mean a read-modify-write every 45s racing the token
+    registry — last write wins, so a beat could silently drop a Live Activity
+    token. Alone, it needs no merge: one small PUT, nothing else to lose. */
+const PRESENCE_TYPE = "com.construct.presence";
 
 // Activities are short-lived; a token outliving this is stale and its pushes
 // would be rejected by APNs anyway.
@@ -42,8 +47,8 @@ async function userId() {
   return user_id;
 }
 
-async function accountDataUrl() {
-  return `${HOMESERVER}/_matrix/client/v3/user/${encodeURIComponent(await userId())}/account_data/${ACCOUNT_DATA_TYPE}`;
+async function accountDataUrl(type = ACCOUNT_DATA_TYPE) {
+  return `${HOMESERVER}/_matrix/client/v3/user/${encodeURIComponent(await userId())}/account_data/${type}`;
 }
 
 /** The whole account-data blob. `{}` when unset — a 404 here just means nothing
@@ -123,7 +128,7 @@ export default async function handler(req, res) {
           lastStart: blob.lastStart ?? null,
           lastNotify: blob.lastNotify ?? null,
           lastPush: lastPushCache,
-          activeClient: blob.active ?? null,
+          activeClient: await lastHeartbeat(),
         });
       }
       return res.status(200).json({ roomId, count: rooms[roomId] ? 1 : 0 });
@@ -163,8 +168,14 @@ export default async function handler(req, res) {
   // Room-less, like push-to-start, so it must precede the roomId check.
   if (action === "heartbeat") {
     try {
-      const blob = await readBlob();
-      await writeBlob({ ...blob, active: { ts: Date.now(), roomId: roomId ?? null } });
+      // Straight PUT: nothing else lives in this document, so there is nothing
+      // to read first and nothing another writer can lose.
+      const r = await fetch(await accountDataUrl(PRESENCE_TYPE), {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ts: Date.now(), roomId: roomId ?? null }),
+      });
+      if (!r.ok) throw new Error(`heartbeat write failed: ${r.status}`);
     } catch (err) {
       return res.status(200).json({ ok: false, error: String(err?.message || err) });
     }
@@ -350,11 +361,26 @@ export async function startLiveActivityIfNeeded(roomId, { roomName, detail, ques
     the failure mode has to be "you get notified anyway". */
 export async function clientActiveWithin(ms) {
   try {
-    const blob = await readBlob();
-    const ts = blob.active?.ts;
+    const r = await fetch(await accountDataUrl(PRESENCE_TYPE), {
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+    });
+    if (!r.ok) return false;
+    const ts = (await r.json())?.ts;
     return typeof ts === "number" && Date.now() - ts < ms;
   } catch {
     return false;
+  }
+}
+
+/** Last heartbeat, for the diagnostic. */
+export async function lastHeartbeat() {
+  try {
+    const r = await fetch(await accountDataUrl(PRESENCE_TYPE), {
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+    });
+    return r.ok ? await r.json() : null;
+  } catch {
+    return null;
   }
 }
 

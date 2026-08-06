@@ -186,11 +186,14 @@ export default async function handler(req, res) {
         // a mismatch is dropped silently by ActivityKit. `question` is echoed
         // from the registry so it stays visible (faded) above the reply.
         // `roomId` rides along so a button can send back to this room.
+        // roomName rides along because one activity serves every room now: it
+        // has to re-label itself for whichever room this message came from.
         "content-state": {
           status: "Reply",
           question: entry.question || "",
           detail: body.slice(0, 300),
           roomId: room_id,
+          roomName: room_name || title,
           actions: actions.slice(0, 3),
         },
         // An `alert` block turns this into an alerting update: iOS plays sound

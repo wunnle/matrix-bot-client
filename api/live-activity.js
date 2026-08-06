@@ -237,6 +237,11 @@ export default async function handler(req, res) {
     one), so without a cooldown a chatty room would stack duplicates. */
 const START_COOLDOWN_MS = 5 * 60 * 1000;
 
+/** The app keeps a single Live Activity for all rooms, so its update token is
+    stored under one key rather than per room; the room a message came from
+    travels in the content-state instead. */
+export const GLOBAL_KEY = "*";
+
 /** Create a Live Activity for a room that doesn't have one, using the device's
     push-to-start token (iOS 17.2+). This is what extends Live Activities to
     every room rather than only the ones started from inside the app.
@@ -254,12 +259,15 @@ export async function startLiveActivityIfNeeded(roomId, { roomName, detail, ques
     return { skipped: "read-failed", error: String(err?.message || err) };
   }
 
-  const existing = blob.rooms?.[roomId];
-  if (existing?.token && Date.now() - (existing.ts ?? 0) <= TTL_MS) {
-    return { skipped: "already-running" };
-  }
+  // Any live token means an activity already exists — update it instead of
+  // starting a second one, whichever room it was created for.
+  const runningActivity = Object.values(blob.rooms ?? {}).find(
+    (e) => e?.token && Date.now() - (e.ts ?? 0) <= TTL_MS
+  );
+  if (runningActivity) return { skipped: "already-running" };
+  // Cooldown is global for the same reason: there is only ever one activity.
   const started = { ...(blob.started ?? {}) };
-  if (!force && Date.now() - (started[roomId] ?? 0) < START_COOLDOWN_MS) return { skipped: "cooldown" };
+  if (!force && Date.now() - (started[GLOBAL_KEY] ?? 0) < START_COOLDOWN_MS) return { skipped: "cooldown" };
 
   const tokens = Object.keys(blob.pushToStart ?? {});
   if (!tokens.length) return { skipped: "no-push-to-start-token" };
@@ -279,6 +287,7 @@ export async function startLiveActivityIfNeeded(roomId, { roomName, detail, ques
         question: question.slice(0, 120),
         detail: (detail || "").slice(0, 300),
         roomId,
+        roomName: roomName || "",
         actions: actions.slice(0, 3),
       },
       // Not optional: a start push creates visible UI, and iOS drops one that
@@ -315,7 +324,7 @@ export async function startLiveActivityIfNeeded(roomId, { roomName, detail, ques
   // Only rate-limit a start APNs actually accepted — otherwise one rejected
   // push would block this room for the whole cooldown.
   const accepted = results.some((r) => r.status === 200);
-  if (accepted) started[roomId] = Date.now();
+  if (accepted) started[GLOBAL_KEY] = Date.now();
   try {
     await writeBlob({ ...blob, pushToStart: live, started, lastStart: { roomId, at: Date.now(), accepted, results } });
   } catch {}
@@ -347,7 +356,10 @@ export async function recordPushResult(roomId, result) {
 export async function liveActivityEntry(roomId) {
   try {
     const rooms = await readRooms();
-    const entry = rooms[roomId];
+    // One activity now serves every room, registered under GLOBAL_KEY. A
+    // room-keyed entry is only a leftover from the per-room model (or an
+    // activity an older build started), so it is still honoured as a fallback.
+    const entry = rooms[GLOBAL_KEY] ?? rooms[roomId] ?? Object.values(rooms)[0];
     return entry?.token ? { token: entry.token, question: entry.question || "" } : null;
   } catch {
     return null;

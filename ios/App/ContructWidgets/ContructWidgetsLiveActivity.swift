@@ -8,6 +8,7 @@ import AppIntents
 import WidgetKit
 import SwiftUI
 import UIKit
+import ImageIO
 
 // NOTE: this struct is intentionally duplicated in the app target
 // (AppDelegate.swift). ActivityKit matches attributes across processes by
@@ -25,9 +26,23 @@ struct ConstructActivityAttributes: ActivityAttributes {
         var roomId: String = ""
         // Bender's [[CTA]] chips, sent as one-tap QuickReplyIntent buttons.
         var actions: [String] = []
+        // Which room the current message is from. Lives here rather than in the
+        // attributes because a single activity now serves every room, and
+        // attributes are immutable once an activity starts. Defaulted so
+        // activities started before this field existed still decode; the views
+        // fall back to attributes.roomName when it's empty.
+        var roomName: String = ""
     }
 
     var roomName: String
+}
+
+/// The room a message came from. One activity serves every room now, so this
+/// lives in the state; the attribute is only a fallback for activities started
+/// before that moved (their state has no roomName).
+private func displayRoomName(_ state: ConstructActivityAttributes.ContentState,
+                             _ attributes: ConstructActivityAttributes) -> String {
+    state.roomName.isEmpty ? attributes.roomName : state.roomName
 }
 
 /// "Reply" is the only terminal (non-working) status; everything else
@@ -150,9 +165,21 @@ enum AvatarCache {
         return dir.appendingPathComponent(fileName(for: roomId))
     }
 
+    /// Decoded through ImageIO at a bounded size rather than with
+    /// `UIImage(data:)`. A Live Activity renders in a tiny memory budget, and a
+    /// full-resolution avatar expands to tens of megabytes once decoded — enough
+    /// for the system to SIGKILL the extension mid-render, which shows up as an
+    /// activity that never appears rather than as a crash.
     static func image(for roomId: String) -> UIImage? {
-        guard let url = url(for: roomId), let data = try? Data(contentsOf: url) else { return nil }
-        return UIImage(data: data)
+        guard let url = url(for: roomId),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 180,
+        ]
+        guard let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return UIImage(cgImage: thumb)
     }
 }
 
@@ -320,7 +347,7 @@ struct ContructWidgetsLiveActivity: Widget {
                 // Room name fills the otherwise-empty top-left; the working ring
                 // sits top-right while waiting.
                 DynamicIslandExpandedRegion(.leading) {
-                    Text(context.attributes.roomName)
+                    Text(displayRoomName(context.state, context.attributes))
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(.secondary)
                         // Inset from the island's rounded top-left corner, which
@@ -412,7 +439,7 @@ private struct IslandExpandedMock: View {
         let reply = isReply(state.status)
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
-                Text(attributes.roomName)
+                Text(displayRoomName(state, attributes))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.secondary)
                 Spacer()

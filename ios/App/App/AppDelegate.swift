@@ -274,6 +274,12 @@ private func configureWebKeyboardOnce() {
 /// webview, so they can't reach import.meta.env). Persisted in the shared App
 /// Group suite so extensions in their own processes (e.g. the notification
 /// content extension) can read the secret too, not just the app process.
+/// The app keeps one Live Activity for every room, so its update token is
+/// registered under a single key rather than per room — the room a message came
+/// from travels in the content-state. Must match GLOBAL_KEY in
+/// api/live-activity.js.
+let liveActivityGlobalKey = "*"
+
 enum IntentConfig {
     static let appGroup = "group.com.wunnle.construct"
     static let secret = "construct.intentSecret"
@@ -375,9 +381,8 @@ private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<
 @available(iOS 16.2, *)
 private func adoptRunningLiveActivities() {
     for activity in Activity<ConstructActivityAttributes>.activities {
-        let state = activity.content.state
-        guard !state.roomId.isEmpty else { continue }
-        trackLiveActivityToken(activity, room: state.roomId, question: state.question)
+        trackLiveActivityToken(activity, room: liveActivityGlobalKey,
+                               question: activity.content.state.question)
     }
 }
 
@@ -404,11 +409,8 @@ private func observeLiveActivityStartsOnce() {
 
     Task {
         for await activity in Activity<ConstructActivityAttributes>.activityUpdates {
-            let state = activity.content.state
-            // The gateway stamps the room into content-state; without it there
-            // is nothing to register the update token against.
-            guard !state.roomId.isEmpty else { continue }
-            trackLiveActivityToken(activity, room: state.roomId, question: state.question)
+            trackLiveActivityToken(activity, room: liveActivityGlobalKey,
+                                   question: activity.content.state.question)
         }
     }
 }
@@ -913,6 +915,12 @@ struct ConstructActivityAttributes: ActivityAttributes {
         var roomId: String = ""
         // Bender's [[CTA]] chips, sent as one-tap QuickReplyIntent buttons.
         var actions: [String] = []
+        // Which room the current message is from. Lives here rather than in the
+        // attributes because a single activity now serves every room, and
+        // attributes are immutable once an activity starts. Defaulted so
+        // activities started before this field existed still decode; the views
+        // fall back to attributes.roomName when it's empty.
+        var roomName: String = ""
     }
 
     var roomName: String
@@ -1011,24 +1019,33 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Live Activities require iOS 16.2 or later")
             return
         }
-        let attributes = ConstructActivityAttributes(roomName: call.getString("roomName") ?? "Construct")
+        let roomName = call.getString("roomName") ?? "Construct"
+        let attributes = ConstructActivityAttributes(roomName: roomName)
         let question = call.getString("question") ?? ""
         let state = ConstructActivityAttributes.ContentState(
             status: call.getString("status") ?? "",
             question: question,
-            detail: call.getString("detail") ?? ""
+            detail: call.getString("detail") ?? "",
+            roomId: call.getString("roomId") ?? "",
+            roomName: roomName
         )
+        // One activity serves every room, so re-point the running one at this
+        // room rather than adding a second to the lock screen.
+        if let existing = Activity<ConstructActivityAttributes>.activities.first(where: { $0.activityState == .active }) {
+            Task {
+                await existing.update(.init(state: state, staleDate: nil))
+                trackLiveActivityToken(existing, room: liveActivityGlobalKey, question: question)
+                call.resolve(["activityId": existing.id, "reused": true])
+            }
+            return
+        }
         do {
             let activity = try Activity.request(
                 attributes: attributes,
                 content: .init(state: state, staleDate: nil),
                 pushType: .token
             )
-            // Only rooms we can address can receive pushed updates; without a
-            // roomId the activity still works, just app-driven as before.
-            if let room = call.getString("roomId") {
-                trackLiveActivityToken(activity, room: room, question: question)
-            }
+            trackLiveActivityToken(activity, room: liveActivityGlobalKey, question: question)
             call.resolve(["activityId": activity.id])
         } catch {
             call.reject("Failed to start Live Activity: \(error.localizedDescription)")
@@ -1061,9 +1078,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         Task {
             // Clear tokens first, so the gateway can't push into an activity
             // that is about to be dismissed.
-            if let room = call.getString("roomId") {
-                await clearLiveActivityTokens(room: room)
-            }
+            await clearLiveActivityTokens(room: liveActivityGlobalKey)
             for activity in Activity<ConstructActivityAttributes>.activities {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }

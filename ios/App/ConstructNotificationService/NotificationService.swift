@@ -14,6 +14,8 @@
 //
 import Intents
 import UserNotifications
+import ImageIO
+import UIKit
 
 /// Writer half of the Live Activity avatar cache, duplicated from the app
 /// target (AppDelegate.swift) — separate processes with no shared module, so
@@ -28,13 +30,32 @@ private enum AvatarCache {
     }
 
     static func write(_ data: Data, roomId: String) {
-        guard !roomId.isEmpty, !data.isEmpty,
+        // The proxy serves the avatar at full resolution, and the reader is a
+        // Live Activity with a tiny memory budget — store a bounded thumbnail
+        // rather than whatever arrived, so rendering can't be killed for it.
+        guard !roomId.isEmpty, let png = downsampledPNG(data, maxPixel: 180),
               let dir = FileManager.default
                 .containerURL(forSecurityApplicationGroupIdentifier: appGroup)?
                 .appendingPathComponent("avatars", isDirectory: true)
         else { return }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try? data.write(to: dir.appendingPathComponent(fileName(for: roomId)), options: .atomic)
+        try? png.write(to: dir.appendingPathComponent(fileName(for: roomId)), options: .atomic)
+    }
+
+    /// ImageIO rather than UIImage: this decodes straight to the target size
+    /// instead of expanding the original in memory first (the same reason the
+    /// share extension downsamples).
+    private static func downsampledPNG(_ data: Data, maxPixel: Int) -> Data? {
+        guard !data.isEmpty,
+              let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        else { return nil }
+        return UIImage(cgImage: thumb).pngData()
     }
 }
 

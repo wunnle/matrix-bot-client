@@ -225,20 +225,19 @@ export default async function handler(req, res) {
     return r.status === 200;
   })();
 
-  // No activity was updated, so there probably isn't one for this room — ask
-  // the device to create one (iOS 17.2+ push-to-start), which is what gives
-  // rooms the app has never opened a Live Activity.
+  // Push-to-start (iOS 17.2+) can create an activity for a room the app has
+  // never opened. OFF by default: APNs accepts the start and returns 200 even
+  // when iOS then does nothing with it, so there is no way from here to know an
+  // activity actually appeared. Since a start push must carry an alert, acting
+  // on that 200 meant suppressing the message's own banner — which silently
+  // dropped messages whenever the activity failed to materialise.
   //
-  // A start push has to carry an alert or iOS discards it, so it arrives as
-  // this message's notification (sound + banner) and the per-device alert below
-  // is skipped when it was accepted — exactly how a delivered Live Activity
-  // update already suppresses its duplicate. iOS only issues a push-to-start
-  // token while Live Activities are enabled for the app, and a revoked one
-  // fails here and is dropped, so this can't leave a message with no surface.
-  const activityStarted = !liveActivityDelivered
+  // The machinery is kept (and reachable via action:"test-start") so this can
+  // be re-enabled once the device side is proven; until then a message always
+  // gets a notification, and Live Activities are the ones the app starts.
+  const activityStarted = process.env.LIVE_ACTIVITY_PUSH_TO_START === "1" && !liveActivityDelivered
     ? await startLiveActivityIfNeeded(room_id, {
         roomName: room_name || title,
-        // Match the banner it replaces: sender reads better than the room.
         alertTitle: sender_display_name || title,
         detail: body,
         actions,

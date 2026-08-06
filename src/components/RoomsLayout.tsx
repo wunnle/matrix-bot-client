@@ -14,6 +14,7 @@ import { getClient, getCachedRooms, resyncNow } from '../lib/matrix'
 import { getDictationAutoSend, setDictationAutoSend } from '../lib/clientSettings'
 import { resolveRoomIdFromParam } from '../lib/roomAliases'
 import { isAgentRoom } from '../lib/roomMeta'
+import { startPresenceHeartbeat, setActiveRoom } from '../lib/presence'
 
 interface Props {
   auth: AuthState
@@ -158,6 +159,11 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     if (roomId) return
     fetchIntent()
   }, [roomId, fetchIntent])
+
+  // Report foreground presence so the gateway can skip notifying a phone for a
+  // message already on screen in whichever client you're using.
+  useEffect(() => startPresenceHeartbeat(), [])
+  useEffect(() => { setActiveRoom(activeRoomId) }, [activeRoomId])
 
   useEffect(() => {
     if (!clientReady) return

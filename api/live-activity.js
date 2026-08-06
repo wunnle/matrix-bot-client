@@ -123,18 +123,7 @@ export default async function handler(req, res) {
           lastStart: blob.lastStart ?? null,
           lastNotify: blob.lastNotify ?? null,
           lastPush: lastPushCache,
-          // Is the homeserver's own presence usable for "am I active in another
-          // client"? Cheaper than a heartbeat if it is, useless if the server
-          // degrades it — worth knowing before building on it.
-          presence: await (async () => {
-            try {
-              const r = await fetch(
-                `${HOMESERVER}/_matrix/client/v3/presence/${encodeURIComponent(await userId())}/status`,
-                { headers: { Authorization: `Bearer ${ACCESS_TOKEN}` } }
-              );
-              return r.ok ? await r.json() : { error: r.status };
-            } catch (e) { return { error: String(e?.message || e) }; }
-          })(),
+          activeClient: blob.active ?? null,
         });
       }
       return res.status(200).json({ roomId, count: rooms[roomId] ? 1 : 0 });
@@ -163,6 +152,19 @@ export default async function handler(req, res) {
         if (ts < cutoff) delete pushToStart[t];
       }
       await writeBlob({ ...blob, pushToStart });
+    } catch (err) {
+      return res.status(200).json({ ok: false, error: String(err?.message || err) });
+    }
+    return res.status(200).json({ ok: true });
+  }
+
+  // A client in the foreground says so periodically, so the gateway can skip
+  // buzzing a phone for something you're already looking at somewhere else.
+  // Room-less, like push-to-start, so it must precede the roomId check.
+  if (action === "heartbeat") {
+    try {
+      const blob = await readBlob();
+      await writeBlob({ ...blob, active: { ts: Date.now(), roomId: roomId ?? null } });
     } catch (err) {
       return res.status(200).json({ ok: false, error: String(err?.message || err) });
     }
@@ -341,6 +343,19 @@ export async function startLiveActivityIfNeeded(roomId, { roomName, detail, ques
     await writeBlob({ ...blob, pushToStart: live, started, lastStart: { roomId, at: Date.now(), accepted, results } });
   } catch {}
   return { sent: results.length, accepted, results };
+}
+
+/** How recently a Construct client reported itself in the foreground. Returns
+    false on any error so a storage hiccup can't silently mute notifications —
+    the failure mode has to be "you get notified anyway". */
+export async function clientActiveWithin(ms) {
+  try {
+    const blob = await readBlob();
+    const ts = blob.active?.ts;
+    return typeof ts === "number" && Date.now() - ts < ms;
+  } catch {
+    return false;
+  }
 }
 
 /** Record that the gateway ran for a room, and which branch it took. Without

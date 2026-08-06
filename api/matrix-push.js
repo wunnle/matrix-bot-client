@@ -8,7 +8,7 @@
  */
 import webpush from "web-push";
 import { apnsSend, apnsSendWithFallback, apnsConfigured, isEnvMismatch, APNS_BUNDLE_ID, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
-import { liveActivityEntry, clearTokens, recordPushResult, startLiveActivityIfNeeded, recordNotify } from "./live-activity.js";
+import { liveActivityEntry, clearTokens, recordPushResult, startLiveActivityIfNeeded, recordNotify, clientActiveWithin } from "./live-activity.js";
 
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
@@ -151,6 +151,11 @@ export default async function handler(req, res) {
 
   const rejected = [];
 
+  // You're looking at Construct somewhere right now (web, desktop, or this
+  // phone), so a banner is noise — the open client already shows the message.
+  // Deliberately fails open: any error reading this reports "not active".
+  const activeElsewhere = await clientActiveWithin(75_000);
+
   // Resolved once and shared by the APNs payload (service extension) and the
   // Web Push icon.
   const avatarUrl = mxcToProxyUrl(await resolveRoomAvatarMxc(room_id, sender));
@@ -201,11 +206,15 @@ export default async function handler(req, res) {
         // expands) instead of updating it silently. The push-payload equivalent
         // of ActivityKit's alertConfiguration, which the app can't set while
         // suspended.
-        alert: {
-          title: title,
-          body: body.slice(0, 150),
-          sound: "default",
-        },
+        // Alerting updates play a sound and expand the island. Skipped while a
+        // client is active: the activity still refreshes, just without the buzz.
+        ...(activeElsewhere ? {} : {
+          alert: {
+            title: title,
+            body: body.slice(0, 150),
+            sound: "default",
+          },
+        }),
       },
     };
 
@@ -259,6 +268,9 @@ export default async function handler(req, res) {
         if (!apnsConfigured()) {
           return; // APNs not configured — don't reject, token may be valid later
         }
+        // A client is in the foreground somewhere — skip the banner rather than
+        // buzz for a message that's already on a screen you're looking at.
+        if (activeElsewhere) return;
         // Suppress the alert on the phone that is showing the Live Activity: it
         // already got an alerting Live Activity push (sound + haptic) for this
         // same message, so a banner here is a second buzz. Web Push (other
@@ -354,7 +366,8 @@ export default async function handler(req, res) {
     activityStarted,
     devices: devices.length,
     // The alert is suppressed when a Live Activity carried the message instead.
-    alertSuppressed: liveActivityDelivered,
+    alertSuppressed: liveActivityDelivered || activeElsewhere,
+    activeElsewhere,
   });
 
   // Matrix spec requires returning rejected pushkeys so the homeserver unregisters them

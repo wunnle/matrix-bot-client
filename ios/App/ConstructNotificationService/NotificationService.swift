@@ -14,6 +14,50 @@
 //
 import Intents
 import UserNotifications
+import ImageIO
+import UIKit
+
+/// Writer half of the Live Activity avatar cache, duplicated from the app
+/// target (AppDelegate.swift) — separate processes with no shared module, so
+/// the path scheme has to stay identical. Worth having here as well as in the
+/// app: this extension runs for rooms the app has never opened, which is
+/// exactly when the gateway starts a Live Activity for one.
+private enum AvatarCache {
+    static let appGroup = "group.com.wunnle.construct"
+
+    static func fileName(for roomId: String) -> String {
+        String(roomId.map { $0.isLetter || $0.isNumber ? $0 : "_" }) + ".png"
+    }
+
+    static func write(_ data: Data, roomId: String) {
+        // The proxy serves the avatar at full resolution, and the reader is a
+        // Live Activity with a tiny memory budget — store a bounded thumbnail
+        // rather than whatever arrived, so rendering can't be killed for it.
+        guard !roomId.isEmpty, let png = downsampledPNG(data, maxPixel: 180),
+              let dir = FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: appGroup)?
+                .appendingPathComponent("avatars", isDirectory: true)
+        else { return }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? png.write(to: dir.appendingPathComponent(fileName(for: roomId)), options: .atomic)
+    }
+
+    /// ImageIO rather than UIImage: this decodes straight to the target size
+    /// instead of expanding the original in memory first (the same reason the
+    /// share extension downsamples).
+    private static func downsampledPNG(_ data: Data, maxPixel: Int) -> Data? {
+        guard !data.isEmpty,
+              let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        else { return nil }
+        return UIImage(cgImage: thumb).pngData()
+    }
+}
 
 final class NotificationService: UNNotificationServiceExtension {
   private var contentHandler: ((UNNotificationContent) -> Void)?
@@ -47,6 +91,8 @@ final class NotificationService: UNNotificationServiceExtension {
     req.timeoutInterval = 12
     task = URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
       guard let self else { return }
+      // Keep a copy for the Live Activity, which has no way to fetch its own.
+      if let data { AvatarCache.write(data, roomId: roomId) }
       let image = data.flatMap { INImage(imageData: $0) }
       self.deliver(communicationFrom: best, roomId: roomId, senderName: senderName, avatar: image)
     }

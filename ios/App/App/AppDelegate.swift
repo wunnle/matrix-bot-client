@@ -43,6 +43,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // activity, so a stale token doesn't keep suppressing this room's
         // notifications.
         if #available(iOS 16.2, *) { Task { await reconcileLiveActivityTokens() } }
+        // Pick up activities the gateway started while this process was away, so
+        // the next message updates them instead of starting yet another one.
+        if #available(iOS 16.2, *) { adoptRunningLiveActivities() }
+        // Let the gateway create activities for rooms the app hasn't opened.
+        if #available(iOS 17.2, *) { observeLiveActivityStartsOnce() }
         // Hide the assistant/"language" bar on iPad + Mac (and the blank software
         // keyboard on Mac). No-op on iPhone.
         if #available(iOS 14.0, *) { configureWebKeyboardOnce() }
@@ -215,6 +220,7 @@ struct ListenIntent: AppIntent {
 ///   blank software keyboard (useless with no touch input) collapses. The
 ///   hardware keyboard still types.
 private var didConfigureWebKeyboard = false
+private var didObserveLiveActivityStarts = false
 @available(iOS 14.0, *)
 private func configureWebKeyboardOnce() {
     guard !didConfigureWebKeyboard, let cls = NSClassFromString("WKContentView") else { return }
@@ -268,6 +274,12 @@ private func configureWebKeyboardOnce() {
 /// webview, so they can't reach import.meta.env). Persisted in the shared App
 /// Group suite so extensions in their own processes (e.g. the notification
 /// content extension) can read the secret too, not just the app process.
+/// The app keeps one Live Activity for every room, so its update token is
+/// registered under a single key rather than per room — the room a message came
+/// from travels in the content-state. Must match GLOBAL_KEY in
+/// api/live-activity.js.
+let liveActivityGlobalKey = "*"
+
 enum IntentConfig {
     static let appGroup = "group.com.wunnle.construct"
     static let secret = "construct.intentSecret"
@@ -279,14 +291,62 @@ enum IntentConfig {
     static var defaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
 }
 
+/// Writer half of the Live Activity avatar cache.
+///
+/// NOTE: the reader is duplicated in the widget target
+/// (ContructWidgetsLiveActivity.swift) and the notification service extension
+/// writes to it too — separate processes, no shared module, so the path scheme
+/// has to stay identical in all three. A Live Activity can't fetch its own
+/// image (no network while rendering, and the push payload is far too small),
+/// so whatever is on disk when it draws is what it shows.
+enum AvatarCache {
+    static let appGroup = "group.com.wunnle.construct"
+
+    static func fileName(for roomId: String) -> String {
+        String(roomId.map { $0.isLetter || $0.isNumber ? $0 : "_" }) + ".png"
+    }
+
+    static func write(_ data: Data, roomId: String) {
+        guard !roomId.isEmpty, !data.isEmpty,
+              let dir = FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: appGroup)?
+                .appendingPathComponent("avatars", isDirectory: true)
+        else { return }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? data.write(to: dir.appendingPathComponent(fileName(for: roomId)), options: .atomic)
+    }
+}
+
 /// Registers an Activity's APNs push token with the server so `matrix-push.js`
 /// can update the Live Activity while the app is suspended — the only way to
 /// move it past whatever state the app last set.
 ///
 /// The token is per-activity and rotates, so this observes `pushTokenUpdates`
 /// for the activity's lifetime rather than reading it once.
+/// Activities can arrive from two directions now — created here, or created by
+/// the gateway and handed to us via `activityUpdates` — and the same one can
+/// arrive both ways. Observing it twice would post its token again on every
+/// rotation, so each activity is claimed once.
+private final class TrackedActivities {
+    static let shared = TrackedActivities()
+    private let lock = NSLock()
+    private var ids = Set<String>()
+
+    /// True only for the first caller to claim this activity.
+    func claim(_ id: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return ids.insert(id).inserted
+    }
+
+    func release(_ id: String) {
+        lock.lock(); defer { lock.unlock() }
+        ids.remove(id)
+    }
+}
+
 @available(iOS 16.2, *)
 private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<T>, room: String, question: String = "") {
+    guard TrackedActivities.shared.claim(activity.id) else { return }
     Task {
         for await tokenData in activity.pushTokenUpdates {
             _ = await postLiveActivityToken(tokenData, room: room, question: question)
@@ -302,10 +362,69 @@ private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<
         for await state in activity.activityStateUpdates {
             if state == .ended || state == .dismissed {
                 await clearLiveActivityTokens(room: room)
+                // Let a future activity for this room be tracked again.
+                TrackedActivities.shared.release(activity.id)
                 break
             }
         }
     }
+}
+
+/// Adopts activities that are already running. `activityUpdates` only delivers
+/// activities as they are *created*, and a push-started one is created while
+/// this process is suspended — that creation is never replayed on resume, so
+/// without sweeping the current list its update token is never registered and
+/// the gateway can only ever start a new activity instead of updating this one.
+///
+/// Safe to call on every activation: trackLiveActivityToken claims each
+/// activity once.
+@available(iOS 16.2, *)
+private func adoptRunningLiveActivities() {
+    for activity in Activity<ConstructActivityAttributes>.activities {
+        trackLiveActivityToken(activity, room: liveActivityGlobalKey,
+                               question: activity.content.state.question)
+    }
+}
+
+/// Wires up the two streams that let the *gateway* create Live Activities, so
+/// every room can have one rather than only the rooms an activity was started
+/// for from inside the app (see startLiveActivityIfNeeded in api/live-activity.js):
+///
+///  * `pushToStartTokenUpdates` — a per-device token the gateway pushes to in
+///    order to create an activity. It rotates, so it is observed rather than
+///    read once.
+///  * `activityUpdates` — an activity created remotely has nothing observing
+///    its own update token, so it would be stuck on whatever content started
+///    it. Adopt each one and register its token under the room in its state.
+@available(iOS 17.2, *)
+private func observeLiveActivityStartsOnce() {
+    guard !didObserveLiveActivityStarts else { return }
+    didObserveLiveActivityStarts = true
+
+    Task {
+        for await tokenData in Activity<ConstructActivityAttributes>.pushToStartTokenUpdates {
+            await postPushToStartToken(tokenData)
+        }
+    }
+
+    Task {
+        for await activity in Activity<ConstructActivityAttributes>.activityUpdates {
+            trackLiveActivityToken(activity, room: liveActivityGlobalKey,
+                                   question: activity.content.state.question)
+        }
+    }
+}
+
+/// Registers the device-level push-to-start token. Distinct from the per-room
+/// update tokens: this one authorises *creating* an activity, so it is stored
+/// once for the device rather than against a room.
+private func postPushToStartToken(_ tokenData: Data) async {
+    let d = IntentConfig.defaults
+    guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
+    let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
+    let token = tokenData.map { String(format: "%02x", $0) }.joined()
+    _ = await intentPost("\(apiBase)/api/live-activity", secret: secret,
+                         body: ["action": "push-to-start", "token": token])
 }
 
 /// Registers the activity's first push token and *waits* for it.
@@ -796,6 +915,12 @@ struct ConstructActivityAttributes: ActivityAttributes {
         var roomId: String = ""
         // Bender's [[CTA]] chips, sent as one-tap QuickReplyIntent buttons.
         var actions: [String] = []
+        // Which room the current message is from. Lives here rather than in the
+        // attributes because a single activity now serves every room, and
+        // attributes are immutable once an activity starts. Defaulted so
+        // activities started before this field existed still decode; the views
+        // fall back to attributes.roomName when it's empty.
+        var roomName: String = ""
     }
 
     var roomName: String
@@ -815,6 +940,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "saveIntentConfig", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "donateShareTargets", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cacheRoomAvatars", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isMacApp", returnType: CAPPluginReturnPromise)
     ]
 
@@ -823,6 +949,25 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     /// software keyboard.
     @objc func isMacApp(_ call: CAPPluginCall) {
         call.resolve(["value": ProcessInfo.processInfo.isiOSAppOnMac])
+    }
+
+    /// Store every room's avatar for the Live Activity to draw.
+    ///
+    /// Deliberately separate from donateShareTargets: that one is capped and
+    /// filtered by the share-sheet settings, so rooms excluded from sharing (or
+    /// past the cap) had no avatar and fell back to the bundled placeholder.
+    /// What the lock screen can draw shouldn't depend on sharing preferences.
+    @objc func cacheRoomAvatars(_ call: CAPPluginCall) {
+        let items: [(String, Data)] = (call.getArray("rooms", JSObject.self) ?? []).compactMap { room in
+            guard let roomId = room["roomId"] as? String, !roomId.isEmpty,
+                  let b64 = room["avatar"] as? String,
+                  let data = Data(base64Encoded: b64) else { return nil }
+            return (roomId, data)
+        }
+        call.resolve()
+        DispatchQueue.global(qos: .utility).async {
+            for (roomId, data) in items { AvatarCache.write(data, roomId: roomId) }
+        }
     }
 
     /// Donate an INSendMessageIntent per room so iOS surfaces the rooms as
@@ -848,6 +993,9 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             // Re-donating the same groupIdentifier updates that room's donation
             // in place (refreshing its avatar) without disturbing the others.
             for (roomId, name, avatar) in items {
+                // Same bytes the share sheet uses, kept on disk for the Live
+                // Activity — which can't load an image any other way.
+                if let avatar { AvatarCache.write(avatar, roomId: roomId) }
                 let intent = INSendMessageIntent(
                     recipients: nil,
                     outgoingMessageType: .outgoingMessageText,
@@ -891,24 +1039,33 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Live Activities require iOS 16.2 or later")
             return
         }
-        let attributes = ConstructActivityAttributes(roomName: call.getString("roomName") ?? "Construct")
+        let roomName = call.getString("roomName") ?? "Construct"
+        let attributes = ConstructActivityAttributes(roomName: roomName)
         let question = call.getString("question") ?? ""
         let state = ConstructActivityAttributes.ContentState(
             status: call.getString("status") ?? "",
             question: question,
-            detail: call.getString("detail") ?? ""
+            detail: call.getString("detail") ?? "",
+            roomId: call.getString("roomId") ?? "",
+            roomName: roomName
         )
+        // One activity serves every room, so re-point the running one at this
+        // room rather than adding a second to the lock screen.
+        if let existing = Activity<ConstructActivityAttributes>.activities.first(where: { $0.activityState == .active }) {
+            Task {
+                await existing.update(.init(state: state, staleDate: nil))
+                trackLiveActivityToken(existing, room: liveActivityGlobalKey, question: question)
+                call.resolve(["activityId": existing.id, "reused": true])
+            }
+            return
+        }
         do {
             let activity = try Activity.request(
                 attributes: attributes,
                 content: .init(state: state, staleDate: nil),
                 pushType: .token
             )
-            // Only rooms we can address can receive pushed updates; without a
-            // roomId the activity still works, just app-driven as before.
-            if let room = call.getString("roomId") {
-                trackLiveActivityToken(activity, room: room, question: question)
-            }
+            trackLiveActivityToken(activity, room: liveActivityGlobalKey, question: question)
             call.resolve(["activityId": activity.id])
         } catch {
             call.reject("Failed to start Live Activity: \(error.localizedDescription)")
@@ -941,9 +1098,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         Task {
             // Clear tokens first, so the gateway can't push into an activity
             // that is about to be dismissed.
-            if let room = call.getString("roomId") {
-                await clearLiveActivityTokens(room: room)
-            }
+            await clearLiveActivityTokens(room: liveActivityGlobalKey)
             for activity in Activity<ConstructActivityAttributes>.activities {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }

@@ -7,6 +7,8 @@ import ActivityKit
 import AppIntents
 import WidgetKit
 import SwiftUI
+import UIKit
+import ImageIO
 
 // NOTE: this struct is intentionally duplicated in the app target
 // (AppDelegate.swift). ActivityKit matches attributes across processes by
@@ -24,9 +26,23 @@ struct ConstructActivityAttributes: ActivityAttributes {
         var roomId: String = ""
         // Bender's [[CTA]] chips, sent as one-tap QuickReplyIntent buttons.
         var actions: [String] = []
+        // Which room the current message is from. Lives here rather than in the
+        // attributes because a single activity now serves every room, and
+        // attributes are immutable once an activity starts. Defaulted so
+        // activities started before this field existed still decode; the views
+        // fall back to attributes.roomName when it's empty.
+        var roomName: String = ""
     }
 
     var roomName: String
+}
+
+/// The room a message came from. One activity serves every room now, so this
+/// lives in the state; the attribute is only a fallback for activities started
+/// before that moved (their state has no roomName).
+private func displayRoomName(_ state: ConstructActivityAttributes.ContentState,
+                             _ attributes: ConstructActivityAttributes) -> String {
+    state.roomName.isEmpty ? attributes.roomName : state.roomName
 }
 
 /// "Reply" is the only terminal (non-working) status; everything else
@@ -123,15 +139,66 @@ private struct QuickReplyButtons: View {
     }
 }
 
-/// Circular room avatar.
+/// Room avatars cached as files in the shared App Group container.
+///
+/// A Live Activity's views can't fetch anything — widget rendering has no
+/// network — and the avatar is far too big for the ~4KB push payload, so the
+/// image has to already be on disk when the activity draws. The app writes
+/// these when it donates share targets, and the notification service extension
+/// writes them when it decorates a push, which covers rooms the app has never
+/// opened. Keyed by room id, which ContentState already carries.
+enum AvatarCache {
+    static let appGroup = "group.com.wunnle.construct"
+
+    /// Room ids contain characters that can't go in a path (`!`, `:`), and the
+    /// localpart is unique, so a straight character filter is enough.
+    static func fileName(for roomId: String) -> String {
+        String(roomId.map { $0.isLetter || $0.isNumber ? $0 : "_" }) + ".png"
+    }
+
+    static func url(for roomId: String) -> URL? {
+        guard !roomId.isEmpty,
+              let dir = FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: appGroup)?
+                .appendingPathComponent("avatars", isDirectory: true)
+        else { return nil }
+        return dir.appendingPathComponent(fileName(for: roomId))
+    }
+
+    /// Decoded through ImageIO at a bounded size rather than with
+    /// `UIImage(data:)`. A Live Activity renders in a tiny memory budget, and a
+    /// full-resolution avatar expands to tens of megabytes once decoded — enough
+    /// for the system to SIGKILL the extension mid-render, which shows up as an
+    /// activity that never appears rather than as a crash.
+    static func image(for roomId: String) -> UIImage? {
+        guard let url = url(for: roomId),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 180,
+        ]
+        guard let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return UIImage(cgImage: thumb)
+    }
+}
+
+/// Circular room avatar — the room's own picture when one has been cached,
+/// otherwise the bundled placeholder.
 private struct RoomAvatar: View {
     var size: CGFloat
+    var roomId: String = ""
     var body: some View {
-        Image("RoomAvatar")
-            .resizable()
-            .scaledToFill()
-            .frame(width: size, height: size)
-            .clipShape(Circle())
+        Group {
+            if let image = AvatarCache.image(for: roomId) {
+                Image(uiImage: image).resizable()
+            } else {
+                Image("RoomAvatar").resizable()
+            }
+        }
+        .scaledToFill()
+        .frame(width: size, height: size)
+        .clipShape(Circle())
     }
 }
 
@@ -182,7 +249,7 @@ struct LockScreenView: View {
     var body: some View {
         let reply = isReply(state.status)
         HStack(alignment: .top, spacing: 12) {
-            RoomAvatar(size: 40)
+            RoomAvatar(size: 40, roomId: state.roomId)
             if reply {
                 // Answer phase. A plain line-limited Text (no ViewThatFits) so
                 // the banner hugs the reply: ViewThatFits measured against a
@@ -192,14 +259,25 @@ struct LockScreenView: View {
                 // anything longer truncates with an ellipsis. Quick-reply chips
                 // sit beneath it when bender suggests any.
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(state.detail)
-                        // The banner hard-caps at 160pt. With chips below, a tall
-                        // reply would push them past the clip, so cap the reply's
-                        // lines when actions are present to reserve room for them.
-                        .font(.body)
-                        .lineLimit(state.actions.isEmpty ? 10 : 3)
-                        .minimumScaleFactor(0.85)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 2) {
+                        // One activity serves every room now, so the card has to
+                        // say which room this is from. The avatar alone isn't
+                        // enough for agent rooms, whose names carry the task.
+                        if !state.roomName.isEmpty {
+                            Text(state.roomName)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Text(state.detail)
+                            // The banner hard-caps at 160pt. With chips below, a tall
+                            // reply would push them past the clip, so cap the reply's
+                            // lines when actions are present to reserve room for them.
+                            .font(.body)
+                            .lineLimit(state.actions.isEmpty ? 9 : 3)
+                            .minimumScaleFactor(0.85)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     if #available(iOS 17.0, *) {
                         if !state.actions.isEmpty {
                             QuickReplyButtons(actions: state.actions, roomId: state.roomId)
@@ -280,7 +358,7 @@ struct ContructWidgetsLiveActivity: Widget {
                 // Room name fills the otherwise-empty top-left; the working ring
                 // sits top-right while waiting.
                 DynamicIslandExpandedRegion(.leading) {
-                    Text(context.attributes.roomName)
+                    Text(displayRoomName(context.state, context.attributes))
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(.secondary)
                         // Inset from the island's rounded top-left corner, which
@@ -302,7 +380,7 @@ struct ContructWidgetsLiveActivity: Widget {
                         .padding(.trailing, 4)
                 }
             } compactLeading: {
-                RoomAvatar(size: 20)
+                RoomAvatar(size: 20, roomId: context.state.roomId)
             } compactTrailing: {
                 if reply {
                     Image(systemName: "bubble.left.fill")
@@ -311,7 +389,7 @@ struct ContructWidgetsLiveActivity: Widget {
                     WorkingRing(size: 14)
                 }
             } minimal: {
-                RoomAvatar(size: 20)
+                RoomAvatar(size: 20, roomId: context.state.roomId)
             }
         }
     }
@@ -372,7 +450,7 @@ private struct IslandExpandedMock: View {
         let reply = isReply(state.status)
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
-                Text(attributes.roomName)
+                Text(displayRoomName(state, attributes))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.secondary)
                 Spacer()

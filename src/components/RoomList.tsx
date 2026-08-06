@@ -8,7 +8,7 @@ import { fetchJoinedRooms, getCachedRooms, cacheRooms, getClient, getRoomOrder, 
 import { useNavigate } from 'react-router-dom'
 import { seedAgentPills } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
-import { donateShareTargets } from '../lib/liveActivity'
+import { donateShareTargets, cacheRoomAvatars } from '../lib/liveActivity'
 import { getDisabledShareRooms } from '../lib/shareRooms'
 import NotificationCenter from './NotificationCenter'
 import { toggleDebug } from '../lib/debug'
@@ -164,6 +164,19 @@ export default function RoomList({
       [...disabled],
     )
   }, [joinedRooms, auth.userId])
+
+  // Cache every room's avatar for the Live Activity. Kept apart from the
+  // share-target donation below, which is capped and filtered by the sharing
+  // settings — a room excluded there still needs its picture on the lock screen.
+  const avatarSigRef = useRef('')
+  useEffect(() => {
+    if (joinedRooms.length === 0) return
+    const withAvatars = joinedRooms.filter(r => r.avatarMxc)
+    const sig = withAvatars.map(r => `${r.roomId}:${r.avatarMxc}`).join('|')
+    if (sig === avatarSigRef.current) return
+    avatarSigRef.current = sig
+    void cacheRoomAvatars(withAvatars.map(r => ({ roomId: r.roomId, avatarMxc: r.avatarMxc })))
+  }, [joinedRooms])
 
   // Persist the live list so the next cold start paints what was last on screen
   // (invites included) instead of the previous launch's startup snapshot.

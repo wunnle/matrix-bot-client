@@ -8,7 +8,7 @@
  */
 import webpush from "web-push";
 import { apnsSend, apnsSendWithFallback, apnsConfigured, isEnvMismatch, APNS_BUNDLE_ID, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
-import { liveActivityEntry, clearTokens, recordPushResult } from "./live-activity.js";
+import { liveActivityEntry, clearTokens, recordPushResult, startLiveActivityIfNeeded, recordNotify } from "./live-activity.js";
 
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
@@ -186,11 +186,14 @@ export default async function handler(req, res) {
         // a mismatch is dropped silently by ActivityKit. `question` is echoed
         // from the registry so it stays visible (faded) above the reply.
         // `roomId` rides along so a button can send back to this room.
+        // roomName rides along because one activity serves every room now: it
+        // has to re-label itself for whichever room this message came from.
         "content-state": {
           status: "Reply",
           question: entry.question || "",
           detail: body.slice(0, 300),
           roomId: room_id,
+          roomName: room_name || title,
           actions: actions.slice(0, 3),
         },
         // An `alert` block turns this into an alerting update: iOS plays sound
@@ -225,6 +228,25 @@ export default async function handler(req, res) {
     return r.status === 200;
   })();
 
+  // Push-to-start (iOS 17.2+) creates an activity for a room the app has never
+  // opened, which is what extends Live Activities beyond the ones the app
+  // starts itself. Set LIVE_ACTIVITY_PUSH_TO_START=0 to switch it off.
+  //
+  // Deliberately does NOT suppress this message's notification, even though the
+  // start push carries its own alert: APNs answers 200 whether or not iOS goes
+  // on to create the activity, so "accepted" is not evidence of anything, and
+  // acting on it silently dropped a message. The cost is a double alert on the
+  // first message in a room (once per cooldown); the alternative risks a
+  // message with no surface at all, which is worse.
+  const activityStarted = process.env.LIVE_ACTIVITY_PUSH_TO_START !== "0" && !liveActivityDelivered
+    ? await startLiveActivityIfNeeded(room_id, {
+        roomName: room_name || title,
+        alertTitle: sender_display_name || title,
+        detail: body,
+        actions,
+      }).then((r) => r?.accepted === true).catch(() => false)
+    : false;
+
   await Promise.all(
     devices.map(async (device) => {
       const pushkey = device.pushkey;
@@ -242,6 +264,9 @@ export default async function handler(req, res) {
         // same message, so a banner here is a second buzz. Web Push (other
         // devices, e.g. desktop) is untouched — this only skips the native
         // iOS alert, and only when the Live Activity push actually landed.
+        // Only a *delivered update* suppresses the banner — an activity that
+        // was already running proved itself by registering its token. A start
+        // is never trusted for this; see the note above.
         if (liveActivityDelivered) return;
         // Sender as the title reads better than the room on iOS; the room
         // becomes the subtitle. Falls back to the web-push title when the
@@ -321,6 +346,16 @@ export default async function handler(req, res) {
       }
     })
   );
+
+  // Leaves a trace of which branch ran for this message — see recordNotify.
+  await recordNotify({
+    roomId: room_id,
+    liveActivityDelivered,
+    activityStarted,
+    devices: devices.length,
+    // The alert is suppressed when a Live Activity carried the message instead.
+    alertSuppressed: liveActivityDelivered,
+  });
 
   // Matrix spec requires returning rejected pushkeys so the homeserver unregisters them
   res.status(200).json({ rejected });

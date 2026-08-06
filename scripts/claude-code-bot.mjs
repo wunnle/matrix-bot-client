@@ -119,7 +119,10 @@ if (!access_token) {
   log(`device: ${device_id}`)
   // New device → wipe crypto store
   for (const f of fs.readdirSync(STORE_DIR)) {
-    if (f !== '.session.json' && f !== 'sessions.json') {
+    // Crypto state only. The room map and the room-number counter describe
+    // rooms, not devices, and a reused number would collide with a live
+    // worktree branch.
+    if (!['.session.json', 'sessions.json', 'room-counter.json'].includes(f)) {
       fs.rmSync(path.join(STORE_DIR, f), { recursive: true, force: true })
     }
   }
@@ -474,19 +477,42 @@ const ROOM_NAME_RE = /^BenderDev-(\d+)$/
 // on startup; a name a human picked is never touched.
 const LEGACY_NAME_RE = /^(agent: |⌁ )/
 
-// Counts up from the highest number in use rather than filling gaps, so a
-// number is never reused by a different room.
-function nextRoomName(extraNames = []) {
+// The counter is persisted rather than derived from the rooms in flight. Room
+// names looked like the obvious source, but a room renames itself to describe
+// its work within its first turns, so a derived max regresses as soon as the
+// numbered names are gone — and the reused number collides with the still-live
+// `agent/<name>` branch and worktree directory of the earlier room, which makes
+// `git worktree add` refuse and drops the new room into a shared tree.
+const ROOM_COUNTER_FILE = path.join(STORE_DIR, 'room-counter.json')
+
+// Seeded once from whatever numbers are already in use — names still following
+// the scheme, plus the branches of live worktree rooms, which outlive the name.
+function seedRoomCounter() {
   let max = 0
-  const names = [
-    ...client.getRooms().map((r) => r.name),
-    ...extraNames,
-  ]
-  for (const name of names) {
-    const m = name && ROOM_NAME_RE.exec(name)
+  for (const room of client.getRooms()) {
+    const m = ROOM_NAME_RE.exec(room.name ?? '')
     if (m) max = Math.max(max, Number(m[1]))
   }
-  return `${ROOM_PREFIX}-${max + 1}`
+  for (const entry of Object.values(sessions)) {
+    const m = new RegExp(`^agent/${ROOM_PREFIX.toLowerCase()}-(\\d+)$`)
+      .exec(entry.branch ?? '')
+    if (m) max = Math.max(max, Number(m[1]))
+  }
+  return max
+}
+
+// Counts up rather than filling gaps, so a number is never reused by a
+// different room. Written before it is handed out: a crash mid-spawn costs one
+// number, while handing the same one out twice costs a room its worktree.
+function nextRoomName() {
+  let last = null
+  if (fs.existsSync(ROOM_COUNTER_FILE)) {
+    try { last = JSON.parse(fs.readFileSync(ROOM_COUNTER_FILE, 'utf8')).last } catch {}
+  }
+  if (typeof last !== 'number') last = seedRoomCounter()
+  const next = last + 1
+  fs.writeFileSync(ROOM_COUNTER_FILE, JSON.stringify({ last: next }))
+  return `${ROOM_PREFIX}-${next}`
 }
 
 // Rooms sharing one working tree overwrite each other's edits mid-turn. When a
@@ -982,7 +1008,6 @@ await backfillAvatars()
 // Renaming is server-side state, so it lands on every device without a client
 // rebuild. Rooms already following the scheme are left alone.
 async function backfillNames() {
-  const assigned = []
   for (const roomId of Object.keys(sessions)) {
     try {
       const room = client.getRoom(roomId)
@@ -991,8 +1016,7 @@ async function backfillNames() {
       // human chose — renaming a room to describe its purpose must survive a
       // bot restart.
       if (!LEGACY_NAME_RE.test(room.name ?? '')) continue
-      const name = nextRoomName(assigned)
-      assigned.push(name)
+      const name = nextRoomName()
       await client.sendStateEvent(roomId, 'm.room.name', { name }, '')
       log(`Renamed ${roomId} → ${name}`)
     } catch (e) {

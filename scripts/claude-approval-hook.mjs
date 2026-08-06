@@ -71,17 +71,70 @@ const SAFE_SUBCOMMANDS = {
 }
 const SAFE_NPM_SCRIPTS = new Set(['build', 'test', 'lint', 'typecheck'])
 
+// Splits a command line on unquoted `|`, `||`, `&&`, `;` and newline. A naive
+// regex split treats a `|` inside quotes as a pipeline, so `grep "a\|b" f` was
+// judged as a call to `grep "a\` and denied — the operator is data there, not
+// syntax. Single `&` is deliberately not a separator, so `2>&1` survives.
+function splitSegments(cmd) {
+  const segs = []
+  let cur = ''
+  let quote = null
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i]
+    if (quote) {
+      cur += c
+      // A backslash escapes the next character inside "" but not inside ''.
+      if (c === '\\' && quote === '"' && i + 1 < cmd.length) cur += cmd[++i]
+      else if (c === quote) quote = null
+      continue
+    }
+    if (c === '"' || c === "'") { quote = c; cur += c; continue }
+    if (c === '\\' && i + 1 < cmd.length) { cur += c + cmd[++i]; continue }
+    if (c === ';' || c === '\n' || c === '|' || (c === '&' && cmd[i + 1] === '&')) {
+      if ((c === '|' && cmd[i + 1] === '|') || c === '&') i++
+      segs.push(cur)
+      cur = ''
+      continue
+    }
+    cur += c
+  }
+  segs.push(cur)
+  return segs.map((s) => s.trim()).filter(Boolean)
+}
+
+// The parts of a segment that are outside quotes — where an operator is syntax
+// rather than text. Used so a `>` inside a search pattern is not read as a
+// redirect.
+function unquoted(seg) {
+  let out = ''
+  let quote = null
+  for (let i = 0; i < seg.length; i++) {
+    const c = seg[i]
+    if (quote) {
+      if (c === '\\' && quote === '"' && i + 1 < seg.length) i++
+      else if (c === quote) quote = null
+      continue
+    }
+    if (c === '"' || c === "'") { quote = c; continue }
+    if (c === '\\' && i + 1 < seg.length) { i++; continue }
+    out += c
+  }
+  return out
+}
+
 function bashIsSafe(command) {
   const cmd = (command ?? '').trim()
   if (!cmd) return false
+  // Substitution is checked against the raw string: `$(…)` and backticks still
+  // expand inside double quotes, so quoting is no reason to trust them.
   if (/\$\(|`|<\(|>\(/.test(cmd)) return false                 // command/process substitution
   if (/(^|\s)sudo(\s|$)/.test(cmd)) return false               // privilege escalation
   if (/-delete\b|-exec(dir)?\b|-ok\b|-fprint\b/.test(cmd)) return false // find mutations
-  // Write redirects, allowing only >/dev/null and fd merges (2>&1).
-  const noHarmless = cmd.replace(/\d*>&\d+/g, '').replace(/[&\d]*>\s*\/dev\/null/g, '')
-  if (noHarmless.includes('>')) return false
   // Every pipeline/sequence segment must be a recognised read-only program.
-  return cmd.split(/&&|\|\||\||;|\n/).map((s) => s.trim()).filter(Boolean).every((seg) => {
+  return splitSegments(cmd).every((seg) => {
+    // Write redirects, allowing only >/dev/null and fd merges (2>&1).
+    const noHarmless = unquoted(seg).replace(/\d*>&\d+/g, '').replace(/[&\d]*>\s*\/dev\/null/g, '')
+    if (noHarmless.includes('>')) return false
     let tokens = seg.split(/\s+/)
     while (tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens = tokens.slice(1) // strip VAR=val
     let base = (tokens[0] ?? '').split('/').pop()

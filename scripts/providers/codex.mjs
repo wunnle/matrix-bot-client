@@ -10,6 +10,7 @@
 // that. What this file does guarantee is that a dead connection fails the turn
 // loudly rather than hanging it.
 import { spawn } from 'node:child_process'
+import { bashIsSafe } from '../approval-rules.mjs'
 
 // Seeded from `model/list` on this build; refreshed from the server once
 // connected, so a new model appears without a code change. Static seed because
@@ -64,6 +65,39 @@ const APPROVAL_LABELS = {
 
 function log(...args) {
   console.log(`[${new Date().toISOString().slice(11, 23)}][codex]`, ...args)
+}
+
+// Codex runs everything through a login shell, so the command arrives as
+// `/bin/bash -lc "the real thing"`. Judging that string as-is asks about
+// /bin/bash, which no rule allows — so every command would prompt. Recover the
+// script it actually runs.
+export function unwrapShell(command) {
+  const m = /^\S*\b(?:bash|sh|zsh)\s+(?:-[A-Za-z]+\s+)*-[A-Za-z]*c\s+([\s\S]+)$/.exec(String(command).trim())
+  if (!m) return command
+  const rest = m[1].trim()
+  const quote = rest[0]
+  if (quote !== '"' && quote !== "'") return rest
+  // Find the closing quote, honouring backslash escapes inside "".
+  let out = ''
+  for (let i = 1; i < rest.length; i++) {
+    const c = rest[i]
+    if (c === '\\' && quote === '"' && i + 1 < rest.length) { out += rest[++i]; continue }
+    if (c === quote) return out
+    out += c
+  }
+  // Unbalanced quoting: hand back the original so the rules judge it, and a
+  // string we could not parse is one no rule will recognise — it gets asked.
+  return command
+}
+
+// Approvals the room should never see, because the same rules already let the
+// Claude side run them unattended. Codex asks about far less (its sandbox only
+// stops what it cannot do), so this fires mainly for reads that reach outside
+// the workspace, network reads, and the pre-approved CLIs.
+export function autoAllowed(method, params) {
+  if (method !== 'item/commandExecution/requestApproval' && method !== 'execCommandApproval') return false
+  if (!params?.command) return false
+  return bashIsSafe(unwrapShell(params.command), params.cwd ?? process.cwd())
 }
 
 // The body of the approval message. A command speaks for itself; a file change
@@ -198,6 +232,11 @@ class AppServer {
     const turn = this.turns.get(msg.params?.threadId)
 
     if (ASKABLE.has(msg.method)) {
+      if (autoAllowed(msg.method, msg.params)) {
+        log(`auto-allowed: ${String(msg.params.command).slice(0, 120)}`)
+        this.respond(msg.id, { decision: 'accept' })
+        return
+      }
       // Fire and forget: the turn is blocked on this request, so awaiting it
       // here would stall the read loop that has to keep draining the socket.
       this.#askRoom(msg, turn)

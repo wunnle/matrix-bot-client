@@ -246,6 +246,18 @@ function setRoomModel(roomId: string, model: string) {
   localStorage.setItem(`room-model:${roomId}`, model)
 }
 
+// Agent room topics are ` · `-separated, and their first field is where the
+// room works: an absolute path for a plain room, a branch name for one running
+// in its own worktree. A full path never fits the subtitle line, so keep only
+// its last segment — the directory or worktree name is what identifies it.
+// Branches pass through untouched, being short and already meaningful.
+function shortenTopicPaths(topic: string): string {
+  return topic
+    .split(' · ')
+    .map((part) => (part.startsWith('/') ? part.split('/').filter(Boolean).pop() ?? part : part))
+    .join(' · ')
+}
+
 type MessageMenuPos = { eventId: string; x: number; y: number; body: string }
 
 function openPinContextMenu(
@@ -702,7 +714,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       const ev = room.currentState.getStateEvents(sdk.EventType.RoomTopic, '')
       const raw = ev?.getContent()?.topic
       const t = typeof raw === 'string' ? raw.trim() : ''
-      setRoomTopic(t)
+      setRoomTopic(shortenTopicPaths(t))
     }
     readTopic()
     const onState = (ev: sdk.MatrixEvent) => {

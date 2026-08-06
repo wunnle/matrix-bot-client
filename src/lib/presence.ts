@@ -13,6 +13,24 @@ let timer: ReturnType<typeof setInterval> | null = null
 let currentRoomId: string | null = null
 let pushkey: string | null = null
 
+/** Identity for a client that has no pushkey — a browser where notifications
+    were never enabled still has to be recognisable as "somewhere else", or the
+    phone keeps buzzing while you read on the desktop. Any value that can't
+    collide with a real pushkey does; it only ever has to differ. */
+function clientId(): string {
+  const KEY = 'construct:client-id'
+  try {
+    let id = localStorage.getItem(KEY)
+    if (!id) {
+      id = `client:${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+      localStorage.setItem(KEY, id)
+    }
+    return id
+  } catch {
+    return 'client:ephemeral'
+  }
+}
+
 async function beat() {
   const secret = import.meta.env.VITE_INTENT_SECRET
   // Builds without the secret (the public one) simply never suppress.
@@ -25,7 +43,7 @@ async function beat() {
       // is the same value the homeserver hands it per device. Without one it
       // can't be identified, and the gateway deliberately does nothing rather
       // than guess (see matrix-push.js).
-      body: JSON.stringify({ action: 'heartbeat', roomId: currentRoomId, pushkey }),
+      body: JSON.stringify({ action: 'heartbeat', roomId: currentRoomId, pushkey: pushkey ?? clientId() }),
     })
   } catch {
     // Never surface: failing to report presence only means you get notified.

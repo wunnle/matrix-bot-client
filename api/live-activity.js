@@ -19,7 +19,7 @@
  *
  * Auth: x-intent-secret header — never the URL or body.
  */
-import { apnsSendWithFallback, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
+import { apnsSendWithFallback, apnsConfigured, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
 
 const SECRET = process.env.INTENT_SECRET;
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
@@ -46,17 +46,37 @@ async function accountDataUrl() {
   return `${HOMESERVER}/_matrix/client/v3/user/${encodeURIComponent(await userId())}/account_data/${ACCOUNT_DATA_TYPE}`;
 }
 
-/** Current map, with expired entries dropped. `{}` when unset — a 404 here
-    just means no activity has ever registered. */
-async function readRooms() {
+/** The whole account-data blob. `{}` when unset — a 404 here just means nothing
+    has ever registered. Besides `rooms` it carries `pushToStart` (device tokens
+    that let the gateway *create* an activity, see startLiveActivityIfNeeded)
+    and `started` (when we last did so per room). */
+async function readBlob() {
   const r = await fetch(await accountDataUrl(), {
     headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
   });
   if (r.status === 404) return {};
   if (!r.ok) throw new Error(`read account data failed: ${r.status}`);
-  const data = await r.json();
-  if (data?.lastPush !== undefined) lastPushCache = data.lastPush;
-  const rooms = data?.rooms ?? {};
+  const data = (await r.json()) ?? {};
+  if (data.lastPush !== undefined) lastPushCache = data.lastPush;
+  return data;
+}
+
+async function writeBlob(next) {
+  const r = await fetch(await accountDataUrl(), {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(next),
+  });
+  if (!r.ok) throw new Error(`write account data failed: ${r.status}`);
+}
+
+/** Live per-room update tokens, with expired entries dropped. */
+async function readRooms() {
+  const data = await readBlob();
+  const rooms = data.rooms ?? {};
   const now = Date.now();
   return Object.fromEntries(
     Object.entries(rooms).filter(([, v]) => v?.token && now - (v.ts ?? 0) <= TTL_MS)
@@ -64,17 +84,12 @@ async function readRooms() {
 }
 
 let lastPushCache = null;
+/** Read-modify-write: `rooms` is only one field of the blob, and blindly
+    replacing the document would drop the push-to-start registrations. */
 async function writeRooms(rooms, lastPush) {
   if (lastPush !== undefined) lastPushCache = lastPush;
-  const r = await fetch(await accountDataUrl(), {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${ACCESS_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ rooms, lastPush: lastPushCache }),
-  });
-  if (!r.ok) throw new Error(`write account data failed: ${r.status}`);
+  const blob = await readBlob();
+  await writeBlob({ ...blob, rooms, lastPush: lastPushCache });
 }
 
 export default async function handler(req, res) {
@@ -94,8 +109,13 @@ export default async function handler(req, res) {
       // registered under a different room id than the one being queried looks
       // identical to no registration at all.
       if (!roomId) {
+        // Counts only — token values are credentials. pushToStart tells a
+        // device that never registered apart from one whose start push failed.
+        const blob = await readBlob();
         return res.status(200).json({
           rooms: Object.entries(rooms).map(([id, v]) => ({ roomId: id, ageMs: Date.now() - (v.ts ?? 0) })),
+          pushToStartTokens: Object.keys(blob.pushToStart ?? {}).length,
+          started: Object.entries(blob.started ?? {}).map(([id, ts]) => ({ roomId: id, ageMs: Date.now() - ts })),
           lastPush: lastPushCache,
         });
       }
@@ -108,6 +128,29 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const { roomId, token, action } = req.body || {};
+
+  // Push-to-start token (iOS 17.2+). Unlike the others this is per *device*,
+  // not per room — it's what lets the gateway create an activity for a room the
+  // app has never opened. Registered before any room exists, so it must be
+  // handled ahead of the roomId check.
+  if (action === "push-to-start") {
+    if (!token) return res.status(400).json({ error: "missing token" });
+    try {
+      const blob = await readBlob();
+      const pushToStart = { ...(blob.pushToStart ?? {}), [token]: Date.now() };
+      // These rotate; drop ones that haven't been re-registered in a month so
+      // the list can't grow without bound across reinstalls.
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      for (const [t, ts] of Object.entries(pushToStart)) {
+        if (ts < cutoff) delete pushToStart[t];
+      }
+      await writeBlob({ ...blob, pushToStart });
+    } catch (err) {
+      return res.status(200).json({ ok: false, error: String(err?.message || err) });
+    }
+    return res.status(200).json({ ok: true });
+  }
+
   if (!roomId) return res.status(400).json({ error: "missing roomId" });
 
   // Fire a Live Activity push at the registered token, without consuming it, so
@@ -167,6 +210,80 @@ export default async function handler(req, res) {
   }
 
   res.status(200).json({ ok: true });
+}
+
+/** Don't re-create an activity for the same room on every message: a push-start
+    is fire-and-forget (APNs 200 says nothing about whether ActivityKit started
+    one), so without a cooldown a chatty room would stack duplicates. */
+const START_COOLDOWN_MS = 15 * 60 * 1000;
+
+/** Create a Live Activity for a room that doesn't have one, using the device's
+    push-to-start token (iOS 17.2+). This is what extends Live Activities to
+    every room rather than only the ones started from inside the app.
+
+    Deliberately silent — no `alert` block — and the caller still sends its
+    normal notification. We cannot tell from here whether the activity actually
+    started (old iOS, Live Activities disabled, token stale), and suppressing
+    the banner on an unconfirmed start is exactly how messages go missing. */
+export async function startLiveActivityIfNeeded(roomId, { roomName, detail, question = "", actions = [] }) {
+  if (!apnsConfigured()) return { skipped: "apns-not-configured" };
+  let blob;
+  try {
+    blob = await readBlob();
+  } catch (err) {
+    return { skipped: "read-failed", error: String(err?.message || err) };
+  }
+
+  const existing = blob.rooms?.[roomId];
+  if (existing?.token && Date.now() - (existing.ts ?? 0) <= TTL_MS) {
+    return { skipped: "already-running" };
+  }
+  const started = { ...(blob.started ?? {}) };
+  if (Date.now() - (started[roomId] ?? 0) < START_COOLDOWN_MS) return { skipped: "cooldown" };
+
+  const tokens = Object.keys(blob.pushToStart ?? {});
+  if (!tokens.length) return { skipped: "no-push-to-start-token" };
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const payload = {
+    aps: {
+      timestamp: nowSec,
+      event: "start",
+      "stale-date": nowSec + 900,
+      // Must match the Swift type name and its stored properties exactly, or
+      // ActivityKit drops the push without a word.
+      "attributes-type": "ConstructActivityAttributes",
+      attributes: { roomName: roomName || "Construct" },
+      "content-state": {
+        status: "Reply",
+        question: question.slice(0, 120),
+        detail: (detail || "").slice(0, 300),
+        roomId,
+        actions: actions.slice(0, 3),
+      },
+    },
+  };
+
+  const results = [];
+  const live = { ...(blob.pushToStart ?? {}) };
+  for (const t of tokens) {
+    const r = await apnsSendWithFallback(t, payload, {
+      topic: LIVE_ACTIVITY_TOPIC,
+      pushType: "liveactivity",
+      priority: 10,
+    });
+    results.push({ status: r.status, env: r.env, apnsId: r.apnsId });
+    // A device that reinstalled or disabled activities reports the token dead.
+    if (r.status === 410 || (r.status === 400 && (r.body || "").includes("BadDeviceToken"))) {
+      delete live[t];
+    }
+  }
+
+  started[roomId] = Date.now();
+  try {
+    await writeBlob({ ...blob, pushToStart: live, started });
+  } catch {}
+  return { sent: results.length, results };
 }
 
 /** Record what APNs said about the last Live Activity push, so a push that is

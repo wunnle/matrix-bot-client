@@ -8,7 +8,7 @@
  */
 import webpush from "web-push";
 import { apnsSend, apnsSendWithFallback, apnsConfigured, isEnvMismatch, APNS_BUNDLE_ID, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
-import { liveActivityEntry, clearTokens, recordPushResult } from "./live-activity.js";
+import { liveActivityEntry, clearTokens, recordPushResult, startLiveActivityIfNeeded } from "./live-activity.js";
 
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
@@ -224,6 +224,18 @@ export default async function handler(req, res) {
     }
     return r.status === 200;
   })();
+
+  // No activity was updated, so there probably isn't one for this room — ask
+  // the device to create one (iOS 17.2+ push-to-start). Additive on purpose:
+  // it sends no alert and does not suppress the notification below, since an
+  // APNs 200 doesn't prove ActivityKit actually started anything.
+  if (!liveActivityDelivered) {
+    await startLiveActivityIfNeeded(room_id, {
+      roomName: room_name || title,
+      detail: body,
+      actions,
+    }).catch(() => {});
+  }
 
   await Promise.all(
     devices.map(async (device) => {

@@ -43,6 +43,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // activity, so a stale token doesn't keep suppressing this room's
         // notifications.
         if #available(iOS 16.2, *) { Task { await reconcileLiveActivityTokens() } }
+        // Let the gateway create activities for rooms the app hasn't opened.
+        if #available(iOS 17.2, *) { observeLiveActivityStartsOnce() }
         // Hide the assistant/"language" bar on iPad + Mac (and the blank software
         // keyboard on Mac). No-op on iPhone.
         if #available(iOS 14.0, *) { configureWebKeyboardOnce() }
@@ -215,6 +217,7 @@ struct ListenIntent: AppIntent {
 ///   blank software keyboard (useless with no touch input) collapses. The
 ///   hardware keyboard still types.
 private var didConfigureWebKeyboard = false
+private var didObserveLiveActivityStarts = false
 @available(iOS 14.0, *)
 private func configureWebKeyboardOnce() {
     guard !didConfigureWebKeyboard, let cls = NSClassFromString("WKContentView") else { return }
@@ -285,8 +288,30 @@ enum IntentConfig {
 ///
 /// The token is per-activity and rotates, so this observes `pushTokenUpdates`
 /// for the activity's lifetime rather than reading it once.
+/// Activities can arrive from two directions now — created here, or created by
+/// the gateway and handed to us via `activityUpdates` — and the same one can
+/// arrive both ways. Observing it twice would post its token again on every
+/// rotation, so each activity is claimed once.
+private final class TrackedActivities {
+    static let shared = TrackedActivities()
+    private let lock = NSLock()
+    private var ids = Set<String>()
+
+    /// True only for the first caller to claim this activity.
+    func claim(_ id: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return ids.insert(id).inserted
+    }
+
+    func release(_ id: String) {
+        lock.lock(); defer { lock.unlock() }
+        ids.remove(id)
+    }
+}
+
 @available(iOS 16.2, *)
 private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<T>, room: String, question: String = "") {
+    guard TrackedActivities.shared.claim(activity.id) else { return }
     Task {
         for await tokenData in activity.pushTokenUpdates {
             _ = await postLiveActivityToken(tokenData, room: room, question: question)
@@ -302,10 +327,56 @@ private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<
         for await state in activity.activityStateUpdates {
             if state == .ended || state == .dismissed {
                 await clearLiveActivityTokens(room: room)
+                // Let a future activity for this room be tracked again.
+                TrackedActivities.shared.release(activity.id)
                 break
             }
         }
     }
+}
+
+/// Wires up the two streams that let the *gateway* create Live Activities, so
+/// every room can have one rather than only the rooms an activity was started
+/// for from inside the app (see startLiveActivityIfNeeded in api/live-activity.js):
+///
+///  * `pushToStartTokenUpdates` — a per-device token the gateway pushes to in
+///    order to create an activity. It rotates, so it is observed rather than
+///    read once.
+///  * `activityUpdates` — an activity created remotely has nothing observing
+///    its own update token, so it would be stuck on whatever content started
+///    it. Adopt each one and register its token under the room in its state.
+@available(iOS 17.2, *)
+private func observeLiveActivityStartsOnce() {
+    guard !didObserveLiveActivityStarts else { return }
+    didObserveLiveActivityStarts = true
+
+    Task {
+        for await tokenData in Activity<ConstructActivityAttributes>.pushToStartTokenUpdates {
+            await postPushToStartToken(tokenData)
+        }
+    }
+
+    Task {
+        for await activity in Activity<ConstructActivityAttributes>.activityUpdates {
+            let state = activity.content.state
+            // The gateway stamps the room into content-state; without it there
+            // is nothing to register the update token against.
+            guard !state.roomId.isEmpty else { continue }
+            trackLiveActivityToken(activity, room: state.roomId, question: state.question)
+        }
+    }
+}
+
+/// Registers the device-level push-to-start token. Distinct from the per-room
+/// update tokens: this one authorises *creating* an activity, so it is stored
+/// once for the device rather than against a room.
+private func postPushToStartToken(_ tokenData: Data) async {
+    let d = IntentConfig.defaults
+    guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
+    let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
+    let token = tokenData.map { String(format: "%02x", $0) }.joined()
+    _ = await intentPost("\(apiBase)/api/live-activity", secret: secret,
+                         body: ["action": "push-to-start", "token": token])
 }
 
 /// Registers the activity's first push token and *waits* for it.

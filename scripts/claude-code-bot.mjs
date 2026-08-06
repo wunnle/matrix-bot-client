@@ -348,11 +348,12 @@ function startApprovalBroker() {
   })
 }
 
-// A room's subject is rarely clear from the first message but usually is by the
-// second, so the agent is asked to retitle it exactly once, on that turn. Only
-// while the name is still the auto-generated one — a name someone chose (or the
-// agent already picked) is never revisited, and the ask never repeats.
-const RENAME_TURN = 2
+// The first message usually already says what the room is for, so the agent is
+// asked to retitle it from turn one and gets a second chance on turn two if the
+// subject was still vague. Only while the name is still the auto-generated one —
+// a name someone chose (or the agent already picked) is never revisited, so the
+// ask stops as soon as it lands.
+const RENAME_UNTIL_TURN = 2
 const RENAME_INSTRUCTION =
   'This room is still using its placeholder name. If the subject of this ' +
   'conversation is now clear, invoke the room-rename skill to retitle it ' +
@@ -377,7 +378,7 @@ function runClaude(roomId, prompt) {
     '--settings', APPROVAL_SETTINGS,
   ]
   if (entry.sessionId) args.push('--resume', entry.sessionId)
-  if (entry.turns === RENAME_TURN && ROOM_NAME_RE.test(client.getRoom(roomId)?.name ?? '')) {
+  if (entry.turns <= RENAME_UNTIL_TURN && ROOM_NAME_RE.test(client.getRoom(roomId)?.name ?? '')) {
     args.push('--append-system-prompt', RENAME_INSTRUCTION)
   }
 

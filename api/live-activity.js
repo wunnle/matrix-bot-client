@@ -116,6 +116,7 @@ export default async function handler(req, res) {
           rooms: Object.entries(rooms).map(([id, v]) => ({ roomId: id, ageMs: Date.now() - (v.ts ?? 0) })),
           pushToStartTokens: Object.keys(blob.pushToStart ?? {}).length,
           started: Object.entries(blob.started ?? {}).map(([id, ts]) => ({ roomId: id, ageMs: Date.now() - ts })),
+          lastStart: blob.lastStart ?? null,
           lastPush: lastPushCache,
         });
       }
@@ -272,18 +273,24 @@ export async function startLiveActivityIfNeeded(roomId, { roomName, detail, ques
       pushType: "liveactivity",
       priority: 10,
     });
-    results.push({ status: r.status, env: r.env, apnsId: r.apnsId });
+    // Keep the body: APNs reports *why* it refused (BadDeviceToken,
+    // TopicDisallowed, a malformed content-state), and without it a start that
+    // never appears is indistinguishable from one that was never sent.
+    results.push({ status: r.status, env: r.env, apnsId: r.apnsId, body: (r.body || "").slice(0, 200) });
     // A device that reinstalled or disabled activities reports the token dead.
     if (r.status === 410 || (r.status === 400 && (r.body || "").includes("BadDeviceToken"))) {
       delete live[t];
     }
   }
 
-  started[roomId] = Date.now();
+  // Only rate-limit a start APNs actually accepted — otherwise one rejected
+  // push would block this room for the whole cooldown.
+  const accepted = results.some((r) => r.status === 200);
+  if (accepted) started[roomId] = Date.now();
   try {
-    await writeBlob({ ...blob, pushToStart: live, started });
+    await writeBlob({ ...blob, pushToStart: live, started, lastStart: { roomId, at: Date.now(), accepted, results } });
   } catch {}
-  return { sent: results.length, results };
+  return { sent: results.length, accepted, results };
 }
 
 /** Record what APNs said about the last Live Activity push, so a push that is

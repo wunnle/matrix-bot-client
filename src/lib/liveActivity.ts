@@ -81,10 +81,12 @@ export async function cacheRoomAvatars(
   if (!client) return
   const withAvatars = rooms.filter(r => r.avatarMxc).slice(0, 50)
   if (withAvatars.length === 0) return
-  const payload = (await Promise.all(withAvatars.map(async r => {
+  const resolved = await Promise.all(withAvatars.map(async r => {
     const avatar = await resolveMediaBase64(client!, r.avatarMxc!, 96, 96, 'crop')
     return avatar ? { roomId: r.roomId, avatar } : null
-  }))).filter(Boolean)
+  }))
+  // Explicit guard: filter(Boolean) doesn't narrow away the nulls for tsc.
+  const payload = resolved.filter((r): r is { roomId: string; avatar: string } => r !== null)
   if (payload.length === 0) return
   await plugin.cacheRoomAvatars({ rooms: payload }).catch(() => {})
 }

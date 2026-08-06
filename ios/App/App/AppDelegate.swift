@@ -43,6 +43,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // activity, so a stale token doesn't keep suppressing this room's
         // notifications.
         if #available(iOS 16.2, *) { Task { await reconcileLiveActivityTokens() } }
+        // Pick up activities the gateway started while this process was away, so
+        // the next message updates them instead of starting yet another one.
+        if #available(iOS 16.2, *) { adoptRunningLiveActivities() }
         // Let the gateway create activities for rooms the app hasn't opened.
         if #available(iOS 17.2, *) { observeLiveActivityStartsOnce() }
         // Hide the assistant/"language" bar on iPad + Mac (and the blank software
@@ -332,6 +335,23 @@ private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<
                 break
             }
         }
+    }
+}
+
+/// Adopts activities that are already running. `activityUpdates` only delivers
+/// activities as they are *created*, and a push-started one is created while
+/// this process is suspended — that creation is never replayed on resume, so
+/// without sweeping the current list its update token is never registered and
+/// the gateway can only ever start a new activity instead of updating this one.
+///
+/// Safe to call on every activation: trackLiveActivityToken claims each
+/// activity once.
+@available(iOS 16.2, *)
+private func adoptRunningLiveActivities() {
+    for activity in Activity<ConstructActivityAttributes>.activities {
+        let state = activity.content.state
+        guard !state.roomId.isEmpty else { continue }
+        trackLiveActivityToken(activity, room: state.roomId, question: state.question)
     }
 }
 

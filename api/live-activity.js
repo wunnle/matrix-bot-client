@@ -230,7 +230,7 @@ export default async function handler(req, res) {
 /** Don't re-create an activity for the same room on every message: a push-start
     is fire-and-forget (APNs 200 says nothing about whether ActivityKit started
     one), so without a cooldown a chatty room would stack duplicates. */
-const START_COOLDOWN_MS = 15 * 60 * 1000;
+const START_COOLDOWN_MS = 5 * 60 * 1000;
 
 /** Create a Live Activity for a room that doesn't have one, using the device's
     push-to-start token (iOS 17.2+). This is what extends Live Activities to

@@ -11,8 +11,9 @@
 //         timeoutMs, onSession }) -> Promise<{ text, isError } | { error }>
 //   cancel(roomId) -> boolean               (false when nothing was running)
 import { claude } from './claude.mjs'
+import { codex } from './codex.mjs'
 
-export const PROVIDERS = { claude }
+export const PROVIDERS = { claude, codex }
 export const DEFAULT_PROVIDER = 'claude'
 
 // The provider a room is bound to. Sessions written before providers existed

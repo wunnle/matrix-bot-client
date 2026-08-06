@@ -26,6 +26,14 @@
 	<true/>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<!-- This app pushes a start plus an update per bot reply, across several
+	     rooms. Without declaring that, iOS applies its stricter Live Activity
+	     push budget and silently stops acting on pushes once it's exceeded —
+	     APNs still answers 200, so the only symptom is activities that quietly
+	     stop appearing. Also surfaces a per-app "Frequent Updates" toggle in
+	     Settings. -->
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+	<true/>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>INSendMessageIntent</string>

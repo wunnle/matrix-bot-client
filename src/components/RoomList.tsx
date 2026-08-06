@@ -558,6 +558,19 @@ export default function RoomList({
                     const sub = await reg.pushManager.getSubscription()
                     return sub?.endpoint ? `...${sub.endpoint.slice(-20)}` : 'none'
                   }),
+                  // This feature works by making notifications *not* happen, so
+                  // when it misfires there's nothing to see. Listing who is
+                  // holding the phone quiet is the whole diagnosis.
+                  await line('Foreground clients', async () => {
+                    const secret = import.meta.env.VITE_INTENT_SECRET
+                    if (!secret) return 'n/a (no intent secret in this build)'
+                    const r = await fetch('/api/live-activity', { headers: { 'x-intent-secret': secret } })
+                    const clients = (await r.json())?.activeClients ?? []
+                    if (!clients.length) return 'none — notifications flow normally'
+                    return '\n' + clients.map((c: { client: string; viewingRoom: string | null; ageMs: number }) =>
+                      `  ${c.client}${c.viewingRoom ? ` in ${c.viewingRoom.slice(0, 12)}…` : ''} (${Math.round(c.ageMs / 1000)}s ago)`
+                    ).join('\n')
+                  }),
                   await line('Registered pushers', async () => {
                     const pushers = await getClient().getPushers()
                     return '\n' + ((pushers?.pushers ?? []).map((p: any) =>

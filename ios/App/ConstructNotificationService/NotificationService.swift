@@ -15,6 +15,29 @@
 import Intents
 import UserNotifications
 
+/// Writer half of the Live Activity avatar cache, duplicated from the app
+/// target (AppDelegate.swift) — separate processes with no shared module, so
+/// the path scheme has to stay identical. Worth having here as well as in the
+/// app: this extension runs for rooms the app has never opened, which is
+/// exactly when the gateway starts a Live Activity for one.
+private enum AvatarCache {
+    static let appGroup = "group.com.wunnle.construct"
+
+    static func fileName(for roomId: String) -> String {
+        String(roomId.map { $0.isLetter || $0.isNumber ? $0 : "_" }) + ".png"
+    }
+
+    static func write(_ data: Data, roomId: String) {
+        guard !roomId.isEmpty, !data.isEmpty,
+              let dir = FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: appGroup)?
+                .appendingPathComponent("avatars", isDirectory: true)
+        else { return }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? data.write(to: dir.appendingPathComponent(fileName(for: roomId)), options: .atomic)
+    }
+}
+
 final class NotificationService: UNNotificationServiceExtension {
   private var contentHandler: ((UNNotificationContent) -> Void)?
   private var bestAttempt: UNMutableNotificationContent?
@@ -47,6 +70,8 @@ final class NotificationService: UNNotificationServiceExtension {
     req.timeoutInterval = 12
     task = URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
       guard let self else { return }
+      // Keep a copy for the Live Activity, which has no way to fetch its own.
+      if let data { AvatarCache.write(data, roomId: roomId) }
       let image = data.flatMap { INImage(imageData: $0) }
       self.deliver(communicationFrom: best, roomId: roomId, senderName: senderName, avatar: image)
     }

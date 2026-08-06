@@ -7,6 +7,7 @@ import ActivityKit
 import AppIntents
 import WidgetKit
 import SwiftUI
+import UIKit
 
 // NOTE: this struct is intentionally duplicated in the app target
 // (AppDelegate.swift). ActivityKit matches attributes across processes by
@@ -123,15 +124,54 @@ private struct QuickReplyButtons: View {
     }
 }
 
-/// Circular room avatar.
+/// Room avatars cached as files in the shared App Group container.
+///
+/// A Live Activity's views can't fetch anything — widget rendering has no
+/// network — and the avatar is far too big for the ~4KB push payload, so the
+/// image has to already be on disk when the activity draws. The app writes
+/// these when it donates share targets, and the notification service extension
+/// writes them when it decorates a push, which covers rooms the app has never
+/// opened. Keyed by room id, which ContentState already carries.
+enum AvatarCache {
+    static let appGroup = "group.com.wunnle.construct"
+
+    /// Room ids contain characters that can't go in a path (`!`, `:`), and the
+    /// localpart is unique, so a straight character filter is enough.
+    static func fileName(for roomId: String) -> String {
+        String(roomId.map { $0.isLetter || $0.isNumber ? $0 : "_" }) + ".png"
+    }
+
+    static func url(for roomId: String) -> URL? {
+        guard !roomId.isEmpty,
+              let dir = FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: appGroup)?
+                .appendingPathComponent("avatars", isDirectory: true)
+        else { return nil }
+        return dir.appendingPathComponent(fileName(for: roomId))
+    }
+
+    static func image(for roomId: String) -> UIImage? {
+        guard let url = url(for: roomId), let data = try? Data(contentsOf: url) else { return nil }
+        return UIImage(data: data)
+    }
+}
+
+/// Circular room avatar — the room's own picture when one has been cached,
+/// otherwise the bundled placeholder.
 private struct RoomAvatar: View {
     var size: CGFloat
+    var roomId: String = ""
     var body: some View {
-        Image("RoomAvatar")
-            .resizable()
-            .scaledToFill()
-            .frame(width: size, height: size)
-            .clipShape(Circle())
+        Group {
+            if let image = AvatarCache.image(for: roomId) {
+                Image(uiImage: image).resizable()
+            } else {
+                Image("RoomAvatar").resizable()
+            }
+        }
+        .scaledToFill()
+        .frame(width: size, height: size)
+        .clipShape(Circle())
     }
 }
 
@@ -182,7 +222,7 @@ struct LockScreenView: View {
     var body: some View {
         let reply = isReply(state.status)
         HStack(alignment: .top, spacing: 12) {
-            RoomAvatar(size: 40)
+            RoomAvatar(size: 40, roomId: state.roomId)
             if reply {
                 // Answer phase. A plain line-limited Text (no ViewThatFits) so
                 // the banner hugs the reply: ViewThatFits measured against a
@@ -302,7 +342,7 @@ struct ContructWidgetsLiveActivity: Widget {
                         .padding(.trailing, 4)
                 }
             } compactLeading: {
-                RoomAvatar(size: 20)
+                RoomAvatar(size: 20, roomId: context.state.roomId)
             } compactTrailing: {
                 if reply {
                     Image(systemName: "bubble.left.fill")
@@ -311,7 +351,7 @@ struct ContructWidgetsLiveActivity: Widget {
                     WorkingRing(size: 14)
                 }
             } minimal: {
-                RoomAvatar(size: 20)
+                RoomAvatar(size: 20, roomId: context.state.roomId)
             }
         }
     }

@@ -285,6 +285,32 @@ enum IntentConfig {
     static var defaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
 }
 
+/// Writer half of the Live Activity avatar cache.
+///
+/// NOTE: the reader is duplicated in the widget target
+/// (ContructWidgetsLiveActivity.swift) and the notification service extension
+/// writes to it too — separate processes, no shared module, so the path scheme
+/// has to stay identical in all three. A Live Activity can't fetch its own
+/// image (no network while rendering, and the push payload is far too small),
+/// so whatever is on disk when it draws is what it shows.
+enum AvatarCache {
+    static let appGroup = "group.com.wunnle.construct"
+
+    static func fileName(for roomId: String) -> String {
+        String(roomId.map { $0.isLetter || $0.isNumber ? $0 : "_" }) + ".png"
+    }
+
+    static func write(_ data: Data, roomId: String) {
+        guard !roomId.isEmpty, !data.isEmpty,
+              let dir = FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: appGroup)?
+                .appendingPathComponent("avatars", isDirectory: true)
+        else { return }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? data.write(to: dir.appendingPathComponent(fileName(for: roomId)), options: .atomic)
+    }
+}
+
 /// Registers an Activity's APNs push token with the server so `matrix-push.js`
 /// can update the Live Activity while the app is suspended — the only way to
 /// move it past whatever state the app last set.
@@ -939,6 +965,9 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             // Re-donating the same groupIdentifier updates that room's donation
             // in place (refreshing its avatar) without disturbing the others.
             for (roomId, name, avatar) in items {
+                // Same bytes the share sheet uses, kept on disk for the Live
+                // Activity — which can't load an image any other way.
+                if let avatar { AvatarCache.write(avatar, roomId: roomId) }
                 let intent = INSendMessageIntent(
                     recipients: nil,
                     outgoingMessageType: .outgoingMessageText,

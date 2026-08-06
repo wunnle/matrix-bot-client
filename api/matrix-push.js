@@ -8,7 +8,7 @@
  */
 import webpush from "web-push";
 import { apnsSend, apnsSendWithFallback, apnsConfigured, isEnvMismatch, APNS_BUNDLE_ID, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
-import { liveActivityEntry, clearTokens, recordPushResult, startLiveActivityIfNeeded, recordNotify, clientActiveWithin } from "./live-activity.js";
+import { liveActivityEntry, clearTokens, recordPushResult, startLiveActivityIfNeeded, recordNotify, lastHeartbeat } from "./live-activity.js";
 
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
@@ -151,10 +151,26 @@ export default async function handler(req, res) {
 
   const rejected = [];
 
-  // You're looking at Construct somewhere right now (web, desktop, or this
-  // phone), so a banner is noise — the open client already shows the message.
-  // Deliberately fails open: any error reading this reports "not active".
-  const activeElsewhere = await clientActiveWithin(75_000);
+  // Which client is in the foreground, and where. Two different rules follow
+  // from it, so the *identity* matters, not just that something is active:
+  //   • the active device itself still wants to hear about other rooms — it is
+  //     only the room already on screen that would be noise;
+  //   • every other device stays quiet, because you're reading elsewhere.
+  //
+  // A heartbeat with no pushkey can't be attributed to a device, so it is
+  // ignored entirely rather than guessed at: the failure mode has to be an
+  // extra notification, never a missing one.
+  const heartbeat = await lastHeartbeat();
+  const activeClient =
+    heartbeat?.pushkey && Date.now() - (heartbeat.ts ?? 0) < 75_000 ? heartbeat : null;
+  const activeViewingThisRoom = activeClient?.roomId === room_id;
+  // Is the foreground client this phone, or something else entirely?
+  const activeIsNative =
+    !!activeClient &&
+    devices.some((d) => d.pushkey === activeClient.pushkey && !parseWebPushKey(d.pushkey));
+  // Nothing on the phone at all while you're reading on another device; and
+  // nothing for the room you already have open.
+  const suppressLiveActivity = !!activeClient && (!activeIsNative || activeViewingThisRoom);
 
   // Resolved once and shared by the APNs payload (service extension) and the
   // Web Push icon.
@@ -208,7 +224,7 @@ export default async function handler(req, res) {
         // suspended.
         // Alerting updates play a sound and expand the island. Skipped while a
         // client is active: the activity still refreshes, just without the buzz.
-        ...(activeElsewhere ? {} : {
+        ...(suppressLiveActivity ? {} : {
           alert: {
             title: title,
             body: body.slice(0, 150),
@@ -247,7 +263,7 @@ export default async function handler(req, res) {
   // acting on it silently dropped a message. The cost is a double alert on the
   // first message in a room (once per cooldown); the alternative risks a
   // message with no surface at all, which is worse.
-  const activityStarted = process.env.LIVE_ACTIVITY_PUSH_TO_START !== "0" && !liveActivityDelivered
+  const activityStarted = process.env.LIVE_ACTIVITY_PUSH_TO_START !== "0" && !liveActivityDelivered && !suppressLiveActivity
     ? await startLiveActivityIfNeeded(room_id, {
         roomName: room_name || title,
         alertTitle: sender_display_name || title,
@@ -268,9 +284,9 @@ export default async function handler(req, res) {
         if (!apnsConfigured()) {
           return; // APNs not configured — don't reject, token may be valid later
         }
-        // A client is in the foreground somewhere — skip the banner rather than
-        // buzz for a message that's already on a screen you're looking at.
-        if (activeElsewhere) return;
+        // Silent when you're reading on another device, and when this device is
+        // the active one but already showing this very room.
+        if (activeClient && (activeClient.pushkey !== pushkey || activeViewingThisRoom)) return;
         // Suppress the alert on the phone that is showing the Live Activity: it
         // already got an alerting Live Activity push (sound + haptic) for this
         // same message, so a banner here is a second buzz. Web Push (other
@@ -340,6 +356,10 @@ export default async function handler(req, res) {
         return;
       }
 
+      // Same rule as the native branch above: quiet on every other device while
+      // you're reading, and quiet here for the room already on screen.
+      if (activeClient && (activeClient.pushkey !== pushkey || activeViewingThisRoom)) return;
+
       const icon = avatarUrl;
       const payload = JSON.stringify({
         title,
@@ -366,8 +386,8 @@ export default async function handler(req, res) {
     activityStarted,
     devices: devices.length,
     // The alert is suppressed when a Live Activity carried the message instead.
-    alertSuppressed: liveActivityDelivered || activeElsewhere,
-    activeElsewhere,
+    alertSuppressed: liveActivityDelivered,
+    activeClient: activeClient ? { native: activeIsNative, sameRoom: activeViewingThisRoom } : null,
   });
 
   // Matrix spec requires returning rejected pushkeys so the homeserver unregisters them

@@ -11,6 +11,7 @@ const BEAT_MS = 45_000
 
 let timer: ReturnType<typeof setInterval> | null = null
 let currentRoomId: string | null = null
+let pushkey: string | null = null
 
 async function beat() {
   const secret = import.meta.env.VITE_INTENT_SECRET
@@ -20,11 +21,21 @@ async function beat() {
     await fetch('/api/live-activity', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-intent-secret': secret },
-      body: JSON.stringify({ action: 'heartbeat', roomId: currentRoomId }),
+      // The pushkey is how the gateway tells *this* device from the others: it
+      // is the same value the homeserver hands it per device. Without one it
+      // can't be identified, and the gateway deliberately does nothing rather
+      // than guess (see matrix-push.js).
+      body: JSON.stringify({ action: 'heartbeat', roomId: currentRoomId, pushkey }),
     })
   } catch {
     // Never surface: failing to report presence only means you get notified.
   }
+}
+
+/** This client's own pushkey (APNs token, or the web-push subscription JSON),
+    so the gateway can recognise which device is the active one. */
+export function setPresencePushkey(value: string | null) {
+  pushkey = value
 }
 
 /** Which room is on screen, sent with the next beat. */

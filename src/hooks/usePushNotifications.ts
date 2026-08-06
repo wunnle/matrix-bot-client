@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { setPresencePushkey } from '../lib/presence'
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 
@@ -100,6 +101,9 @@ export function usePushNotifications(enabled: boolean) {
           PushNotifications.register().catch(reject);
         });
         if (cancelled) return;
+        // Lets the gateway tell this phone apart from other devices when
+        // deciding whose notifications to skip (see src/lib/presence.ts).
+        setPresencePushkey(token);
 
         const { loadAuth } = await import("../lib/auth");
         const auth = loadAuth();
@@ -169,6 +173,9 @@ export function usePushNotifications(enabled: boolean) {
         }
 
         const pushkey = JSON.stringify(subscription.toJSON());
+        // Lets the gateway tell this device apart from the others when deciding
+        // whose notifications to skip (see src/lib/presence.ts).
+        setPresencePushkey(pushkey);
 
         await fetch(`${auth.homeserver}/_matrix/client/v3/pushers/set`, {
           method: "POST",

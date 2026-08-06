@@ -173,7 +173,7 @@ export default async function handler(req, res) {
       const r = await fetch(await accountDataUrl(PRESENCE_TYPE), {
         method: "PUT",
         headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ ts: Date.now(), roomId: roomId ?? null }),
+        body: JSON.stringify({ ts: Date.now(), roomId: roomId ?? null, pushkey: req.body?.pushkey ?? null }),
       });
       if (!r.ok) throw new Error(`heartbeat write failed: ${r.status}`);
     } catch (err) {

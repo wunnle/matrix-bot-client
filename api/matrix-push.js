@@ -150,6 +150,9 @@ export default async function handler(req, res) {
   const { text: body, actions } = parseActions(rawBody);
 
   const rejected = [];
+  // Counted so the trace can say a notification was skipped *because a client
+  // was in the foreground*, which alertSuppressed (activity-based) can't.
+  let presenceSkipped = 0;
 
   // Which clients are in the foreground, and where. Two rules follow, so which
   // device it is matters, not just that something is active:
@@ -287,7 +290,10 @@ export default async function handler(req, res) {
         // Silent when you're reading on another device, and when this device is
         // the active one but already showing this very room.
         if (active.some((c) => c.pushkey !== pushkey) ||
-            active.some((c) => c.pushkey === pushkey && c.roomId === room_id)) return;
+            active.some((c) => c.pushkey === pushkey && c.roomId === room_id)) {
+          presenceSkipped += 1;
+          return;
+        }
         // Suppress the alert on the phone that is showing the Live Activity: it
         // already got an alerting Live Activity push (sound + haptic) for this
         // same message, so a banner here is a second buzz. Web Push (other
@@ -360,7 +366,10 @@ export default async function handler(req, res) {
       // Same rule as the native branch above: quiet on every other device while
       // you're reading, and quiet here for the room already on screen.
       if (active.some((c) => c.pushkey !== pushkey) ||
-          active.some((c) => c.pushkey === pushkey && c.roomId === room_id)) return;
+          active.some((c) => c.pushkey === pushkey && c.roomId === room_id)) {
+        presenceSkipped += 1;
+        return;
+      }
 
       const icon = avatarUrl;
       const payload = JSON.stringify({
@@ -391,6 +400,8 @@ export default async function handler(req, res) {
     alertSuppressed: liveActivityDelivered,
     activeClients: active.length,
     activeNonNative,
+    presenceSkipped,
+    liveActivitySuppressed: suppressLiveActivity,
   });
 
   // Matrix spec requires returning rejected pushkeys so the homeserver unregisters them

@@ -8,7 +8,7 @@
  */
 import webpush from "web-push";
 import { apnsSend, apnsSendWithFallback, apnsConfigured, isEnvMismatch, APNS_BUNDLE_ID, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
-import { liveActivityEntry, clearTokens, recordPushResult, startLiveActivityIfNeeded } from "./live-activity.js";
+import { liveActivityEntry, clearTokens, recordPushResult, startLiveActivityIfNeeded, recordNotify } from "./live-activity.js";
 
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
@@ -341,6 +341,16 @@ export default async function handler(req, res) {
       }
     })
   );
+
+  // Leaves a trace of which branch ran for this message — see recordNotify.
+  await recordNotify({
+    roomId: room_id,
+    liveActivityDelivered,
+    activityStarted,
+    devices: devices.length,
+    // The alert is suppressed when a Live Activity carried the message instead.
+    alertSuppressed: liveActivityDelivered || activityStarted,
+  });
 
   // Matrix spec requires returning rejected pushkeys so the homeserver unregisters them
   res.status(200).json({ rejected });

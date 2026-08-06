@@ -121,6 +121,7 @@ export default async function handler(req, res) {
           pushToStartAgeMs: Object.values(blob.pushToStart ?? {}).map((ts) => Date.now() - ts),
           started: Object.entries(blob.started ?? {}).map(([id, ts]) => ({ roomId: id, ageMs: Date.now() - ts })),
           lastStart: blob.lastStart ?? null,
+          lastNotify: blob.lastNotify ?? null,
           lastPush: lastPushCache,
         });
       }
@@ -319,6 +320,17 @@ export async function startLiveActivityIfNeeded(roomId, { roomName, detail, ques
     await writeBlob({ ...blob, pushToStart: live, started, lastStart: { roomId, at: Date.now(), accepted, results } });
   } catch {}
   return { sent: results.length, accepted, results };
+}
+
+/** Record that the gateway ran for a room, and which branch it took. Without
+    this there's no way to tell "the homeserver never pushed" from "it pushed
+    and we chose not to update the activity" — they look identical from the
+    device, and both end with a Live Activity stuck on its last state. */
+export async function recordNotify(info) {
+  try {
+    const blob = await readBlob();
+    await writeBlob({ ...blob, lastNotify: { at: Date.now(), ...info } });
+  } catch {}
 }
 
 /** Record what APNs said about the last Live Activity push, so a push that is

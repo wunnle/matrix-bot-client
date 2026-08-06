@@ -276,6 +276,14 @@ export async function startLiveActivityIfNeeded(roomId, { roomName, detail, ques
         roomId,
         actions: actions.slice(0, 3),
       },
+      // Not optional: a start push creates visible UI, and iOS drops one that
+      // carries no alert — APNs still answers 200, so the only symptom is an
+      // activity that never appears.
+      alert: {
+        title: roomName || "Construct",
+        body: (detail || "").slice(0, 150),
+        sound: "default",
+      },
     },
   };
 

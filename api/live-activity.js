@@ -115,6 +115,10 @@ export default async function handler(req, res) {
         return res.status(200).json({
           rooms: Object.entries(rooms).map(([id, v]) => ({ roomId: id, ageMs: Date.now() - (v.ts ?? 0) })),
           pushToStartTokens: Object.keys(blob.pushToStart ?? {}).length,
+          // Age matters as much as the count: a token re-registered seconds ago
+          // means the app is observing, while a stale one means we're pushing
+          // at a registration the current install has replaced.
+          pushToStartAgeMs: Object.values(blob.pushToStart ?? {}).map((ts) => Date.now() - ts),
           started: Object.entries(blob.started ?? {}).map(([id, ts]) => ({ roomId: id, ageMs: Date.now() - ts })),
           lastStart: blob.lastStart ?? null,
           lastPush: lastPushCache,

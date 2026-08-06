@@ -123,6 +123,18 @@ export default async function handler(req, res) {
           lastStart: blob.lastStart ?? null,
           lastNotify: blob.lastNotify ?? null,
           lastPush: lastPushCache,
+          // Is the homeserver's own presence usable for "am I active in another
+          // client"? Cheaper than a heartbeat if it is, useless if the server
+          // degrades it — worth knowing before building on it.
+          presence: await (async () => {
+            try {
+              const r = await fetch(
+                `${HOMESERVER}/_matrix/client/v3/presence/${encodeURIComponent(await userId())}/status`,
+                { headers: { Authorization: `Bearer ${ACCESS_TOKEN}` } }
+              );
+              return r.ok ? await r.json() : { error: r.status };
+            } catch (e) { return { error: String(e?.message || e) }; }
+          })(),
         });
       }
       return res.status(200).json({ roomId, count: rooms[roomId] ? 1 : 0 });

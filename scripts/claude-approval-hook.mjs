@@ -20,7 +20,7 @@ const PATH_SCOPED = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit'])
 // Invoking one of these only loads its instructions into the turn — every tool
 // call the skill then makes comes back through this hook on its own, so this
 // grants nothing the skill's own calls would not have to earn separately.
-const SAFE_SKILLS = new Set(['linear', 'next'])
+const SAFE_SKILLS = new Set(['linear', 'next', 'room-rename'])
 
 // Bash commands that only read state run without a prompt. Anything unrecognised
 // — or any sign of mutation (write redirects, sudo, command substitution, find
@@ -57,7 +57,10 @@ const PREAPPROVED_BINS = new Set(['linear'])
 // The same CLIs reached the long way round, as `node /path/to/thing.js …`.
 // Matched on basename so the wrapper and the raw script are judged alike —
 // otherwise the call is judged on `node`, which is only safe for --version.
-const PREAPPROVED_SCRIPTS = new Set(['linear.js'])
+// room-rename.mjs sets m.room.name on the room the turn is already running in
+// and can touch nothing else — asking the room's owner for permission to retitle
+// that room is a prompt with no decision in it.
+const PREAPPROVED_SCRIPTS = new Set(['linear.js', 'room-rename.mjs'])
 // Programs safe only for specific read-only subcommands.
 const SAFE_SUBCOMMANDS = {
   git: new Set(['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files', 'describe',

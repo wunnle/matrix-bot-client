@@ -23,21 +23,67 @@ const MODELS = {
   'gpt-5.2': 'gpt-5.2',
 }
 
-// Approval-shaped server requests. Every one of them must be answered or the
-// turn hangs forever, so anything not explicitly handled is declined.
-// CLA-122 replaces the blanket decline with real routing into the broker.
-const APPROVAL_METHODS = new Set([
+// Approvals we can put to the room as a yes/no. Both answer with the same
+// decision enum: accept | acceptForSession | decline | cancel.
+const ASKABLE = new Set([
   'item/commandExecution/requestApproval',
   'item/fileChange/requestApproval',
-  'item/permissions/requestApproval',
-  'item/tool/requestUserInput',
-  'mcpServer/elicitation/request',
   'execCommandApproval',
   'applyPatchApproval',
 ])
 
+// Approval-shaped requests we cannot honestly turn into a chat button, but
+// which still must be answered or the turn hangs forever:
+//   item/permissions/requestApproval  wants a GrantedPermissionProfile, not a
+//                                     yes/no — granting it means constructing a
+//                                     filesystem permission set.
+//   item/tool/requestUserInput        a question for the user, not a decision.
+//   mcpServer/elicitation/request     same, from an MCP server.
+// Declining these is the safe answer until each gets its own treatment.
+const UNSUPPORTED = new Set([
+  'item/permissions/requestApproval',
+  'item/tool/requestUserInput',
+  'mcpServer/elicitation/request',
+])
+
+// Chat answer -> the decision this build actually accepts. Note these are not
+// `approved`/`denied`: see CLA-119.
+const DECISIONS = {
+  allow: 'accept',
+  allow_session: 'acceptForSession',
+  deny: 'decline',
+}
+
+// What the room calls each kind of approval, in "Approve `…`?".
+const APPROVAL_LABELS = {
+  'item/commandExecution/requestApproval': 'shell command',
+  'execCommandApproval': 'shell command',
+  'item/fileChange/requestApproval': 'file changes',
+  'applyPatchApproval': 'file changes',
+}
+
 function log(...args) {
   console.log(`[${new Date().toISOString().slice(11, 23)}][codex]`, ...args)
+}
+
+// The body of the approval message. A command speaks for itself; a file change
+// does not, so its diff is looked up from the item the request points at —
+// the approval params carry only an itemId, never the patch.
+function describeApproval(method, params = {}, turn) {
+  if (params.command) {
+    const where = params.cwd ? `\n# in ${params.cwd}` : ''
+    return `${params.command}${where}`
+  }
+  const changes = turn?.fileChanges.get(params.itemId)
+  if (changes?.length) {
+    const body = changes
+      // `kind` is a tagged object ({type: "add"|"delete"|"update"}), so it has
+      // to be unwrapped — interpolating it directly prints [object Object].
+      .map((c) => `# ${c.kind?.type ?? 'update'} ${c.path}\n${c.diff ?? ''}`.trim())
+      .join('\n\n')
+    return params.reason ? `# ${params.reason}\n\n${body}` : body
+  }
+  return params.reason ?? method
 }
 
 // One app-server for every room. Connection is lazy: nothing starts until a
@@ -149,11 +195,18 @@ class AppServer {
   }
 
   #onServerRequest(msg) {
-    if (APPROVAL_METHODS.has(msg.method)) {
-      // Fail closed. Until CLA-122 routes these to the room, nobody can say yes.
-      const turn = this.turns.get(msg.params?.threadId)
-      turn?.onDeclined(msg.method, msg.params)
-      log(`declined ${msg.method} (no approval routing yet)`)
+    const turn = this.turns.get(msg.params?.threadId)
+
+    if (ASKABLE.has(msg.method)) {
+      // Fire and forget: the turn is blocked on this request, so awaiting it
+      // here would stall the read loop that has to keep draining the socket.
+      this.#askRoom(msg, turn)
+      return
+    }
+
+    if (UNSUPPORTED.has(msg.method)) {
+      turn?.onDeclined(msg.method, msg.params?.command ?? msg.params?.reason)
+      log(`declined ${msg.method} (not answerable from chat)`)
       this.respond(msg.id, { decision: 'decline' })
       return
     }
@@ -164,6 +217,31 @@ class AppServer {
       id: msg.id,
       error: { code: -32601, message: `${msg.method} is not handled by this client` },
     })
+  }
+
+  // Puts one approval to the room and answers the server with the result.
+  async #askRoom(msg, turn) {
+    let decision = 'decline'
+    try {
+      if (!turn?.ask) throw new Error('no room is listening for this thread')
+      const answer = await turn.ask({
+        toolName: APPROVAL_LABELS[msg.method] ?? msg.method,
+        summary: describeApproval(msg.method, msg.params, turn),
+        // Only worth offering where the backend can remember it.
+        allowSession: true,
+      })
+      decision = DECISIONS[answer?.decision] ?? 'decline'
+    } catch (e) {
+      // Never fall through to "allow" — an approval we could not ask about is
+      // an approval nobody granted.
+      log(`approval for ${msg.method} failed (${e.message}); declining`)
+      turn?.onDeclined(msg.method, msg.params?.command ?? msg.params?.reason)
+    }
+    try {
+      this.respond(msg.id, { decision })
+    } catch (e) {
+      log(`could not answer ${msg.method}: ${e.message}`)
+    }
   }
 
   send(msg) {
@@ -219,6 +297,11 @@ class Turn {
     this.text = null
     this.declined = []
     this.interrupted = false
+    // itemId -> [{path, kind, diff}]. Kept so a file-change approval can show
+    // what it would actually do; the request itself carries only the itemId.
+    this.fileChanges = new Map()
+    // Set by run(): how to put a question to the room this turn belongs to.
+    this.ask = null
     this.done = new Promise((resolve) => { this.finish = resolve })
   }
 
@@ -229,12 +312,20 @@ class Turn {
         // Needed for turn/interrupt, which takes threadId *and* turnId.
         this.turnId = p.turn?.id ?? this.turnId
         break
+      case 'item/started':
       case 'item/completed':
         // The reply is the final_answer agent message; other items are tool
         // calls and reasoning, which belong to CLA-103's streaming, not here.
         if (p.item?.type === 'agentMessage' && p.item?.phase === 'final_answer') {
           this.text = p.item.text ?? this.text
         }
+        // A pending patch arrives as an item before its approval is requested.
+        if (p.item?.type === 'fileChange' && p.item?.changes) {
+          this.fileChanges.set(p.item.id, p.item.changes)
+        }
+        break
+      case 'item/fileChange/patchUpdated':
+        if (p.changes) this.fileChanges.set(p.itemId, p.changes)
         break
       case 'turn/completed': {
         const turn = p.turn ?? {}
@@ -257,14 +348,13 @@ class Turn {
     this.declined.push(params?.command ?? method)
   }
 
-  // Without this, an auto-declined command looks to the room like the agent
-  // simply chose not to do the work. Temporary: CLA-122 makes them answerable.
+  // Only covers requests that were refused without anyone being asked. A plain
+  // "no" from the room needs no footnote — the human already knows.
   #withNotes() {
     const body = this.text ?? '(no output)'
     if (!this.declined.length) return body
     const list = this.declined.map((d) => `- \`${String(d).slice(0, 200)}\``).join('\n')
-    return `${body}\n\n---\n⚠️ Auto-declined ${this.declined.length} approval request(s) — ` +
-      `Codex rooms cannot ask for approval yet (CLA-122):\n${list}`
+    return `${body}\n\n---\n⚠️ Declined ${this.declined.length} request(s) that could not be put to you:\n${list}`
   }
 
   fail(reason) {
@@ -287,7 +377,7 @@ export const codex = {
     return model
   },
 
-  async run({ roomId, prompt, cwd, model, sessionId, instructions = [], timeoutMs, onSession }) {
+  async run({ roomId, prompt, cwd, model, sessionId, instructions = [], approval, timeoutMs, onSession }) {
     let turn
     let timer = null
     try {
@@ -321,6 +411,9 @@ export const codex = {
       }
 
       turn = new Turn(threadId, roomId)
+      // How this turn's approvals reach a human. Absent (standalone use, or a
+      // caller that predates it) means every approval is declined.
+      turn.ask = approval?.ask ?? null
       server.turns.set(threadId, turn)
       server.turnsByRoom.set(roomId, turn)
 

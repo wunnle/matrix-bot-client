@@ -229,8 +229,14 @@ function settleApproval(roomId, decision, reason) {
   return true
 }
 
-// Blocks the hook's HTTP request until the human answers in the room.
-function askForApproval(roomId, { toolName, summary }) {
+// Blocks the caller until the human answers in the room. Used by the Claude
+// hook over loopback HTTP, and directly by providers that carry approvals on
+// their own connection.
+//
+// `allowSession` offers a third answer, for backends that can remember a yes
+// for the rest of the session. The Claude hook has no such notion, so its
+// prompts stay two-way.
+function askForApproval(roomId, { toolName, summary, allowSession = false }) {
   return new Promise((resolve) => {
     // A second request for a room that is already waiting would strand the
     // first; refuse rather than lose track of it.
@@ -247,7 +253,10 @@ function askForApproval(roomId, { toolName, summary }) {
 
     pendingApprovals.set(roomId, { resolve, timer })
 
-    const body = `🔐 Approve \`${toolName}\`?\n\n${fencedBlock(summary)}\n\n[[Approve]] [[Deny]]`
+    const buttons = allowSession
+      ? '[[Approve]] [[Always allow]] [[Deny]]'
+      : '[[Approve]] [[Deny]]'
+    const body = `🔐 Approve \`${toolName}\`?\n\n${fencedBlock(summary)}\n\n${buttons}`
     sendRoomText(roomId, body).catch((e) => {
       // If we can't ask, we must not proceed as though we had.
       settleApproval(roomId, 'deny', `Could not post the approval request: ${e.message}`)
@@ -388,8 +397,12 @@ function runTurn(roomId, prompt) {
     sessionId: entry.sessionId,
     instructions,
     approval: {
+      // For providers that gate through the loopback broker (Claude's hook).
       url: `http://127.0.0.1:${APPROVAL_PORT}/approve`,
       timeoutMs: APPROVAL_TIMEOUT_MS,
+      // For providers that carry approvals on their own connection and can ask
+      // the room directly, skipping the HTTP hop entirely.
+      ask: (request) => askForApproval(roomId, request),
     },
     // A turn can block on a human answering an approval, so this must exceed
     // the approval timeout rather than race it.
@@ -899,6 +912,14 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   if (answer === 'approve' || answer === 'yes' || answer === 'y') {
     if (settleApproval(roomId, 'allow', 'Approved in chat.')) {
       await sendRoomText(roomId,'✅ Approved — continuing.')
+      return
+    }
+  }
+  // Only offered when the provider can honour it; a backend that cannot will
+  // never have posted the button, so this can only match a prompt that did.
+  if (answer === 'always allow' || answer === 'always') {
+    if (settleApproval(roomId, 'allow_session', 'Approved for the session in chat.')) {
+      await sendRoomText(roomId, '✅ Approved — and I won\'t ask again this session.')
       return
     }
   }

@@ -182,6 +182,11 @@ export default async function handler(req, res) {
   // suppress the duplicate alert on the same phone.
   const liveActivityDelivered = await (async () => {
     if (!apnsConfigured()) return false;
+    // Reading on another device (or already looking at this room): don't touch
+    // the activity at all. Dropping only the alert still refreshed it on the
+    // lock screen, which is exactly what "no Live Activities" rules out. The
+    // cost is that it holds its last message until you're away again.
+    if (suppressLiveActivity) return false;
     const entry = await liveActivityEntry(room_id);
     if (!entry) return false;
 
@@ -221,15 +226,11 @@ export default async function handler(req, res) {
         // expands) instead of updating it silently. The push-payload equivalent
         // of ActivityKit's alertConfiguration, which the app can't set while
         // suspended.
-        // Alerting updates play a sound and expand the island. Skipped while a
-        // client is active: the activity still refreshes, just without the buzz.
-        ...(suppressLiveActivity ? {} : {
-          alert: {
-            title: title,
-            body: body.slice(0, 150),
-            sound: "default",
-          },
-        }),
+        alert: {
+          title: title,
+          body: body.slice(0, 150),
+          sound: "default",
+        },
       },
     };
 

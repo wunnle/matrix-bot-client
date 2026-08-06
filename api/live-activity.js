@@ -128,7 +128,13 @@ export default async function handler(req, res) {
           lastStart: blob.lastStart ?? null,
           lastNotify: blob.lastNotify ?? null,
           lastPush: lastPushCache,
-          activeClient: await lastHeartbeat(),
+          // Pushkeys are credentials — only their tail is shown, which is
+          // enough to tell two clients apart.
+          activeClients: (await activeClients(75_000)).map((c) => ({
+            client: c.pushkey.startsWith("client:") ? "web (no push)" : `…${c.pushkey.slice(-8)}`,
+            viewingRoom: c.roomId,
+            ageMs: Date.now() - c.ts,
+          })),
         });
       }
       return res.status(200).json({ roomId, count: rooms[roomId] ? 1 : 0 });
@@ -168,12 +174,24 @@ export default async function handler(req, res) {
   // Room-less, like push-to-start, so it must precede the roomId check.
   if (action === "heartbeat") {
     try {
-      // Straight PUT: nothing else lives in this document, so there is nothing
-      // to read first and nothing another writer can lose.
+      // Keyed per client, not a single slot: with a phone and a desktop both
+      // open they would otherwise overwrite each other every beat, and the
+      // gateway would flip between "the phone is active" and "the desktop is"
+      // depending on who wrote last.
+      const key = req.body?.pushkey;
+      if (!key) return res.status(400).json({ error: "missing pushkey" });
+      const current = await readPresence();
+      const clients = { ...(current.clients ?? {}), [key]: { ts: Date.now(), roomId: roomId ?? null } };
+      // Forget clients that stopped beating long ago, so the document can't
+      // accumulate every browser that ever opened the app.
+      const cutoff = Date.now() - 10 * 60 * 1000;
+      for (const [k, v] of Object.entries(clients)) {
+        if ((v?.ts ?? 0) < cutoff) delete clients[k];
+      }
       const r = await fetch(await accountDataUrl(PRESENCE_TYPE), {
         method: "PUT",
         headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ ts: Date.now(), roomId: roomId ?? null, pushkey: req.body?.pushkey ?? null }),
+        body: JSON.stringify({ clients }),
       });
       if (!r.ok) throw new Error(`heartbeat write failed: ${r.status}`);
     } catch (err) {
@@ -356,32 +374,27 @@ export async function startLiveActivityIfNeeded(roomId, { roomName, detail, ques
   return { sent: results.length, accepted, results };
 }
 
-/** How recently a Construct client reported itself in the foreground. Returns
-    false on any error so a storage hiccup can't silently mute notifications —
-    the failure mode has to be "you get notified anyway". */
-export async function clientActiveWithin(ms) {
+/** Raw presence document. */
+async function readPresence() {
   try {
     const r = await fetch(await accountDataUrl(PRESENCE_TYPE), {
       headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
     });
-    if (!r.ok) return false;
-    const ts = (await r.json())?.ts;
-    return typeof ts === "number" && Date.now() - ts < ms;
+    return r.ok ? ((await r.json()) ?? {}) : {};
   } catch {
-    return false;
+    return {};
   }
 }
 
-/** Last heartbeat, for the diagnostic. */
-export async function lastHeartbeat() {
-  try {
-    const r = await fetch(await accountDataUrl(PRESENCE_TYPE), {
-      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
-    });
-    return r.ok ? await r.json() : null;
-  } catch {
-    return null;
-  }
+/** Clients that reported themselves in the foreground within `ms`, as
+    `[{ pushkey, roomId, ts }]`. Empty on any error, so a storage hiccup can
+    never mute a notification — the failure mode has to be notifying anyway. */
+export async function activeClients(ms) {
+  const now = Date.now();
+  const clients = (await readPresence()).clients ?? {};
+  return Object.entries(clients)
+    .filter(([, v]) => typeof v?.ts === "number" && now - v.ts < ms)
+    .map(([pushkey, v]) => ({ pushkey, roomId: v.roomId ?? null, ts: v.ts }));
 }
 
 /** Record that the gateway ran for a room, and which branch it took. Without

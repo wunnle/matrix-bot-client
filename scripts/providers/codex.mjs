@@ -243,6 +243,26 @@ class AppServer {
       return
     }
 
+    // Codex hit a 401 and is asking the client for fresh ChatGPT tokens. Only
+    // a client that owns the login can answer — the response requires an
+    // accessToken, and ours lives in ~/.codex/auth.json, which codex refreshes
+    // itself. So there is no honest success here; what matters is that the
+    // room is told, because the fix is a human running `codex login`.
+    if (msg.method === 'account/chatgptAuthTokens/refresh') {
+      const note = 'Codex could not authenticate (401) and asked me to refresh its ChatGPT login. ' +
+        'I cannot — run `codex login` on the Pi.'
+      log(`auth refresh requested (reason: ${msg.params?.reason ?? 'unknown'}) — ${note}`)
+      // The request carries no threadId, so it cannot be routed to one room.
+      // Every turn in flight is about to fail for this reason; tell them all.
+      for (const [, turn] of this.turns) turn.onDeclined('ChatGPT auth refresh', note)
+      this.send({
+        jsonrpc: '2.0',
+        id: msg.id,
+        error: { code: -32601, message: 'this client does not manage ChatGPT auth; codex owns ~/.codex/auth.json' },
+      })
+      return
+    }
+
     if (UNSUPPORTED.has(msg.method)) {
       turn?.onDeclined(msg.method, msg.params?.command ?? msg.params?.reason)
       log(`declined ${msg.method} (not answerable from chat)`)

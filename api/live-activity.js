@@ -25,6 +25,11 @@ const SECRET = process.env.INTENT_SECRET;
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN;
 const ACCOUNT_DATA_TYPE = "com.construct.live_activity";
+/** Foreground heartbeats live in their own document, deliberately. Sharing the
+    one above would mean a read-modify-write every 45s racing the token
+    registry — last write wins, so a beat could silently drop a Live Activity
+    token. Alone, it needs no merge: one small PUT, nothing else to lose. */
+const PRESENCE_TYPE = "com.construct.presence";
 
 // Activities are short-lived; a token outliving this is stale and its pushes
 // would be rejected by APNs anyway.
@@ -42,8 +47,8 @@ async function userId() {
   return user_id;
 }
 
-async function accountDataUrl() {
-  return `${HOMESERVER}/_matrix/client/v3/user/${encodeURIComponent(await userId())}/account_data/${ACCOUNT_DATA_TYPE}`;
+async function accountDataUrl(type = ACCOUNT_DATA_TYPE) {
+  return `${HOMESERVER}/_matrix/client/v3/user/${encodeURIComponent(await userId())}/account_data/${type}`;
 }
 
 /** The whole account-data blob. `{}` when unset — a 404 here just means nothing
@@ -123,6 +128,13 @@ export default async function handler(req, res) {
           lastStart: blob.lastStart ?? null,
           lastNotify: blob.lastNotify ?? null,
           lastPush: lastPushCache,
+          // Pushkeys are credentials — only their tail is shown, which is
+          // enough to tell two clients apart.
+          activeClients: (await activeClients(75_000)).map((c) => ({
+            client: c.pushkey.startsWith("client:") ? "web (no push)" : `…${c.pushkey.slice(-8)}`,
+            viewingRoom: c.roomId,
+            ageMs: Date.now() - c.ts,
+          })),
         });
       }
       return res.status(200).json({ roomId, count: rooms[roomId] ? 1 : 0 });
@@ -151,6 +163,37 @@ export default async function handler(req, res) {
         if (ts < cutoff) delete pushToStart[t];
       }
       await writeBlob({ ...blob, pushToStart });
+    } catch (err) {
+      return res.status(200).json({ ok: false, error: String(err?.message || err) });
+    }
+    return res.status(200).json({ ok: true });
+  }
+
+  // A client in the foreground says so periodically, so the gateway can skip
+  // buzzing a phone for something you're already looking at somewhere else.
+  // Room-less, like push-to-start, so it must precede the roomId check.
+  if (action === "heartbeat") {
+    try {
+      // Keyed per client, not a single slot: with a phone and a desktop both
+      // open they would otherwise overwrite each other every beat, and the
+      // gateway would flip between "the phone is active" and "the desktop is"
+      // depending on who wrote last.
+      const key = req.body?.pushkey;
+      if (!key) return res.status(400).json({ error: "missing pushkey" });
+      const current = await readPresence();
+      const clients = { ...(current.clients ?? {}), [key]: { ts: Date.now(), roomId: roomId ?? null } };
+      // Forget clients that stopped beating long ago, so the document can't
+      // accumulate every browser that ever opened the app.
+      const cutoff = Date.now() - 10 * 60 * 1000;
+      for (const [k, v] of Object.entries(clients)) {
+        if ((v?.ts ?? 0) < cutoff) delete clients[k];
+      }
+      const r = await fetch(await accountDataUrl(PRESENCE_TYPE), {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ clients }),
+      });
+      if (!r.ok) throw new Error(`heartbeat write failed: ${r.status}`);
     } catch (err) {
       return res.status(200).json({ ok: false, error: String(err?.message || err) });
     }
@@ -329,6 +372,29 @@ export async function startLiveActivityIfNeeded(roomId, { roomName, detail, ques
     await writeBlob({ ...blob, pushToStart: live, started, lastStart: { roomId, at: Date.now(), accepted, results } });
   } catch {}
   return { sent: results.length, accepted, results };
+}
+
+/** Raw presence document. */
+async function readPresence() {
+  try {
+    const r = await fetch(await accountDataUrl(PRESENCE_TYPE), {
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+    });
+    return r.ok ? ((await r.json()) ?? {}) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Clients that reported themselves in the foreground within `ms`, as
+    `[{ pushkey, roomId, ts }]`. Empty on any error, so a storage hiccup can
+    never mute a notification — the failure mode has to be notifying anyway. */
+export async function activeClients(ms) {
+  const now = Date.now();
+  const clients = (await readPresence()).clients ?? {};
+  return Object.entries(clients)
+    .filter(([, v]) => typeof v?.ts === "number" && now - v.ts < ms)
+    .map(([pushkey, v]) => ({ pushkey, roomId: v.roomId ?? null, ts: v.ts }));
 }
 
 /** Record that the gateway ran for a room, and which branch it took. Without

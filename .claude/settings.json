@@ -1,14 +1,25 @@
 {
   "permissions": {
     "allow": [
+      "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push *)",
       "Bash(git push)",
-      "Edit(/home/wunnle/matrix-pwa/**)",
-      "Write(/home/wunnle/matrix-pwa/**)",
-      "Bash(systemctl --user status *)",
+      "Bash(journalctl --user *)",
+      "Bash(linear --help)",
+      "Bash(linear get *)",
+      "Bash(linear issue view *)",
+      "Bash(linear list *)",
+      "Bash(linear list-states *)",
+      "Bash(linear view *)",
+      "Bash(node --check *)",
       "Bash(systemctl --user is-active *)",
-      "Bash(systemctl --user list-units *)"
+      "Bash(systemctl --user list-units *)",
+      "Bash(systemctl --user status *)",
+      "Edit(/home/wunnle/.claude-bot-worktrees/matrix-pwa-*/**)",
+      "Edit(/home/wunnle/matrix-pwa/**)",
+      "Write(/home/wunnle/.claude-bot-worktrees/matrix-pwa-*/**)",
+      "Write(/home/wunnle/matrix-pwa/**)"
     ]
   }
 }

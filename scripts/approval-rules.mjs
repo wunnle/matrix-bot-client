@@ -81,14 +81,28 @@ const WRAPPERS = new Set(['env', 'command', 'nohup', 'stdbuf', 'xargs'])
 const DURATION_WRAPPERS = new Set(['timeout'])
 // Not read-only, but pre-authorised: the Linear CLI only ever touches Sinan's
 // own issue tracker, and prompting for every search made the bots unusable.
-const PREAPPROVED_BINS = new Set(['linear'])
-// The same CLIs reached the long way round, as `node /path/to/thing.js …`.
-// Matched on basename so the wrapper and the raw script are judged alike —
-// otherwise the call is judged on `node`, which is only safe for --version.
-// room-rename.mjs sets m.room.name on the room the turn is already running in
-// and can touch nothing else — asking the room's owner for permission to retitle
-// that room is a prompt with no decision in it.
-const PREAPPROVED_SCRIPTS = new Set(['linear.js', 'room-rename.mjs'])
+const PREAPPROVED_BINS = new Set(['linear', 'obsidian'])
+// Helper scripts an agent may run unprompted: the CLIs reached the long way
+// round (`node /path/to/linear.js …`), and the ones a skill tells it to call.
+//
+// Matched on the **resolved absolute path**, never the basename. Basename
+// matching would be a hole rather than a shortcut: /tmp is writable without a
+// prompt, so an agent could write /tmp/room-rename.mjs and run it as itself.
+//
+// Each entry is a script whose blast radius is known: room-rename.mjs sets
+// m.room.name on the room the turn is already in; linear.js reaches Sinan's own
+// tracker; ha_helper.py reaches his own Home Assistant. Note the last one both
+// reads and writes — a pre-approved ha_helper.py can turn lights and switches
+// on and off without asking.
+const HOME = process.env.HOME ?? '/home/wunnle'
+const PREAPPROVED_SCRIPT_PATHS = new Set([
+  `${HOME}/.openclaw/workspace/integrations/linear/linear.js`,
+  `${HOME}/.openclaw/workspace/scripts/ha_helper.py`,
+  `${HOME}/matrix-pwa/scripts/room-rename.mjs`,
+])
+// Interpreters that run a *file*. `-c`/`-e` inline code is deliberately not
+// covered: the argument has to be one of the paths above.
+const SCRIPT_INTERPRETERS = new Set(['node', 'python3', 'python'])
 // Programs safe only for specific read-only subcommands.
 const SAFE_SUBCOMMANDS = {
   git: new Set(['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files', 'describe',
@@ -282,7 +296,15 @@ export function bashIsSafe(command, cwd) {
       const binGuard = GUARDED_BINS[base]
       return binGuard ? !binGuard.test(tokens.slice(1).join(' ')) : true
     }
-    if (base === 'node' && PREAPPROVED_SCRIPTS.has((tokens[1] ?? '').split('/').pop())) return true
+    if (SCRIPT_INTERPRETERS.has(base)) {
+      const arg = tokens[1]
+      if (arg && !arg.startsWith('-')) {
+        const script = path.resolve(cwd, arg.replace(/^~(?=\/|$)/, HOME))
+        // Belt and braces: a pre-approved path must not sit anywhere the agent
+        // can write unprompted, or the entry becomes a bypass of itself.
+        if (PREAPPROVED_SCRIPT_PATHS.has(script) && !isSandboxPath(script, cwd)) return true
+      }
+    }
     if (PATH_ARG_BINS.has(base)) {
       const guard = GUARDED_BINS[base]
       if (guard && guard.test(tokens.slice(1).join(' '))) return false

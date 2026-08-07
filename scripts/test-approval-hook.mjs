@@ -45,6 +45,21 @@ const CASES = [
   ['chmod +x /usr/local/bin/hermes', 'deny'],
   // 4 — substitution is judged by what is inside it.
   ['P=$(readlink -f $(which linear)); echo "$P"', 'allow'],
+
+  // Skill helper scripts, matched by absolute path.
+  ['python3 /home/wunnle/.openclaw/workspace/scripts/ha_helper.py states', 'allow'],
+  ['python3 /home/wunnle/.openclaw/workspace/scripts/ha_helper.py call light.turn_on --entity-id light.desk', 'allow'],
+  ['node /home/wunnle/matrix-pwa/scripts/room-rename.mjs "A Name"', 'allow'],
+  ['obsidian search:context query="bender"', 'allow'],
+  ['obsidian daily:append content="note"', 'allow'],
+  // The basename hole: /tmp is writable without a prompt, so a same-named
+  // script there must not inherit the real one's trust.
+  ['python3 /tmp/ha_helper.py', 'deny'],
+  ['node /tmp/room-rename.mjs "X"', 'deny'],
+  ['node ~/.claude-bot-worktrees/matrix-pwa-BenderDev-6/scripts/room-rename.mjs "X"', 'deny'],
+  // An interpreter is only trusted with one of those files, never inline code.
+  ['python3 -c "import os; os.system(\'id\')"', 'deny'],
+  ['python3', 'deny'],
   ['echo "$(rm -rf /tmp/x)"', 'deny'],
   ['echo `sudo whoami`', 'deny'],
   // 5 — filters and wrappers.

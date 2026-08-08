@@ -1690,8 +1690,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                             <>
                               <div className="message-pin-surface" {...pinSurfaceProps}>
                                 <div
-                                  className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''}`}
+                                  className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.machine ? 'bot-text-machine' : ''}`}
                                   onClick={cleanHtml ? onBotRichTextClick : undefined}
+                                  title={msg.machine?.source ? `Machine message from ${msg.machine.source}` : undefined}
                                 >
                                   {msg.threads
                                     ? <div className="msg-threads">{msg.threads.map((t, i) => <ThreadBlock key={i} thread={t} />)}</div>
@@ -2169,6 +2170,14 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
     ? String(content['com.construct.source'])
     : undefined
 
+  const rawMachine = content?.['com.construct.machine']
+  const machine = rawMachine && typeof rawMachine === 'object'
+    ? {
+        kind: typeof (rawMachine as any).kind === 'string' ? String((rawMachine as any).kind) : undefined,
+        source: typeof (rawMachine as any).source === 'string' ? String((rawMachine as any).source) : undefined,
+      }
+    : rawMachine === true ? {} : undefined
+
   return {
     eventId: event.getId() ?? event.getTs().toString(),
     sender: event.getSender() ?? '',
@@ -2187,6 +2196,7 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
     isDecryptionFailure: isFailure,
     isRead,
     source,
+    machine,
   }
 }
 

@@ -908,6 +908,23 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 .bot-text.bot-text-rich { white-space: normal; }
+
+/* com.construct.machine — a notification or orchestration event nobody typed.
+   Recedes rather than hides: it should be skimmable at a glance and clearly
+   not a person talking, but still legible when you go looking for it. */
+.bot-text.bot-text-machine {
+  font-size: 13px;
+  color: var(--text-muted);
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+  font-family: ui-monospace, monospace;
+  white-space: pre-wrap;
+}
+
+.bot-text.bot-text-machine code {
+  background: transparent;
+  padding: 0;
+}
 .bot-text p { margin-bottom: 0.5em; }
 .bot-text p:last-child { margin-bottom: 0; }
 .bot-text ul, .bot-text ol { padding-left: 1.4em; margin-bottom: 0.5em; }

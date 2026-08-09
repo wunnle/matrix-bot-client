@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { loadAuth, clearAuth } from './lib/auth'
 import { destroyAndWipeStores } from './lib/matrix'
@@ -21,7 +21,11 @@ export default function App() {
   const [ready, setReady] = useState(false)
   const navigate = useNavigate()
 
-  usePushNotifications(!!auth)
+  const openNotificationRoom = useCallback((roomId: string) => {
+    navigate(`/rooms/${encodeURIComponent(roomId)}`)
+  }, [navigate])
+
+  usePushNotifications(!!auth, openNotificationRoom)
 
   useEffect(() => {
     const stored = loadAuth()

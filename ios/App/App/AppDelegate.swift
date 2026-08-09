@@ -126,6 +126,23 @@ final class NotificationActionRouter: NSObject, UNUserNotificationCenterDelegate
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
+        if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+           let room = response.notification.request.content.userInfo["roomId"] as? String,
+           !room.isEmpty {
+            var allowed = CharacterSet.urlQueryAllowed
+            allowed.remove(charactersIn: "&+=?")
+            guard let encoded = room.addingPercentEncoding(withAllowedCharacters: allowed),
+                  let url = URL(string: "construct://room?room=\(encoded)") else {
+                forward(center, didReceive: response, completionHandler: completionHandler)
+                return
+            }
+            Task { @MainActor in
+                UIApplication.shared.open(url)
+                self.forward(center, didReceive: response, completionHandler: completionHandler)
+            }
+            return
+        }
+
         guard response.actionIdentifier == Self.replyActionId,
               let textResponse = response as? UNTextInputNotificationResponse else {
             forward(center, didReceive: response, completionHandler: completionHandler)

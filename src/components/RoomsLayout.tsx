@@ -186,29 +186,33 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     }
   }, [clientReady, fetchIntent])
 
-  // Native deep links (construct://listen?room=...) — from the Control
-  // Center "Listen" control. Mirrors the room-intent voice action.
+  // Native deep links:
+  // - construct://listen?room=... from the Control Center "Listen" control.
+  // - construct://room?room=... from notification taps.
   // The listener attaches immediately (a cold launch from the control can
   // deliver the URL before the client is ready); the navigation is queued
-  // in pendingListenRef and applied once clientReady flips true.
-  const pendingListenRef = useRef<string | null>(null)
+  // in pendingDeepLinkRef and applied once clientReady flips true.
+  const pendingDeepLinkRef = useRef<{ room: string, listen: boolean } | null>(null)
   const clientReadyRef = useRef(false)
   clientReadyRef.current = clientReady
 
-  const goListen = useCallback((room: string) => {
-    navigate(`/rooms/${encodeURIComponent(room)}?listen=${Date.now()}`, { replace: true })
+  const goToRoom = useCallback((room: string, listen = false) => {
+    const query = listen ? `?listen=${Date.now()}` : ''
+    navigate(`/rooms/${encodeURIComponent(room)}${query}`, { replace: true })
   }, [navigate])
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return
 
     const handleUrl = (url: string) => {
-      const match = url.match(/^construct:\/\/listen\?room=([^&]+)/)
+      const match = url.match(/^construct:\/\/(listen|room)\?room=([^&]+)/)
       if (!match) return
-      const room = decodeURIComponent(match[1]!)
+      const action = match[1]!
+      const room = decodeURIComponent(match[2]!)
+      const listen = action === 'listen'
       // Ready → navigate now (warm); otherwise queue for the drain effect (cold).
-      if (clientReadyRef.current) goListen(room)
-      else pendingListenRef.current = room
+      if (clientReadyRef.current) goToRoom(room, listen)
+      else pendingDeepLinkRef.current = { room, listen }
     }
 
     const sub = CapacitorApp.addListener('appUrlOpen', ({ url }) => handleUrl(url))
@@ -218,14 +222,14 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     return () => {
       sub.then((h) => h.remove())
     }
-  }, [goListen])
+  }, [goToRoom])
 
   useEffect(() => {
-    if (!clientReady || !pendingListenRef.current) return
-    const room = pendingListenRef.current
-    pendingListenRef.current = null
-    goListen(room)
-  }, [clientReady, goListen])
+    if (!clientReady || !pendingDeepLinkRef.current) return
+    const { room, listen } = pendingDeepLinkRef.current
+    pendingDeepLinkRef.current = null
+    goToRoom(room, listen)
+  }, [clientReady, goToRoom])
 
   return (
     <div className={`layout ${activeRoomId ? 'room-open' : ''}`}>

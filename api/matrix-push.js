@@ -168,11 +168,19 @@ export default async function handler(req, res) {
   const nativePushkeys = new Set(
     devices.map((d) => d.pushkey).filter((k) => k && !parseWebPushKey(k))
   );
-  const activeNativeHere = active.find((c) => nativePushkeys.has(c.pushkey));
-  const activeNonNative = active.some((c) => !nativePushkeys.has(c.pushkey));
+  const isNativeClient = (c) => c.native || nativePushkeys.has(c.pushkey);
+  // "You're reading this on some other device." A client that hasn't registered
+  // a pushkey yet can't be told apart from the device being notified, so a
+  // *native* one is assumed to be that phone rather than another screen: during
+  // the seconds between app launch and APNs registration the phone used to read
+  // as somewhere-else and mute itself. Unidentifiable means notify.
+  const readingElsewhere = (pushkey) =>
+    active.some((c) => (c.pushkey ? c.pushkey !== pushkey : !isNativeClient(c)));
+  const activeNativeHere = active.find(isNativeClient);
   // Nothing on the phone while you're reading on another device, and nothing
   // for a room the phone itself already has open.
-  const suppressLiveActivity = activeNonNative || activeNativeHere?.roomId === room_id;
+  const suppressLiveActivity =
+    active.some((c) => !isNativeClient(c)) || activeNativeHere?.roomId === room_id;
 
   // Resolved once and shared by the APNs payload (service extension) and the
   // Web Push icon.
@@ -289,7 +297,7 @@ export default async function handler(req, res) {
         }
         // Silent when you're reading on another device, and when this device is
         // the active one but already showing this very room.
-        if (active.some((c) => c.pushkey !== pushkey) ||
+        if (readingElsewhere(pushkey) ||
             active.some((c) => c.pushkey === pushkey && c.roomId === room_id)) {
           presenceSkipped += 1;
           return;
@@ -365,7 +373,7 @@ export default async function handler(req, res) {
 
       // Same rule as the native branch above: quiet on every other device while
       // you're reading, and quiet here for the room already on screen.
-      if (active.some((c) => c.pushkey !== pushkey) ||
+      if (readingElsewhere(pushkey) ||
           active.some((c) => c.pushkey === pushkey && c.roomId === room_id)) {
         presenceSkipped += 1;
         return;

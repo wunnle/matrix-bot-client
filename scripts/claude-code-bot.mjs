@@ -239,7 +239,9 @@ function settleApproval(roomId, decision, reason) {
 // `allowSession` offers a third answer, for backends that can remember a yes
 // for the rest of the session. The Claude hook has no such notion, so its
 // prompts stay two-way.
-function askForApproval(roomId, { toolName, summary, allowSession = false }) {
+// `lang` tags the fenced block so Construct can colour it — 'diff' for file
+// changes, absent for shell commands.
+function askForApproval(roomId, { toolName, summary, lang, allowSession = false }) {
   return new Promise((resolve) => {
     // A second request for a room that is already waiting would strand the
     // first; refuse rather than lose track of it.
@@ -259,7 +261,7 @@ function askForApproval(roomId, { toolName, summary, allowSession = false }) {
     const buttons = allowSession
       ? '[[Approve]] [[Always allow]] [[Deny]]'
       : '[[Approve]] [[Deny]]'
-    const body = `🔐 Approve \`${toolName}\`?\n\n${fencedBlock(summary)}\n\n${buttons}`
+    const body = `🔐 Approve \`${toolName}\`?\n\n${fencedBlock(summary, lang)}\n\n${buttons}`
     sendRoomText(roomId, body).catch((e) => {
       // If we can't ask, we must not proceed as though we had.
       settleApproval(roomId, 'deny', `Could not post the approval request: ${e.message}`)
@@ -292,7 +294,27 @@ function sendRoomText(roomId, text, extra = {}) {
 // discusses markup can't inject it. `[[Label]]` action markers survive as plain
 // text — Construct turns them into buttons, and keeps them literal inside
 // <code>, which is what we want for code blocks that happen to contain them.
-const md = new Marked({ renderer: { html: (token) => escapeHtml(token.raw) } })
+// ```diff blocks are rendered line by line so Construct can colour additions
+// and removals; Construct's sanitizer keeps exactly these class names. Any
+// other language falls through to Marked's default code renderer.
+function diffCode(token) {
+  if (token.lang !== 'diff') return false
+  const lines = String(token.text).split('\n').map((line) => {
+    const cls = line.startsWith('+') ? 'diff-add'
+      : line.startsWith('-') ? 'diff-del'
+      : line.startsWith('#') ? 'diff-meta'
+      : 'diff-ctx'
+    return `<span class="${cls}">${escapeHtml(line) || '&nbsp;'}</span>`
+  })
+  return `<pre><code class="diff">${lines.join('\n')}</code></pre>`
+}
+
+const md = new Marked({
+  renderer: {
+    html: (token) => escapeHtml(token.raw),
+    code: diffCode,
+  },
+})
 
 function markdownToHtml(text) {
   return md.parse(String(text), { async: false }).trim()
@@ -300,10 +322,12 @@ function markdownToHtml(text) {
 
 // Fences `summary` as a Markdown code block, widening the fence so content
 // containing backtick runs can't terminate it early.
-function fencedBlock(summary) {
+function fencedBlock(summary, lang) {
   const longest = Math.max(0, ...[...String(summary).matchAll(/`+/g)].map((m) => m[0].length))
   const fence = '`'.repeat(Math.max(3, longest + 1))
-  return `${fence}\n${summary}\n${fence}`
+  // Never interpolate an untrusted language into the info string.
+  const tag = /^[a-z]{1,12}$/.test(String(lang ?? '')) ? lang : ''
+  return `${fence}${tag}\n${summary}\n${fence}`
 }
 
 function escapeHtml(s) {

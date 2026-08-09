@@ -2243,7 +2243,10 @@ function eventsToMessages(events: sdk.MatrixEvent[], userId: string, room: sdk.R
 }
 
 const ALLOWED_TAGS = /^(p|br|strong|b|em|i|u|s|del|code|pre|ul|ol|li|blockquote|h[1-6]|a|span|table|thead|tbody|tr|th|td)$/i
-const ALLOWED_ATTRS: Record<string, string[]> = { a: ['href', 'target', 'rel'] }
+const ALLOWED_ATTRS: Record<string, string[]> = { a: ['href', 'target', 'rel'], span: ['class'], code: ['class'] }
+// Class names are an allowlist, not free text: the bot marks up diff lines with
+// these and nothing else may borrow the app's styling.
+const ALLOWED_CLASSES = /^(diff|diff-add|diff-del|diff-meta|diff-ctx)$/
 
 function sanitizeHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
@@ -2258,6 +2261,8 @@ function sanitizeHtml(html: string): string {
       for (const attr of Array.from(el.attributes)) {
         if (!allowed.includes(attr.name)) el.removeAttribute(attr.name)
       }
+      const cls = el.getAttribute('class')
+      if (cls !== null && !ALLOWED_CLASSES.test(cls)) el.removeAttribute('class')
       if (el.tagName.toLowerCase() === 'a') {
         const href = el.getAttribute('href') ?? ''
         if (href.startsWith('javascript:')) el.removeAttribute('href')

@@ -131,7 +131,9 @@ export default async function handler(req, res) {
           // Pushkeys are credentials — only their tail is shown, which is
           // enough to tell two clients apart.
           activeClients: (await activeClients(75_000)).map((c) => ({
-            client: c.pushkey.startsWith("client:") ? "web (no push)" : `…${c.pushkey.slice(-8)}`,
+            client: c.pushkey
+              ? `…${c.pushkey.slice(-8)}`
+              : c.native ? "native (no push yet)" : "web (no push)",
             viewingRoom: c.roomId,
             ageMs: Date.now() - c.ts,
           })),
@@ -178,10 +180,26 @@ export default async function handler(req, res) {
       // open they would otherwise overwrite each other every beat, and the
       // gateway would flip between "the phone is active" and "the desktop is"
       // depending on who wrote last.
-      const key = req.body?.pushkey;
-      if (!key) return res.status(400).json({ error: "missing pushkey" });
+      //
+      // The key is the client's own stable id, NOT its pushkey. Keying by
+      // pushkey meant a device that beat before its APNs token arrived wrote a
+      // second, pushkey-less entry that outlived the window, and that ghost
+      // read as "another device you're reading on" — muting the phone's own
+      // notifications and its Live Activity. Identity has to be stable across
+      // the moment the pushkey becomes known.
+      const key = req.body?.clientId || req.body?.pushkey;
+      if (!key) return res.status(400).json({ error: "missing clientId" });
       const current = await readPresence();
-      const clients = { ...(current.clients ?? {}), [key]: { ts: Date.now(), roomId: roomId ?? null } };
+      const entry = {
+        ts: Date.now(),
+        roomId: roomId ?? null,
+        pushkey: req.body?.pushkey ?? null,
+        native: req.body?.native === true,
+      };
+      const clients = { ...(current.clients ?? {}), [key]: entry };
+      // Drop the pre-fix entries this client wrote under its pushkey, so one
+      // device stops being counted twice while old builds are still installed.
+      if (entry.pushkey && clients[entry.pushkey] && entry.pushkey !== key) delete clients[entry.pushkey];
       // Forget clients that stopped beating long ago, so the document can't
       // accumulate every browser that ever opened the app.
       const cutoff = Date.now() - 10 * 60 * 1000;
@@ -387,14 +405,24 @@ async function readPresence() {
 }
 
 /** Clients that reported themselves in the foreground within `ms`, as
-    `[{ pushkey, roomId, ts }]`. Empty on any error, so a storage hiccup can
-    never mute a notification — the failure mode has to be notifying anyway. */
+    `[{ clientId, pushkey, native, roomId, ts }]`. `pushkey` is null until that
+    client has registered one, so callers must decide by identity and not assume
+    it is present. Empty on any error, so a storage hiccup can never mute a
+    notification — the failure mode has to be notifying anyway. */
 export async function activeClients(ms) {
   const now = Date.now();
   const clients = (await readPresence()).clients ?? {};
   return Object.entries(clients)
     .filter(([, v]) => typeof v?.ts === "number" && now - v.ts < ms)
-    .map(([pushkey, v]) => ({ pushkey, roomId: v.roomId ?? null, ts: v.ts }));
+    .map(([clientId, v]) => ({
+      clientId,
+      // Entries written by pre-fix builds are keyed by pushkey and carry no
+      // pushkey field; `client:`-prefixed keys were their no-pushkey fallback.
+      pushkey: v.pushkey ?? (clientId.startsWith("client:") ? null : clientId),
+      native: v.native === true,
+      roomId: v.roomId ?? null,
+      ts: v.ts,
+    }));
 }
 
 /** Record that the gateway ran for a room, and which branch it took. Without

@@ -128,6 +128,12 @@ export default async function handler(req, res) {
   // Badge-only update — no actual message to show
   if (!room_id || !content?.body) return res.status(200).json({ rejected: [] });
 
+  // Machine message — a component announcing something, not a person talking.
+  // Suppressed before push and before the Live Activity: a file watcher
+  // reporting that a note changed must not light up the lock screen. It is
+  // still in the room, styled quietly, for whenever the app is opened.
+  if (content["com.construct.machine"]) return res.status(200).json({ rejected: [] });
+
   // Tool progress / thinking message — suppress notification
   const TOOL_PROGRESS_LINE = /^(?:\*\s*)?\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\(×\d+\))?|\.\.\.)\s*$/u;
   const isThinking = content.body.split('\n').filter(l => l.trim()).every(l => TOOL_PROGRESS_LINE.test(l.trim()));

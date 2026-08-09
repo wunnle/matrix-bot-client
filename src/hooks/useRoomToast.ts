@@ -61,6 +61,10 @@ export function useRoomToast(activeRoomId: string | null, clientReady: boolean) 
       if (sender === client.getUserId()) return
 
       const content = event.getContent()
+      // Machine messages are notifications a component emitted, not someone
+      // talking. Toasting them means being interrupted by the plumbing — the
+      // note watcher announcing a file changed is not worth a popup.
+      if (content?.['com.construct.machine']) return
       const body = content?.body as string | undefined
       if (!body) return
       if (isThinkingMessage(body)) return

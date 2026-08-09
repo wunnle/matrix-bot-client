@@ -22,7 +22,10 @@ function notifFromRoom(room: sdk.Room, userId: string): RoomNotification | null 
     e => (e.getType() === 'm.room.message') && !e.isDecryptionFailure() && e.getSender() !== userId
   )
   if (!lastMsg) return null
-  const body = lastMsg.getContent()?.body as string | undefined
+  const lastContent = lastMsg.getContent()
+  // See useRoomToast: machine messages are plumbing, not someone talking.
+  if (lastContent?.['com.construct.machine']) return null
+  const body = lastContent?.body as string | undefined
   if (!body || isThinkingMessage(body)) return null
   const sender = lastMsg.getSender() ?? ''
   const member = room.getMember(sender)
@@ -123,6 +126,7 @@ export function useRoomNotifications(activeRoomId: string | null, clientReady: b
       if (sender === client.getUserId()) return
 
       const content = event.getContent()
+      if (content?.['com.construct.machine']) return
       const body = content?.body as string | undefined
       if (!body) return
       if (isThinkingMessage(body)) return

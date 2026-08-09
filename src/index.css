@@ -14,6 +14,10 @@
   --own-bubble: #2d2a5e;
   --other-bubble: #1a1a24;
   --danger: #e05c5c;
+  --diff-add: #7ee2a8;
+  --diff-add-bg: rgba(72, 187, 120, 0.14);
+  --diff-del: #f08c8c;
+  --diff-del-bg: rgba(224, 92, 92, 0.14);
   --sidebar-width: 280px;
 
   font: 15px/1.5 system-ui, -apple-system, sans-serif;
@@ -958,6 +962,23 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   padding: 0;
   font-size: 1em;
 }
+/* Approval requests send their file changes as a diff. Each line is its own
+   span so the tint can run the full width of the (scrolling) block, which is
+   what makes an add/remove readable at a glance on a phone. */
+.bot-text pre code.diff {
+  display: block;
+  width: fit-content;
+  min-width: 100%;
+}
+.bot-text code.diff > span {
+  display: block;
+  padding: 0 10px;
+  margin: 0 -10px;
+}
+.bot-text code.diff .diff-add { color: var(--diff-add); background: var(--diff-add-bg); }
+.bot-text code.diff .diff-del { color: var(--diff-del); background: var(--diff-del-bg); }
+.bot-text code.diff .diff-meta { color: var(--text-muted); }
+
 .bot-text-rich code,
 .bot-text-rich pre { cursor: pointer; }
 .bot-text-rich code:hover { background: var(--bg-hover); }

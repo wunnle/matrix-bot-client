@@ -35,10 +35,48 @@ function readStdin() {
   })
 }
 
+// A path alone says nothing about what the edit does, so file-writing tools get
+// their content rendered as a diff. Long bodies are clipped — the point is to
+// judge the change, not to read the whole file in a chat bubble.
+const DIFF_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit'])
+const MAX_DIFF_LINES = 40
+const MAX_LINE = 200
+
+function clip(text, marker) {
+  const lines = String(text ?? '').split('\n')
+  const shown = lines.slice(0, MAX_DIFF_LINES)
+    .map((l) => `${marker}${l.length > MAX_LINE ? `${l.slice(0, MAX_LINE)}…` : l}`)
+  if (lines.length > shown.length) shown.push(`${marker}… ${lines.length - shown.length} more lines`)
+  return shown.join('\n')
+}
+
+function diffBlock(oldText, newText) {
+  return [clip(oldText, '-'), clip(newText, '+')].filter(Boolean).join('\n')
+}
+
 // One-line summary of the call, for the approval message in chat.
 function describe(toolName, input) {
   if (toolName === 'Bash') return input?.command ?? '(no command)'
   const target = input?.file_path ?? input?.path ?? input?.notebook_path
+
+  if (toolName === 'Edit' && target) {
+    const all = input.replace_all ? ' (all occurrences)' : ''
+    return `# edit ${target}${all}\n${diffBlock(input.old_string, input.new_string)}`
+  }
+  if (toolName === 'MultiEdit' && target) {
+    const edits = (input.edits ?? [])
+      .map((e, i) => `# change ${i + 1}\n${diffBlock(e.old_string, e.new_string)}`)
+      .join('\n\n')
+    return `# edit ${target}\n${edits}`
+  }
+  if (toolName === 'Write' && target) {
+    return `# write ${target}\n${clip(input.content, '+')}`
+  }
+  if (toolName === 'NotebookEdit' && target) {
+    const mode = input.edit_mode ?? 'replace'
+    return `# notebook ${mode} ${target} (cell ${input.cell_id ?? '?'})\n${clip(input.new_source, '+')}`
+  }
+
   if (target) return target
   const url = input?.url
   if (url) return url
@@ -91,6 +129,8 @@ try {
       sessionId,
       toolName,
       summary: describe(toolName, toolInput),
+      // Tells the bot to render this as a diff rather than a plain block.
+      lang: DIFF_TOOLS.has(toolName) ? 'diff' : undefined,
       cwd,
     }),
     signal: ctrl.signal,

@@ -286,6 +286,7 @@ class AppServer {
       const answer = await turn.ask({
         toolName: APPROVAL_LABELS[msg.method] ?? msg.method,
         summary: describeApproval(msg.method, msg.params, turn),
+        lang: turn?.fileChanges.get(msg.params?.itemId)?.length ? 'diff' : undefined,
         // Only worth offering where the backend can remember it.
         allowSession: true,
       })

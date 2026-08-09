@@ -1887,7 +1887,14 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
         <div className="pills" onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>
           {lastActions.map((action) => (
-            <button key={`action-${action}`} className="pill pill-action" onClick={() => sendMessage(action)}>
+            <button
+              key={`action-${action}`}
+              className="pill pill-action"
+              // Don't let the tap move focus: a focused composer stays focused
+              // (keyboard up), a blurred one stays blurred.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => sendMessage(action)}
+            >
               {action}
             </button>
           ))}

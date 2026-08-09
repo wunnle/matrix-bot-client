@@ -429,6 +429,16 @@ export async function activeClients(ms) {
     this there's no way to tell "the homeserver never pushed" from "it pushed
     and we chose not to update the activity" — they look identical from the
     device, and both end with a Live Activity stuck on its last state. */
+/** The last event the gateway handled, for duplicate detection. Cheap because
+    it reads the document recordNotify already maintains. */
+export async function lastNotifyRecord() {
+  try {
+    return (await readBlob()).lastNotify ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function recordNotify(info) {
   try {
     const blob = await readBlob();

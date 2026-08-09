@@ -8,7 +8,7 @@
  */
 import webpush from "web-push";
 import { apnsSend, apnsSendWithFallback, apnsConfigured, isEnvMismatch, APNS_BUNDLE_ID, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
-import { liveActivityEntry, clearTokens, recordPushResult, startLiveActivityIfNeeded, recordNotify, activeClients } from "./live-activity.js";
+import { liveActivityEntry, clearTokens, recordPushResult, startLiveActivityIfNeeded, recordNotify, activeClients, lastNotifyRecord } from "./live-activity.js";
 
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
@@ -123,7 +123,7 @@ export default async function handler(req, res) {
   const { notification } = req.body || {};
   if (!notification) return res.status(400).json({ rejected: [] });
 
-  const { room_id, room_name, content, sender, sender_display_name, devices = [], counts } = notification;
+  const { room_id, room_name, content, event_id, sender, sender_display_name, devices = [], counts } = notification;
 
   // Badge-only update — no actual message to show
   if (!room_id || !content?.body) return res.status(200).json({ rejected: [] });
@@ -159,6 +159,18 @@ export default async function handler(req, res) {
   // Counted so the trace can say a notification was skipped *because a client
   // was in the foreground*, which alertSuppressed (activity-based) can't.
   let presenceSkipped = 0;
+  const startedAt = Date.now();
+
+  // The homeserver re-delivers an event it didn't get a timely 200 for, and
+  // this handler makes several sequential round-trips before answering — so a
+  // slow run comes back as the same event twice and pushes the Live Activity
+  // twice. Recognise the repeat and acknowledge it without acting again.
+  if (event_id) {
+    const previous = await lastNotifyRecord();
+    if (previous?.eventId === event_id && Date.now() - (previous.at ?? 0) < 5 * 60 * 1000) {
+      return res.status(200).json({ rejected: [], duplicate: true });
+    }
+  }
 
   // Which clients are in the foreground, and where. Two rules follow, so which
   // device it is matters, not just that something is active:
@@ -407,6 +419,10 @@ export default async function handler(req, res) {
   // Leaves a trace of which branch ran for this message — see recordNotify.
   await recordNotify({
     roomId: room_id,
+    eventId: event_id ?? null,
+    // How long the handler took: the homeserver retries when this runs long,
+    // which is what duplicate deliveries look like from the device.
+    ms: Date.now() - startedAt,
     liveActivityDelivered,
     activityStarted,
     devices: devices.length,

@@ -31,7 +31,7 @@ async function clearActiveTimestamp() {
   } catch {}
 }
 
-export function usePushNotifications(enabled: boolean) {
+export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: string) => void) {
   // Write a "last active" timestamp into the Cache API while the app is visible.
   // The SW reads this on every push and suppresses if it's fresh — reliable even
   // when clients.matchAll() fails to return the open window (iOS Safari quirk).
@@ -132,11 +132,16 @@ export function usePushNotifications(enabled: boolean) {
 
     registerNativePusher();
 
+    PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
+      const roomId = action.notification?.data?.roomId;
+      if (typeof roomId === "string" && roomId) onOpenRoom?.(roomId);
+    });
+
     return () => {
       cancelled = true;
       PushNotifications.removeAllListeners().catch(() => {});
     };
-  }, [enabled]);
+  }, [enabled, onOpenRoom]);
 
   useEffect(() => {
     if (!enabled) return;

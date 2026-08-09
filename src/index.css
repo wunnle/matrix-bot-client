@@ -1498,10 +1498,15 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   -webkit-user-select: none;
 }
 
-.pill:hover {
-  background: var(--accent-dim);
-  border-color: var(--accent);
-  color: var(--accent);
+/* Touch browsers leave :hover stuck on whatever sat under the finger, so a tap
+   that re-renders the row lights up the pill that took its place. Hover styling
+   is for real pointers only. */
+@media (hover: hover) {
+  .pill:hover {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
 }
 
 @media (hover: none) {
@@ -1518,8 +1523,10 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   background: var(--accent-dim);
   flex-shrink: 0;
 }
-.pill-action:hover {
-  opacity: 0.8;
+@media (hover: hover) {
+  .pill-action:hover {
+    opacity: 0.8;
+  }
 }
 
 .pill-add {
@@ -1529,10 +1536,12 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   line-height: 1;
   border-radius: 8px;
 }
-.pill-add:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--accent-dim);
+@media (hover: hover) {
+  .pill-add:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-dim);
+  }
 }
 
 .pill-input {

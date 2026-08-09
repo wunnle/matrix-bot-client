@@ -1101,9 +1101,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     // should send silently without popping the keyboard.
     const keepFocus = document.activeElement === textareaRef.current
     stopDictation()
-    setInput('')
-    if (textareaRef.current) textareaRef.current.style.height = 'auto'
-    setSuggestions([])
+    // Only wipe the composer when what's being sent IS the composer's content.
+    // Quick-action pills send their own text and must leave a half-typed
+    // message alone.
+    const clearedComposer = (textareaRef.current?.value ?? '') === text
+    if (clearedComposer) {
+      setInput('')
+      if (textareaRef.current) textareaRef.current.style.height = 'auto'
+      setSuggestions([])
+    }
     setSending(true)
     requestAnimationFrame(scrollToBottom)
     try {
@@ -1115,7 +1121,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         'com.construct.version': __CONSTRUCT_VERSION__,
       } as any)
     } catch (err: any) {
-      setInput(text) // restore input so message isn't lost
+      if (clearedComposer) setInput(text) // restore input so message isn't lost
       setSendError(err?.message ?? 'Failed to send')
       setTimeout(() => setSendError(''), 4000)
     } finally {

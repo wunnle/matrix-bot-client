@@ -30,6 +30,11 @@ const ACCOUNT_DATA_TYPE = "com.construct.live_activity";
     registry — last write wins, so a beat could silently drop a Live Activity
     token. Alone, it needs no merge: one small PUT, nothing else to lose. */
 const PRESENCE_TYPE = "com.construct.presence";
+/** Duplicate detection gets its own document too. The shared blob above is
+    read-modify-written by several code paths, so a slow writer can put back a
+    document it read earlier and resurrect old fields — which is exactly how the
+    value this check depends on would go stale. One writer, one field, no merge. */
+const LAST_EVENT_TYPE = "com.construct.last_event";
 
 // Activities are short-lived; a token outliving this is stale and its pushes
 // would be rejected by APNs anyway.
@@ -429,13 +434,31 @@ export async function activeClients(ms) {
     this there's no way to tell "the homeserver never pushed" from "it pushed
     and we chose not to update the activity" — they look identical from the
     device, and both end with a Live Activity stuck on its last state. */
-/** The last event the gateway handled, for duplicate detection. Cheap because
-    it reads the document recordNotify already maintains. */
-export async function lastNotifyRecord() {
+/** True when this exact event was already handled recently — the homeserver
+    re-delivering something it didn't get a timely 200 for. Records the event as
+    seen on the way through, so the second delivery finds it.
+
+    Fails open on any error: a missed dedupe is a duplicate notification, while a
+    false positive would drop a real message. */
+export async function seenEventBefore(eventId, withinMs) {
+  if (!eventId) return false;
   try {
-    return (await readBlob()).lastNotify ?? null;
+    const r = await fetch(await accountDataUrl(LAST_EVENT_TYPE), {
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+    });
+    const prev = r.ok ? await r.json() : null;
+    const isRepeat =
+      prev?.eventId === eventId && Date.now() - (prev.at ?? 0) < withinMs;
+    if (!isRepeat) {
+      await fetch(await accountDataUrl(LAST_EVENT_TYPE), {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId, at: Date.now() }),
+      });
+    }
+    return isRepeat;
   } catch {
-    return null;
+    return false;
   }
 }
 

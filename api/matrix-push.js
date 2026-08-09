@@ -8,7 +8,7 @@
  */
 import webpush from "web-push";
 import { apnsSend, apnsSendWithFallback, apnsConfigured, isEnvMismatch, APNS_BUNDLE_ID, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
-import { liveActivityEntry, clearTokens, recordPushResult, startLiveActivityIfNeeded, recordNotify, activeClients, lastNotifyRecord } from "./live-activity.js";
+import { liveActivityEntry, clearTokens, recordPushResult, startLiveActivityIfNeeded, recordNotify, activeClients, seenEventBefore } from "./live-activity.js";
 
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
@@ -165,11 +165,8 @@ export default async function handler(req, res) {
   // this handler makes several sequential round-trips before answering — so a
   // slow run comes back as the same event twice and pushes the Live Activity
   // twice. Recognise the repeat and acknowledge it without acting again.
-  if (event_id) {
-    const previous = await lastNotifyRecord();
-    if (previous?.eventId === event_id && Date.now() - (previous.at ?? 0) < 5 * 60 * 1000) {
-      return res.status(200).json({ rejected: [], duplicate: true });
-    }
+  if (await seenEventBefore(event_id, 5 * 60 * 1000)) {
+    return res.status(200).json({ rejected: [], duplicate: true });
   }
 
   // Which clients are in the foreground, and where. Two rules follow, so which

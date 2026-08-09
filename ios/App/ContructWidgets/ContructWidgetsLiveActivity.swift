@@ -37,6 +37,18 @@ struct ConstructActivityAttributes: ActivityAttributes {
     var roomName: String
 }
 
+/// Deep link that opens the room a message came from. Same URL the app builds
+/// for a notification tap, and RoomsLayout already routes it — without one, a
+/// tap just opens the app wherever it happened to be, which is especially wrong
+/// now that a single activity stands in for every room.
+private func roomDeepLink(_ roomId: String) -> URL? {
+    guard !roomId.isEmpty else { return nil }
+    var allowed = CharacterSet.urlQueryAllowed
+    allowed.remove(charactersIn: "&+=?")
+    guard let encoded = roomId.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
+    return URL(string: "construct://room?room=\(encoded)")
+}
+
 /// The room a message came from. One activity serves every room now, so this
 /// lives in the state; the attribute is only a fallback for activities started
 /// before that moved (their state has no roomName).
@@ -351,6 +363,7 @@ struct ContructWidgetsLiveActivity: Widget {
                 .environment(\.colorScheme, .dark)
                 .activityBackgroundTint(Color(red: 0.07, green: 0.07, blue: 0.1))
                 .activitySystemActionForegroundColor(Color.white)
+                .widgetURL(roomDeepLink(context.state.roomId))
 
         } dynamicIsland: { context in
             let reply = isReply(context.state.status)
@@ -391,6 +404,8 @@ struct ContructWidgetsLiveActivity: Widget {
             } minimal: {
                 RoomAvatar(size: 20, roomId: context.state.roomId)
             }
+            // The island routes its own taps, separately from the lock screen.
+            .widgetURL(roomDeepLink(context.state.roomId))
         }
     }
 }

@@ -264,14 +264,14 @@ function askForApproval(roomId, { toolName, summary, full, lang, allowSession = 
     // Anything that isn't a diff is a command or a bare argument dump; both read
     // better wrapped than scrolled.
     const body = `🔐 Approve \`${toolName}\`?\n\n${fencedBlock(summary, lang ?? 'cmd')}\n\n${buttons}`
-    // The card shows a clipped change; the rest rides along as a thread, which
-    // Construct already renders as an expandable block. Nobody should have to
-    // approve a change they can only see part of.
+    // The card shows a clipped change; the rest rides along for Construct to
+    // open in a dialog. Nobody should have to approve a change they can only
+    // see part of.
     const extra = full
       ? {
-          'com.construct.thread': {
-            title: lang === 'diff' ? 'Show the whole change' : 'Show the whole command',
-            summary: `${countLines(full)} lines in full`,
+          'com.construct.approval': {
+            title: lang === 'diff' ? 'Full change' : 'Full command',
+            lines: countLines(full),
             body: fencedBlock(full, lang ?? 'cmd'),
           },
         }

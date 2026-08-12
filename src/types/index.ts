@@ -33,6 +33,13 @@ export interface ToolProgressLine {
   raw?: string
 }
 
+// The untrimmed version of a change an approval card only shows part of.
+export interface ConstructApproval {
+  title: string
+  lines: number
+  body: string
+}
+
 export interface Message {
   eventId: string
   sender: string
@@ -45,6 +52,7 @@ export interface Message {
   fileMime?: string
   cards?: ConstructCard[]
   threads?: ConstructThread[]
+  approval?: ConstructApproval
   toolProgress?: ToolProgressLine[]
   timestamp: number
   isOwnMessage: boolean

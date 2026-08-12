@@ -40,7 +40,7 @@ import { useToast } from '../hooks/useToast'
 import { useVisualViewportResize } from '../hooks/useVisualViewport'
 import RoomEditor from './RoomEditor'
 import { Marked } from 'marked'
-import type { Message, RoomConfig, ConstructThread, ToolProgressLine } from '../types'
+import type { Message, RoomConfig, ConstructThread, ConstructApproval, ToolProgressLine } from '../types'
 
 interface Props {
   roomId: string
@@ -771,6 +771,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
   const [expandedToolGroups] = useState<Set<string>>(new Set())
   const [toolDialog, setToolDialog] = useState<{ lines: ReturnType<typeof parseToolProgressMessage> } | null>(null)
+  const [approvalDialog, setApprovalDialog] = useState<ConstructApproval | null>(null)
   const [expandedToolLine, setExpandedToolLine] = useState<string | null>(null)
   const resolvedImagesRef = useRef<Set<string>>(new Set())
   useEffect(() => {
@@ -1491,6 +1492,20 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       </div>
 
       {showEditor && <RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} onLeave={() => { setShowEditor(false); onBack() }} />}
+      {approvalDialog && (
+        <div className="room-editor-overlay" onClick={() => setApprovalDialog(null)}>
+          <div className="room-editor" onClick={e => e.stopPropagation()}>
+            <div className="room-editor-header">
+              <span className="room-editor-title">{approvalDialog.title}</span>
+              <button className="room-editor-close" onClick={() => setApprovalDialog(null)}>✕</button>
+            </div>
+            <div
+              className="room-editor-body bot-text bot-text-rich approval-dialog-body"
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(threadMd.parse(approvalDialog.body, { async: false }) as string) }}
+            />
+          </div>
+        </div>
+      )}
       {toolDialog && (
         <div className="room-editor-overlay" onClick={() => { setToolDialog(null); setExpandedToolLine(null) }}>
           <div className="room-editor" onClick={e => e.stopPropagation()}>
@@ -1775,6 +1790,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                                           ? <span dangerouslySetInnerHTML={{ __html: cleanHtml }} />
                                           : text}
                                 </div>
+                                {msg.approval && (
+                                  <button
+                                    className="approval-full-btn"
+                                    onClick={(e) => { e.stopPropagation(); setApprovalDialog(msg.approval!) }}
+                                  >
+                                    <span className="material-icons approval-full-icon">unfold_more</span>
+                                    View all {msg.approval.lines} lines
+                                  </button>
+                                )}
                               </div>
                               {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                                 <div className="reaction-bar">
@@ -2196,6 +2220,16 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
     ? String(content['com.construct.source'])
     : undefined
 
+  const rawApproval = content?.['com.construct.approval']
+  const approval = rawApproval && typeof rawApproval === 'object'
+    && typeof rawApproval.body === 'string' && typeof rawApproval.title === 'string'
+    ? {
+        title: String(rawApproval.title),
+        lines: Number(rawApproval.lines) || String(rawApproval.body).split('\n').length,
+        body: String(rawApproval.body),
+      }
+    : undefined
+
   return {
     eventId: event.getId() ?? event.getTs().toString(),
     sender: event.getSender() ?? '',
@@ -2208,6 +2242,7 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
     fileMime,
     cards: cards && cards.length > 0 ? cards : undefined,
     threads: threads && threads.length > 0 ? threads : undefined,
+    approval,
     toolProgress: toolProgress && toolProgress.length > 0 ? toolProgress : undefined,
     timestamp: event.getTs(),
     isOwnMessage,

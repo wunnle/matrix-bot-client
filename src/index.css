@@ -978,6 +978,30 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   width: fit-content;
   min-width: 100%;
 }
+/* Opens the untrimmed change in a dialog. Sits under the card's clipped block,
+   quiet enough not to compete with Approve/Deny. */
+.approval-full-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-active);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.approval-full-btn:hover { background: var(--bg-hover); color: var(--text); }
+.approval-full-icon { font-size: 14px; }
+/* The dialog is all diff: let it scroll as one block rather than as flex rows. */
+.approval-dialog-body {
+  display: block;
+  padding: 4px 16px 20px;
+}
+
 /* Commands in approval cards: same face and weight as a diff, but wrapped —
    there is no column structure to preserve, and a truncated command is the one
    thing you must not approve blind. */

@@ -304,7 +304,12 @@ function diffCode(token) {
       : line.startsWith('-') ? 'diff-del'
       : line.startsWith('#') ? 'diff-meta'
       : 'diff-ctx'
-    return `<span class="${cls}">${escapeHtml(line) || '&nbsp;'}</span>`
+    // The marker gets its own span so it can sit off the code with a gap.
+    // Unmarked lines carry an empty one, which keeps the columns aligned.
+    const marked = cls !== 'diff-ctx'
+    const mark = marked ? escapeHtml(line[0]) : ''
+    const rest = escapeHtml(marked ? line.slice(1) : line) || '&nbsp;'
+    return `<span class="${cls}"><span class="diff-mark">${mark}</span>${rest}</span>`
   })
   // Joined with nothing: the spans are display:block, so a newline between them
   // survives inside <pre> as its own line box and double-spaces the diff.

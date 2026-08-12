@@ -261,7 +261,9 @@ function askForApproval(roomId, { toolName, summary, lang, allowSession = false 
     const buttons = allowSession
       ? '[[Approve]] [[Always allow]] [[Deny]]'
       : '[[Approve]] [[Deny]]'
-    const body = `🔐 Approve \`${toolName}\`?\n\n${fencedBlock(summary, lang)}\n\n${buttons}`
+    // Anything that isn't a diff is a command or a bare argument dump; both read
+    // better wrapped than scrolled.
+    const body = `🔐 Approve \`${toolName}\`?\n\n${fencedBlock(summary, lang ?? 'cmd')}\n\n${buttons}`
     sendRoomText(roomId, body).catch((e) => {
       // If we can't ask, we must not proceed as though we had.
       settleApproval(roomId, 'deny', `Could not post the approval request: ${e.message}`)
@@ -298,6 +300,10 @@ function sendRoomText(roomId, text, extra = {}) {
 // and removals; Construct's sanitizer keeps exactly these class names. Any
 // other language falls through to Marked's default code renderer.
 function diffCode(token) {
+  // Approval commands are usually one long line. Tagged so the client can wrap
+  // them instead of hiding the tail behind a sideways scroll, which on a phone
+  // means approving something you can only half see.
+  if (token.lang === 'cmd') return `<pre><code class="cmd">${escapeHtml(token.text)}</code></pre>`
   if (token.lang !== 'diff') return false
   const lines = String(token.text).split('\n').map((line) => {
     const cls = line.startsWith('+') ? 'diff-add'

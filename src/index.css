@@ -978,6 +978,18 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   width: fit-content;
   min-width: 100%;
 }
+/* Commands in approval cards: same face and weight as a diff, but wrapped —
+   there is no column structure to preserve, and a truncated command is the one
+   thing you must not approve blind. */
+.bot-text pre code.cmd {
+  display: block;
+  font-size: 0.9em;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .bot-text code.diff > span {
   display: block;
   padding: 0 10px;

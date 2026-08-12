@@ -365,12 +365,33 @@ function startApprovalBroker() {
         return
       }
       log(`[${roomId}] approval requested: ${payload.toolName} — ${payload.summary}`)
+
+      // If the hook goes away before the human answers — it aborted, or the
+      // socket died — settle the room's pending approval instead of leaving it
+      // stranded. A stranded entry rejects every later call in that room with
+      // "Another approval is already pending", which reads as the agent being
+      // wedged for no visible reason.
+      let answered = false
+      res.on('close', () => {
+        if (!answered && settleApproval(roomId, 'deny', 'Approval client disconnected.')) {
+          log(`[${roomId}] approval abandoned by client — pending entry cleared`)
+        }
+      })
+
       const result = await askForApproval(roomId, payload)
+      answered = true
       log(`[${roomId}] approval ${result.decision}: ${payload.toolName}`)
+      if (res.writableEnded) return
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify(result))
     })
   })
+  // A human may take minutes to answer, but Node's default requestTimeout (5
+  // min) destroys the socket well before APPROVAL_TIMEOUT_MS (10 min). That gap
+  // is what stranded entries: the hook saw "fetch failed" while the broker kept
+  // waiting, blocking the room until its own timer expired.
+  server.requestTimeout = APPROVAL_TIMEOUT_MS + 60_000
+  server.headersTimeout = APPROVAL_TIMEOUT_MS + 60_000
   server.listen(APPROVAL_PORT, '127.0.0.1', () => {
     log(`Approval broker on 127.0.0.1:${APPROVAL_PORT}`)
   })

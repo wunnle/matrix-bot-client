@@ -961,6 +961,12 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
      line breaks obvious without extra leading. */
   line-height: 1.35;
 }
+/* Fixed width so +/-/# and unmarked lines start their code at the same column. */
+.bot-text code.diff .diff-mark {
+  display: inline-block;
+  width: 1.6ch;
+  opacity: 0.7;
+}
 .bot-text code.diff .diff-add { color: var(--diff-add); background: var(--diff-add-bg); }
 .bot-text code.diff .diff-del { color: var(--diff-del); background: var(--diff-del-bg); }
 .bot-text code.diff .diff-meta { color: var(--text-muted); }

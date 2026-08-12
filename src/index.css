@@ -950,6 +950,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
    what makes an add/remove readable at a glance on a phone. */
 .bot-text pre code.diff {
   display: block;
+  /* A shade smaller than other code: diffs are scanned, not read, and the
+     extra characters per line mean less wrapping on a phone. */
+  font-size: 0.9em;
   width: fit-content;
   min-width: 100%;
 }

@@ -35,6 +35,38 @@ export const AGENT_ROOM_TYPE = 'com.construct.agent'
 // row is where you look while a turn you no longer want is running.
 const AGENT_PILLS = ['!stop', '!model', '!end', '!reset']
 
+// A default added after rooms already exist reaches nobody: pills are seeded
+// once, on accept. Backfilling has to be a one-shot migration rather than a
+// reconcile against AGENT_PILLS on every sync — otherwise a pill the user
+// deliberately deleted grows back the next time the app starts.
+//
+// Recorded under a key that cannot collide with a room id, since those always
+// begin with '!'.
+const MIGRATIONS_KEY = '__migrations'
+const STOP_PILL_MIGRATION = 'stop-pill'
+
+export async function backfillAgentPills(client: MatrixClient): Promise<void> {
+  const store = client.getAccountData(ACCOUNT_DATA_TYPE)?.getContent<PillsStore>() ?? {}
+  const done = store[MIGRATIONS_KEY] ?? []
+  if (done.includes(STOP_PILL_MIGRATION)) return
+
+  const next: PillsStore = { ...store }
+  for (const room of client.getRooms()) {
+    if (room.getMyMembership() !== 'join') continue
+    if (!isAgentRoom(client, room.roomId)) continue
+    const pills = next[room.roomId]
+    // An agent room with no pills yet is seedAgentPills' job — it will lay down
+    // the full set including !stop, so touching it here would only half-seed it.
+    if (!pills?.length || pills.includes('!stop')) continue
+    // Front of the row, matching AGENT_PILLS: it is the one you reach for in a
+    // hurry, and appending would bury it behind whatever the user has added.
+    next[room.roomId] = ['!stop', ...pills]
+  }
+  next[MIGRATIONS_KEY] = [...done, STOP_PILL_MIGRATION]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.setAccountData(ACCOUNT_DATA_TYPE, next as any)
+}
+
 export function isAgentRoom(client: MatrixClient, roomId: string): boolean {
   const room = client.getRoom(roomId)
   const create = room?.currentState.getStateEvents('m.room.create', '')

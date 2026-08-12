@@ -6,7 +6,7 @@ import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
 import { fetchJoinedRooms, getCachedRooms, cacheRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, type RoomSummary } from '../lib/matrix'
 import { useNavigate } from 'react-router-dom'
-import { seedAgentPills } from '../lib/roomMeta'
+import { seedAgentPills, backfillAgentPills } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { donateShareTargets, cacheRoomAvatars } from '../lib/liveActivity'
 import { getDisabledShareRooms } from '../lib/shareRooms'
@@ -151,6 +151,8 @@ export default function RoomList({
   // their names change — `rooms` also updates on every unread/timestamp change,
   // and re-donating each time hitches.
   const donatedSigRef = useRef('')
+  // One pill backfill per app start; the recorded migration handles the rest.
+  const backfilledRef = useRef(false)
   useEffect(() => {
     if (joinedRooms.length === 0) return
     const disabled = getDisabledShareRooms(auth.userId)
@@ -382,6 +384,13 @@ export default function RoomList({
     // rather than depending on catching that one event.
     const onSync = (state: string) => {
       if (state !== 'SYNCING') return
+      // A default pill added after a room was accepted never reaches it, since
+      // seeding only happens on accept. Top those rooms up here — guarded so it
+      // runs once per app start, and a no-op after the migration is recorded.
+      if (!backfilledRef.current) {
+        backfilledRef.current = true
+        backfillAgentPills(client).catch(() => {})
+      }
       const fresh = toRoomSummaries(client, auth.userId)
       setRooms((prev) => {
         const changed = fresh.length !== prev.length

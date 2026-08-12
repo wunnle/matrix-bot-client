@@ -241,7 +241,7 @@ function settleApproval(roomId, decision, reason) {
 // prompts stay two-way.
 // `lang` tags the fenced block so Construct can colour it — 'diff' for file
 // changes, absent for shell commands.
-function askForApproval(roomId, { toolName, summary, lang, allowSession = false }) {
+function askForApproval(roomId, { toolName, summary, full, lang, allowSession = false }) {
   return new Promise((resolve) => {
     // A second request for a room that is already waiting would strand the
     // first; refuse rather than lose track of it.
@@ -264,7 +264,19 @@ function askForApproval(roomId, { toolName, summary, lang, allowSession = false 
     // Anything that isn't a diff is a command or a bare argument dump; both read
     // better wrapped than scrolled.
     const body = `🔐 Approve \`${toolName}\`?\n\n${fencedBlock(summary, lang ?? 'cmd')}\n\n${buttons}`
-    sendRoomText(roomId, body).catch((e) => {
+    // The card shows a clipped change; the rest rides along as a thread, which
+    // Construct already renders as an expandable block. Nobody should have to
+    // approve a change they can only see part of.
+    const extra = full
+      ? {
+          'com.construct.thread': {
+            title: lang === 'diff' ? 'Show the whole change' : 'Show the whole command',
+            summary: `${countLines(full)} lines in full`,
+            body: fencedBlock(full, lang ?? 'cmd'),
+          },
+        }
+      : {}
+    sendRoomText(roomId, body, extra).catch((e) => {
       // If we can't ask, we must not proceed as though we had.
       settleApproval(roomId, 'deny', `Could not post the approval request: ${e.message}`)
     })
@@ -335,6 +347,10 @@ function markdownToHtml(text) {
 
 // Fences `summary` as a Markdown code block, widening the fence so content
 // containing backtick runs can't terminate it early.
+function countLines(text) {
+  return String(text).split('\n').length
+}
+
 function fencedBlock(summary, lang) {
   const longest = Math.max(0, ...[...String(summary).matchAll(/`+/g)].map((m) => m[0].length))
   const fence = '`'.repeat(Math.max(3, longest + 1))

@@ -736,6 +736,21 @@ const startTs = Date.now()
 // Rooms with a turn in flight — Claude Code turns are not concurrency-safe per session.
 const busy = new Set()
 
+// Messages that arrived while a turn was running, per room. Nothing is said in
+// the timeline about them: an unprocessed message is one that has no read
+// receipt, which the client already draws as a single check, and picking it up
+// sends the receipt that turns it into a double. The queue is the only place
+// that state lives, so it must be drained by whoever set `busy`.
+const queued = new Map()
+// A phone that reconnects can replay a backlog; past this many the user is told
+// out loud rather than having forty messages silently fused into one prompt.
+const MAX_QUEUED = 10
+
+// Rooms whose in-flight turn was killed by !stop. Killing the turn surfaces
+// through the provider's ordinary error path, so the drain has to be told the
+// failure was asked for — otherwise !stop answers itself with a ⚠️.
+const stopped = new Set()
+
 // `roomId:cwd` pairs that have been warned about sharing a working tree. A
 // second !spawn for the same pair is the confirmation and goes through.
 const pendingSpawns = new Set()
@@ -781,6 +796,78 @@ async function downloadAttachment(event) {
   return file
 }
 
+// Turns the raw event into the text the agent actually sees. Attachments are
+// fetched here rather than at enqueue time so a queued image is downloaded when
+// it is about to be used, not minutes earlier.
+async function promptFor(event, body) {
+  const content = event.getContent()
+  const msgtype = content?.msgtype
+  if (msgtype !== 'm.image' && msgtype !== 'm.file') return body
+
+  const file = await downloadAttachment(event)
+  // The caption, when the client sends one, is the actual instruction; the
+  // filename alone is not, so it is not repeated as the ask.
+  const caption = content.filename && body !== content.filename ? body : ''
+  return caption
+    ? `${caption}\n\n(The attachment for this message is at ${file} — read it first.)`
+    : `I sent you a file at ${file}. Read it and tell me what you see.`
+}
+
+// Runs `first`, then whatever piled up while it ran, until the room is idle.
+// Queued messages are coalesced into one prompt instead of one turn each: two
+// messages ten seconds apart are almost always one instruction and its
+// correction, and running them separately does the wrong thing first.
+async function drainRoom(roomId, first) {
+  busy.add(roomId)
+  // Turns can run for minutes; keep the typing indicator alive so the room doesn't look dead.
+  await client.sendTyping(roomId, true, 30000)
+  const keepAlive = setInterval(() => {
+    client.sendTyping(roomId, true, 30000).catch(() => {})
+  }, 25000)
+
+  try {
+    let batch = [first]
+    while (batch.length) {
+      // The receipt is the "picked up" signal behind the second check. Receipts
+      // are monotonic, so marking the newest event of the batch covers them all.
+      await client.sendReadReceipt(batch[batch.length - 1]).catch(() => {})
+      try {
+        const parts = []
+        for (const ev of batch) {
+          const text = ev.getContent()?.body?.trim() ?? ''
+          try {
+            parts.push(await promptFor(ev, text))
+          } catch (e) {
+            // One unreadable attachment must not sink the rest of the batch —
+            // the agent is told what failed and answers the messages that worked.
+            await sendRoomText(roomId, `⚠️ Could not read that attachment: ${e.message}`).catch(() => {})
+            parts.push(`(I tried to send a file here but it could not be read: ${e.message})`)
+          }
+        }
+        const res = await runTurn(roomId, parts.join('\n\n'))
+        if (!stopped.has(roomId)) {
+          await sendRoomText(roomId, res.error ? `⚠️ ${res.error}` : res.text)
+        }
+      } catch (e) {
+        if (!stopped.has(roomId)) await sendRoomText(roomId, `⚠️ ${e.message}`).catch(() => {})
+      }
+      // !stop drops the queue too: everything waiting was meant for the run
+      // that was just abandoned, so feeding it to a fresh turn is not what was
+      // asked for. The finally block clears `busy`.
+      if (stopped.delete(roomId)) return
+      batch = queued.get(roomId)?.splice(0) ?? []
+    }
+  } finally {
+    // All synchronous, and before any await: a message landing after `busy` is
+    // cleared starts its own drain, but one landing before it must still find a
+    // live queue to join.
+    clearInterval(keepAlive)
+    queued.delete(roomId)
+    busy.delete(roomId)
+    await client.sendTyping(roomId, false).catch(() => {})
+  }
+}
+
 client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   if (toStartOfTimeline) return                          // skip history
   if (event.getTs() < startTs) return                   // skip messages before bot started
@@ -812,39 +899,9 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   const roomId = room.roomId
   log(`[${room?.name ?? roomId}] ${event.getSender()}: ${body}`)
 
-  // An attachment's body is just the filename, so forwarding it as a prompt
-  // sends the agent a bare name and no picture — the reason images "didn't
-  // arrive". Download it and point the agent at the file instead.
-  const msgtype = event.getContent()?.msgtype
-  if (msgtype === 'm.image' || msgtype === 'm.file') {
-    if (busy.has(roomId)) {
-      await sendRoomText(roomId, 'Still working on the previous message — hold on.')
-      return
-    }
-    busy.add(roomId)
-    await client.sendTyping(roomId, true, 30000)
-    const keepAlive = setInterval(() => {
-      client.sendTyping(roomId, true, 30000).catch(() => {})
-    }, 25000)
-    try {
-      const file = await downloadAttachment(event)
-      // The caption, when the client sends one, is the actual instruction; the
-      // filename alone is not, so it is not repeated as the ask.
-      const caption = event.getContent()?.filename && body !== event.getContent().filename ? body : ''
-      const prompt = caption
-        ? `${caption}\n\n(The attachment for this message is at ${file} — read it first.)`
-        : `I sent you a file at ${file}. Read it and tell me what you see.`
-      const res = await runTurn(roomId, prompt)
-      await sendRoomText(roomId, res.error ? `⚠️ ${res.error}` : res.text)
-    } catch (e) {
-      await sendRoomText(roomId, `⚠️ Could not read that attachment: ${e.message}`).catch(() => {})
-    } finally {
-      clearInterval(keepAlive)
-      await client.sendTyping(roomId, false).catch(() => {})
-      busy.delete(roomId)
-    }
-    return
-  }
+  // An attachment's body is just its filename, so it never matches a command or
+  // an approval answer and can fall through to the turn path, where promptFor
+  // downloads it and points the agent at the file.
 
   // !spawn [path] [model] — both optional, model recognised by being a known name.
   if (body.startsWith('!spawn')) {
@@ -952,6 +1009,36 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   // fall back to the marker baked into m.room.create.
   if (!sessions[roomId] && !isAgentRoom(roomId)) return
 
+  // !stop — abandon the running turn and everything queued behind it. Handled
+  // above the queue check for the same reason approval answers are: the room it
+  // is for is always busy, so queueing it would park the stop behind the very
+  // turn it exists to kill.
+  if (body === '!stop') {
+    if (!busy.has(roomId)) {
+      await sendRoomText(roomId, 'Nothing running.')
+      return
+    }
+    stopped.add(roomId)
+    // A turn blocked on an approval is parked inside the hook rather than in
+    // the agent, and will not notice a signal until the hook returns — so the
+    // pending question has to be settled before the kill can land.
+    const wasBlocked = settleApproval(roomId, 'deny', 'Stopped from chat.')
+    if (!providerFor(sessions[roomId]).cancel?.(roomId)) {
+      // Nothing to kill: either the turn is between provider calls or this
+      // backend cannot interrupt. Do not leave the room muted for a turn that
+      // is still going to answer.
+      stopped.delete(roomId)
+      await sendRoomText(roomId, wasBlocked
+        ? '🚫 Denied the pending approval, but the turn itself could not be cancelled — it will finish on its own.'
+        : '⚠️ Nothing for the provider to cancel — the turn will finish on its own.')
+      return
+    }
+    const dropped = queued.get(roomId)?.length ?? 0
+    queued.delete(roomId)
+    await sendRoomText(roomId, `🛑 Stopped.${dropped ? ` Dropped ${dropped} queued message${dropped === 1 ? '' : 's'}.` : ''}`)
+    return
+  }
+
   // !reset — keep the room, its directory and model; drop the session so the
   // next message starts fresh. For when the context is poisoned rather than the
   // room being unwanted. The old transcript stays on disk.
@@ -1048,27 +1135,18 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   }
 
   if (busy.has(roomId)) {
-    await sendRoomText(roomId,'Still working on the previous message — hold on.')
+    const pending = queued.get(roomId) ?? []
+    if (pending.length >= MAX_QUEUED) {
+      await sendRoomText(roomId, `Holding ${pending.length} messages already — I'll answer those first.`)
+      return
+    }
+    pending.push(event)
+    queued.set(roomId, pending)
+    log(`Queued in ${roomId} (${pending.length} waiting)`)
     return
   }
-  busy.add(roomId)
 
-  // Turns can run for minutes; keep the typing indicator alive so the room doesn't look dead.
-  await client.sendTyping(roomId, true, 30000)
-  const keepAlive = setInterval(() => {
-    client.sendTyping(roomId, true, 30000).catch(() => {})
-  }, 25000)
-
-  try {
-    const res = await runTurn(roomId, body)
-    await sendRoomText(roomId,res.error ? `⚠️ ${res.error}` : res.text)
-  } catch (e) {
-    await sendRoomText(roomId,`⚠️ ${e.message}`).catch(() => {})
-  } finally {
-    clearInterval(keepAlive)
-    await client.sendTyping(roomId, false).catch(() => {})
-    busy.delete(roomId)
-  }
+  await drainRoom(roomId, event)
 })
 
 await ensureAvatars()

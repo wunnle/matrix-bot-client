@@ -31,7 +31,9 @@ export const AGENT_ROOM_TYPE = 'com.construct.agent'
 // The command set every agent room shares. Seeded on accept because the bot
 // cannot write them: pills live in the user's account data, writable only with
 // the user's own token.
-const AGENT_PILLS = ['!model', '!end', '!reset']
+// !stop leads: it is the only one that is urgent when you reach for it, and the
+// row is where you look while a turn you no longer want is running.
+const AGENT_PILLS = ['!stop', '!model', '!end', '!reset']
 
 export function isAgentRoom(client: MatrixClient, roomId: string): boolean {
   const room = client.getRoom(roomId)

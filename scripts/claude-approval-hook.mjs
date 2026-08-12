@@ -42,39 +42,44 @@ const DIFF_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit'])
 const MAX_DIFF_LINES = 40
 const MAX_LINE = 200
 
-function clip(text, marker) {
+// The whole change is sent alongside the clipped one so the room can offer it
+// on demand. Capped well under Matrix's 64KB event limit.
+const MAX_FULL_CHARS = 24000
+
+function clip(text, marker, maxLines) {
   const lines = String(text ?? '').split('\n')
-  const shown = lines.slice(0, MAX_DIFF_LINES)
+  const shown = lines.slice(0, maxLines)
     .map((l) => `${marker}${l.length > MAX_LINE ? `${l.slice(0, MAX_LINE)}…` : l}`)
   if (lines.length > shown.length) shown.push(`${marker}… ${lines.length - shown.length} more lines`)
   return shown.join('\n')
 }
 
-function diffBlock(oldText, newText) {
-  return [clip(oldText, '-'), clip(newText, '+')].filter(Boolean).join('\n')
+function diffBlock(oldText, newText, maxLines) {
+  return [clip(oldText, '-', maxLines), clip(newText, '+', maxLines)].filter(Boolean).join('\n')
 }
 
-// One-line summary of the call, for the approval message in chat.
-function describe(toolName, input) {
+// One-line summary of the call, for the approval message in chat. `maxLines`
+// caps each side of a change; pass Infinity for the untrimmed version.
+function describe(toolName, input, maxLines = MAX_DIFF_LINES) {
   if (toolName === 'Bash') return input?.command ?? '(no command)'
   const target = input?.file_path ?? input?.path ?? input?.notebook_path
 
   if (toolName === 'Edit' && target) {
     const all = input.replace_all ? ' (all occurrences)' : ''
-    return `# edit ${target}${all}\n${diffBlock(input.old_string, input.new_string)}`
+    return `# edit ${target}${all}\n${diffBlock(input.old_string, input.new_string, maxLines)}`
   }
   if (toolName === 'MultiEdit' && target) {
     const edits = (input.edits ?? [])
-      .map((e, i) => `# change ${i + 1}\n${diffBlock(e.old_string, e.new_string)}`)
+      .map((e, i) => `# change ${i + 1}\n${diffBlock(e.old_string, e.new_string, maxLines)}`)
       .join('\n\n')
     return `# edit ${target}\n${edits}`
   }
   if (toolName === 'Write' && target) {
-    return `# write ${target}\n${clip(input.content, '+')}`
+    return `# write ${target}\n${clip(input.content, '+', maxLines)}`
   }
   if (toolName === 'NotebookEdit' && target) {
     const mode = input.edit_mode ?? 'replace'
-    return `# notebook ${mode} ${target} (cell ${input.cell_id ?? '?'})\n${clip(input.new_source, '+')}`
+    return `# notebook ${mode} ${target} (cell ${input.cell_id ?? '?'})\n${clip(input.new_source, '+', maxLines)}`
   }
 
   if (target) return target
@@ -116,6 +121,11 @@ if (toolName === 'Bash' && bashIsSafe(toolInput.command, cwd)) {
 }
 
 // Everything else — mutating Bash, writes outside the directory, unknown tools — asks.
+const summary = describe(toolName, toolInput)
+const untrimmed = describe(toolName, toolInput, Infinity)
+// Only worth carrying when it says more than the card already does.
+const full = untrimmed !== summary ? untrimmed.slice(0, MAX_FULL_CHARS) : undefined
+
 let res
 try {
   const ctrl = new AbortController()
@@ -128,7 +138,8 @@ try {
       roomId: process.env.AGENT_ROOM_ID,
       sessionId,
       toolName,
-      summary: describe(toolName, toolInput),
+      summary,
+      full,
       // Tells the bot to render this as a diff rather than a plain block.
       lang: DIFF_TOOLS.has(toolName) ? 'diff' : undefined,
       cwd,

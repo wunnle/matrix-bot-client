@@ -57,24 +57,54 @@ export async function declineInvite(roomId: string): Promise<void> {
   await getClient().leave(roomId)
 }
 
+// A single tool-progress line, e.g. `⏺ Read: "src/App.tsx"` — agent rooms emit
+// streams of these and they are not something you need to come back and read.
+const TOOL_PROGRESS_LINE = /^(?:\*\s*)?\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\(×\d+\))?|\.\.\.)\s*$/u
+
+export function isThinkingMessage(body: string): boolean {
+  return body.split('\n').filter(l => l.trim()).every(l => TOOL_PROGRESS_LINE.test(l.trim()))
+}
+
+// Does this event deserve a badge? Agent rooms churn out events that are not
+// someone talking to you: streamed `m.replace` edits of a bubble you already
+// saw, machine plumbing, tool-progress lines, your own messages. Counting those
+// is what produced badges that nothing in the room could explain and that came
+// straight back after being cleared.
+function countsAsUnread(event: sdk.MatrixEvent, userId: string): boolean {
+  const type = event.getType()
+  if (type !== 'm.room.message' && type !== 'm.room.encrypted') return false
+  if (event.getSender() === userId) return false
+  if (event.isRedacted()) return false
+  if (event.getRelation()?.rel_type === 'm.replace') return false
+  // Encrypted and not yet decrypted — can't inspect content, assume it counts.
+  if (type === 'm.room.encrypted' && !event.getClearContent()) return true
+  const content = event.getContent()
+  if (content?.['com.construct.machine']) return false
+  const body = content?.body as string | undefined
+  if (!body) return false
+  if (isThinkingMessage(body)) return false
+  return true
+}
+
 // Count unread messages using the local read receipt position rather than
 // the server-side notification count, which can stay stale across restarts.
 export function getRoomUnreadCount(room: sdk.Room, userId: string): number {
-  const readUpTo = room.getEventReadUpTo(userId)
   const timeline = room.getLiveTimeline().getEvents()
+  const readUpTo = room.getEventReadUpTo(userId)
   if (!readUpTo) {
-    return timeline.filter(
-      e => e.getType() === 'm.room.message' || e.getType() === 'm.room.encrypted'
-    ).length
+    return timeline.filter(e => countsAsUnread(e, userId)).length
   }
   const readIdx = timeline.findIndex(e => e.getId() === readUpTo)
   if (readIdx === -1) {
-    // Receipt points to an event not in the local timeline — fall back
-    return room.getUnreadNotificationCount()
+    // The receipt points at an event that isn't in the local timeline — usually
+    // because it targets an edit or a message that has since scrolled out.
+    // Fall back to its timestamp so we still count from the right place instead
+    // of trusting the server notification count, which counts the same noise.
+    const readTs = room.getReadReceiptForUserId(userId)?.data?.ts
+    if (!readTs) return room.getUnreadNotificationCount()
+    return timeline.filter(e => e.getTs() > readTs && countsAsUnread(e, userId)).length
   }
-  return timeline.slice(readIdx + 1).filter(
-    e => e.getType() === 'm.room.message' || e.getType() === 'm.room.encrypted'
-  ).length
+  return timeline.slice(readIdx + 1).filter(e => countsAsUnread(e, userId)).length
 }
 
 function getRooms(c: sdk.MatrixClient, userId: string): RoomSummary[] {

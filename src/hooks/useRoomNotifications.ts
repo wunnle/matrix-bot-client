@@ -1,14 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import type { IRoomTimelineData } from 'matrix-js-sdk'
-import { getClient, getRoomUnreadCount } from '../lib/matrix'
+import { getClient, getRoomUnreadCount, isThinkingMessage } from '../lib/matrix'
 
-const TOOL_PROGRESS_LINE = /^(?:\*\s*)?\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\(×\d+\))?|\.\.\.)\s*$/u
 const TOAST_TTL_MS = 4000
-
-function isThinkingMessage(body: string): boolean {
-  return body.split('\n').filter(l => l.trim()).every(l => TOOL_PROGRESS_LINE.test(l.trim()))
-}
 
 function toastBody(raw: string): string {
   let text = raw.replace(/```[\s\S]*?```/g, '[code]')

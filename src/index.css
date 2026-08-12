@@ -970,6 +970,11 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   /* A shade smaller than other code: diffs are scanned, not read, and the
      extra characters per line mean less wrapping on a phone. */
   font-size: 0.9em;
+  /* Monospace is load-bearing here — the marker column and the code below it
+     only line up in a fixed-width face — so weight, not family, is what makes
+     the smaller type hold up. */
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-weight: 500;
   width: fit-content;
   min-width: 100%;
 }

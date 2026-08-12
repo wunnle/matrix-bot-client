@@ -306,7 +306,9 @@ function diffCode(token) {
       : 'diff-ctx'
     return `<span class="${cls}">${escapeHtml(line) || '&nbsp;'}</span>`
   })
-  return `<pre><code class="diff">${lines.join('\n')}</code></pre>`
+  // Joined with nothing: the spans are display:block, so a newline between them
+  // survives inside <pre> as its own line box and double-spaces the diff.
+  return `<pre><code class="diff">${lines.join('')}</code></pre>`
 }
 
 const md = new Marked({

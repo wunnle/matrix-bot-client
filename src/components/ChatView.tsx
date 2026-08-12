@@ -2246,7 +2246,7 @@ const ALLOWED_TAGS = /^(p|br|strong|b|em|i|u|s|del|code|pre|ul|ol|li|blockquote|
 const ALLOWED_ATTRS: Record<string, string[]> = { a: ['href', 'target', 'rel'], span: ['class'], code: ['class'] }
 // Class names are an allowlist, not free text: the bot marks up diff lines with
 // these and nothing else may borrow the app's styling.
-const ALLOWED_CLASSES = /^(diff|diff-add|diff-del|diff-meta|diff-ctx|diff-mark)$/
+const ALLOWED_CLASSES = /^(diff|diff-add|diff-del|diff-meta|diff-ctx|diff-mark|cmd)$/
 
 function sanitizeHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')

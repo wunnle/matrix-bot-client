@@ -957,6 +957,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   display: block;
   padding: 0 10px;
   margin: 0 -10px;
+  /* Tighter than prose: a diff reads as a block, and the tinted rows make the
+     line breaks obvious without extra leading. */
+  line-height: 1.35;
 }
 .bot-text code.diff .diff-add { color: var(--diff-add); background: var(--diff-add-bg); }
 .bot-text code.diff .diff-del { color: var(--diff-del); background: var(--diff-del-bg); }

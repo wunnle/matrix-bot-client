@@ -23,6 +23,9 @@ interface Props {
 
 const MAX_MOUNTED_ROOMS = 5
 
+// Per app launch, not per mount — see the getLaunchUrl call below.
+let launchUrlConsumed = false
+
 export default function RoomsLayout({ auth, onSignOut }: Props) {
   useVisualViewportVars()
   const { roomId } = useParams<{ roomId: string }>()
@@ -198,7 +201,11 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
 
   const goToRoom = useCallback((room: string, listen = false) => {
     const query = listen ? `?listen=${Date.now()}` : ''
-    navigate(`/rooms/${encodeURIComponent(room)}${query}`, { replace: true })
+    // Replace whatever we launched into with the room list, then push the room
+    // on top: back from a notification tap lands on the list instead of
+    // dropping straight out of the app.
+    navigate('/rooms', { replace: true })
+    navigate(`/rooms/${encodeURIComponent(room)}${query}`)
   }, [navigate])
 
   useEffect(() => {
@@ -216,9 +223,16 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     }
 
     const sub = CapacitorApp.addListener('appUrlOpen', ({ url }) => handleUrl(url))
-    CapacitorApp.getLaunchUrl().then((launch) => {
-      if (launch?.url) handleUrl(launch.url)
-    }).catch(() => {})
+    // getLaunchUrl() keeps returning the URL the app was launched with for the
+    // whole process lifetime, and this component remounts whenever the route
+    // switches between /rooms and /rooms/:roomId — without the guard, backing
+    // out of a room re-consumes the launch URL and throws you right back in.
+    if (!launchUrlConsumed) {
+      launchUrlConsumed = true
+      CapacitorApp.getLaunchUrl().then((launch) => {
+        if (launch?.url) handleUrl(launch.url)
+      }).catch(() => {})
+    }
     return () => {
       sub.then((h) => h.remove())
     }

@@ -78,6 +78,13 @@ function isToolProgressMessage(_body: string, msg?: Message): boolean {
   return !!msg?.toolProgress
 }
 
+// Only the room's own bot gets its tool progress collapsed into a chip. A peer
+// agent's progress lines stay attributed to them rather than folding into this
+// room's bot narration.
+function isBotToolProgress(msg: Message): boolean {
+  return !msg.isOwnMessage && !msg.isPeerMessage && isToolProgressMessage(msg.body, msg)
+}
+
 function parseToolProgressMessage(_body: string, msg?: Message): ToolProgressLine[] {
   return msg?.toolProgress ?? []
 }
@@ -478,7 +485,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       if (!ev || ev.isRedacted()) continue
       const t = ev.getType()
       if (t !== 'm.room.message' && t !== 'm.room.encrypted' && !ev.isDecryptionFailure()) continue
-      resolved.push(eventToMessage(ev, userId, maxReadTs))
+      resolved.push(eventToMessage(ev, userId, maxReadTs, room))
     }
     setPinnedDisplay(resolved)
   }, [client, roomId, userId])
@@ -546,7 +553,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       const type = event.getType()
       if (type !== 'm.room.message' && type !== 'm.room.encrypted') return
       const maxReadTs = getMaxReadTs(room_, userId)
-      const msg = eventToMessage(event, userId, maxReadTs)
+      const msg = eventToMessage(event, userId, maxReadTs, room_)
       if (!msg.isOwnMessage) {
         const content = event.getContent()
         const eventModel: string | undefined = content['com.construct.model']
@@ -607,7 +614,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         }
       }
       const maxReadTs = room_ ? getMaxReadTs(room_, userId) : 0
-      const decrypted = eventToMessage(event, userId, maxReadTs)
+      const decrypted = eventToMessage(event, userId, maxReadTs, room_ ?? undefined)
       const rel = event.getRelation()
       setMessages((prev) => {
         const id = event.getId() ?? ''
@@ -1610,10 +1617,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               const m = visibleMessages[i]
               const p = i > 0 ? visibleMessages[i - 1] : null
               const n = i + 1 < visibleMessages.length ? visibleMessages[i + 1] : null
-              const iT = !m.isOwnMessage && isToolProgressMessage(m.body, m)
+              const iT = isBotToolProgress(m)
               if (!iT) continue
-              const pT = p && !p.isOwnMessage && isToolProgressMessage(p.body, p)
-              const nT = n && !n.isOwnMessage && isToolProgressMessage(n.body, n)
+              const pT = p && isBotToolProgress(p)
+              const nT = n && isBotToolProgress(n)
               if (!pT) currentGroupStart = m.eventId
               toolGroupId[m.eventId] = currentGroupStart
               if (!nT && n !== null) collapsibleGroups.add(currentGroupStart)
@@ -1622,11 +1629,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             const showDateDivider = i === 0 || !sameDay(visibleMessages[i - 1].timestamp, msg.timestamp)
             const imageUrl = msg.imageUrl ?? (msg.imageMxc ? imageUrls[msg.eventId] : undefined)
             const fileUrl = msg.fileMxc ? imageUrls[msg.eventId] : undefined
-            const isTool = !msg.isOwnMessage && isToolProgressMessage(msg.body, msg)
+            const isTool = isBotToolProgress(msg)
             const prev = i > 0 ? visibleMessages[i - 1] : null
             const next = i + 1 < visibleMessages.length ? visibleMessages[i + 1] : null
-            const prevIsTool = !showDateDivider && prev && !prev.isOwnMessage && isToolProgressMessage(prev.body, prev)
-            const nextIsTool = next && !next.isOwnMessage && isToolProgressMessage(next.body, next) &&
+            const prevIsTool = !showDateDivider && prev && isBotToolProgress(prev)
+            const nextIsTool = next && isBotToolProgress(next) &&
               sameDay(msg.timestamp, next.timestamp)
             const canPin = !msg.isDecryptionFailure
             const pinSurfaceProps = canPin
@@ -1648,8 +1655,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                     <span>{formatDate(msg.timestamp)}</span>
                   </div>
                 )}
-                <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}${prev && !showDateDivider && prev.isOwnMessage !== msg.isOwnMessage ? ' sender-switch' : ''}`}>
+                <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}${msg.isPeerMessage ? ' peer' : ''}${prev && !showDateDivider && (prev.isOwnMessage !== msg.isOwnMessage || prev.senderName !== msg.senderName) ? ' sender-switch' : ''}`}>
                   <div className="message-body">
+                    {/* Another member's request, not the bot's own voice — say whose. */}
+                    {msg.isPeerMessage && (!prev || showDateDivider || prev.senderName !== msg.senderName) && (
+                      <div className="peer-sender">{msg.senderName}</div>
+                    )}
                     {msg.isOwnMessage ? (
                       <>
                         <div className="message-pin-surface message-pin-surface--own" {...pinSurfaceProps}>
@@ -2143,7 +2154,39 @@ function getMaxReadTs(room: sdk.Room, userId: string): number {
   return max
 }
 
-function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: number): Message {
+// Whoever holds the *top* power level owns the room; their messages keep the
+// plain full-width bot styling and everyone else is a peer.
+//
+// Deliberately relative, not `=== 100`: the top level is not always the bot.
+// In the Notes room the bot sits at 0 and another agent holds 100, so a
+// hardcoded check would label the actual bot a peer and vice versa.
+//
+// Falls back to "no peers" whenever the answer is not clear-cut — an absent
+// power_levels event, or one with no `users` entries — so a room that does not
+// fit this shape renders exactly as it did before.
+function getRoomOwners(room: sdk.Room | undefined): Set<string> {
+  const owners = new Set<string>()
+  if (!room) return owners
+  const pl = room.currentState?.getStateEvents('m.room.power_levels', '')
+  const users = (pl?.getContent()?.users ?? {}) as Record<string, number>
+  let top = -Infinity
+  for (const level of Object.values(users)) {
+    if (typeof level === 'number' && level > top) top = level
+  }
+  if (top === -Infinity) return owners
+  for (const [id, level] of Object.entries(users)) {
+    if (level === top) owners.add(id)
+  }
+  return owners
+}
+
+function eventToMessage(
+  event: sdk.MatrixEvent,
+  userId: string,
+  maxReadTs: number,
+  room?: sdk.Room,
+  owners?: Set<string>,
+): Message {
   const isFailure = event.isDecryptionFailure()
   const isEncrypted = event.getType() === 'm.room.encrypted'
   // Resolve the effective content, honoring two edit shapes:
@@ -2176,8 +2219,15 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
     formattedBody = sanitizeHtml(content.formatted_body)
   }
 
-  const isOwnMessage = event.getSender() === userId
+  const sender = event.getSender() ?? ''
+  const isOwnMessage = sender === userId
   const isRead = isOwnMessage && event.getTs() <= maxReadTs
+
+  const roomOwners = owners ?? getRoomOwners(room)
+  const isPeerMessage = !isOwnMessage && roomOwners.size > 0 && !roomOwners.has(sender)
+  const senderName = isPeerMessage
+    ? (room?.getMember(sender)?.rawDisplayName || shortUserId(sender))
+    : undefined
 
   const imageMxc = content?.msgtype === 'm.image' && content?.url ? content.url : undefined
   const fileMxc = content?.msgtype === 'm.file' && content?.url ? content.url : undefined
@@ -2268,6 +2318,8 @@ function eventToMessage(event: sdk.MatrixEvent, userId: string, maxReadTs: numbe
     toolProgress: toolProgress && toolProgress.length > 0 ? toolProgress : undefined,
     timestamp: event.getTs(),
     isOwnMessage,
+    isPeerMessage,
+    senderName,
     isDecryptionFailure: isFailure,
     isRead,
     source,
@@ -2293,6 +2345,7 @@ function buildReactionsMap(events: sdk.MatrixEvent[]): Record<string, Record<str
 
 function eventsToMessages(events: sdk.MatrixEvent[], userId: string, room: sdk.Room): Message[] {
   const maxReadTs = getMaxReadTs(room, userId)
+  const owners = getRoomOwners(room)
   const reactionsMap = buildReactionsMap(events)
   const messageEvents = events
     .filter((e) => e.getType() === 'm.room.message' || e.getType() === 'm.room.encrypted' || e.isDecryptionFailure())
@@ -2320,7 +2373,7 @@ function eventsToMessages(events: sdk.MatrixEvent[], userId: string, room: sdk.R
     .map((e) => {
       const id = e.getId() ?? ''
       const edit = latestEditByTarget.get(id)
-      let msg = eventToMessage(edit ?? e, userId, maxReadTs)
+      let msg = eventToMessage(edit ?? e, userId, maxReadTs, room, owners)
       if (edit) msg = { ...msg, eventId: id, timestamp: e.getTs() }
       const reactions = reactionsMap[msg.eventId]
       return reactions ? { ...msg, reactions } : msg

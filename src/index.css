@@ -913,6 +913,29 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .bot-text.bot-text-rich { white-space: normal; }
 
+/* A peer: someone other than you and other than the room's owner (the member
+   at the top power level). They make requests in a room you share, so they read
+   as someone talking — indented and attributed — rather than as the bot's own
+   voice, which stays the plain full-width text below. */
+.message.peer .message-body {
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+  margin-left: 2px;
+}
+
+.peer-sender {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 2px;
+  letter-spacing: 0.01em;
+}
+
+/* Deliberately NOT dimmed: a peer's message is a request someone typed, not
+   background noise like bot-text-machine. The rule and the name carry the
+   distinction; dimming the body would push real content under the contrast
+   floor and read as less important than the bot's own replies. */
+
 /* com.construct.machine — a notification or orchestration event nobody typed.
    Recedes rather than hides: it should be skimmable at a glance and clearly
    not a person talking, but still legible when you go looking for it. */

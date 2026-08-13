@@ -56,6 +56,11 @@ export interface Message {
   toolProgress?: ToolProgressLine[]
   timestamp: number
   isOwnMessage: boolean
+  // A third sender class beside you and the room's bot: another member making
+  // requests in a room you share. Rendered attributed so their messages don't
+  // read as the bot talking. See senderName.
+  isPeerMessage?: boolean
+  senderName?: string
   isDecryptionFailure?: boolean
   isRead?: boolean
   reactions?: Record<string, string[]> // emoji → list of senderIds

@@ -243,6 +243,12 @@ async function doInit(auth: AuthState): Promise<RoomSummary[]> {
 
 const ROOM_ORDER_KEY = (userId: string) => `construct:room-order:${userId}`
 
+// The order lives in Matrix account data so it follows the account to every
+// device. localStorage stays as a mirror: it is the only thing available for
+// the first paint, before the client exists and the initial sync has landed.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const ROOM_ORDER_EVENT = 'com.construct.room_order' as any
+
 export function getRoomOrder(userId: string): string[] | null {
   try {
     const raw = localStorage.getItem(ROOM_ORDER_KEY(userId))
@@ -252,10 +258,32 @@ export function getRoomOrder(userId: string): string[] | null {
   }
 }
 
-export function setRoomOrder(userId: string, order: string[]) {
+// The server-side order, once a client exists. Returns null when this account
+// has never saved one — callers should then keep whatever they already have
+// rather than falling back to alphabetical.
+export function getRemoteRoomOrder(c: sdk.MatrixClient): string[] | null {
+  const content = c.getAccountData(ROOM_ORDER_EVENT)?.getContent() as { order?: unknown } | undefined
+  const order = content?.order
+  if (!Array.isArray(order)) return null
+  return order.filter((id): id is string => typeof id === 'string')
+}
+
+// Local mirror only — for writing back an order that came *from* the server,
+// which must not be echoed straight back to it.
+export function cacheRoomOrder(userId: string, order: string[]) {
   try {
     localStorage.setItem(ROOM_ORDER_KEY(userId), JSON.stringify(order))
   } catch {}
+}
+
+export function setRoomOrder(userId: string, order: string[]) {
+  cacheRoomOrder(userId, order)
+  // Fire-and-forget: a failed write must not undo the local reorder the user
+  // just made, and the next drag re-sends the whole list anyway.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    client?.setAccountData(ROOM_ORDER_EVENT, { order } as any)?.catch?.(() => {})
+  } catch { /* no client yet — the local mirror still holds the order */ }
 }
 
 export function applyRoomOrder(rooms: RoomSummary[], order: string[]): RoomSummary[] {
@@ -264,7 +292,10 @@ export function applyRoomOrder(rooms: RoomSummary[], order: string[]): RoomSumma
     const ai = orderMap.get(a.roomId) ?? Infinity
     const bi = orderMap.get(b.roomId) ?? Infinity
     if (ai !== bi) return ai - bi
-    return a.name.localeCompare(b.name)
+    // Rooms with no saved position all land after the ordered ones, oldest
+    // first — so a freshly spawned agent room shows up at the bottom instead
+    // of wherever its name happens to sort.
+    return (a.lastTs ?? 0) - (b.lastTs ?? 0)
   })
 }
 

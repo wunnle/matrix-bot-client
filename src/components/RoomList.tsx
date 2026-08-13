@@ -4,7 +4,7 @@ import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSe
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
-import { fetchJoinedRooms, getCachedRooms, cacheRooms, getClient, getRoomOrder, setRoomOrder, applyRoomOrder, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, type RoomSummary } from '../lib/matrix'
+import { fetchJoinedRooms, getCachedRooms, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, type RoomSummary } from '../lib/matrix'
 import { useNavigate } from 'react-router-dom'
 import { seedAgentPills, backfillAgentPills } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
@@ -129,7 +129,18 @@ export default function RoomList({
   useEffect(() => {
     fetchJoinedRooms(auth)
       .then((r) => {
-        const order = getRoomOrder(auth.userId)
+        // Account data wins over the localStorage mirror: it is what another
+        // device may have reordered since this one last ran.
+        let order: string[] | null = null
+        try { order = getRemoteRoomOrder(getClient()) } catch { /* fall back to the mirror */ }
+        if (order) {
+          cacheRoomOrder(auth.userId, order)
+        } else {
+          // Nothing on the server yet — migrate whatever this device already
+          // had up, so an order set before this change follows the account.
+          order = getRoomOrder(auth.userId)
+          if (order) setRoomOrder(auth.userId, order)
+        }
         setRooms(order ? applyRoomOrder(r, order) : r)
         setLoading(false)
         setClientReady(true)
@@ -408,11 +419,22 @@ export default function RoomList({
       })
     }
 
+    // Reorder done on another device arrives as account data — apply it live.
+    const onAccountData = (event: sdk.MatrixEvent) => {
+      if (event.getType() !== ROOM_ORDER_EVENT) return
+      const order = getRemoteRoomOrder(client)
+      if (!order) return
+      cacheRoomOrder(auth.userId, order)
+      setRooms((prev) => applyRoomOrder(prev, order))
+    }
+
     client.on(sdk.RoomEvent.MyMembership, onMembership)
     client.on(sdk.ClientEvent.Sync, onSync)
+    client.on(sdk.ClientEvent.AccountData, onAccountData)
     return () => {
       client.off(sdk.RoomEvent.MyMembership, onMembership)
       client.off(sdk.ClientEvent.Sync, onSync)
+      client.off(sdk.ClientEvent.AccountData, onAccountData)
     }
   }, [clientReady, auth.userId])
 

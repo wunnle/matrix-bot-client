@@ -8,7 +8,15 @@ interface Member {
   userId: string
   name: string
   membership: string
+  powerLevel: number
   avatarUrl: string | null
+}
+
+function powerLabel(level: number): string | null {
+  if (level >= 100) return 'Admin'
+  if (level >= 50) return 'Mod'
+  if (level > 0) return `PL ${level}`
+  return null
 }
 
 interface Props {
@@ -51,10 +59,12 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
         userId: m.userId,
         name: m.name || m.userId,
         membership: m.membership ?? 'join',
+        powerLevel: m.powerLevel ?? 0,
         avatarUrl: m.getMxcAvatarUrl()
           ? await resolveMediaUrl(client, m.getMxcAvatarUrl()!, 64, 64, 'crop')
           : null,
       })))
+      resolved.sort((a, b) => b.powerLevel - a.powerLevel || a.name.localeCompare(b.name))
       if (!cancelled) setMembers(resolved)
     }
 
@@ -64,9 +74,15 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
       if (state?.roomId === roomId) void loadMembers()
     }
     client.on('RoomState.members' as any, onMembers)
+    // Power levels live in a state event, not a membership event.
+    const onStateEvent = (e: any, state: any) => {
+      if (state?.roomId === roomId && e?.getType?.() === 'm.room.power_levels') void loadMembers()
+    }
+    client.on('RoomState.events' as any, onStateEvent)
     return () => {
       cancelled = true
       client.off('RoomState.members' as any, onMembers)
+      client.off('RoomState.events' as any, onStateEvent)
     }
   }, [client, roomId])
 
@@ -298,6 +314,9 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
                     <div className="editor-member-name">{m.name}</div>
                     <div className="editor-member-id">{m.userId}</div>
                   </div>
+                  {powerLabel(m.powerLevel) && (
+                    <span className="editor-member-tag">{powerLabel(m.powerLevel)}</span>
+                  )}
                   {m.membership === 'invite' && <span className="editor-member-tag">Invited</span>}
                 </div>
               ))}

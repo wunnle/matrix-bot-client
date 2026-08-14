@@ -78,6 +78,11 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   animation: slideDown 0.2s ease;
 }
 
+/* The topmost banner sits under the status bar / notch, so it carries the inset. */
+.layout > .connection-banner:first-child {
+  padding-top: calc(7px + env(safe-area-inset-top));
+}
+
 @keyframes slideDown {
   from { transform: translateY(-100%); opacity: 0; }
   to   { transform: translateY(0);     opacity: 1; }
@@ -134,6 +139,11 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
      web). */
   padding-top: max(env(safe-area-inset-top), 10px);
 }
+
+/* A banner above takes over the inset, so the chrome below drops back to its
+   plain padding instead of leaving a status-bar-sized gap. */
+.layout:has(> .connection-banner) .sidebar { padding-top: 10px; }
+.layout:has(> .connection-banner) .chat-header { padding-top: 11px; }
 
 .main {
   flex: 1;

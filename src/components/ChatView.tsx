@@ -41,6 +41,7 @@ import { useVisualViewportResize } from '../hooks/useVisualViewport'
 import RoomEditor from './RoomEditor'
 import { Marked } from 'marked'
 import type { Message, RoomConfig, ConstructThread, ConstructApproval, ToolProgressLine } from '../types'
+import { useAgentActivity, formatElapsed } from '../hooks/useAgentActivity'
 
 interface Props {
   roomId: string
@@ -497,6 +498,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [refreshPinned])
 
   const visibleMessages = renderStart > 0 ? messages.slice(renderStart) : messages
+
+  // What the bot looks like it's doing, for the status row above the composer.
+  // Any typing member counts as "the run is alive": the room's bot isn't
+  // separable from a peer by user id here (getRoomBotMeta only takes the first
+  // other member), and a peer typing only keeps the row up a little longer.
+  const agentActivity = useAgentActivity(messages, typingUsers.length > 0)
 
   useEffect(() => {
     isFirstLoad.current = true
@@ -1473,8 +1480,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             : <div className="chat-avatar chat-avatar-fallback">{roomName.slice(0, 1).toUpperCase()}</div>}
           <div className="chat-header-info" onClick={() => setShowEditor(true)} style={{ cursor: 'pointer' }}>
             <span className="chat-title">{roomName}</span>
-            <span className={`chat-subtitle${typingUsers.length > 0 ? ' chat-subtitle--thinking' : ''}`}>
-              {typingUsers.length > 0
+            {/* The activity row above the composer says this better when it's
+                up; don't repeat it in the header. */}
+            <span className={`chat-subtitle${typingUsers.length > 0 && !agentActivity ? ' chat-subtitle--thinking' : ''}`}>
+              {typingUsers.length > 0 && !agentActivity
                 ? `${bot?.name ?? 'Bot'} is thinking…`
                 : (roomTopic || (bot?.name ?? null))}
             </span>
@@ -1946,6 +1955,17 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       )}
 
       <div className="chat-footer" ref={footerRef}>
+
+        {agentActivity && (
+          <div className={`agent-activity agent-activity--${agentActivity.phase}`} aria-live="polite">
+            <span className="agent-activity-dot" />
+            <span className="agent-activity-label">{agentActivity.label}</span>
+            {agentActivity.detail && (
+              <span className="agent-activity-detail">{agentActivity.detail}</span>
+            )}
+            <span className="agent-activity-elapsed">{formatElapsed(agentActivity.elapsedSec)}</span>
+          </div>
+        )}
 
         <div className="pills" onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>
           {lastActions.map((action) => (

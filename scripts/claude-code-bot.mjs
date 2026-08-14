@@ -259,8 +259,8 @@ function askForApproval(roomId, { toolName, summary, full, lang, allowSession = 
     pendingApprovals.set(roomId, { resolve, timer })
 
     const buttons = allowSession
-      ? '[[Approve]] [[Always allow]] [[Deny]]'
-      : '[[Approve]] [[Deny]]'
+      ? '[[Deny]] [[Approve]] [[Always allow]]'
+      : '[[Deny]] [[Approve]]'
     // Anything that isn't a diff is a command or a bare argument dump; both read
     // better wrapped than scrolled.
     const body = `🔐 Approve \`${toolName}\`?\n\n${fencedBlock(summary, lang ?? 'cmd')}\n\n${buttons}`

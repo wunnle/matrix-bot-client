@@ -16,7 +16,7 @@ const INVITE_TIMEOUT_MS = 90_000
 // public ones it was invited to), and picking the wrong one sends a command
 // into a room full of strangers. So it is pinned, and overridable per deploy.
 const CONFIGURED_HOST_ROOM: string =
-  import.meta.env.VITE_SPAWN_ROOM ?? '!iEbYoSfZgfHLeSKLei:matrix.org'
+  import.meta.env.VITE_SPAWN_ROOM ?? '!DpRWqhWOHJAxyvjOGI:matrix.org'
 
 /**
  * A joined room the bot listens in, or null when there is none.

@@ -16,12 +16,16 @@ import { bashIsSafe } from '../approval-rules.mjs'
 // connected, so a new model appears without a code change. Static seed because
 // the registry has to answer resolveModel() synchronously at startup, before
 // any app-server exists.
+// This is only a seed: it answers `!spawn <path> <model>` before any
+// app-server exists, and is replaced by `model/list` on the first connection.
+// Expect it to go stale — the list changed under us mid-session once already.
 const MODELS = {
+  'gpt-5.6-sol': 'gpt-5.6-sol',
+  'gpt-5.6-terra': 'gpt-5.6-terra',
+  'gpt-5.6-luna': 'gpt-5.6-luna',
   'gpt-5.5': 'gpt-5.5',
   'gpt-5.4': 'gpt-5.4',
   'gpt-5.4-mini': 'gpt-5.4-mini',
-  'gpt-5.3-codex': 'gpt-5.3-codex',
-  'gpt-5.2': 'gpt-5.2',
 }
 
 // Approvals we can put to the room as a yes/no. Both answer with the same
@@ -148,7 +152,21 @@ class AppServer {
   }
 
   async #start() {
-    const child = spawn('codex', ['app-server'], { stdio: ['pipe', 'pipe', 'pipe'] })
+    // `--disable apps` drops the `codex_apps` MCP server, which otherwise
+    // exposes ~130 tools from the ChatGPT account's connectors — including
+    // github_create_commit, github_merge_pull_request, github_delete_file and
+    // the sites_* deploy tools.
+    //
+    // Two gates miss all of it. The gh wrapper never sees these because they
+    // never invoke `gh`, and it hard-denies `gh api` precisely because API
+    // access cannot be scoped to a repo. The approval broker never sees them
+    // because an MCP tool call is neither a command nor a file change, so it
+    // reaches no prompt at all.
+    //
+    // Per-invocation, so the interactive `codex` TUI keeps its connectors.
+    // Anything reachable over MCP is outside the allowlist by construction; if
+    // a server is ever wanted here, gate it at mcpServer/tool/call first.
+    const child = spawn('codex', ['app-server', '--disable', 'apps'], { stdio: ['pipe', 'pipe', 'pipe'] })
     this.child = child
 
     child.stdout.setEncoding('utf8')
@@ -171,6 +189,11 @@ class AppServer {
     this.notify('initialized', {})
     log('app-server ready')
     this.#refreshModels()
+    // Say what tools exist outside the approval gate. An MCP server reaches no
+    // prompt — not a command, not a file change — so anything listed here is
+    // capability the broker cannot see. Silence is how ~130 connector tools sat
+    // in agent rooms unnoticed; this line is the check that it stays empty.
+    this.#reportMcp()
     return child
   }
 
@@ -328,6 +351,19 @@ class AppServer {
 
   respond(id, result) {
     this.send({ jsonrpc: '2.0', id, result })
+  }
+
+  // Best-effort, and loud only when there is something to be loud about.
+  async #reportMcp() {
+    try {
+      const list = await this.request('mcpServerStatus/list', {})
+      const servers = (list?.data ?? [])
+        .map((s) => `${s.name} (${Object.keys(s.tools ?? {}).length} tools)`)
+      if (servers.length) log(`⚠️ MCP servers reachable without approval: ${servers.join(', ')}`)
+      else log('no MCP servers — every tool call goes through the approval rules')
+    } catch (e) {
+      log(`could not list MCP servers (${e.message})`)
+    }
   }
 
   // Best-effort: the alias table works without it, and the model refresh is

@@ -7,6 +7,7 @@ import type { AuthState } from '../types'
 import { fetchJoinedRooms, getCachedRooms, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, type RoomSummary } from '../lib/matrix'
 import { useNavigate } from 'react-router-dom'
 import { seedAgentPills, backfillAgentPills } from '../lib/roomMeta'
+import { findSpawnHostRoom, spawnAgentRoom } from '../lib/spawnAgent'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { donateShareTargets, cacheRoomAvatars } from '../lib/liveActivity'
 import { getDisabledShareRooms } from '../lib/shareRooms'
@@ -86,6 +87,28 @@ const InviteTile = memo(function InviteTile({ room, busy, onAccept }: {
   )
 })
 
+// The ghost tile that spawns a new agent room. Deliberately shaped like the
+// invite tile: what it produces *is* an invite, and it sits in the same place
+// the new room's own tile will appear a moment later.
+const SpawnTile = memo(function SpawnTile({ busy, onSpawn }: {
+  busy: boolean
+  onSpawn: () => void
+}) {
+  return (
+    <button
+      className="room-card room-card--spawn"
+      onClick={onSpawn}
+      disabled={busy}
+      title="Start a new Claude Code agent room"
+    >
+      <div className="room-card-avatar">
+        <span>{busy ? '…' : '+'}</span>
+      </div>
+      <div className="room-card-name">{busy ? 'spawning…' : 'new claudebot'}</div>
+    </button>
+  )
+})
+
 export default function RoomList({
   auth,
   activeRoomId,
@@ -117,9 +140,20 @@ export default function RoomList({
   const navigate = useNavigate()
   const [invitesBusy, setInvitesBusy] = useState<Record<string, boolean>>({})
   const [inviteError, setInviteError] = useState('')
+  const [spawning, setSpawning] = useState(false)
 
   const invites = useMemo(() => rooms.filter(isInvite), [rooms])
   const joinedRooms = useMemo(() => rooms.filter((r) => !isInvite(r)), [rooms])
+
+  // Only offered when there is somewhere to send `!spawn` — the command needs a
+  // room the bot is already in, and a dead button is worse than no button.
+  // Derived on each render rather than memoised: the answer lives in the SDK's
+  // room state, which `rooms` does not mirror, so there is no dependency list
+  // that would keep a cached value honest.
+  let canSpawn = false
+  if (clientReady) {
+    try { canSpawn = findSpawnHostRoom(getClient()) !== null } catch { /* no client yet */ }
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -461,6 +495,30 @@ export default function RoomList({
     }
   }
 
+  async function handleSpawn() {
+    setInviteError('')
+    let client: ReturnType<typeof getClient>
+    try { client = getClient() } catch { return }
+    const host = findSpawnHostRoom(client)
+    if (!host) {
+      setInviteError('No room to spawn from — open an agent room first.')
+      return
+    }
+    setSpawning(true)
+    try {
+      const roomId = await spawnAgentRoom(client, host)
+      // The invite's own name is what the bot chose (Bender-N); accepting here
+      // rather than leaving the ghost invite tile behind is the whole point of
+      // the button — one tap, one room.
+      const name = client.getRoom(roomId)?.name ?? 'agent'
+      await handleAcceptInvite(roomId, name)
+    } catch (e) {
+      setInviteError((e as Error).message ?? 'Could not spawn a room')
+    } finally {
+      setSpawning(false)
+    }
+  }
+
   function handleDragEnd(event: { active: { id: string | number }, over: { id: string | number } | null }) {
     const { active, over } = event
     if (!over || active.id === over.id) return
@@ -514,6 +572,9 @@ export default function RoomList({
                   onAccept={handleAcceptInvite}
                 />
               ))}
+              {/* Last tile in the grid: it creates a room rather than opening
+                  one, so it should never sit above rooms that exist. */}
+              {canSpawn && <SpawnTile busy={spawning} onSpawn={handleSpawn} />}
             </div>
           </SortableContext>
         </DndContext>

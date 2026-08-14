@@ -297,6 +297,22 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   .room-card--invite:hover { opacity: 0.75; }
 }
 
+/* The spawn tile is a ghost of a room that does not exist yet — same shape as
+   an invite, since an invite is literally what tapping it produces. */
+.room-card--spawn { opacity: 0.45; }
+.room-card--spawn:disabled { cursor: progress; }
+
+.room-card--spawn .room-card-avatar {
+  border: 1px dashed var(--text-faint);
+  background: transparent;
+  /* Nothing to drag here, so let a touch on it scroll the grid. */
+  touch-action: auto;
+}
+
+@media (hover: hover) {
+  .room-card--spawn:hover { opacity: 0.75; }
+}
+
 .room-card {
   display: flex;
   flex-direction: column;

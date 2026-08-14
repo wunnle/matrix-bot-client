@@ -1,7 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { getClient } from '../lib/matrix'
 import { loadPills, savePills } from '../lib/roomMeta'
+import { resolveMediaUrl } from '../lib/mediaUrl'
 import { useToast } from '../hooks/useToast'
+
+interface Member {
+  userId: string
+  name: string
+  membership: string
+  avatarUrl: string | null
+}
 
 interface Props {
   roomId: string
@@ -16,6 +24,7 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notifPref, setNotifPref] = useState<'all' | 'mentions' | 'mute' | null>(null)
+  const [members, setMembers] = useState<Member[]>([])
   const [inviteInput, setInviteInput] = useState('')
   const [inviting, setInviting] = useState(false)
   const [inviteStatus, setInviteStatus] = useState('')
@@ -26,6 +35,39 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
 
   useEffect(() => {
     loadPills(client, roomId).then(setPills)
+  }, [client, roomId])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadMembers() {
+      const room = client.getRoom(roomId)
+      if (!room) return
+      const raw = [
+        ...room.getMembersWithMembership('join'),
+        ...room.getMembersWithMembership('invite'),
+      ]
+      const resolved = await Promise.all(raw.map(async (m) => ({
+        userId: m.userId,
+        name: m.name || m.userId,
+        membership: m.membership ?? 'join',
+        avatarUrl: m.getMxcAvatarUrl()
+          ? await resolveMediaUrl(client, m.getMxcAvatarUrl()!, 64, 64, 'crop')
+          : null,
+      })))
+      if (!cancelled) setMembers(resolved)
+    }
+
+    void loadMembers()
+    // Membership changes anywhere trigger a cheap re-read for this room only.
+    const onMembers = (_e: any, state: any) => {
+      if (state?.roomId === roomId) void loadMembers()
+    }
+    client.on('RoomState.members' as any, onMembers)
+    return () => {
+      cancelled = true
+      client.off('RoomState.members' as any, onMembers)
+    }
   }, [client, roomId])
 
   useEffect(() => {
@@ -229,6 +271,36 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
                 enterKeyHint="done"
               />
               <button onClick={addPill} disabled={!newPill.trim()}>Add</button>
+            </div>
+          </div>
+
+          <div className="editor-section">
+            <div className="editor-section-label">
+              People{members.length > 0 ? ` (${members.length})` : ''}
+            </div>
+            <div className="editor-members">
+              {members.length === 0 && (
+                <span style={{ fontSize: 13, color: 'var(--text-faint)' }}>No members yet</span>
+              )}
+              {members.map((m) => (
+                <div
+                  key={m.userId}
+                  className="editor-member"
+                  onClick={() => { navigator.clipboard.writeText(m.userId); showToast('Copied') }}
+                  title={m.userId}
+                >
+                  <div className="editor-member-avatar">
+                    {m.avatarUrl
+                      ? <img src={m.avatarUrl} alt="" />
+                      : <span>{(m.name[0] ?? '?').toUpperCase()}</span>}
+                  </div>
+                  <div className="editor-member-text">
+                    <div className="editor-member-name">{m.name}</div>
+                    <div className="editor-member-id">{m.userId}</div>
+                  </div>
+                  {m.membership === 'invite' && <span className="editor-member-tag">Invited</span>}
+                </div>
+              ))}
             </div>
           </div>
 

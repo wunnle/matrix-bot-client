@@ -1618,6 +1618,49 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 
+/* What the bot is doing right now — sits between the timeline and the pills,
+   where the eye already is when you're waiting on a reply. */
+.agent-activity {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 2px 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.agent-activity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: live-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.agent-activity-label {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.agent-activity-detail {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.agent-activity-elapsed {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
 /* Pills & Autocomplete */
 .pills {
   display: flex;

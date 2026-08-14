@@ -86,6 +86,19 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .banner-connecting  { background: #2a2a1a; color: #c8b86a; }
 .banner-reconnecting { background: #2a1e1a; color: #e0956a; }
 .banner-error       { background: #2a1a1a; color: #e06a6a; }
+.banner-update      { background: #1a2430; color: #7ab0e0; }
+
+.banner-action {
+  margin-left: auto;
+  padding: 3px 12px;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  cursor: pointer;
+}
 
 .banner-dot {
   width: 7px;
@@ -98,6 +111,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .banner-connecting  .banner-dot { background: #c8b86a; }
 .banner-reconnecting .banner-dot { background: #e0956a; }
 .banner-error       .banner-dot { background: #e06a6a; animation: none; }
+.banner-update      .banner-dot { background: #7ab0e0; animation: none; }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }

@@ -7,6 +7,7 @@ import type { AuthState } from '../types'
 import RoomList from './RoomList'
 import ChatView from './ChatView'
 import ConnectionBanner from './ConnectionBanner'
+import UpdateBanner from './UpdateBanner'
 import RoomToast from './RoomToast'
 import { useRoomNotifications } from '../hooks/useRoomNotifications'
 import { useVisualViewportVars } from '../hooks/useVisualViewport'
@@ -247,6 +248,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
 
   return (
     <div className={`layout ${activeRoomId ? 'room-open' : ''}`}>
+      <UpdateBanner />
       <ConnectionBanner />
       {activeRoomId && toasts.length > 0 && (
         <RoomToast

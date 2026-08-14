@@ -50,7 +50,15 @@ export async function spawnAgentRoom(
 ): Promise<string> {
   // Subscribed before the send, not after: the bot can invite faster than the
   // send's own round trip returns, and an invite that lands first is missed.
-  const invited = waitForInvite(client)
+  //
+  // The snapshot is what makes "the invite" mean the new one. MyMembership
+  // re-fires for invites that were already pending — an old un-accepted agent
+  // room is enough — and taking the first event wholesale opened a stale room
+  // while the freshly spawned one sat unaccepted in the list.
+  const known = new Set(
+    client.getRooms().filter((r) => r.getMyMembership() === 'invite').map((r) => r.roomId),
+  )
+  const invited = waitForInvite(client, known)
   try {
     await client.sendMessage(hostRoomId, { msgtype: 'm.text', body: '!spawn' } as never)
   } catch (e) {
@@ -60,11 +68,15 @@ export async function spawnAgentRoom(
   return invited.promise
 }
 
-function waitForInvite(client: sdk.MatrixClient): { promise: Promise<string>, cancel: () => void } {
+function waitForInvite(
+  client: sdk.MatrixClient,
+  known: Set<string>,
+): { promise: Promise<string>, cancel: () => void } {
   let cancel = () => {}
   const promise = new Promise<string>((resolve, reject) => {
     const onMembership = (room: sdk.Room, membership: string) => {
       if (membership !== 'invite') return
+      if (known.has(room.roomId)) return
       stop()
       resolve(room.roomId)
     }

@@ -28,6 +28,14 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* WebKit's text autosizing inflates the font in tall/wide block containers,
+   which is why long <pre> code blocks sometimes render much larger than the
+   0.9em they're set to. Pin it off so declared sizes are what you get. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }

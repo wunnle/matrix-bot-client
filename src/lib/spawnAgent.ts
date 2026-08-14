@@ -10,14 +10,28 @@ import { isAgentRoom } from './roomMeta'
 // worktree first, which on a cold page cache is seconds rather than instant.
 const INVITE_TIMEOUT_MS = 90_000
 
+// The standing room to spawn from — one the bot sits in that is not itself an
+// agent room, so the tile works with no agent rooms open at all. It cannot be
+// detected: the bot shares several ordinary rooms with the user (including
+// public ones it was invited to), and picking the wrong one sends a command
+// into a room full of strangers. So it is pinned, and overridable per deploy.
+const CONFIGURED_HOST_ROOM: string =
+  import.meta.env.VITE_SPAWN_ROOM ?? '!iEbYoSfZgfHLeSKLei:matrix.org'
+
 /**
- * A joined room the bot listens in, or null when there is none. Agent rooms are
- * the reliable signal: the bot created them, so it is certainly a member and
- * certainly still handling commands there. The most recently active one wins —
- * it is the room the user is most likely to look at if something goes wrong,
- * and the spawn's confirmation lands there.
+ * A joined room the bot listens in, or null when there is none.
+ *
+ * The pinned room wins when it is joined — spawning from the room you already
+ * use for this keeps the command out of whichever agent room happened to be
+ * active. Agent rooms are the fallback: the bot created them, so it is
+ * certainly a member and certainly still handling commands there. Most
+ * recently active first, since that is where the user will look if the spawn
+ * goes wrong and the confirmation lands there.
  */
 export function findSpawnHostRoom(client: sdk.MatrixClient): string | null {
+  if (client.getRoom(CONFIGURED_HOST_ROOM)?.getMyMembership() === 'join') {
+    return CONFIGURED_HOST_ROOM
+  }
   const candidates = client.getRooms()
     .filter((r) => r.getMyMembership() === 'join' && isAgentRoom(client, r.roomId))
     .sort((a, b) => b.getLastActiveTimestamp() - a.getLastActiveTimestamp())

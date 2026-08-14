@@ -328,6 +328,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  /* iOS otherwise offers its image callout ("Zoom in on image", save, copy)
+     when the drag press lingers on the avatar. */
+  -webkit-touch-callout: none;
 }
 
 .room-card-avatar img {
@@ -335,6 +338,11 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   height: 100%;
   border-radius: 18px;
   object-fit: cover;
+  /* Keep the touch targeting the drag handle, never the <img> itself, so
+     iOS never treats a slow drag as a gesture on an image. */
+  pointer-events: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
 }
 
 .room-card.active .room-card-avatar {

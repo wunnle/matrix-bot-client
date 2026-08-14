@@ -899,6 +899,17 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   const roomId = room.roomId
   log(`[${room?.name ?? roomId}] ${event.getSender()}: ${body}`)
 
+  // Commands come from the owner only. In a shared room another agent reads
+  // them too, and donbot answered a `!spawn` by helpfully sending `!spawn`
+  // itself — so one tap of the home-screen tile built two rooms and two
+  // worktrees. Ordinary messages are deliberately left alone: relaying a prompt
+  // into an agent room is a real use, while letting a second LLM drive !spawn,
+  // !stop and !model is not.
+  if (body.startsWith('!') && OWNER_ID && event.getSender() !== OWNER_ID) {
+    log(`Ignoring command from ${event.getSender()} (owner is ${OWNER_ID})`)
+    return
+  }
+
   // An attachment's body is just its filename, so it never matches a command or
   // an approval answer and can fall through to the turn path, where promptFor
   // downloads it and points the agent at the file.

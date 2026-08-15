@@ -10,7 +10,7 @@ import { seedAgentPills, backfillAgentPills } from '../lib/roomMeta'
 import { findSpawnHostRoom, spawnAgentRoom } from '../lib/spawnAgent'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { donateShareTargets, cacheRoomAvatars } from '../lib/liveActivity'
-import { getDisabledShareRooms } from '../lib/shareRooms'
+import { getDisabledShareRooms, isShareableRoom } from '../lib/shareRooms'
 import NotificationCenter from './NotificationCenter'
 import { toggleDebug } from '../lib/debug'
 import type { RoomNotification } from '../hooks/useRoomNotifications'
@@ -202,13 +202,18 @@ export default function RoomList({
     if (joinedRooms.length === 0) return
     const disabled = getDisabledShareRooms(auth.userId)
     // Invites are excluded: you cannot send to a room you have not joined.
-    const enabled = joinedRooms.filter(r => !disabled.has(r.roomId))
+    // Agent rooms are excluded too, and not as a default — see isShareableRoom.
+    const agentRooms = joinedRooms.filter(r => !isShareableRoom(r.roomId)).map(r => r.roomId)
+    const enabled = joinedRooms.filter(r => !disabled.has(r.roomId) && isShareableRoom(r.roomId))
     const sig = enabled.map(r => `${r.roomId}:${r.name}`).join('|')
     if (sig === donatedSigRef.current) return
     donatedSigRef.current = sig
     void donateShareTargets(
       enabled.map(r => ({ roomId: r.roomId, name: r.name, avatarMxc: r.avatarMxc })),
-      [...disabled],
+      // Dropping a room from the donated set does not retract it: `remove` is an
+      // explicit list. Agent rooms donated before this rule existed would stay
+      // in the share sheet forever without being named here.
+      [...disabled, ...agentRooms],
     )
   }, [joinedRooms, auth.userId])
 

@@ -10,6 +10,7 @@ import * as os from 'node:os'
 import * as http from 'node:http'
 import { execFile } from 'node:child_process'
 import { providerFor, resolveModel, allModelAliases, DEFAULT_PROVIDER, PROVIDERS } from './providers/index.mjs'
+import { createApprovalQueue } from './approval-queue.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
@@ -209,55 +210,14 @@ client.on(sdk.RoomEvent.MyMembership, async (room, membership) => {
 // reversible from chat, and !end sits next to !model on the pill row.
 const pendingEnds = new Set()
 
-// roomId -> { resolve, timer }. At most one outstanding approval per room:
-// Claude is blocked inside the hook, so it cannot ask a second question.
-const pendingApprovals = new Map()
-
-// The hook reports its room directly (see AGENT_ROOM_ID below). Session-id
-// lookup is only a fallback: a room's session id is not known until its first
-// turn finishes, so during that first turn it would find nothing and deny.
-function roomForRequest({ roomId, sessionId }) {
-  if (roomId && sessions[roomId]) return roomId
-  return Object.keys(sessions).find((id) => sessions[id].sessionId === sessionId)
-}
-
-// Resolves a room's outstanding approval, if any. Returns false when there was
-// nothing pending, so the caller can treat the message as an ordinary prompt.
-function settleApproval(roomId, decision, reason) {
-  const pending = pendingApprovals.get(roomId)
-  if (!pending) return false
-  clearTimeout(pending.timer)
-  pendingApprovals.delete(roomId)
-  pending.resolve({ decision, reason })
-  return true
-}
-
-// Blocks the caller until the human answers in the room. Used by the Claude
-// hook over loopback HTTP, and directly by providers that carry approvals on
-// their own connection.
-//
-// `allowSession` offers a third answer, for backends that can remember a yes
-// for the rest of the session. The Claude hook has no such notion, so its
-// prompts stay two-way.
-// `lang` tags the fenced block so Construct can colour it — 'diff' for file
-// changes, absent for shell commands.
-function askForApproval(roomId, { toolName, summary, full, lang, allowSession = false }) {
-  return new Promise((resolve) => {
-    // A second request for a room that is already waiting would strand the
-    // first; refuse rather than lose track of it.
-    if (pendingApprovals.has(roomId)) {
-      resolve({ decision: 'deny', reason: 'Another approval is already pending in this room.' })
-      return
-    }
-
-    const timer = setTimeout(() => {
-      pendingApprovals.delete(roomId)
-      sendRoomText(roomId,`⏱️ No answer — denied \`${toolName}\`.`).catch(() => {})
-      resolve({ decision: 'deny', reason: 'Timed out waiting for approval.' })
-    }, APPROVAL_TIMEOUT_MS)
-
-    pendingApprovals.set(roomId, { resolve, timer })
-
+// One approval on screen per room, the rest waiting behind it. The bookkeeping
+// lives in approval-queue.mjs; posting the card is the part that belongs here.
+const approvals = createApprovalQueue({
+  timeoutMs: APPROVAL_TIMEOUT_MS,
+  onTimeout: (roomId, toolName) =>
+    sendRoomText(roomId, `⏱️ No answer — denied \`${toolName}\`.`).catch(() => {}),
+  present: (roomId, request, abandon) => {
+    const { toolName, summary, full, lang, allowSession = false } = request
     const buttons = allowSession
       ? '[[Deny]] [[Approve]] [[Always allow]]'
       : '[[Deny]] [[Approve]]'
@@ -278,9 +238,21 @@ function askForApproval(roomId, { toolName, summary, full, lang, allowSession = 
       : {}
     sendRoomText(roomId, body, extra).catch((e) => {
       // If we can't ask, we must not proceed as though we had.
-      settleApproval(roomId, 'deny', `Could not post the approval request: ${e.message}`)
+      abandon(`Could not post the approval request: ${e.message}`)
     })
-  })
+  },
+})
+
+const askForApproval = (roomId, request) => approvals.ask(roomId, request)
+const settleApproval = (roomId, decision, reason) => approvals.settle(roomId, decision, reason)
+const dropQueuedApprovals = (roomId, reason) => approvals.dropQueued(roomId, reason)
+
+// The hook reports its room directly (see AGENT_ROOM_ID below). Session-id
+// lookup is only a fallback: a room's session id is not known until its first
+// turn finishes, so during that first turn it would find nothing and deny.
+function roomForRequest({ roomId, sessionId }) {
+  if (roomId && sessions[roomId]) return roomId
+  return Object.keys(sessions).find((id) => sessions[id].sessionId === sessionId)
 }
 
 // Construct reads com.construct.model off incoming messages and shows it in the
@@ -389,18 +361,18 @@ function startApprovalBroker() {
       log(`[${roomId}] approval requested: ${payload.toolName} — ${payload.summary}`)
 
       // If the hook goes away before the human answers — it aborted, or the
-      // socket died — settle the room's pending approval instead of leaving it
-      // stranded. A stranded entry rejects every later call in that room with
-      // "Another approval is already pending", which reads as the agent being
-      // wedged for no visible reason.
+      // socket died — drop *this* request rather than leaving it stranded. It
+      // is aborted by identity, not by room: with a queue, the card on screen
+      // may belong to a different caller that is still waiting.
       let answered = false
+      const gone = new AbortController()
       res.on('close', () => {
-        if (!answered && settleApproval(roomId, 'deny', 'Approval client disconnected.')) {
-          log(`[${roomId}] approval abandoned by client — pending entry cleared`)
-        }
+        if (answered) return
+        gone.abort()
+        log(`[${roomId}] approval abandoned by client — request released`)
       })
 
-      const result = await askForApproval(roomId, payload)
+      const result = await askForApproval(roomId, { ...payload, signal: gone.signal })
       answered = true
       log(`[${roomId}] approval ${result.decision}: ${payload.toolName}`)
       if (res.writableEnded) return
@@ -1030,6 +1002,9 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       return
     }
     stopped.add(roomId)
+    // Anything queued belongs to the run being abandoned, so it goes first —
+    // settling the pending one would otherwise put the next card straight up.
+    dropQueuedApprovals(roomId, 'Stopped from chat.')
     // A turn blocked on an approval is parked inside the hook rather than in
     // the agent, and will not notice a signal until the hook returns — so the
     // pending question has to be settled before the kill can land.
@@ -1058,6 +1033,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       await sendRoomText(roomId, 'No session to reset — this room is already unbound. Use !end to close it.')
       return
     }
+    dropQueuedApprovals(roomId, 'Session reset.')
     if (settleApproval(roomId, 'deny', 'Session reset.')) {
       await sendRoomText(roomId, '🚫 Denied the pending approval as part of the reset.')
     }
@@ -1074,6 +1050,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   // !end — unbind the room and leave it. Confirmed because it cannot be undone
   // from chat and the button sits next to the others.
   if (body === '!end') {
+    dropQueuedApprovals(roomId, 'Room is being ended.')
     if (settleApproval(roomId, 'deny', 'Room is being ended.')) {
       await sendRoomText(roomId, '🚫 Denied the pending approval. Send !end again once the turn stops.')
       return

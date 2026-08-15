@@ -312,8 +312,14 @@ export default async function handler(req, res) {
         }
         // Silent when you're reading on another device, and when this device is
         // the active one but already showing this very room.
+        //
+        // The third clause covers the window before APNs registration, when the
+        // foreground native client carries no pushkey and so can't be matched to
+        // this token: it already suppressed the Live Activity for this room, and
+        // without this the phone still buzzed for the room on its screen.
         if (readingElsewhere(pushkey) ||
-            active.some((c) => c.pushkey === pushkey && c.roomId === room_id)) {
+            active.some((c) => c.pushkey === pushkey && c.roomId === room_id) ||
+            (activeNativeHere && !activeNativeHere.pushkey && activeNativeHere.roomId === room_id)) {
           presenceSkipped += 1;
           return;
         }

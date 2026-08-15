@@ -42,6 +42,7 @@ import RoomEditor from './RoomEditor'
 import { Marked } from 'marked'
 import type { Message, RoomConfig, ConstructThread, ConstructApproval, ToolProgressLine } from '../types'
 import { useAgentActivity, formatElapsed } from '../hooks/useAgentActivity'
+import { useAgentBlocked, formatResetsAt } from '../hooks/useAgentBlocked'
 
 interface Props {
   roomId: string
@@ -544,6 +545,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // separable from a peer by user id here (getRoomBotMeta only takes the first
   // other member), and a peer typing only keeps the row up a little longer.
   const agentActivity = useAgentActivity(messages, typingUsers.length > 0)
+
+  // Set by the bot when a turn came back "usage limit reached" — the one state
+  // where the room is alive but nothing the user types will run.
+  const agentBlocked = useAgentBlocked(client, roomId)
 
   useEffect(() => {
     isFirstLoad.current = true
@@ -1995,6 +2000,27 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       )}
 
       <div className="chat-footer" ref={footerRef}>
+
+        {agentBlocked && (
+          <div className="agent-blocked" aria-live="polite">
+            <span className="agent-blocked-text">
+              {agentBlocked.reason}
+              {formatResetsAt(agentBlocked.resetsAt) && !/reset/i.test(agentBlocked.reason)
+                ? ` · resets ${formatResetsAt(agentBlocked.resetsAt)}`
+                : ''}
+            </span>
+            <button
+              type="button"
+              className="agent-blocked-btn"
+              // Same reasoning as the pills: a tap must not steal focus from
+              // (or hand it to) the composer.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => sendMessage('!continue')}
+            >
+              Continue working
+            </button>
+          </div>
+        )}
 
         {agentActivity && (
           <div className={`agent-activity agent-activity--${agentActivity.phase}`} aria-live="polite">

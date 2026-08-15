@@ -11,6 +11,7 @@ import * as http from 'node:http'
 import { execFile } from 'node:child_process'
 import { providerFor, resolveModel, allModelAliases, DEFAULT_PROVIDER, PROVIDERS } from './providers/index.mjs'
 import { createApprovalQueue } from './approval-queue.mjs'
+import { detectLimitBlock } from './limit-block.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
@@ -785,11 +786,41 @@ async function promptFor(event, body) {
     : `I sent you a file at ${file}. Read it and tell me what you see.`
 }
 
+// Whether a room is currently blocked on the provider's quota, so a repeated
+// verdict doesn't resend identical state. Memory only: the state event itself
+// is the durable copy, and a bot restart re-reads it from the room.
+const BLOCKED_EVENT = 'com.construct.agent_blocked'
+const blockedRooms = new Map()
+
+// Publishes the blocked verdict as room state rather than as a message.
+// Construct needs to know "is this room stuck right now", which is a property
+// of the room and not of any one message — and a scan of the timeline for ⚠️
+// text would resurrect the button every time the user scrolled back.
+async function setBlocked(roomId, block) {
+  const prev = blockedRooms.get(roomId)
+  if (!block) {
+    if (!prev) return
+    blockedRooms.delete(roomId)
+    await client.sendStateEvent(roomId, BLOCKED_EVENT, { blocked: false }, '')
+      .catch((e) => log(`Could not clear blocked state on ${roomId}: ${e.message}`))
+    return
+  }
+  if (prev?.reason === block.reason && prev?.resetsAt === block.resetsAt) return
+  blockedRooms.set(roomId, block)
+  await client.sendStateEvent(roomId, BLOCKED_EVENT, {
+    blocked: true,
+    reason: block.reason,
+    resets_at: block.resetsAt,
+  }, '').catch((e) => log(`Could not set blocked state on ${roomId}: ${e.message}`))
+}
+
 // Runs `first`, then whatever piled up while it ran, until the room is idle.
 // Queued messages are coalesced into one prompt instead of one turn each: two
 // messages ten seconds apart are almost always one instruction and its
 // correction, and running them separately does the wrong thing first.
-async function drainRoom(roomId, first) {
+// `firstPrompt`, when given, replaces the text of the first batch — it is how
+// !continue re-runs the prompt the quota block ate without the user retyping it.
+async function drainRoom(roomId, first, firstPrompt = null) {
   busy.add(roomId)
   // Turns can run for minutes; keep the typing indicator alive so the room doesn't look dead.
   await client.sendTyping(roomId, true, 30000)
@@ -799,12 +830,14 @@ async function drainRoom(roomId, first) {
 
   try {
     let batch = [first]
+    let override = firstPrompt
     while (batch.length) {
       // The receipt is the "picked up" signal behind the second check. Receipts
       // are monotonic, so marking the newest event of the batch covers them all.
       await client.sendReadReceipt(batch[batch.length - 1]).catch(() => {})
       try {
         const parts = []
+        if (override) { parts.push(override); batch = [] }
         for (const ev of batch) {
           const text = ev.getContent()?.body?.trim() ?? ''
           try {
@@ -816,9 +849,29 @@ async function drainRoom(roomId, first) {
             parts.push(`(I tried to send a file here but it could not be read: ${e.message})`)
           }
         }
-        const res = await runTurn(roomId, parts.join('\n\n'))
+        override = null
+        const prompt = parts.join('\n\n')
+        const res = await runTurn(roomId, prompt)
         if (!stopped.has(roomId)) {
-          await sendRoomText(roomId, res.error ? `⚠️ ${res.error}` : res.text)
+          // A quota block is not a failure of this prompt, so the prompt is kept
+          // and the room is marked stuck instead of just printing the provider's
+          // complaint — Construct turns that state into the Continue button.
+          const block = detectLimitBlock(res)
+          if (block) {
+            if (sessions[roomId]) {
+              sessions[roomId] = { ...sessions[roomId], pendingPrompt: prompt }
+              saveSessions()
+            }
+            await setBlocked(roomId, block)
+            await sendRoomText(roomId, `⏳ ${block.reason}\n\nI kept what you asked for — send \`!continue\` (or tap Continue working) once it resets.`)
+          } else {
+            if (sessions[roomId]?.pendingPrompt) {
+              delete sessions[roomId].pendingPrompt
+              saveSessions()
+            }
+            await setBlocked(roomId, null)
+            await sendRoomText(roomId, res.error ? `⚠️ ${res.error}` : res.text)
+          }
         }
       } catch (e) {
         if (!stopped.has(roomId)) await sendRoomText(roomId, `⚠️ ${e.message}`).catch(() => {})
@@ -1025,6 +1078,26 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     return
   }
 
+  // !continue — resume after a quota block. Re-runs the prompt that was cut off
+  // rather than asking the agent to guess what "continue" meant; the session is
+  // resumed as usual, so it still has the context it built before the block.
+  if (body === '!continue') {
+    if (busy.has(roomId)) {
+      await sendRoomText(roomId, 'Already running — nothing to continue.')
+      return
+    }
+    const pending = sessions[roomId]?.pendingPrompt
+    // The block clears here regardless: if the quota is still short the next
+    // turn will simply say so again and set it back.
+    await setBlocked(roomId, null)
+    if (!pending) {
+      await sendRoomText(roomId, 'Nothing was left unfinished — just send me the next thing.')
+      return
+    }
+    await drainRoom(roomId, event, pending)
+    return
+  }
+
   // !reset — keep the room, its directory and model; drop the session so the
   // next message starts fresh. For when the context is poisoned rather than the
   // room being unwanted. The old transcript stays on disk.
@@ -1210,6 +1283,20 @@ async function backfillPowerLevels() {
   }
 }
 await backfillPowerLevels()
+
+// The blocked flag outlives the process — a restart during a quota window must
+// not forget that the room is stuck, or the next successful turn would skip
+// clearing state that Construct is still rendering a button from.
+function loadBlockedState() {
+  for (const roomId of Object.keys(sessions)) {
+    const content = client.getRoom(roomId)?.currentState
+      .getStateEvents(BLOCKED_EVENT, '')?.getContent()
+    if (content?.blocked) {
+      blockedRooms.set(roomId, { reason: content.reason, resetsAt: content.resets_at ?? null })
+    }
+  }
+}
+loadBlockedState()
 
 startApprovalBroker()
 

@@ -7,7 +7,7 @@
 //
 // Wired up via --settings; see APPROVAL_SETTINGS in claude-code-bot.mjs.
 import * as path from 'node:path'
-import { AUTO_ALLOW, PATH_SCOPED, SAFE_SKILLS, bashIsSafe, isSandboxPath } from './approval-rules.mjs'
+import { AUTO_ALLOW, PATH_SCOPED, SAFE_SKILLS, bashIsSafe, isSandboxPath, isSecretPath } from './approval-rules.mjs'
 
 const BROKER_URL = process.env.AGENT_APPROVAL_URL ?? 'http://127.0.0.1:8787/approve'
 
@@ -103,7 +103,13 @@ const toolInput = payload.tool_input ?? {}
 const sessionId = payload.session_id
 const cwd = payload.cwd ?? process.cwd()
 
-if (AUTO_ALLOW.has(toolName)) decide('allow', 'Read-only tool.')
+// Read-only tools are allowed outright, except when what they read is a
+// credential. Reading changes nothing locally, which is why these are on the
+// list; but reading is how a secret leaves, and WebFetch is on the same list.
+const readTarget = toolInput.file_path ?? toolInput.notebook_path ?? toolInput.path
+if (AUTO_ALLOW.has(toolName) && !isSecretPath(readTarget, cwd)) {
+  decide('allow', 'Read-only tool.')
+}
 
 if (toolName === 'Skill' && SAFE_SKILLS.has(toolInput.skill)) {
   decide('allow', `Pre-approved skill: ${toolInput.skill}.`)

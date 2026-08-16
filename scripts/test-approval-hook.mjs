@@ -46,6 +46,19 @@ const CASES = [
   // 4 — substitution is judged by what is inside it.
   ['P=$(readlink -f $(which linear)); echo "$P"', 'allow'],
 
+  // `cat` is on the allowlist, so without a path rule every credential on the
+  // machine reads with no prompt.
+  ['cat /home/wunnle/.codex/auth.json', 'deny'],
+  ['cat ~/.claude/.credentials.json', 'deny'],
+  ['cat scripts/.env', 'deny', '/home/wunnle/matrix-pwa'],
+  ['head -1 ~/.ssh/id_ed25519', 'deny'],
+  ['grep -r TOKEN ~/.openclaw/.env', 'deny'],
+  ['cat .env.local', 'deny'],
+  ['cat ~/.npmrc', 'deny'],
+  // A path that merely mentions the word is not a credential.
+  ['cat src/lib/environment.ts', 'allow'],
+  ['grep -rn env src/', 'allow'],
+
   // Skill helper scripts, matched by absolute path.
   ['python3 /home/wunnle/.openclaw/workspace/scripts/ha_helper.py states', 'allow'],
   ['python3 /home/wunnle/.openclaw/workspace/scripts/ha_helper.py call light.turn_on --entity-id light.desk', 'allow'],
@@ -99,6 +112,25 @@ for (const [command, expected, cwd] of CASES) {
   }
 }
 console.log(`${CASES.length - failed}/${CASES.length} rule assertions passed`)
+
+// Credentials are asked about even though reading is otherwise free: reading
+// changes nothing locally, but it is how a secret leaves, and WebFetch is on
+// the same auto-allow list.
+for (const [tool, input, expected, why] of [
+  ['Read', { file_path: '/home/wunnle/.codex/auth.json' }, 'deny', 'codex tokens'],
+  ['Read', { file_path: '/home/wunnle/.claude/.credentials.json' }, 'deny', "Claude's own OAuth"],
+  ['Read', { file_path: '/home/wunnle/matrix-pwa/scripts/.env' }, 'deny', 'bot password'],
+  ['Read', { file_path: '/home/wunnle/.ssh/id_ed25519' }, 'deny', 'ssh key'],
+  ['Read', { file_path: '/home/wunnle/.npmrc' }, 'deny', 'npm token'],
+  ['Grep', { pattern: 'KEY', path: '/home/wunnle/.openclaw/.env' }, 'deny', 'grep leaks contents too'],
+  // The ordinary read path must be untouched, or the room becomes unusable.
+  ['Read', { file_path: path.join(WORKTREE, 'package.json') }, 'allow', 'ordinary file'],
+  ['Read', { file_path: path.join(WORKTREE, 'src/lib/environment.ts') }, 'allow', 'env in the name is not a .env'],
+  ['Read', { file_path: '/etc/hostname' }, 'allow', 'reads outside the tree stay free'],
+]) {
+  const got = ask(tool, input)
+  if (got !== expected) { failed++; console.log(`FAIL  ${tool} ${why}: want ${expected}, got ${got}`) }
+}
 
 // Writes are path-scoped, not tool-scoped.
 for (const [file, expected] of [

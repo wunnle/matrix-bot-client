@@ -1,7 +1,7 @@
 {
   "name": "construct",
   "private": true,
-  "version": "1.0.298",
+  "version": "1.0.299",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,7 @@
     "sync:ios": "npm run build && npx cap sync ios",
     "sync:ios:remote": "npm run build && CAP_SERVER_URL=https://construct.kafagoz.com npx cap sync ios",
     "lint": "eslint .",
+    "test": "node scripts/test-approval-hook.mjs && node scripts/test-codex-approval.mjs && node scripts/test-approval-queue.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

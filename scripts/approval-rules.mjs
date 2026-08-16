@@ -129,6 +129,43 @@ const SAFE_NPM_SCRIPTS = new Set(['build', 'test', 'lint', 'typecheck'])
 const GIT_WORKTREE_SUBCOMMANDS = new Set(['add', 'commit', 'stash', 'checkout',
   'switch', 'restore', 'merge', 'rebase', 'cherry-pick', 'revert', 'tag', 'apply', 'mv'])
 
+// Files that are credentials rather than code. Reading is otherwise unrestricted
+// — a turn reads dozens of files and prompting for that would make the room
+// unusable — but reading is exactly how a secret leaves, so these few are worth
+// a question. The list is the credentials that actually exist on this machine,
+// plus the usual shapes.
+const SECRET_BASENAMES = new Set([
+  'auth.json',          // ~/.codex — ChatGPT tokens, including the refresh token
+  '.credentials.json',  // ~/.claude — Claude Code's own OAuth
+  '.session.json',      // the bot's Matrix access token
+  '.npmrc', '.netrc', '.pgpass',
+])
+const SECRET_PATTERNS = [
+  /(^|\/)\.env(\.[^/]*)?$/,          // .env, .env.local
+  /(^|\/)\.ssh\//,
+  /(^|\/)\.gnupg\//,
+  /(^|\/)\.aws\/credentials$/,
+  /(^|\/)id_(rsa|dsa|ecdsa|ed25519)$/,
+]
+
+// True when `target` names one of them. Resolved first, so `../../.ssh/id_rsa`
+// and a bare `.env` are judged the same way as an absolute path.
+export function isSecretPath(target, cwd) {
+  if (!target) return false
+  const resolved = path.resolve(cwd ?? '.', String(target).replace(/^~(?=\/|$)/, HOME))
+  if (SECRET_BASENAMES.has(path.basename(resolved))) return true
+  return SECRET_PATTERNS.some((re) => re.test(resolved))
+}
+
+// True when any word of a command names a secret. Deliberately blunt: it does
+// not try to work out which argument is a path, because `grep -r foo ~/.ssh`
+// and `cat ~/.codex/auth.json` both leak and neither is worth modelling
+// precisely. A false positive costs one prompt.
+export function commandTouchesSecret(command, cwd) {
+  const bare = unquoted(String(command ?? '')).replace(/[|;&<>()]/g, ' ')
+  return bare.split(/\s+/).filter(Boolean).some((token) => isSecretPath(token, cwd))
+}
+
 // True for paths the agent may write without asking: its own directory, the
 // room worktrees, and scratch space.
 export function isSandboxPath(target, cwd) {
@@ -254,6 +291,9 @@ export function redirectTargetsAllowed(seg, cwd) {
 export function bashIsSafe(command, cwd) {
   let cmd = (command ?? '').trim()
   if (!cmd) return false
+  // Reading is otherwise free, and `cat` is on the allowlist — so without this
+  // every credential on the machine could be read with no prompt.
+  if (commandTouchesSecret(cmd, cwd)) return false
   if (/(^|\s)sudo(\s|$)/.test(cmd)) return false               // privilege escalation
   cmd = stripHeredocs(cmd)
   // Substitution is checked against the raw string: `$(…)` and backticks still

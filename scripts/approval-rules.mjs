@@ -23,6 +23,23 @@ const PROJECTS_ROOT = process.env.AGENT_PROJECTS_ROOT
   ?? path.join(process.env.HOME ?? '/home/wunnle', 'projects')
 const SCRATCH_ROOTS = ['/tmp', '/var/tmp', WORKTREES_ROOT, PROJECTS_ROOT]
 
+// curl stays untrusted in general — it fetches remote code, and `curl … | sh` is
+// exactly the shape this hook exists to stop. The single exception is confirming
+// a deploy went live, which is the last step of every sandbox turn: a plain GET
+// of one of Sinan's own hosts, with the body thrown away. Anything that sends a
+// body, changes the method, uploads, or saves the response to a file is out, and
+// so is any other host.
+const DEPLOY_HOSTS = /^https:\/\/([a-z0-9-]+\.)*kafagoz\.com(\/|$)/i
+const CURL_MUTATES = /(^|\s)(-X\s*(?!GET\b)|--request\s+(?!GET\b)|-d\b|--data\S*|-F\b|--form\b|-T\b|--upload-file\b|--config\b|-K\b|-O\b|--remote-name\b)|(^|\s)(-o|--output)\s+(?!\/dev\/null(\s|$))/
+function curlIsDeployCheck(tokens) {
+  const args = tokens.slice(1)
+  if (CURL_MUTATES.test(args.join(' '))) return false
+  const urls = args.filter((t) => /^[a-z]+:\/\//i.test(t.replace(/^['"]|['"]$/g, '')))
+  // No URL at all is not a deploy check; more than one host widens it silently.
+  if (!urls.length) return false
+  return urls.every((u) => DEPLOY_HOSTS.test(u.replace(/^['"]|['"]$/g, '')))
+}
+
 // True when the turn is running inside the projects tree, where the extra
 // latitude below (installs, push) applies.
 function inProjects(cwd) {
@@ -38,7 +55,7 @@ export const PATH_SCOPED = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit'
 // Invoking one of these only loads its instructions into the turn — every tool
 // call the skill then makes comes back through this hook on its own, so this
 // grants nothing the skill's own calls would not have to earn separately.
-export const SAFE_SKILLS = new Set(['linear', 'next', 'room-rename', 'ship'])
+export const SAFE_SKILLS = new Set(['linear', 'next', 'room-rename', 'ship', 'newproject'])
 
 // Bash commands that only read state run without a prompt. Anything unrecognised
 // — or any sign of mutation (write redirects, sudo, command substitution, find
@@ -48,7 +65,7 @@ const SAFE_BASH_BINS = new Set([
   'rg', 'find', 'wc', 'which', 'type', 'whoami', 'id', 'date', 'env', 'sort',
   'uniq', 'cut', 'tr', 'diff', 'stat', 'file', 'du', 'df', 'tree', 'basename',
   'dirname', 'realpath', 'readlink', 'uname', 'hostname', 'sleep', 'true',
-  'false', 'test', 'jq', 'shasum', 'md5sum', 'cksum', 'column', 'xxd', 'strings',
+  'false', 'test', '[', '[[', 'jq', 'shasum', 'md5sum', 'cksum', 'column', 'xxd', 'strings',
   'nl', 'tac', 'comm',
   // Read-only inspection of the machine itself: processes, resources, network,
   // hardware, clock. None of these change state without a flag we reject below.
@@ -65,7 +82,7 @@ const SAFE_BASH_BINS = new Set([
 // arrives as three segments — the header, `do cmd`, and `done` — and only the
 // middle one names a program.
 const KEYWORD_HEADS = new Set(['for', 'while', 'until', 'if', 'elif', 'case'])
-const KEYWORD_NOOPS = new Set(['do', 'then', 'else', 'done', 'fi', 'esac', '{', '}', '!', 'time'])
+const KEYWORD_NOOPS = new Set(['do', 'then', 'else', 'done', 'fi', 'esac', '{', '}', '!', 'time', 'break', 'continue'])
 // Read-only by default, but each has flags/subcommands that mutate; the guards
 // below reject those before the binary is accepted.
 const GUARDED_BINS = {
@@ -143,7 +160,7 @@ const SAFE_NPM_SCRIPTS = new Set(['build', 'test', 'lint', 'typecheck'])
 // time. `push` is deliberately absent — that is the step that leaves the Pi.
 // Branch and worktree deletion are absent too: refs are shared with the parent
 // checkout, so those reach outside this room.
-const GIT_WORKTREE_SUBCOMMANDS = new Set(['add', 'commit', 'stash', 'checkout',
+const GIT_WORKTREE_SUBCOMMANDS = new Set(['add', 'commit', 'stash', 'checkout', 'pull', 'fetch',
   'switch', 'restore', 'merge', 'rebase', 'cherry-pick', 'revert', 'tag', 'apply', 'mv'])
 
 // Files that are credentials rather than code. Reading is otherwise unrestricted
@@ -357,6 +374,7 @@ export function bashIsSafe(command, cwd) {
       if (!tokens.length || tokens[0].startsWith('-')) return false
       base = tokens[0].split('/').pop()
     }
+    if (base === 'curl') return curlIsDeployCheck(tokens)
     if (SAFE_BASH_BINS.has(base) || PREAPPROVED_BINS.has(base)) {
       const binGuard = GUARDED_BINS[base]
       return binGuard ? !binGuard.test(tokens.slice(1).join(' ')) : true

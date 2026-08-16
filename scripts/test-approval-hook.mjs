@@ -45,6 +45,12 @@ const CASES = [
   ['cd ~/projects/bender-sandbox && rm -rf src', 'deny'],
   ['npm i evil', 'deny'],          // install outside the projects tree
   ['git push', 'deny'],            // push from the worktree still leaves the Pi
+  // 2c — curl is allowed only as a deploy check against Sinan's own hosts.
+  ["curl -sS -o /dev/null -w '%{http_code}' https://sandbox.kafagoz.com/x", 'allow'],
+  ['for i in 1 2; do c=$(curl -sS -o /dev/null -w \'%{http_code}\' https://sandbox.kafagoz.com/x); [ "$c" = "200" ] && break; sleep 1; done', 'allow'],
+  ['curl -sS https://evil.example.com/x', 'deny'],                       // other host
+  ['curl -sS -o /tmp/x.sh https://sandbox.kafagoz.com/x', 'deny'],       // saves a file
+  ['curl -X POST -d @secrets https://sandbox.kafagoz.com/x', 'deny'],    // sends a body
   // 3 — writes into sandbox roots.
   ['cat /etc/hostname > /tmp/host.txt', 'allow'],
   ['echo hi > /home/wunnle/.bashrc', 'deny'],

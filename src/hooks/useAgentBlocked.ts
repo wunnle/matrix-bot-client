@@ -17,10 +17,17 @@ export interface AgentBlocked {
   reason: string
   /** Epoch ms the quota window rolls over, when the bot could parse one. */
   resetsAt: number | null
+  /**
+   * Whether pressing Continue can plausibly work yet — the window has rolled
+   * over, or the bot never parsed a time so there is nothing to wait for.
+   * Flips on its own at `resetsAt`; the bar does not need a new state event.
+   */
+  canContinue: boolean
 }
 
 export function useAgentBlocked(client: sdk.MatrixClient, roomId: string): AgentBlocked | null {
   const [blocked, setBlocked] = useState<AgentBlocked | null>(null)
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
     const room = client.getRoom(roomId)
@@ -29,8 +36,13 @@ export function useAgentBlocked(client: sdk.MatrixClient, roomId: string): Agent
       const content = room.currentState
         .getStateEvents(AGENT_BLOCKED_EVENT as any, '')?.getContent() as any
       setBlocked(content?.blocked
-        ? { reason: String(content.reason ?? 'Blocked'), resetsAt: content.resets_at ?? null }
+        ? {
+            reason: String(content.reason ?? 'Blocked'),
+            resetsAt: content.resets_at ?? null,
+            canContinue: false, // recomputed below against the clock
+          }
         : null)
+      setNow(Date.now())
     }
     read()
     const onState = (ev: sdk.MatrixEvent) => {
@@ -40,7 +52,22 @@ export function useAgentBlocked(client: sdk.MatrixClient, roomId: string): Agent
     return () => { room.currentState.off(sdk.RoomStateEvent.Events, onState) }
   }, [client, roomId])
 
-  return blocked
+  // One timer that fires at the reset itself, rather than a ticking interval:
+  // nothing about the bar changes in between. A device asleep past the reset
+  // wakes up with a stale `now`, so the timeout is re-armed from the current
+  // clock on every render that changes `resetsAt`.
+  const resetsAt = blocked?.resetsAt ?? null
+  useEffect(() => {
+    if (!resetsAt) return
+    const wait = resetsAt - Date.now()
+    if (wait <= 0) { setNow(Date.now()); return }
+    // setTimeout saturates past ~24.8 days and would fire immediately.
+    const t = setTimeout(() => setNow(Date.now()), Math.min(wait + 1000, 2 ** 31 - 1))
+    return () => clearTimeout(t)
+  }, [resetsAt, now])
+
+  if (!blocked) return null
+  return { ...blocked, canContinue: !blocked.resetsAt || now >= blocked.resetsAt }
 }
 
 /**

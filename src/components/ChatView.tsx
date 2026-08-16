@@ -2005,20 +2005,29 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           <div className="agent-blocked" aria-live="polite">
             <span className="agent-blocked-text">
               {blockedHeadline(agentBlocked.reason)}
-              {formatResetsAt(agentBlocked.resetsAt)
-                ? ` · resets ${formatResetsAt(agentBlocked.resetsAt)}`
-                : ''}
+              {agentBlocked.canContinue
+                // Past the reset the clock is history; what matters is that the
+                // room is waiting on you, not on the provider.
+                ? (agentBlocked.resetsAt ? ' · window reset' : '')
+                : formatResetsAt(agentBlocked.resetsAt)
+                  ? ` · resets ${formatResetsAt(agentBlocked.resetsAt)}`
+                  : ''}
             </span>
-            <button
-              type="button"
-              className="agent-blocked-btn"
-              // Same reasoning as the pills: a tap must not steal focus from
-              // (or hand it to) the composer.
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => sendMessage('!continue')}
-            >
-              Continue working
-            </button>
+            {/* Before the window rolls over the button is only a way to spend
+                a turn on the same refusal, so it appears at the reset — which
+                the hook flips on its own, without waiting for the bot. */}
+            {agentBlocked.canContinue && (
+              <button
+                type="button"
+                className="agent-blocked-btn"
+                // Same reasoning as the pills: a tap must not steal focus from
+                // (or hand it to) the composer.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => sendMessage('!continue')}
+              >
+                Continue working
+              </button>
+            )}
           </div>
         )}
 

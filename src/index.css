@@ -1669,6 +1669,44 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   opacity: 0.7;
 }
 
+/* The room is alive but the provider has cut us off — sits where the activity
+   row would, since the two states are mutually exclusive in practice. */
+.agent-blocked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin: 6px 0 2px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.agent-blocked-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-blocked-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agent-blocked-btn:active { opacity: 0.8; }
+
 /* Pills & Autocomplete */
 .pills {
   display: flex;

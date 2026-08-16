@@ -1676,7 +1676,10 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  margin: 6px 0 2px;
+  /* `auto` on the sides, not 0: .chat-footer > * centers footer content on the
+     shorthand's margin-left/right, and a `0` here would silently undo it. */
+  margin: 6px auto 2px;
+  width: 100%;
   border-radius: 10px;
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);

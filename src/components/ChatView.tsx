@@ -42,7 +42,7 @@ import RoomEditor from './RoomEditor'
 import { Marked } from 'marked'
 import type { Message, RoomConfig, ConstructThread, ConstructApproval, ToolProgressLine } from '../types'
 import { useAgentActivity, formatElapsed } from '../hooks/useAgentActivity'
-import { useAgentBlocked, formatResetsAt } from '../hooks/useAgentBlocked'
+import { useAgentBlocked, formatResetsAt, blockedHeadline } from '../hooks/useAgentBlocked'
 
 interface Props {
   roomId: string
@@ -2004,8 +2004,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         {agentBlocked && (
           <div className="agent-blocked" aria-live="polite">
             <span className="agent-blocked-text">
-              {agentBlocked.reason}
-              {formatResetsAt(agentBlocked.resetsAt) && !/reset/i.test(agentBlocked.reason)
+              {blockedHeadline(agentBlocked.reason)}
+              {formatResetsAt(agentBlocked.resetsAt)
                 ? ` · resets ${formatResetsAt(agentBlocked.resetsAt)}`
                 : ''}
             </span>

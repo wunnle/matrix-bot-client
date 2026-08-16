@@ -43,10 +43,26 @@ export function useAgentBlocked(client: sdk.MatrixClient, roomId: string): Agent
   return blocked
 }
 
+/**
+ * Drop the provider's own "· resets 1:10pm (Europe/Istanbul)" tail.
+ *
+ * That clock is written in whatever zone the provider chose to name, and it is
+ * a wall time with no date — so it stays right on the screen long after the
+ * window has rolled over. We re-render it from `resets_at` instead, in the
+ * reader's zone; keeping both would show the same reset twice, disagreeing.
+ */
+export function blockedHeadline(reason: string): string {
+  return reason.replace(/\s*[·|,-]?\s*resets?\b.*$/i, '').trim() || reason.trim()
+}
+
 /** "resets 1:10pm", or "" when the bot could not parse a time out of the notice. */
 export function formatResetsAt(resetsAt: number | null): string {
   if (!resetsAt) return ''
   const at = new Date(resetsAt)
   if (Number.isNaN(at.getTime())) return ''
-  return at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const time = at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  // The quota window can roll over past midnight, and a bare "1:10am" then
+  // reads as "ten minutes ago" rather than "in nine hours".
+  const today = new Date()
+  return at.toDateString() === today.toDateString() ? time : `${time} tomorrow`
 }

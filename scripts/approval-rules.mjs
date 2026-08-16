@@ -14,7 +14,22 @@ import * as path from 'node:path'
 // sees them, so they are not worth a prompt on this machine.
 const WORKTREES_ROOT = process.env.AGENT_WORKTREES_ROOT
   ?? path.join(process.env.HOME ?? '/home/wunnle', '.claude-bot-worktrees')
-const SCRATCH_ROOTS = ['/tmp', '/var/tmp', WORKTREES_ROOT]
+// The sandbox repo and anything else built by the newproject flow. Deliberately
+// disposable: the work is experiments, the repo is one Sinan treats as
+// throwaway, and prompting for every file written there made the room unusable.
+// Note this is the one scratch root that is not private — pushing from here
+// deploys to a public domain, which is why `git push` is gated separately below.
+const PROJECTS_ROOT = process.env.AGENT_PROJECTS_ROOT
+  ?? path.join(process.env.HOME ?? '/home/wunnle', 'projects')
+const SCRATCH_ROOTS = ['/tmp', '/var/tmp', WORKTREES_ROOT, PROJECTS_ROOT]
+
+// True when the turn is running inside the projects tree, where the extra
+// latitude below (installs, push) applies.
+function inProjects(cwd) {
+  const root = path.resolve(PROJECTS_ROOT)
+  const here = path.resolve(cwd ?? '.')
+  return here === root || here.startsWith(root + path.sep)
+}
 // Read-only inspection of the local checkout — no side effects worth a prompt.
 export const AUTO_ALLOW = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'NotebookRead', 'WebSearch', 'WebFetch'])
 // Writes are fine in the room's own directory and in scratch space (see
@@ -23,7 +38,7 @@ export const PATH_SCOPED = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit'
 // Invoking one of these only loads its instructions into the turn — every tool
 // call the skill then makes comes back through this hook on its own, so this
 // grants nothing the skill's own calls would not have to earn separately.
-export const SAFE_SKILLS = new Set(['linear', 'next', 'room-rename'])
+export const SAFE_SKILLS = new Set(['linear', 'next', 'room-rename', 'ship'])
 
 // Bash commands that only read state run without a prompt. Anything unrecognised
 // — or any sign of mutation (write redirects, sudo, command substitution, find
@@ -108,7 +123,9 @@ const SAFE_SUBCOMMANDS = {
   git: new Set(['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files', 'describe',
     'blame', 'cat-file', 'shortlog', 'symbolic-ref', 'for-each-ref', 'branch', 'remote',
     'worktree']),
-  npm: new Set(['test', 'ls', 'list', 'outdated', 'view', 'why', 'run']),
+  // install/i/ci run package lifecycle scripts, i.e. arbitrary code, so they are
+  // accepted only inside the projects tree (see the npm guard in bashIsSafe).
+  npm: new Set(['test', 'ls', 'list', 'outdated', 'view', 'why', 'run', 'install', 'i', 'ci']),
   // --check parses a file and exits; it writes nothing.
   node: new Set(['--version', '-v', '--check', '-c']),
   // Type-checking and linting the checkout. Both only read source (tsc -b can
@@ -301,6 +318,10 @@ export function bashIsSafe(command, cwd) {
   const resolved = resolveSubstitutions(cmd, cwd)
   if (resolved === null) return false
   cmd = resolved
+  // A turn runs from its worktree and reaches the projects tree by `cd`ing into
+  // it, so the latitude granted there has to follow the `cd` rather than judging
+  // every segment against the directory the turn started in.
+  let effCwd = cwd
   // Every pipeline/sequence segment must be a recognised read-only program.
   return splitSegments(cmd).every((seg) => {
     if (!redirectTargetsAllowed(seg, cwd)) return false
@@ -320,7 +341,11 @@ export function bashIsSafe(command, cwd) {
     // is not a decision: reads are unrestricted and writes are checked against
     // the sandbox roots by absolute path anyway.
     if (base === 'cd') {
-      if (tokens.length === 1 || tokens.length === 2) return true
+      if (tokens.length === 2) {
+        effCwd = path.resolve(effCwd, tokens[1].replace(/^~(?=\/|$)/, HOME))
+        return true
+      }
+      if (tokens.length === 1) return true
       return false                       // `cd` with extra words is not a plain cd
     }
     // Unwrap to the program that really runs. Bail on flags (env -i, -S …)
@@ -363,9 +388,14 @@ export function bashIsSafe(command, cwd) {
     let at = 1
     while (at < tokens.length && tokens[at].startsWith('-') && !subs.has(tokens[at])) at++
     const sub = tokens[at]
-    if (base === 'git' && GIT_WORKTREE_SUBCOMMANDS.has(sub)) return gitStaysInWorktree(tokens, cwd)
+    if (base === 'git' && GIT_WORKTREE_SUBCOMMANDS.has(sub)) return gitStaysInWorktree(tokens, effCwd) || inProjects(effCwd)
+    // `push` still leaves the Pi, so it stays out of the worktree set above. In
+    // the projects tree it is the whole point — the push *is* the deploy — and
+    // the only thing reachable is a repo Sinan treats as disposable.
+    if (base === 'git' && sub === 'push') return inProjects(effCwd)
     if (!subs.has(sub)) return false
     if (base === 'npm' && sub === 'run') return SAFE_NPM_SCRIPTS.has(tokens[at + 1])
+    if (base === 'npm' && (sub === 'install' || sub === 'i' || sub === 'ci')) return inProjects(effCwd)
     // `git branch`/`git remote` list only with no extra args (branch -d, remote add mutate).
     if (base === 'git' && (sub === 'branch' || sub === 'remote')) return tokens.length === at + 1
     // `git worktree` also adds, moves and prunes; only the listing is read-only.

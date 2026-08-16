@@ -36,6 +36,15 @@ const CASES = [
   ['node --check scripts/claude-code-bot.mjs', 'allow'],
   ['npm run build', 'allow'],
   ['npm run deploy', 'deny'],
+  // 2b — the sandbox/projects tree. The whole build-and-deploy loop runs from a
+  // worktree and reaches it by `cd`, so the latitude has to follow the `cd`.
+  ['cd ~/projects/bender-sandbox && npm i marked', 'allow'],
+  ['cd ~/projects/bender-sandbox && npm run build', 'allow'],
+  ['cd ~/projects/bender-sandbox && git add -A && git commit -m x && git push', 'allow'],
+  // …and stops at the edges of it.
+  ['cd ~/projects/bender-sandbox && rm -rf src', 'deny'],
+  ['npm i evil', 'deny'],          // install outside the projects tree
+  ['git push', 'deny'],            // push from the worktree still leaves the Pi
   // 3 — writes into sandbox roots.
   ['cat /etc/hostname > /tmp/host.txt', 'allow'],
   ['echo hi > /home/wunnle/.bashrc', 'deny'],

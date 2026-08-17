@@ -350,8 +350,8 @@ function openPinContextMenu(
   const pad = 8
   const mw = 180
   // Approximate menu height used only to keep it on screen: sender/time header
-  // + reaction row + Copy/Inspect/Pin.
-  const mh = 210
+  // + Copy/Inspect/Pin.
+  const mh = 170
   const x = Math.min(window.innerWidth - mw - pad, Math.max(pad, clientX - mw / 2))
   const y = Math.min(window.innerHeight - mh - pad, Math.max(pad, clientY + 4))
   const now = Date.now()
@@ -1410,8 +1410,22 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     [clearLongPressTimer],
   )
 
+  // The browser's own menu is the only place with "Copy link address", "Save
+  // image", "Copy" for a selection — so yield to it whenever the pointer is
+  // over something it can act on. Everywhere else the message menu wins, and
+  // the ⋯ button keeps it reachable in the yielded cases.
+  const nativeMenuWins = (target: EventTarget | null): boolean => {
+    if (target instanceof Element && target.closest('a, img, pre, code, input, textarea')) return true
+    const sel = window.getSelection()
+    return !!sel && !sel.isCollapsed && sel.toString().trim().length > 0
+  }
+
   const onPinContextMenu = useCallback(
     (eventId: string, body: string) => (e: React.MouseEvent) => {
+      if (nativeMenuWins(e.target)) {
+        clearLongPressTimer()
+        return
+      }
       e.preventDefault()
       clearLongPressTimer()
       showMessageMenuAt(eventId, body, e.clientX, e.clientY)
@@ -1419,9 +1433,22 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     [clearLongPressTimer, showMessageMenuAt],
   )
 
+  // Anchored under the ⋯ button rather than at the pointer, so the menu never
+  // covers the message it belongs to.
+  const onMessageMoreClick = useCallback(
+    (eventId: string, body: string) => (e: React.MouseEvent) => {
+      e.stopPropagation()
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      showMessageMenuAt(eventId, body, r.left + r.width / 2, r.bottom)
+    },
+    [showMessageMenuAt],
+  )
+
   const onPinPointerDown = useCallback(
     (eventId: string, body: string) => (e: React.PointerEvent) => {
       if (e.button !== 0) return
+      // Long-pressing a link should offer the OS share/copy sheet, not ours.
+      if (e.target instanceof Element && e.target.closest('a, img')) return
       const x0 = e.clientX
       const y0 = e.clientY
       longPressStartRef.current = { x: x0, y: y0, eventId, pointerId: e.pointerId }
@@ -1891,6 +1918,17 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                       </>
                     )}
                   </div>
+                  {canPin && (
+                    <button
+                      type="button"
+                      className="message-more-btn"
+                      aria-label="Message actions"
+                      aria-haspopup="menu"
+                      onClick={onMessageMoreClick(msg.eventId, msg.body)}
+                    >
+                      <span className="material-icons">more_horiz</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )
@@ -1923,21 +1961,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               <div className="message-ctx-menu-sent">{messageMenuMeta.sentAt}</div>
             </div>
           )}
-          <div className="message-ctx-menu-reactions">
-            {['✅', '❎'].map(emoji => (
-              <button
-                key={emoji}
-                type="button"
-                className="message-ctx-menu-reaction"
-                onClick={() => {
-                  void sendReaction(messageMenu.eventId, emoji)
-                  setMessageMenu(null)
-                }}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
           <button
             type="button"
             className="message-ctx-menu-item"

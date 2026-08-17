@@ -136,12 +136,15 @@ private struct QuickReplyButtons: View {
             ForEach(actions.prefix(3), id: \.self) { action in
                 Button(intent: QuickReplyIntent(text: action, roomId: roomId)) {
                     Text(action)
-                        .font(.caption.weight(.semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
+                        // Three chips share the width, so a long label shrinks
+                        // rather than truncating; the floor is lower now that
+                        // the base size is bigger.
+                        .minimumScaleFactor(0.7)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
                         .frame(maxWidth: .infinity)
                         .background(Color.white.opacity(0.14), in: Capsule())
                 }

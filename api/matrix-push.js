@@ -192,6 +192,11 @@ export default async function handler(req, res) {
   const readingElsewhere = (pushkey) =>
     active.some((c) => (c.pushkey ? c.pushkey !== pushkey : !isNativeClient(c)));
   const activeNativeHere = active.find(isNativeClient);
+  // Only for the trace below, but it has to exist: an undefined name there
+  // throws *after* the Live Activity has already been pushed, so the handler
+  // 500s, the homeserver retries, and the retry pushes the activity again once
+  // the dedupe window has passed.
+  const activeNonNative = active.some((c) => !isNativeClient(c));
   // Nothing on the phone while you're reading on another device, and nothing
   // for a room the phone itself already has open.
   const suppressLiveActivity =

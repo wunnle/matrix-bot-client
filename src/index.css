@@ -1200,35 +1200,62 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-size: 12px;
   color: var(--text-muted);
 }
-/* Pointer-only affordance for the message menu: right-click now falls through
-   to the browser over links, images and selections, so hovering has to be the
-   reliable way in. Touch keeps long-press and never shows this. */
-.message-more-btn {
-  align-self: center;
-  flex-shrink: 0;
+/* Sender, time and the message actions, revealed under the message on hover.
+   Right-click now falls through to the browser over links, images and
+   selections, so this is the reliable way in on a pointer device; touch keeps
+   long-press and never renders the row.
+
+   `visibility: hidden` rather than `display: none` on purpose: the row always
+   takes its space, so revealing it never shifts the timeline, and the reserved
+   height reads as breathing room between messages. */
+.message-meta {
   display: none;
   align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+  padding: 0 4px;
+  max-width: 100%;
+  visibility: hidden;
+}
+
+.message-meta-info {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.message-meta-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.message-meta-btn {
+  display: flex;
+  align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin: 0 2px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: none;
-  border-radius: 50%;
+  border-radius: 5px;
   background: transparent;
   color: var(--text-faint);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s, background 0.12s, color 0.12s;
+  transition: background 0.12s, color 0.12s;
 }
-.message-more-btn .material-icons { font-size: 18px; }
-.message.own .message-more-btn { order: -1; }
+
+.message-meta-btn .material-icons { font-size: 15px; }
+.message-meta-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.message-meta-btn--on { color: var(--accent); }
+.message-meta-btn:disabled { opacity: 0.5; cursor: default; }
 
 @media (hover: hover) and (pointer: fine) {
-  .message-more-btn { display: flex; }
-  .message:hover .message-more-btn,
-  .message-more-btn:focus-visible { opacity: 1; }
-  .message-more-btn:hover { background: var(--bg-hover); color: var(--text); }
+  .message-meta { display: flex; }
+  .message:hover .message-meta { visibility: visible; }
 }
 
 /* Collapse vertical gap between consecutive tool-progress messages so

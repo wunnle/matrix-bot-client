@@ -1433,17 +1433,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     [clearLongPressTimer, showMessageMenuAt],
   )
 
-  // Anchored under the ⋯ button rather than at the pointer, so the menu never
-  // covers the message it belongs to.
-  const onMessageMoreClick = useCallback(
-    (eventId: string, body: string) => (e: React.MouseEvent) => {
-      e.stopPropagation()
-      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-      showMessageMenuAt(eventId, body, r.left + r.width / 2, r.bottom)
-    },
-    [showMessageMenuAt],
-  )
-
   const onPinPointerDown = useCallback(
     (eventId: string, body: string) => (e: React.PointerEvent) => {
       if (e.button !== 0) return
@@ -1489,11 +1478,35 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     longPressStartRef.current = null
   }, [])
 
-  const onPinOrUnpin = useCallback(async () => {
-    if (!messageMenu) return
+  const copyMessage = useCallback((body: string) => {
+    void copyTextToClipboard(body).then(() => showToast('Copied'))
+  }, [showToast])
+
+  const inspectMessage = useCallback((eventId: string) => {
+    const room = client.getRoom(roomId)
+    const ev = room?.findEventById(eventId)
+    if (!ev) { showToast('Event not found'); return }
+    const replacing = (ev as any).replacingEvent?.()
+    const payload = {
+      eventId: ev.getId(),
+      type: ev.getType(),
+      sender: ev.getSender(),
+      ts: ev.getTs(),
+      content: ev.getContent(),
+      hasReplacing: !!replacing,
+      replacingEventId: replacing?.getId?.(),
+      replacingContent: replacing?.getContent?.(),
+      replacingNewContent: replacing?.getContent?.()?.['m.new_content'],
+    }
+    console.log('[inspect event]', payload)
+    void copyTextToClipboard(JSON.stringify(payload, null, 2))
+      .then(() => showToast('Event JSON copied to clipboard'))
+      .catch(() => showToast('Logged to console'))
+  }, [client, roomId, showToast])
+
+  const togglePin = useCallback(async (id: string) => {
     setPinInFlight(true)
     setPinError('')
-    const id = messageMenu.eventId
     const isPinned = pinnedIdsRef.current.has(id)
     try {
       if (isPinned) await unpinRoomEvent(roomId, id)
@@ -1507,7 +1520,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     } finally {
       setPinInFlight(false)
     }
-  }, [messageMenu, roomId])
+  }, [roomId])
 
   useEffect(() => {
     if (!messageMenu) return
@@ -1917,18 +1930,44 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                         })()}
                       </>
                     )}
+                    {canPin && (
+                      // Always rendered, only hidden: reserving the row's height
+                      // keeps messages from jumping on hover, and the reserved
+                      // space doubles as the gap between messages.
+                      <div className="message-meta">
+                        <span className="message-meta-info">
+                          {msg.senderName} · {formatSentAt(msg.timestamp)}
+                        </span>
+                        <span className="message-meta-actions">
+                          <button
+                            type="button"
+                            className="message-meta-btn"
+                            aria-label="Copy message"
+                            onClick={() => copyMessage(msg.body)}
+                          >
+                            <span className="material-icons">content_copy</span>
+                          </button>
+                          <button
+                            type="button"
+                            className={`message-meta-btn${pinnedEventIds.includes(msg.eventId) ? ' message-meta-btn--on' : ''}`}
+                            aria-label={pinnedEventIds.includes(msg.eventId) ? 'Unpin message' : 'Pin message'}
+                            disabled={pinInFlight}
+                            onClick={() => { void togglePin(msg.eventId) }}
+                          >
+                            <span className="material-icons">push_pin</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="message-meta-btn"
+                            aria-label="Inspect event"
+                            onClick={() => inspectMessage(msg.eventId)}
+                          >
+                            <span className="material-icons">data_object</span>
+                          </button>
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  {canPin && (
-                    <button
-                      type="button"
-                      className="message-more-btn"
-                      aria-label="Message actions"
-                      aria-haspopup="menu"
-                      onClick={onMessageMoreClick(msg.eventId, msg.body)}
-                    >
-                      <span className="material-icons">more_horiz</span>
-                    </button>
-                  )}
                 </div>
               </div>
             )
@@ -1965,10 +2004,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             type="button"
             className="message-ctx-menu-item"
             role="menuitem"
-            onClick={() => {
-              void navigator.clipboard.writeText(messageMenu.body).then(() => showToast('Copied'))
-              setMessageMenu(null)
-            }}
+            onClick={() => { copyMessage(messageMenu.body); setMessageMenu(null) }}
           >
             Copy
           </button>
@@ -1976,28 +2012,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             type="button"
             className="message-ctx-menu-item"
             role="menuitem"
-            onClick={() => {
-              const room = client.getRoom(roomId)
-              const ev = room?.findEventById(messageMenu.eventId)
-              if (!ev) { showToast('Event not found'); setMessageMenu(null); return }
-              const replacing = (ev as any).replacingEvent?.()
-              const payload = {
-                eventId: ev.getId(),
-                type: ev.getType(),
-                sender: ev.getSender(),
-                ts: ev.getTs(),
-                content: ev.getContent(),
-                hasReplacing: !!replacing,
-                replacingEventId: replacing?.getId?.(),
-                replacingContent: replacing?.getContent?.(),
-                replacingNewContent: replacing?.getContent?.()?.['m.new_content'],
-              }
-              console.log('[inspect event]', payload)
-              void navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
-                .then(() => showToast('Event JSON copied to clipboard'))
-                .catch(() => showToast('Logged to console'))
-              setMessageMenu(null)
-            }}
+            onClick={() => { inspectMessage(messageMenu.eventId); setMessageMenu(null) }}
           >
             Inspect
           </button>
@@ -2006,7 +2021,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             className="message-ctx-menu-item"
             role="menuitem"
             disabled={pinInFlight}
-            onClick={() => { void onPinOrUnpin() }}
+            onClick={() => { void togglePin(messageMenu.eventId).then(() => setMessageMenu(null)) }}
           >
             {pinnedEventIds.includes(messageMenu.eventId) ? 'Unpin' : 'Pin'}
           </button>

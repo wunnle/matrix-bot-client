@@ -1217,6 +1217,11 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   visibility: hidden;
 }
 
+/* Safari floats the overlay scrollbar of a horizontally scrollable <pre> at the
+   very bottom of the block, where it lands on top of the hover row. Give the
+   row clearance when the message contains one. */
+.message-body:has(pre) .message-meta { margin-top: 10px; }
+
 .message-meta-info {
   font-size: 11px;
   color: var(--text-faint);

@@ -1935,9 +1935,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                       // keeps messages from jumping on hover, and the reserved
                       // space doubles as the gap between messages.
                       <div className="message-meta">
-                        <span className="message-meta-info">
-                          {msg.senderName} · {formatSentAt(msg.timestamp)}
-                        </span>
                         <span className="message-meta-actions">
                           <button
                             type="button"
@@ -1945,7 +1942,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                             aria-label="Copy message"
                             onClick={() => copyMessage(msg.body)}
                           >
-                            <span className="material-icons">content_copy</span>
+                            <span className="material-symbols-outlined">content_copy</span>
                           </button>
                           <button
                             type="button"
@@ -1954,7 +1951,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                             disabled={pinInFlight}
                             onClick={() => { void togglePin(msg.eventId) }}
                           >
-                            <span className="material-icons">push_pin</span>
+                            <span className="material-symbols-outlined">keep</span>
                           </button>
                           <button
                             type="button"
@@ -1962,8 +1959,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                             aria-label="Inspect event"
                             onClick={() => inspectMessage(msg.eventId)}
                           >
-                            <span className="material-icons">data_object</span>
+                            <span className="material-symbols-outlined">data_object</span>
                           </button>
+                        </span>
+                        <span className="message-meta-info">
+                          {msg.authorName}{msg.authorName ? ' · ' : ''}{formatSentAt(msg.timestamp)}
                         </span>
                       </div>
                     )}
@@ -2361,6 +2361,9 @@ function eventToMessage(
   const senderName = isPeerMessage
     ? (room?.getMember(sender)?.rawDisplayName || shortUserId(sender))
     : undefined
+  // Unlike senderName this is set for every message, peer or not: the hover
+  // meta row names the author even when the bubble's side already implies it.
+  const authorName = room?.getMember(sender)?.rawDisplayName || shortUserId(sender)
 
   const imageMxc = content?.msgtype === 'm.image' && content?.url ? content.url : undefined
   const fileMxc = content?.msgtype === 'm.file' && content?.url ? content.url : undefined
@@ -2453,6 +2456,7 @@ function eventToMessage(
     isOwnMessage,
     isPeerMessage,
     senderName,
+    authorName,
     isDecryptionFailure: isFailure,
     isRead,
     source,

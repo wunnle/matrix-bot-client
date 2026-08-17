@@ -1211,9 +1211,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .message-meta {
   display: none;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-top: 2px;
-  padding: 0 4px;
   max-width: 100%;
   visibility: hidden;
 }
@@ -1231,6 +1230,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
+  /* Cancel the button's own padding so the first glyph optically lines up with
+     the bubble's edge instead of sitting in a stray indent. */
+  margin-left: -4px;
 }
 
 .message-meta-btn {
@@ -1248,7 +1250,16 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   transition: background 0.12s, color 0.12s;
 }
 
-.message-meta-btn .material-icons { font-size: 15px; }
+/* One glyph box for all three, so differing intrinsic widths in the icon font
+   can't make the row look ragged. */
+.message-meta-btn .material-symbols-outlined {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  font-variation-settings: 'opsz' 20, 'wght' 400, 'FILL' 0, 'GRAD' 0;
+}
 .message-meta-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
 .message-meta-btn--on { color: var(--accent); }
 .message-meta-btn:disabled { opacity: 0.5; cursor: default; }

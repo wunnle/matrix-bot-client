@@ -61,6 +61,9 @@ export interface Message {
   // read as the bot talking. See senderName.
   isPeerMessage?: boolean
   senderName?: string
+  // Display name of whoever sent it, always resolved — see senderName for the
+  // narrower peer-attribution field.
+  authorName?: string
   isDecryptionFailure?: boolean
   isRead?: boolean
   reactions?: Record<string, string[]> // emoji → list of senderIds

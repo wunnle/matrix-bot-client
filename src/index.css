@@ -1200,21 +1200,19 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-size: 12px;
   color: var(--text-muted);
 }
-/* Sender, time and the message actions, revealed under the message on hover.
-   Right-click now falls through to the browser over links, images and
-   selections, so this is the reliable way in on a pointer device; touch keeps
-   long-press and never renders the row.
+/* Sender, time and the message actions, sitting under the message. This is now
+   the only route to those actions — there is no context menu — so right-click
+   is left entirely to the browser.
 
-   `visibility: hidden` rather than `display: none` on purpose: the row always
-   takes its space, so revealing it never shifts the timeline, and the reserved
-   height reads as breathing room between messages. */
+   `visibility: hidden` rather than `display: none` where it does hide: the row
+   always takes its space, so revealing it never shifts the timeline, and the
+   reserved height reads as breathing room between messages. */
 .message-meta {
-  display: none;
+  display: flex;
   align-items: center;
   gap: 8px;
   margin-top: 2px;
   max-width: 100%;
-  visibility: hidden;
 }
 
 /* Safari floats the overlay scrollbar of a horizontally scrollable <pre> at the
@@ -1269,8 +1267,11 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .message-meta-btn--on { color: var(--accent); }
 .message-meta-btn:disabled { opacity: 0.5; cursor: default; }
 
+/* Hover devices reveal the row on hover only; the space it occupies is
+   reserved either way, so nothing shifts. Touch has no hover and no longer has
+   a long-press menu, so there the row is simply always visible. */
 @media (hover: hover) and (pointer: fine) {
-  .message-meta { display: flex; }
+  .message-meta { visibility: hidden; }
   .message:hover .message-meta { visibility: visible; }
 }
 
@@ -1595,65 +1596,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
-}
-
-.message-ctx-menu {
-  position: fixed;
-  z-index: 100;
-  min-width: 160px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  padding: 4px;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.message-ctx-menu-meta {
-  padding: 8px 14px 6px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 4px;
-  /* The menu is only as wide as its widest item; a long display name should
-     ellipsize rather than stretch the whole menu. */
-  max-width: 240px;
-}
-
-.message-ctx-menu-sender {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.message-ctx-menu-sent {
-  font-size: 12px;
-  color: var(--text-faint);
-  margin-top: 1px;
-}
-
-.message-ctx-menu-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 10px 14px;
-  font-size: 15px;
-  font-family: inherit;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.message-ctx-menu-item:hover:not(:disabled) {
-  background: var(--bg-active, rgba(0, 0, 0, 0.06));
-}
-
-.message-ctx-menu-item:disabled {
-  opacity: 0.55;
-  cursor: default;
 }
 
 .chat-footer {

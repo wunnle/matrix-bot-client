@@ -7,8 +7,6 @@ import {
   useState,
   useCallback,
   useMemo,
-  type Dispatch,
-  type SetStateAction,
 } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import {
@@ -58,9 +56,6 @@ interface Props {
 const PAGE_SIZE = 30
 const RENDER_LIMIT = 60 // kept for isActive reset logic only
 const MSG_CAP = 200 // max messages kept in state; old ones dropped from the front
-const PIN_LONG_PRESS_MS = 500
-const PIN_MOVE_CANCEL_PX = 10
-const MENU_DISMISS_GRACE_MS = 350
 
 // Our swipe-back gesture is only useful where nothing else owns the edge
 // swipe. In a regular browser (iOS Safari, most Android browsers) the
@@ -334,32 +329,6 @@ function shortenTopicPaths(topic: string): string {
     .join(' · ')
 }
 
-type MessageMenuPos = { eventId: string; x: number; y: number; body: string }
-
-function openPinContextMenu(
-  eventId: string,
-  body: string,
-  clientX: number,
-  clientY: number,
-  clearLongPress: () => void,
-  setMessageMenu: Dispatch<SetStateAction<MessageMenuPos | null>>,
-  messageMenuOpenedAt: { current: number },
-  blockRichClickUntil: { current: number },
-) {
-  clearLongPress()
-  const pad = 8
-  const mw = 180
-  // Approximate menu height used only to keep it on screen: sender/time header
-  // + Copy/Inspect/Pin.
-  const mh = 170
-  const x = Math.min(window.innerWidth - mw - pad, Math.max(pad, clientX - mw / 2))
-  const y = Math.min(window.innerHeight - mh - pad, Math.max(pad, clientY + 4))
-  const now = Date.now()
-  messageMenuOpenedAt.current = now
-  blockRichClickUntil.current = now + 450
-  setMessageMenu({ eventId, body, x, y })
-}
-
 function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictationAutoSend }: Props) {
   // Read inside the timeline listener, which must not re-subscribe whenever
   // the active room changes.
@@ -399,11 +368,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [roomId])
 
   const onBotRichTextClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (Date.now() < blockRichClickUntilRef.current) {
-      e.preventDefault()
-      e.stopPropagation()
-      return
-    }
     const raw = e.target
     if (raw == null || !(raw instanceof Element)) return
     if (raw.closest('a')) return
@@ -436,7 +400,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [roomTopic, setRoomTopic] = useState('')
   const [sendError, setSendError] = useState('')
   const [pinError, setPinError] = useState('')
-  const [messageMenu, setMessageMenu] = useState<null | MessageMenuPos>(null)
   const [pinInFlight, setPinInFlight] = useState(false)
   const [showScrollDown, setShowScrollDown] = useState(false)
   const footerRef = useRef<HTMLDivElement>(null)
@@ -458,11 +421,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const autoSendToMessage = useRef<((t: string) => void) | null>(null)
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const longPressStartRef = useRef<{ x: number; y: number; eventId: string; pointerId: number } | null>(null)
-  const messageMenuOpenedAt = useRef(0)
-  const messageMenuRef = useRef<HTMLDivElement | null>(null)
-  const blockRichClickUntilRef = useRef(0)
 
   useEffect(() => {
     activeRoomIdRef.current = roomId
@@ -1370,114 +1328,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     touchStartY.current = null
   }
 
-  const clearLongPressTimer = useCallback(() => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
-    longPressStartRef.current = null
-  }, [])
-
-  // Sender + send time shown at the top of the message context menu. Resolved
-  // from the live event rather than threaded through the open handlers, so it
-  // stays correct for edited and late-decrypted messages.
-  const messageMenuMeta = useMemo(() => {
-    if (!messageMenu) return null
-    const room = client.getRoom(roomId)
-    const ev = room?.findEventById(messageMenu.eventId)
-    if (!ev) return null
-    const sender = ev.getSender() ?? ''
-    return {
-      name: room?.getMember(sender)?.name || shortUserId(sender),
-      userId: sender,
-      sentAt: formatSentAt(ev.getTs()),
-    }
-  }, [messageMenu, roomId])
-
-  const showMessageMenuAt = useCallback(
-    (eventId: string, body: string, clientX: number, clientY: number) => {
-      openPinContextMenu(
-        eventId,
-        body,
-        clientX,
-        clientY,
-        clearLongPressTimer,
-        setMessageMenu,
-        messageMenuOpenedAt,
-        blockRichClickUntilRef,
-      )
-    },
-    [clearLongPressTimer],
-  )
-
-  // The browser's own menu is the only place with "Copy link address", "Save
-  // image", "Copy" for a selection — so yield to it whenever the pointer is
-  // over something it can act on. Everywhere else the message menu wins, and
-  // the ⋯ button keeps it reachable in the yielded cases.
-  const nativeMenuWins = (target: EventTarget | null): boolean => {
-    if (target instanceof Element && target.closest('a, img, pre, code, input, textarea')) return true
-    const sel = window.getSelection()
-    return !!sel && !sel.isCollapsed && sel.toString().trim().length > 0
-  }
-
-  const onPinContextMenu = useCallback(
-    (eventId: string, body: string) => (e: React.MouseEvent) => {
-      if (nativeMenuWins(e.target)) {
-        clearLongPressTimer()
-        return
-      }
-      e.preventDefault()
-      clearLongPressTimer()
-      showMessageMenuAt(eventId, body, e.clientX, e.clientY)
-    },
-    [clearLongPressTimer, showMessageMenuAt],
-  )
-
-  const onPinPointerDown = useCallback(
-    (eventId: string, body: string) => (e: React.PointerEvent) => {
-      if (e.button !== 0) return
-      // Long-pressing a link should offer the OS share/copy sheet, not ours.
-      if (e.target instanceof Element && e.target.closest('a, img')) return
-      const x0 = e.clientX
-      const y0 = e.clientY
-      longPressStartRef.current = { x: x0, y: y0, eventId, pointerId: e.pointerId }
-      longPressTimerRef.current = setTimeout(() => {
-        longPressTimerRef.current = null
-        if (longPressStartRef.current?.eventId !== eventId) return
-        longPressStartRef.current = null
-        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-          try {
-            ;(navigator as Navigator & { vibrate: (n: number) => boolean }).vibrate(12)
-          } catch { /* */ }
-        }
-        showMessageMenuAt(eventId, body, x0, y0)
-      }, PIN_LONG_PRESS_MS)
-    },
-    [showMessageMenuAt],
-  )
-
-  const onPinPointerMove = useCallback((e: React.PointerEvent) => {
-    const s = longPressStartRef.current
-    if (!s) return
-    const dx = e.clientX - s.x
-    const dy = e.clientY - s.y
-    if (dx * dx + dy * dy > PIN_MOVE_CANCEL_PX * PIN_MOVE_CANCEL_PX) {
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current)
-        longPressTimerRef.current = null
-      }
-      longPressStartRef.current = null
-    }
-  }, [])
-
-  const onPinPointerUp = useCallback(() => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
-    longPressStartRef.current = null
-  }, [])
-
   const copyMessage = useCallback((body: string) => {
     void copyTextToClipboard(body).then(() => showToast('Copied'))
   }, [showToast])
@@ -1511,7 +1361,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     try {
       if (isPinned) await unpinRoomEvent(roomId, id)
       else await pinRoomEvent(roomId, id)
-      setMessageMenu(null)
       refreshPinnedRef.current()
     } catch (err: unknown) {
       const m = err instanceof Error ? err.message : 'Could not update pins'
@@ -1521,24 +1370,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       setPinInFlight(false)
     }
   }, [roomId])
-
-  useEffect(() => {
-    if (!messageMenu) return
-    const onDocPointerDown = (e: PointerEvent) => {
-      if (Date.now() - messageMenuOpenedAt.current < MENU_DISMISS_GRACE_MS) return
-      if (messageMenuRef.current?.contains(e.target as Node)) return
-      setMessageMenu(null)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMessageMenu(null)
-    }
-    document.addEventListener('pointerdown', onDocPointerDown, true)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onDocPointerDown, true)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [messageMenu])
 
   return (
     <div
@@ -1664,11 +1495,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                   key={msg.eventId}
                   className={`message-pin-surface message-pin-surface--pinned pinned-body${cleanHtml ? ' pinned-body-rich' : ''}`}
                   onClick={cleanHtml ? onBotRichTextClick : undefined}
-                  onPointerDown={onPinPointerDown(msg.eventId, msg.body)}
-                  onPointerMove={onPinPointerMove}
-                  onPointerUp={onPinPointerUp}
-                  onPointerCancel={onPinPointerUp}
-                  onContextMenu={onPinContextMenu(msg.eventId, msg.body)}
                 >
                   {imgUrl ? (
                     <>
@@ -1730,15 +1556,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             const nextIsTool = next && isBotToolProgress(next) &&
               sameDay(msg.timestamp, next.timestamp)
             const canPin = !msg.isDecryptionFailure
-            const pinSurfaceProps = canPin
-              ? {
-                onPointerDown: onPinPointerDown(msg.eventId, msg.body),
-                onPointerMove: onPinPointerMove,
-                onPointerUp: onPinPointerUp,
-                onPointerCancel: onPinPointerUp,
-                onContextMenu: onPinContextMenu(msg.eventId, msg.body),
-              }
-              : {}
             return (
               <div
                 key={msg.eventId}
@@ -1757,7 +1574,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                     )}
                     {msg.isOwnMessage ? (
                       <>
-                        <div className="message-pin-surface message-pin-surface--own" {...pinSurfaceProps}>
+                        <div className="message-pin-surface message-pin-surface--own">
                           <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${imageUrl ? 'bubble-image' : ''} ${msg.source === 'voice' ? 'bubble-voice' : ''}`}>
                             {msg.source === 'voice' && (
                               <span className="material-icons bubble-voice-icon" title="Voice input">mic</span>
@@ -1818,7 +1635,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                             return (
                               <div
                                 className={`message-pin-surface message-pin-surface--tool tool-progress${prevIsTool ? ' tool-progress-cont' : ''}${nextIsTool ? ' tool-progress-open' : ''}`}
-                                {...pinSurfaceProps}
+                               
                               >
                                 {lines.map((l, idx) => (
                                   <div key={idx} className="tool-progress-line">
@@ -1841,7 +1658,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                             : undefined
                           return (
                             <>
-                              <div className="message-pin-surface" {...pinSurfaceProps}>
+                              <div className="message-pin-surface">
                                 <div
                                   className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.machine ? 'bot-text-machine' : ''}`}
                                   onClick={cleanHtml ? onBotRichTextClick : undefined}
@@ -1981,50 +1798,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         <div className="camera-prompt" onClick={() => { setCameraPrompt(false); cameraInputRef.current?.click() }}>
           <span className="material-icons camera-prompt-icon">photo_camera</span>
           <span className="camera-prompt-label">Tap to open camera</span>
-        </div>
-      )}
-
-      {messageMenu && (
-        <div
-          ref={messageMenuRef}
-          className="message-ctx-menu"
-          style={{ left: messageMenu.x, top: messageMenu.y }}
-          role="menu"
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          {messageMenuMeta && (
-            <div className="message-ctx-menu-meta">
-              <div className="message-ctx-menu-sender" title={messageMenuMeta.userId}>
-                {messageMenuMeta.name}
-              </div>
-              <div className="message-ctx-menu-sent">{messageMenuMeta.sentAt}</div>
-            </div>
-          )}
-          <button
-            type="button"
-            className="message-ctx-menu-item"
-            role="menuitem"
-            onClick={() => { copyMessage(messageMenu.body); setMessageMenu(null) }}
-          >
-            Copy
-          </button>
-          <button
-            type="button"
-            className="message-ctx-menu-item"
-            role="menuitem"
-            onClick={() => { inspectMessage(messageMenu.eventId); setMessageMenu(null) }}
-          >
-            Inspect
-          </button>
-          <button
-            type="button"
-            className="message-ctx-menu-item"
-            role="menuitem"
-            disabled={pinInFlight}
-            onClick={() => { void togglePin(messageMenu.eventId).then(() => setMessageMenu(null)) }}
-          >
-            {pinnedEventIds.includes(messageMenu.eventId) ? 'Unpin' : 'Pin'}
-          </button>
         </div>
       )}
 

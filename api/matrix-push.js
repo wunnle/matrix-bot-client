@@ -161,6 +161,19 @@ export default async function handler(req, res) {
   let presenceSkipped = 0;
   const startedAt = Date.now();
 
+  // Three independent reads from the homeserver feed everything below: who is
+  // in the foreground, the Live Activity registry, and the room avatar. Awaited
+  // one after another they stacked several matrix.org round trips ahead of the
+  // Live Activity push, which is what makes an update land seconds late. Started
+  // together here and awaited at their use sites instead.
+  //
+  // Safe to start before the duplicate check below: all three are pure reads,
+  // and each swallows its own errors, so an early return leaves nothing
+  // rejecting unhandled.
+  const activePromise = activeClients(75_000);
+  const entryPromise = apnsConfigured() ? liveActivityEntry(room_id) : Promise.resolve(null);
+  const avatarPromise = resolveRoomAvatarMxc(room_id, sender);
+
   // The homeserver re-delivers an event it didn't get a timely 200 for, and
   // this handler makes several sequential round-trips before answering — so a
   // slow run comes back as the same event twice and pushes the Live Activity
@@ -176,7 +189,7 @@ export default async function handler(req, res) {
   //   • every other device stays quiet, because you're reading elsewhere.
   //
   // Empty on any error, so an unreadable heartbeat notifies rather than mutes.
-  const active = await activeClients(75_000);
+  const active = await activePromise;
   // A client whose pushkey matches one of this user's push devices is that
   // device; anything else (a browser without notifications) is "somewhere else"
   // by definition, since it is never a device being notified.
@@ -202,10 +215,6 @@ export default async function handler(req, res) {
   const suppressLiveActivity =
     active.some((c) => !isNativeClient(c)) || activeNativeHere?.roomId === room_id;
 
-  // Resolved once and shared by the APNs payload (service extension) and the
-  // Web Push icon.
-  const avatarUrl = mxcToProxyUrl(await resolveRoomAvatarMxc(room_id, sender));
-
   // Push the reply into any running Live Activity for this room, and report
   // whether it was delivered. Independent of the per-device loop below: Live
   // Activity tokens are per-activity, not per Matrix device, so they aren't in
@@ -218,7 +227,7 @@ export default async function handler(req, res) {
     // lock screen, which is exactly what "no Live Activities" rules out. The
     // cost is that it holds its last message until you're away again.
     if (suppressLiveActivity) return false;
-    const entry = await liveActivityEntry(room_id);
+    const entry = await entryPromise;
     if (!entry) return false;
 
     // `update`, not `end`: ending finishes the activity after a single reply,
@@ -302,6 +311,11 @@ export default async function handler(req, res) {
         actions,
       }).then((r) => r?.accepted === true).catch(() => false)
     : false;
+
+  // Shared by the APNs payload (service extension) and the Web Push icon.
+  // Awaited here rather than above the Live Activity block: a cold avatar cache
+  // is one or two more round trips, and nothing about the activity needs it.
+  const avatarUrl = mxcToProxyUrl(await avatarPromise);
 
   await Promise.all(
     devices.map(async (device) => {

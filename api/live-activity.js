@@ -40,16 +40,23 @@ const LAST_EVENT_TYPE = "com.construct.last_event";
 // would be rejected by APNs anyway.
 const TTL_MS = 60 * 60 * 1000;
 
+/** The in-flight promise, not the resolved id: several readers now start at
+    once, and caching only the answer meant each of them made its own whoami
+    call on a cold invocation. Cleared on failure so an error isn't cached. */
 let cachedUserId = null;
-async function userId() {
+function userId() {
   if (cachedUserId) return cachedUserId;
-  const r = await fetch(`${HOMESERVER}/_matrix/client/v3/account/whoami`, {
-    headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+  cachedUserId = (async () => {
+    const r = await fetch(`${HOMESERVER}/_matrix/client/v3/account/whoami`, {
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+    });
+    if (!r.ok) throw new Error(`whoami failed: ${r.status}`);
+    return (await r.json()).user_id;
+  })().catch((err) => {
+    cachedUserId = null;
+    throw err;
   });
-  if (!r.ok) throw new Error(`whoami failed: ${r.status}`);
-  const { user_id } = await r.json();
-  cachedUserId = user_id;
-  return user_id;
+  return cachedUserId;
 }
 
 async function accountDataUrl(type = ACCOUNT_DATA_TYPE) {

@@ -64,12 +64,11 @@ export default function App() {
         path="/"
         element={auth ? <Navigate to="/rooms" replace /> : <LoginScreen onLogin={handleLogin} />}
       />
+      {/* One route, optional param: mounting the layout from two separate
+          <Route> elements remounted it on every list ↔ room transition,
+          throwing away clientReady/visitedRooms and re-running mount effects. */}
       <Route
-        path="/rooms"
-        element={auth ? <RoomsLayout auth={auth} onSignOut={handleSignOut} /> : <Navigate to="/" replace />}
-      />
-      <Route
-        path="/rooms/:roomId"
+        path="/rooms/:roomId?"
         element={auth ? <RoomsLayout auth={auth} onSignOut={handleSignOut} /> : <Navigate to="/" replace />}
       />
       <Route

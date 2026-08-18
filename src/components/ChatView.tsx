@@ -1804,7 +1804,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                           </button>
                         </span>
                         <span className="message-meta-info">
-                          {msg.authorName}{msg.authorName ? ' · ' : ''}{formatSentAt(msg.timestamp)}
+                          {/* Own messages: the bubble's side already says who
+                              sent it, so only the time is worth showing. */}
+                          {msg.isOwnMessage ? '' : <>{msg.authorName}{msg.authorName ? ' · ' : ''}</>}{formatSentAt(msg.timestamp)}
                         </span>
                       </div>
                     )}
@@ -2158,8 +2160,8 @@ function eventToMessage(
   const senderName = isPeerMessage
     ? (room?.getMember(sender)?.rawDisplayName || shortUserId(sender))
     : undefined
-  // Unlike senderName this is set for every message, peer or not: the hover
-  // meta row names the author even when the bubble's side already implies it.
+  // Unlike senderName this is set for every message, peer or not: the meta row
+  // names the author for anything that isn't the user's own message.
   const authorName = room?.getMember(sender)?.rawDisplayName || shortUserId(sender)
 
   const imageMxc = content?.msgtype === 'm.image' && content?.url ? content.url : undefined

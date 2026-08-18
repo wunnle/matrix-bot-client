@@ -35,6 +35,10 @@ const PRESENCE_TYPE = "com.construct.presence";
     document it read earlier and resurrect old fields — which is exactly how the
     value this check depends on would go stale. One writer, one field, no merge. */
 const LAST_EVENT_TYPE = "com.construct.last_event";
+/** How many recent event ids the duplicate check keeps. A retry only has to be
+    recognised for as long as its window lasts, and traffic in that window is a
+    handful of messages, so this is sized for a busy burst rather than tuned. */
+const SEEN_EVENT_LIMIT = 64;
 
 // Activities are short-lived; a token outliving this is stale and its pushes
 // would be rejected by APNs anyway.
@@ -454,16 +458,26 @@ export async function seenEventBefore(eventId, withinMs) {
       headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
     });
     const prev = r.ok ? await r.json() : null;
-    const isRepeat =
-      prev?.eventId === eventId && Date.now() - (prev.at ?? 0) < withinMs;
-    if (!isRepeat) {
-      await fetch(await accountDataUrl(LAST_EVENT_TYPE), {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ eventId, at: Date.now() }),
-      });
-    }
-    return isRepeat;
+    const now = Date.now();
+    // A list, not a single slot: this used to remember only the most recent
+    // event, so any message arriving between an event and its re-delivery
+    // evicted the record and the retry read as new — a second notification for
+    // a message already delivered. Two messages inside the window is the normal
+    // case, not an edge one, so one slot deduped almost nothing.
+    const seen = (Array.isArray(prev?.seen) ? prev.seen : [])
+      // Tolerate the old single-slot document so the first run after deploy
+      // doesn't start from an empty history.
+      .concat(prev?.eventId ? [{ eventId: prev.eventId, at: prev.at ?? 0 }] : [])
+      .filter((e) => e?.eventId && now - (e.at ?? 0) < withinMs);
+
+    if (seen.some((e) => e.eventId === eventId)) return true;
+
+    await fetch(await accountDataUrl(LAST_EVENT_TYPE), {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ seen: [...seen, { eventId, at: now }].slice(-SEEN_EVENT_LIMIT) }),
+    });
+    return false;
   } catch {
     return false;
   }

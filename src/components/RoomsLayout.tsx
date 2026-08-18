@@ -27,6 +27,12 @@ const MAX_MOUNTED_ROOMS = 5
 // Per app launch, not per mount — see the getLaunchUrl call below.
 let launchUrlConsumed = false
 
+// The room the user last backed out of, and when. Ambient navigation (a stale
+// room-intent) must not undo that. Module scope for the same reason as above:
+// it is a property of the app session, not of any one mount.
+let lastBack: { room: string, at: number } | null = null
+const BACK_SUPPRESS_MS = 10_000
+
 export default function RoomsLayout({ auth, onSignOut }: Props) {
   useVisualViewportVars()
   const { roomId } = useParams<{ roomId: string }>()
@@ -135,10 +141,21 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
 
   const handleSelectRoom = useCallback((id: string, name: string) => {
     setRoomNames((prev) => (prev[id] === name ? prev : { ...prev, [id]: name }))
+    lastBack = null
     navigate(`/rooms/${encodeURIComponent(id)}`)
   }, [navigate])
 
+  // Backing out of a room is a decision; nothing may undo it silently. The
+  // room-intent slot lives in serverless module state, so a POST and the GET
+  // that clears it can land on different instances and leave a live intent
+  // behind — which then re-enters the room you just left, on the very next
+  // foreground, and reads as "back does nothing".
+  const suppressedByBack = useCallback((room: string) => {
+    return lastBack !== null && lastBack.room === room && Date.now() - lastBack.at < BACK_SUPPRESS_MS
+  }, [])
+
   const handleBack = useCallback(() => {
+    if (activeRoomIdRef.current) lastBack = { room: activeRoomIdRef.current, at: Date.now() }
     navigate('/rooms', { replace: true })
   }, [navigate])
 
@@ -149,6 +166,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
       .then(r => r.json())
       .then(({ room, action, text }: { room: string | null, action: string | null, text: string | null }) => {
         if (!room) return
+        if (suppressedByBack(room)) return
         const name = getClient().getRoom(room)?.name ?? room
         setRoomNames(prev => ({ ...prev, [room]: name }))
         const ts = Date.now()
@@ -156,7 +174,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
         navigate(`/rooms/${encodeURIComponent(room)}${query}`, { replace: true })
       })
       .catch(() => {})
-  }, [navigate])
+  }, [navigate, suppressedByBack])
 
   const handleReady = useCallback(() => {
     setClientReady(true)
@@ -202,6 +220,8 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
 
   const goToRoom = useCallback((room: string, listen = false) => {
     const query = listen ? `?listen=${Date.now()}` : ''
+    // A deep link is a deliberate tap, so it overrides the back suppression.
+    lastBack = null
     // Replace whatever we launched into with the room list, then push the room
     // on top: back from a notification tap lands on the list instead of
     // dropping straight out of the app.
@@ -225,9 +245,10 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
 
     const sub = CapacitorApp.addListener('appUrlOpen', ({ url }) => handleUrl(url))
     // getLaunchUrl() keeps returning the URL the app was launched with for the
-    // whole process lifetime, and this component remounts whenever the route
-    // switches between /rooms and /rooms/:roomId — without the guard, backing
-    // out of a room re-consumes the launch URL and throws you right back in.
+    // whole process lifetime, so any remount of this component would re-consume
+    // it and throw you back into the launch room. The layout no longer remounts
+    // on list ↔ room transitions, but keep the guard: it is what makes that
+    // safe rather than a routing detail nobody may ever change back.
     if (!launchUrlConsumed) {
       launchUrlConsumed = true
       CapacitorApp.getLaunchUrl().then((launch) => {

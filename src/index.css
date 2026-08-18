@@ -1273,6 +1273,40 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 @media (hover: hover) and (pointer: fine) {
   .message-meta { visibility: hidden; }
   .message:hover .message-meta { visibility: visible; }
+  .message-meta-kebab { display: none; }
+}
+
+/* Touch: no hover to reveal on, and a permanently visible author/time line plus
+   three action buttons under every bubble reads as clutter. Collapse it all
+   behind a kebab that expands the same row in place. */
+@media not all and (hover: hover) and (pointer: fine) {
+  .message-meta:not(.message-meta--open) > .message-meta-actions,
+  .message-meta:not(.message-meta--open) > .message-meta-info { display: none; }
+  .message-meta--open > .message-meta-kebab { color: var(--text); }
+}
+
+.message-meta-kebab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin-left: -4px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.message-meta-kebab .material-symbols-outlined {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  font-variation-settings: 'opsz' 20, 'wght' 400, 'FILL' 0, 'GRAD' 0;
 }
 
 /* Collapse vertical gap between consecutive tool-progress messages so

@@ -401,7 +401,19 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [sendError, setSendError] = useState('')
   const [pinError, setPinError] = useState('')
   const [pinInFlight, setPinInFlight] = useState(false)
+  // Touch only: which message has its meta row opened from the kebab. Hover
+  // devices ignore this and keep revealing the row on hover.
+  const [metaOpenId, setMetaOpenId] = useState<string | null>(null)
   const [showScrollDown, setShowScrollDown] = useState(false)
+  // Tapping anywhere outside an open meta row closes it.
+  useEffect(() => {
+    if (!metaOpenId) return
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target as HTMLElement | null)?.closest('.message-meta')) setMetaOpenId(null)
+    }
+    document.addEventListener('pointerdown', onDown)
+    return () => document.removeEventListener('pointerdown', onDown)
+  }, [metaOpenId])
   const footerRef = useRef<HTMLDivElement>(null)
   const [dragOver, setDragOver] = useState(false)
   const dragCounterRef = useRef(0)
@@ -1751,7 +1763,19 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                       // Always rendered, only hidden: reserving the row's height
                       // keeps messages from jumping on hover, and the reserved
                       // space doubles as the gap between messages.
-                      <div className="message-meta">
+                      <div className={`message-meta${metaOpenId === msg.eventId ? ' message-meta--open' : ''}`}>
+                        {/* Touch only (hidden on hover devices by CSS): the row
+                            is too crowded to sit there permanently, so it hides
+                            behind this. */}
+                        <button
+                          type="button"
+                          className="message-meta-kebab"
+                          aria-label="Message actions"
+                          aria-expanded={metaOpenId === msg.eventId}
+                          onClick={() => setMetaOpenId(id => (id === msg.eventId ? null : msg.eventId))}
+                        >
+                          <span className="material-symbols-outlined">more_horiz</span>
+                        </button>
                         <span className="message-meta-actions">
                           <button
                             type="button"

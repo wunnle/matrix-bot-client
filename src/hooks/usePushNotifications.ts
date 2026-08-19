@@ -153,15 +153,21 @@ export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: str
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
 
     const registerPusher = async () => {
+      let phase = "starting web push setup";
       try {
+        phase = "registering service worker";
         await navigator.serviceWorker.register("/sw.js");
+        phase = "waiting for service worker readiness";
         const reg = await navigator.serviceWorker.ready;
+        phase = "requesting notification permission";
         const permission = Notification.permission === "granted"
           ? "granted"
           : await Notification.requestPermission();
         if (permission !== "granted") return;
 
+        phase = "reading existing push subscription";
         const existing = await reg.pushManager.getSubscription();
+        phase = "creating browser push subscription";
         const subscription =
           existing ??
           (await reg.pushManager.subscribe({
@@ -169,6 +175,7 @@ export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: str
             applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
           }));
 
+        phase = "loading Matrix auth";
         const { loadAuth } = await import("../lib/auth");
         const auth = loadAuth();
 
@@ -182,7 +189,8 @@ export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: str
         // whose notifications to skip (see src/lib/presence.ts).
         setPresencePushkey(pushkey);
 
-        await fetch(`${auth.homeserver}/_matrix/client/v3/pushers/set`, {
+        phase = "registering Matrix pusher";
+        const pusherRes = await fetch(`${auth.homeserver}/_matrix/client/v3/pushers/set`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -201,9 +209,12 @@ export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: str
             },
           }),
         });
+        if (!pusherRes.ok) {
+          throw new Error(`Matrix pusher registration failed: HTTP ${pusherRes.status}`);
+        }
         console.log("Push pusher registered successfully");
       } catch (err) {
-        console.warn("Push setup failed:", err);
+        console.warn(`Push setup failed during ${phase}:`, err);
         try {
           const { loadAuth } = await import("../lib/auth");
           const auth = loadAuth();
@@ -213,10 +224,12 @@ export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: str
             await fetch(`${auth.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent("!DpRWqhWOHJAxyvjOGI:matrix.org")}/send/m.room.message/${txnId}`, {
               method: "PUT",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.accessToken}` },
-              body: JSON.stringify({ msgtype: "m.text", body: `[Construct push setup failed] ${errMsg}` }),
+              body: JSON.stringify({ msgtype: "m.text", body: `[Construct push setup failed] during ${phase}: ${errMsg}` }),
             });
           }
-        } catch {}
+        } catch {
+          // Best effort: avoid a recursive push-setup error report if Matrix send fails.
+        }
       }
     };
 

@@ -346,7 +346,15 @@ export async function startLiveActivityIfNeeded(roomId, { roomName, detail, ques
   const started = { ...(blob.started ?? {}) };
   if (!force && Date.now() - (started[GLOBAL_KEY] ?? 0) < START_COOLDOWN_MS) return { skipped: "cooldown" };
 
-  const tokens = Object.keys(blob.pushToStart ?? {});
+  // Newest registration first. These are per *device* and they rotate, so one
+  // phone that reinstalled or rotated accumulates several entries that are all
+  // still within the 30-day retention above — and each accepted start push
+  // creates its own Activity. The most recently registered token is the one the
+  // current install is listening on; the older ones are the same device's
+  // ghosts.
+  const tokens = Object.entries(blob.pushToStart ?? {})
+    .sort(([, a], [, b]) => (b ?? 0) - (a ?? 0))
+    .map(([t]) => t);
   if (!tokens.length) return { skipped: "no-push-to-start-token" };
 
   const nowSec = Math.floor(Date.now() / 1000);
@@ -396,6 +404,13 @@ export async function startLiveActivityIfNeeded(roomId, { roomName, detail, ques
     if (r.status === 410 || (r.status === 400 && (r.body || "").includes("BadDeviceToken"))) {
       delete live[t];
     }
+    // One accepted start is the whole job: there is only ever one Activity, and
+    // every further accepted push here would create a duplicate of it rather
+    // than reach a second device. Stop rather than fan out — this loop sending
+    // to all tokens is what put five identical Live Activities on one phone.
+    // The untried tokens stay registered; if this one is stale-but-accepted the
+    // next message tries it again, and a genuinely dead one is pruned above.
+    if (r.status === 200) break;
   }
 
   // Only rate-limit a start APNs actually accepted — otherwise one rejected

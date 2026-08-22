@@ -237,30 +237,40 @@ export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: str
         // whose notifications to skip (see src/lib/presence.ts).
         setPresencePushkey(pushkey);
 
-        phase = "registering Matrix pusher";
-        const pusherRes = await fetch(`${auth.homeserver}/_matrix/client/v3/pushers/set`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${auth.accessToken}`,
+        const pusher = {
+          kind: "http",
+          app_id: "com.kafagoz.construct",
+          app_display_name: "Construct",
+          device_display_name: navigator.userAgent.includes("iPhone") ? "iPhone" : "Browser",
+          pushkey,
+          lang: "en",
+          data: {
+            url: "https://construct.kafagoz.com/_matrix/push/v1/notify",
+            format: "event_notification",
           },
+        };
+
+        // Through our own origin rather than straight at the homeserver: the
+        // direct call fails with "TypeError: Load failed" in Safari, which had
+        // pusher registration broken without it being obvious. The proxy also
+        // retires this account's older rows for the same app_id, because the
+        // listing call it needs is blocked by the same wall.
+        phase = "registering Matrix pusher through Construct proxy";
+        const pusherRes = await fetch("/api/register-pusher", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            kind: "http",
-            app_id: "com.kafagoz.construct",
-            app_display_name: "Construct",
-            device_display_name: navigator.userAgent.includes("iPhone") ? "iPhone" : "Browser",
-            pushkey,
-            lang: "en",
-            data: {
-              url: "https://construct.kafagoz.com/_matrix/push/v1/notify",
-              format: "event_notification",
-            },
+            homeserver: auth.homeserver,
+            accessToken: auth.accessToken,
+            pusher,
           }),
         });
         if (!pusherRes.ok) {
           throw new Error(`Matrix pusher registration failed: HTTP ${pusherRes.status}`);
         }
-        console.log("Push pusher registered successfully");
+        const { pruned = 0 } = await pusherRes.json().catch(() => ({}));
+        console.log(`Push pusher registered successfully (retired ${pruned} stale pusher(s))`);
+
       } catch (err) {
         console.warn(`Push setup failed during ${phase}:`, err);
         try {

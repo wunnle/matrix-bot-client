@@ -303,7 +303,24 @@ export default async function handler(req, res) {
   // acting on it silently dropped a message. The cost is a double alert on the
   // first message in a room (once per cooldown); the alternative risks a
   // message with no surface at all, which is worse.
-  const activityStarted = process.env.LIVE_ACTIVITY_PUSH_TO_START !== "0" && !liveActivityDelivered && !suppressLiveActivity
+  // Only the invocation carrying an APNs device starts one. The homeserver runs
+  // an HTTP pusher per pusher row and POSTs this handler once for each, so a
+  // user with both a web and a native pusher gets two concurrent invocations for
+  // one event — and both used to start an Activity, because the guards that
+  // should have stopped the second (seenEventBefore above, and the cooldown in
+  // startLiveActivityIfNeeded) are read-check-write over Matrix account data
+  // with no compare-and-swap: both read "not yet" before either writes. The
+  // observed result was two Activities for one message, only one of which could
+  // ever be updated, since the app registers its update token under a single
+  // key.
+  //
+  // Deciding by device rather than by shared state needs no atomicity: exactly
+  // one pusher row is the phone's APNs token, so exactly one invocation passes.
+  // A Live Activity is a native-app surface anyway — its push-to-start token
+  // comes from the same app that registers this pusher, so an invocation with
+  // no APNs device has no activity to speak for.
+  const ownsLiveActivity = nativePushkeys.size > 0;
+  const activityStarted = process.env.LIVE_ACTIVITY_PUSH_TO_START !== "0" && ownsLiveActivity && !liveActivityDelivered && !suppressLiveActivity
     ? await startLiveActivityIfNeeded(room_id, {
         roomName: room_name || title,
         alertTitle: sender_display_name || title,

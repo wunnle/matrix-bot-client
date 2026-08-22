@@ -129,6 +129,54 @@ export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: str
           }),
         });
         console.log("Native push pusher registered");
+
+        // Drop this account's older pushers for the same app. APNs tokens
+        // rotate — reinstall, restore, OS update — and each new one registered
+        // a pusher without retiring the last, so they accumulate. Synapse runs
+        // one HTTP pusher per pusher row and POSTs the gateway once for each,
+        // so N stale rows means the same phone gets N notifications and N
+        // separate Live Activities for a single message. The gateway's own
+        // dedupe can't save it: those N requests arrive concurrently and the
+        // check (live-activity.js seenEventBefore) is a read-check-write over
+        // account data with no compare-and-swap, so they all read "unseen"
+        // before any of them writes.
+        //
+        // Only tokens APNs still rejects get cleaned up on their own, via the
+        // `rejected` list in api/matrix-push.js. One that a reinstall left
+        // valid never goes away by itself, which is why this is explicit.
+        //
+        // Runs after the registration above, never before: deleting first
+        // would leave a window with no pusher at all, and a failure partway
+        // would end with the phone silently unsubscribed.
+        try {
+          const listRes = await fetch(`${auth.homeserver}/_matrix/client/v3/pushers`, {
+            headers: { Authorization: `Bearer ${auth.accessToken}` },
+          });
+          if (listRes.ok) {
+            const { pushers = [] } = await listRes.json();
+            const stale = pushers.filter(
+              (p: { app_id?: string; pushkey?: string }) =>
+                p.app_id === "com.wunnle.construct.ios" && p.pushkey && p.pushkey !== token,
+            );
+            for (const p of stale) {
+              // `kind: null` is the spec's delete. app_id + pushkey identify
+              // the row, so this can only ever remove this app's own rows.
+              await fetch(`${auth.homeserver}/_matrix/client/v3/pushers/set`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${auth.accessToken}`,
+                },
+                body: JSON.stringify({ kind: null, app_id: p.app_id, pushkey: p.pushkey }),
+              });
+            }
+            if (stale.length) console.log(`Removed ${stale.length} stale pusher(s)`);
+          }
+        } catch (err) {
+          // Never fatal: the pusher that matters is already registered above,
+          // and duplicates are a nuisance rather than a loss.
+          console.warn("Pruning stale pushers failed:", err);
+        }
       } catch (err) {
         console.warn("Native push setup failed:", err);
       }

@@ -1665,6 +1665,18 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-size: 12px;
   color: var(--text-muted);
   min-width: 0;
+  /* The row's content changes shape constantly during a run ("Thinking" with no
+     detail, then a monospace detail at a different font-size). Left to the
+     baseline-aligned line boxes, each swap resized the row by a pixel or two and
+     shoved the whole timeline up and down. Pin the box instead: fixed
+     line-height on every child, so height is the same in every phase. */
+  line-height: 16px;
+  height: 16px;
+  box-sizing: content-box;
+}
+
+.agent-activity > * {
+  line-height: inherit;
 }
 
 .agent-activity-dot {

@@ -800,9 +800,16 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
   const [expandedToolGroups] = useState<Set<string>>(new Set())
   const [toolDialog, setToolDialog] = useState<{ lines: ReturnType<typeof parseToolProgressMessage> } | null>(null)
+  const [lightbox, setLightbox] = useState<{ url: string; alt: string } | null>(null)
   const [approvalDialog, setApprovalDialog] = useState<ConstructApproval | null>(null)
   const [expandedToolLine, setExpandedToolLine] = useState<string | null>(null)
   const resolvedImagesRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!lightbox) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lightbox])
   useEffect(() => {
     const toResolve: { eventId: string; mxc: string }[] = []
     for (const m of messages) {
@@ -1456,6 +1463,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           </div>
         </div>
       )}
+      {lightbox && (
+        <div className="lightbox-overlay" onClick={() => setLightbox(null)}>
+          <button className="lightbox-close" aria-label="Close image" onClick={() => setLightbox(null)}>✕</button>
+          <img className="lightbox-image" src={lightbox.url} alt={lightbox.alt} onClick={e => e.stopPropagation()} />
+        </div>
+      )}
       {toolDialog && (
         <div className="room-editor-overlay" onClick={() => { setToolDialog(null); setExpandedToolLine(null) }}>
           <div className="room-editor" onClick={e => e.stopPropagation()}>
@@ -1510,7 +1523,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 >
                   {imgUrl ? (
                     <>
-                      <img className="pinned-image" src={imgUrl} alt="" />
+                      <img
+                        className="pinned-image"
+                        src={imgUrl}
+                        alt=""
+                        onClick={e => { e.stopPropagation(); setLightbox({ url: imgUrl, alt: msg.body || 'image' }) }}
+                      />
                       {(plain || msg.body)?.trim() ? (
                         <div className="pinned-caption">{plain || msg.body}</div>
                       ) : null}
@@ -1592,7 +1610,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                               <span className="material-icons bubble-voice-icon" title="Voice input">mic</span>
                             )}
                             {imageUrl
-                              ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" />
+                              ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" onClick={e => { e.stopPropagation(); setLightbox({ url: imageUrl, alt: msg.body || 'image' }) }} />
                               : fileUrl
                                 ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
                                 : msg.fileMxc && !fileUrl
@@ -1722,7 +1740,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                                         })}
                                       </div>
                                     : imageUrl
-                                    ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" />
+                                    ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" onClick={e => { e.stopPropagation(); setLightbox({ url: imageUrl, alt: msg.body || 'image' }) }} />
                                     : fileUrl
                                       ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
                                       : msg.fileMxc && !fileUrl

@@ -1603,7 +1603,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                       ) : null}
                     </>
                   ) : cleanHtml ? (
-                    <span dangerouslySetInnerHTML={{ __html: cleanHtml }} />
+                    <div className="rich-html" dangerouslySetInnerHTML={{ __html: cleanHtml }} />
                   ) : (
                     (plain || msg.body)
                   )}
@@ -1817,7 +1817,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                                       : msg.fileMxc && !fileUrl
                                         ? <span className="msg-file msg-file-loading"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</span>
                                         : cleanHtml
-                                          ? <span dangerouslySetInnerHTML={{ __html: cleanHtml }} />
+                                          ? <div className="rich-html" dangerouslySetInnerHTML={{ __html: cleanHtml }} />
                                           : text}
                                 </div>
                                 {msg.approval && (

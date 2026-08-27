@@ -367,7 +367,17 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     })
   }, [roomId])
 
+  // A drag is not a tap. Scrolling a code block sideways ends in a click on
+  // it, which would otherwise copy the block and pop a toast on every swipe.
+  const richTextPointerRef = useRef<{ x: number; y: number } | null>(null)
+  const onBotRichTextPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    richTextPointerRef.current = { x: e.clientX, y: e.clientY }
+  }, [])
+
   const onBotRichTextClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const start = richTextPointerRef.current
+    richTextPointerRef.current = null
+    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) return
     const raw = e.target
     if (raw == null || !(raw instanceof Element)) return
     if (raw.closest('a')) return
@@ -1525,6 +1535,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                   key={msg.eventId}
                   className={`message-pin-surface message-pin-surface--pinned pinned-body${cleanHtml ? ' pinned-body-rich' : ''}`}
                   onClick={cleanHtml ? onBotRichTextClick : undefined}
+                  onPointerDown={cleanHtml ? onBotRichTextPointerDown : undefined}
                 >
                   {imgUrl ? (
                     <>
@@ -1697,6 +1708,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                                 <div
                                   className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.machine ? 'bot-text-machine' : ''}`}
                                   onClick={cleanHtml ? onBotRichTextClick : undefined}
+                                  onPointerDown={cleanHtml ? onBotRichTextPointerDown : undefined}
                                   title={msg.machine?.source ? `Machine message from ${msg.machine.source}` : undefined}
                                 >
                                   {msg.threads

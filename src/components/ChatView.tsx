@@ -434,6 +434,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const client = getClient()
   const bottomRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
+  const codeScrollRef = useRef(new Map<string, number>())
   const refreshPinnedRef = useRef<() => void>(() => {})
   const pinnedIdsRef = useRef<Set<string>>(new Set())
   const activeRoomIdRef = useRef(roomId)
@@ -1060,6 +1061,58 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [client, roomId, userId, loadingMore, hasMore])
 
   // Slide render window up when user scrolls to top of rendered slice
+  // How far a code block is scrolled sideways is state the DOM does not keep
+  // for us. Any render that replaces a message's markup — a streamed edit, an
+  // image URL resolving, the render window sliding — builds a fresh <pre>,
+  // and a fresh <pre> starts back at the left. Remember the offset per block
+  // and put it back whenever the timeline's DOM changes underneath it.
+  useEffect(() => {
+    const container = messagesRef.current
+    if (!container) return
+
+    // Identify a block by the message it belongs to rather than by element
+    // identity, which is exactly what gets thrown away on a re-render.
+    const keyFor = (pre: Element): string | null => {
+      const message = pre.closest('[data-event-id]')
+      const eventId = message instanceof HTMLElement ? message.dataset.eventId : undefined
+      if (!eventId) return null
+      const index = Array.prototype.indexOf.call(message!.querySelectorAll('pre'), pre)
+      return index < 0 ? null : `${eventId}:${index}`
+    }
+
+    // 'scroll' does not bubble, so catch the blocks' own events on the way down.
+    const onScroll = (e: Event) => {
+      const pre = e.target
+      if (!(pre instanceof HTMLElement) || pre.tagName !== 'PRE') return
+      const key = keyFor(pre)
+      if (key) codeScrollRef.current.set(key, pre.scrollLeft)
+    }
+    container.addEventListener('scroll', onScroll, true)
+
+    let queued = 0
+    const restore = () => {
+      queued = 0
+      for (const pre of container.querySelectorAll('pre')) {
+        const key = keyFor(pre)
+        const want = key ? codeScrollRef.current.get(key) : undefined
+        // Only ever push a block back out from the left edge. Restoring in any
+        // other direction would fight a user who scrolled back to the start.
+        if (want && pre.scrollLeft === 0) pre.scrollLeft = want
+      }
+    }
+    const observer = new MutationObserver(() => {
+      if (queued) return
+      queued = requestAnimationFrame(restore)
+    })
+    observer.observe(container, { childList: true, subtree: true })
+
+    return () => {
+      container.removeEventListener('scroll', onScroll, true)
+      observer.disconnect()
+      if (queued) cancelAnimationFrame(queued)
+    }
+  }, [])
+
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
     // React listens for 'scroll' at the root, so this also fires for nested
     // scrollers — e.g. dragging a code block sideways. Those ticks would
@@ -1605,6 +1658,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             return (
               <div
                 key={msg.eventId}
+                data-event-id={msg.eventId}
                 className={isTool ? `tool-progress-wrap${prevIsTool ? ' tool-progress-wrap-cont' : ''}${nextIsTool ? ' tool-progress-wrap-open' : ''}` : undefined}
               >
                 {showDateDivider && (

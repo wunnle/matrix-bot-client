@@ -851,9 +851,11 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .pinned-body-rich pre {
   margin: 0.35em 0;
-  padding: 8px 10px;
+  /* Bottom padding is the scrollbar's lane — see .bot-text pre. */
+  padding: 8px 10px 16px;
   max-width: 100%;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   border-radius: 6px;
   background: var(--bg-active, rgba(0, 0, 0, 0.06));
 }

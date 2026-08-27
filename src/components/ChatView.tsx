@@ -1051,6 +1051,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
   // Slide render window up when user scrolls to top of rendered slice
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
+    // React listens for 'scroll' at the root, so this also fires for nested
+    // scrollers — e.g. dragging a code block sideways. Those ticks would
+    // re-render the whole timeline (and, near the top, kick off scrollback),
+    // which rebuilds the <pre> and throws away its horizontal position.
+    if (e.target !== e.currentTarget) return
     const el = e.currentTarget
     const scrollTop = el.scrollTop
     const isNearBottom = el.scrollHeight - scrollTop - el.clientHeight < 150

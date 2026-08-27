@@ -1027,8 +1027,13 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-size: 0.9em;
   background: var(--bg-active);
   border-radius: 6px;
-  padding: 8px 10px;
+  /* Extra bottom padding reserves a lane for the horizontal scrollbar: a
+     classic bar eats it out of the content box, an overlay bar (Safari/iOS)
+     floats in it. Either way the bar never sits on the last code line or on
+     whatever follows the block. */
+  padding: 8px 10px 16px;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   /* Contain width so long lines scroll instead of expanding the layout */
   width: 0;
   min-width: 100%;
@@ -1214,11 +1219,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   margin-top: 2px;
   max-width: 100%;
 }
-
-/* Safari floats the overlay scrollbar of a horizontally scrollable <pre> at the
-   very bottom of the block, where it lands on top of the hover row. Give the
-   row clearance when the message contains one. */
-.message-body:has(pre) .message-meta { margin-top: 10px; }
 
 .message-meta-info {
   font-size: 11px;
@@ -2099,7 +2099,7 @@ a.msg-file:hover { text-decoration: underline; }
 .msg-thread-body ol { padding-left: 1.3em; margin: 0 0 0.5em; }
 .msg-thread-body li { margin-bottom: 0.2em; }
 .msg-thread-body code { font-size: 0.9em; background: var(--bg); padding: 0.1em 0.3em; border-radius: 3px; }
-.msg-thread-body pre { font-size: 0.85em; background: var(--bg); border-radius: 5px; padding: 8px 10px; overflow-x: auto; width: 0; min-width: 100%; box-sizing: border-box; margin-bottom: 0.5em; }
+.msg-thread-body pre { font-size: 0.85em; background: var(--bg); border-radius: 5px; padding: 8px 10px 16px; overflow-x: auto; overscroll-behavior-x: contain; width: 0; min-width: 100%; box-sizing: border-box; margin-bottom: 0.5em; }
 
 .msg-cards {
   display: flex;

@@ -329,6 +329,16 @@ function shortenTopicPaths(topic: string): string {
     .join(' · ')
 }
 
+// The scrollbar lives inside the block's border box but outside its client
+// box, so a hit below/right of the client box is the bar, not the code.
+const isOnScrollbar = (block: HTMLElement, e: { clientX: number; clientY: number }) => {
+  const rect = block.getBoundingClientRect()
+  return (
+    e.clientY >= rect.top + block.clientTop + block.clientHeight ||
+    e.clientX >= rect.left + block.clientLeft + block.clientWidth
+  )
+}
+
 function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictationAutoSend }: Props) {
   // Read inside the timeline listener, which must not re-subscribe whenever
   // the active room changes.
@@ -370,21 +380,29 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // A drag is not a tap. Scrolling a code block sideways ends in a click on
   // it, which would otherwise copy the block and pop a toast on every swipe.
   const richTextPointerRef = useRef<{ x: number; y: number; pre: HTMLElement | null; scrollLeft: number } | null>(null)
+  // A native scrollbar drag dies the instant its element is replaced, and every
+  // timeline re-render rebuilds the <pre>. Dragging the thumb towards the edge
+  // of the block makes WebKit autoscroll the message list, which is a scroll on
+  // the container itself — past the nested-scroller guard in handleScroll — and
+  // near the top that kicks off scrollback. So: hold the timeline still for as
+  // long as the thumb is held.
+  const scrollbarDragRef = useRef(false)
   const onBotRichTextPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const target = e.target
     const pre = target instanceof Element ? (target.closest('pre') as HTMLElement | null) : null
     richTextPointerRef.current = { x: e.clientX, y: e.clientY, pre, scrollLeft: pre?.scrollLeft ?? 0 }
+    if (pre && isOnScrollbar(pre, e)) {
+      scrollbarDragRef.current = true
+      const end = () => {
+        scrollbarDragRef.current = false
+        window.removeEventListener('pointerup', end)
+        window.removeEventListener('pointercancel', end)
+      }
+      window.addEventListener('pointerup', end)
+      window.addEventListener('pointercancel', end)
+    }
   }, [])
 
-  // The scrollbar lives inside the block's border box but outside its client
-  // box, so a hit below/right of the client box is the bar, not the code.
-  const isOnScrollbar = (block: HTMLElement, e: { clientX: number; clientY: number }) => {
-    const rect = block.getBoundingClientRect()
-    return (
-      e.clientY >= rect.top + block.clientTop + block.clientHeight ||
-      e.clientX >= rect.left + block.clientLeft + block.clientWidth
-    )
-  }
 
   const onBotRichTextClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const start = richTextPointerRef.current
@@ -1138,6 +1156,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     // re-render the whole timeline (and, near the top, kick off scrollback),
     // which rebuilds the <pre> and throws away its horizontal position.
     if (e.target !== e.currentTarget) return
+    // A held scrollbar thumb outranks this: autoscrolling the timeline here
+    // would rebuild the <pre> and kill the drag. See scrollbarDragRef.
+    if (scrollbarDragRef.current) return
     const el = e.currentTarget
     const scrollTop = el.scrollTop
     const isNearBottom = el.scrollHeight - scrollTop - el.clientHeight < 150

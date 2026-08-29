@@ -39,11 +39,19 @@ html {
 /* Height matters as much as width: without it a horizontal scrollbar (code
    blocks) keeps WebKit's default ~15px thickness, which is far taller than the
    lane the block reserves for it, so in the Safari PWA the bar renders thick
-   and spills onto whatever follows the block. */
-::-webkit-scrollbar { width: 4px; height: 4px; }
+   and spills onto whatever follows the block.
+   The bar itself is 10px so a mouse can actually grab it; the transparent
+   border shrinks the *visible* thumb back to 4px without shrinking the hit
+   target. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); background-clip: padding-box; }
 
 body {
   position: fixed;

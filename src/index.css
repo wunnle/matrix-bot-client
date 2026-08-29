@@ -855,6 +855,11 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   color: var(--accent, inherit);
 }
 
+/* See .bot-text pre + p. */
+.pinned-body-rich pre + p,
+.pinned-body-rich pre + ul,
+.pinned-body-rich pre + ol { margin-top: 1.2em; }
+
 .pinned-body-rich pre {
   margin: 0.35em 0 0.9em;
   /* Bottom padding is the scrollbar's lane — see .bot-text pre. */
@@ -1018,6 +1023,12 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 .bot-text p { margin-bottom: 0.5em; }
 .bot-text p:last-child { margin-bottom: 0; }
+/* Prose right after a code block needs more air than prose after prose: the
+   block's scrollbar sits at its bottom edge. Margins collapse, so this is the
+   gap, not an addition to the <pre>'s own margin-bottom. */
+.bot-text pre + p,
+.bot-text pre + ul,
+.bot-text pre + ol { margin-top: 1.2em; }
 .bot-text ul, .bot-text ol { padding-left: 1.4em; margin-bottom: 0.5em; }
 .bot-text li { margin-bottom: 0.2em; }
 .bot-text strong, .bot-text b { font-weight: 600; }

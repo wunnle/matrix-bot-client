@@ -36,7 +36,11 @@ html {
   text-size-adjust: 100%;
 }
 
-::-webkit-scrollbar { width: 4px; }
+/* Height matters as much as width: without it a horizontal scrollbar (code
+   blocks) keeps WebKit's default ~15px thickness, which is far taller than the
+   lane the block reserves for it, so in the Safari PWA the bar renders thick
+   and spills onto whatever follows the block. */
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }

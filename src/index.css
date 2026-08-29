@@ -856,9 +856,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 .pinned-body-rich pre {
-  margin: 0.35em 0;
+  margin: 0.35em 0 0.9em;
   /* Bottom padding is the scrollbar's lane — see .bot-text pre. */
-  padding: 8px 10px 16px;
+  padding: 8px 10px 14px;
   max-width: 100%;
   overflow-x: auto;
   overscroll-behavior-x: contain;
@@ -1035,18 +1035,19 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-size: 0.9em;
   background: var(--bg-active);
   border-radius: 6px;
-  /* Extra bottom padding reserves a lane for the horizontal scrollbar: a
-     classic bar eats it out of the content box, an overlay bar (Safari/iOS)
-     floats in it. Either way the bar never sits on the last code line or on
-     whatever follows the block. */
-  padding: 8px 10px 16px;
+  /* Bottom padding reserves a lane for the horizontal scrollbar so the bar
+     never lands on the last code line. Note a classic (space-taking) bar is
+     *added* to an auto-height box on top of this padding, so the block also
+     needs a margin below it — otherwise the bar sits flush against whatever
+     follows and reads as overlapping it. */
+  padding: 8px 10px 14px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   /* Contain width so long lines scroll instead of expanding the layout */
   width: 0;
   min-width: 100%;
   box-sizing: border-box;
-  margin-bottom: 0.5em;
+  margin-bottom: 0.9em;
   line-height: 1.55;
 }
 .bot-text pre code {

@@ -45,7 +45,11 @@ html {
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+/* :active, not just :hover — a drag that leaves the element stops matching
+   :hover, which made the thumb snap back to its dim colour mid-drag as if the
+   grab had been cancelled. WebKit holds :active for the whole drag. */
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active { background: var(--text-faint); }
 
 body {
   position: fixed;

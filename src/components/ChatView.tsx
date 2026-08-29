@@ -369,21 +369,40 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
   // A drag is not a tap. Scrolling a code block sideways ends in a click on
   // it, which would otherwise copy the block and pop a toast on every swipe.
-  const richTextPointerRef = useRef<{ x: number; y: number } | null>(null)
+  const richTextPointerRef = useRef<{ x: number; y: number; pre: HTMLElement | null; scrollLeft: number } | null>(null)
   const onBotRichTextPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    richTextPointerRef.current = { x: e.clientX, y: e.clientY }
+    const target = e.target
+    const pre = target instanceof Element ? (target.closest('pre') as HTMLElement | null) : null
+    richTextPointerRef.current = { x: e.clientX, y: e.clientY, pre, scrollLeft: pre?.scrollLeft ?? 0 }
   }, [])
+
+  // The scrollbar lives inside the block's border box but outside its client
+  // box, so a hit below/right of the client box is the bar, not the code.
+  const isOnScrollbar = (block: HTMLElement, e: { clientX: number; clientY: number }) => {
+    const rect = block.getBoundingClientRect()
+    return (
+      e.clientY >= rect.top + block.clientTop + block.clientHeight ||
+      e.clientX >= rect.left + block.clientLeft + block.clientWidth
+    )
+  }
 
   const onBotRichTextClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const start = richTextPointerRef.current
     richTextPointerRef.current = null
     if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) return
+    // Dragging the thumb back to roughly where you grabbed it, or clicking the
+    // track to page sideways, both stay under the move threshold but are plainly
+    // not a tap on the code.
+    if (start?.pre && start.pre.scrollLeft !== start.scrollLeft) return
+    if (start?.pre && isOnScrollbar(start.pre, { clientX: start.x, clientY: start.y })) return
     const raw = e.target
     if (raw == null || !(raw instanceof Element)) return
     if (raw.closest('a')) return
     const code = raw.closest('code')
     const block: HTMLElement | null = (code as HTMLElement) ?? (raw.closest('pre') as HTMLElement | null)
     if (!block) return
+    const pre = block.closest('pre')
+    if (pre instanceof HTMLElement && isOnScrollbar(pre, e)) return
     e.preventDefault()
     const text = block.textContent ?? ''
     void copyTextToClipboard(text).then(() => showToast('Copied'))

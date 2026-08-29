@@ -1,4 +1,4 @@
-import { useMemo, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import type { Message } from '../types'
 
 /**
@@ -110,6 +110,14 @@ function getClockSnapshot(): number {
   return Math.floor(Date.now() / 1000)
 }
 
+// A constant snapshot and a no-op unsubscribe: React sees a store that never
+// changes, so an idle room never re-renders on the clock. The value is never
+// read — the hook returns null before touching it when there is no run.
+const NO_UNSUBSCRIBE = () => {}
+function getIdleSnapshot(): number {
+  return 0
+}
+
 function isBotMessage(m: Message): boolean {
   return !m.isOwnMessage && !m.isPeerMessage
 }
@@ -153,7 +161,17 @@ export function useAgentActivity(messages: Message[], botTyping: boolean): Agent
   // mirroring it into state: the snapshot is whole seconds (stable between
   // ticks, so React can bail out) and is read fresh on the first frame after a
   // run starts, not a second late.
-  const nowSec = useSyncExternalStore(subscribeToClock, getClockSnapshot)
+  //
+  // Only subscribe while there is a run to tick for. Subscribing unconditionally
+  // re-rendered the entire timeline once a second in an idle room, for a number
+  // nothing was displaying — which, among other things, rebuilt code blocks
+  // under any in-progress scrollbar drag.
+  const live = base !== null
+  const subscribe = useCallback(
+    (onChange: () => void) => (live ? subscribeToClock(onChange) : NO_UNSUBSCRIBE),
+    [live],
+  )
+  const nowSec = useSyncExternalStore(subscribe, live ? getClockSnapshot : getIdleSnapshot)
 
   if (!base) return null
   const now = nowSec * 1000

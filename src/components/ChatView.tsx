@@ -39,7 +39,8 @@ import { useVisualViewportResize } from '../hooks/useVisualViewport'
 import RoomEditor from './RoomEditor'
 import { Marked } from 'marked'
 import type { Message, RoomConfig, ConstructThread, ConstructApproval, ToolProgressLine } from '../types'
-import { useAgentActivity, formatElapsed } from '../hooks/useAgentActivity'
+import { useAgentRun } from '../hooks/useAgentActivity'
+import { AgentActivityBar } from './AgentActivityBar'
 import { useAgentBlocked, formatResetsAt, blockedHeadline } from '../hooks/useAgentBlocked'
 
 interface Props {
@@ -562,7 +563,13 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // Any typing member counts as "the run is alive": the room's bot isn't
   // separable from a peer by user id here (getRoomBotMeta only takes the first
   // other member), and a peer typing only keeps the row up a little longer.
-  const agentActivity = useAgentActivity(messages, typingUsers.length > 0)
+  const agentRun = useAgentRun(messages)
+  // Only whether the strip is showing, not its ticking contents — the clock
+  // lives in AgentActivityBar so a tick doesn't repaint the timeline.
+  const [agentActivity, setAgentActivity] = useState(false)
+  useEffect(() => {
+    if (!agentRun) setAgentActivity(false)
+  }, [agentRun])
 
   // Set by the bot when a turn came back "usage limit reached" — the one state
   // where the room is alive but nothing the user types will run.
@@ -1997,15 +2004,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           </div>
         )}
 
-        {agentActivity && (
-          <div className={`agent-activity agent-activity--${agentActivity.phase}`} aria-live="polite">
-            <span className="agent-activity-dot" />
-            <span className="agent-activity-label">{agentActivity.label}</span>
-            {agentActivity.detail && (
-              <span className="agent-activity-detail">{agentActivity.detail}</span>
-            )}
-            <span className="agent-activity-elapsed">{formatElapsed(agentActivity.elapsedSec)}</span>
-          </div>
+        {agentRun && (
+          <AgentActivityBar
+            run={agentRun}
+            botTyping={typingUsers.length > 0}
+            onLiveChange={setAgentActivity}
+          />
         )}
 
         <div className="pills" onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>

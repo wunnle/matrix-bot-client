@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import type { Message } from '../types'
 
 /**
@@ -110,26 +110,31 @@ function getClockSnapshot(): number {
   return Math.floor(Date.now() / 1000)
 }
 
-// A constant snapshot and a no-op unsubscribe: React sees a store that never
-// changes, so an idle room never re-renders on the clock. The value is never
-// read — the hook returns null before touching it when there is no run.
-const NO_UNSUBSCRIBE = () => {}
-function getIdleSnapshot(): number {
-  return 0
-}
-
 function isBotMessage(m: Message): boolean {
   return !m.isOwnMessage && !m.isPeerMessage
 }
 
+/** The part of a run that changes only when messages do — no clock involved. */
+export interface AgentRun {
+  phase: AgentActivity['phase']
+  label: string
+  detail?: string
+  startedAt: number
+  lastSignalAt: number
+}
+
 /**
+ * The run in flight, if any. Deliberately clock-free: this is what the timeline
+ * depends on, and it must not re-render once a second. The elapsed seconds are
+ * added by AgentActivityBar, which owns the clock subscription so that ticking
+ * repaints one small leaf instead of every message in the room.
+ *
  * @param messages full room timeline, oldest first
- * @param botTyping whether the room's bot currently has a typing flag set
  */
-export function useAgentActivity(messages: Message[], botTyping: boolean): AgentActivity | null {
+export function useAgentRun(messages: Message[]): AgentRun | null {
   // Everything below is a function of "the run that started at the user's last
   // message", so find that anchor once.
-  const base = useMemo(() => {
+  return useMemo(() => {
     let anchor = -1
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].isOwnMessage) { anchor = i; break }
@@ -156,23 +161,24 @@ export function useAgentActivity(messages: Message[], botTyping: boolean): Agent
       lastSignalAt: lastTool?.timestamp ?? startedAt,
     }
   }, [messages])
+}
 
-  // The wall clock is an external store, so subscribe to it rather than
-  // mirroring it into state: the snapshot is whole seconds (stable between
-  // ticks, so React can bail out) and is read fresh on the first frame after a
-  // run starts, not a second late.
-  //
-  // Only subscribe while there is a run to tick for. Subscribing unconditionally
-  // re-rendered the entire timeline once a second in an idle room, for a number
-  // nothing was displaying — which, among other things, rebuilt code blocks
-  // under any in-progress scrollbar drag.
-  const live = base !== null
-  const subscribe = useCallback(
-    (onChange: () => void) => (live ? subscribeToClock(onChange) : NO_UNSUBSCRIBE),
-    [live],
-  )
-  const nowSec = useSyncExternalStore(subscribe, live ? getClockSnapshot : getIdleSnapshot)
+/**
+ * The wall clock is an external store, so subscribe to it rather than mirroring
+ * it into state: the snapshot is whole seconds (stable between ticks, so React
+ * can bail out) and is read fresh on the first frame after a run starts, not a
+ * second late. Only call this from a leaf that displays elapsed time.
+ */
+export function useClockSeconds(): number {
+  return useSyncExternalStore(subscribeToClock, getClockSnapshot)
+}
 
+/** Run + clock → what to display, or null once the run stops being believable. */
+export function agentActivityAt(
+  base: AgentRun | null,
+  botTyping: boolean,
+  nowSec: number,
+): AgentActivity | null {
   if (!base) return null
   const now = nowSec * 1000
   if (now - base.startedAt > STALE_MS) return null

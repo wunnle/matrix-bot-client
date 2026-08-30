@@ -330,6 +330,19 @@ function shortenTopicPaths(topic: string): string {
     .join(' · ')
 }
 
+/**
+ * Scroll a container to its true end.
+ *
+ * scrollIntoView on the bottom sentinel aligns that zero-height div, which
+ * leaves whatever sits below it — a collapsed bottom margin on the last block,
+ * the container's own padding — still scrollable, so entering a room landed a
+ * few pixels short. The arithmetic has no such gap.
+ */
+function scrollToEnd(el: HTMLElement | null, behavior: ScrollBehavior = 'instant') {
+  if (!el) return
+  el.scrollTo({ top: el.scrollHeight - el.clientHeight, behavior })
+}
+
 // The scrollbar lives inside the block's border box but outside its client
 // box, so a hit below/right of the client box is the bar, not the code.
 const isOnScrollbar = (block: HTMLElement, e: { clientX: number; clientY: number }) => {
@@ -351,7 +364,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   useVisualViewportResize(() => {
     if (!stickToBottomRef.current) return
     programmaticScrollUntilRef.current = performance.now() + 100
-    bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'instant' })
+    scrollToEnd(messagesRef.current)
   }, isActive)
   const { toast, showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -1019,10 +1032,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     /* eslint-enable react-hooks/immutability, react-hooks/set-state-in-effect */
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        const el = messagesRef.current
-        if (!el) return
-        el.scrollTop = el.scrollHeight - el.clientHeight
-        bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'instant' })
+        scrollToEnd(messagesRef.current)
       })
     })
   }, [isActive, messages.length])
@@ -1059,7 +1069,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const behavior: ScrollBehavior = (!isFirstLoad.current && tailChanged && tail.isOwnMessage) ? 'smooth' : 'instant'
     isFirstLoad.current = false
     programmaticScrollUntilRef.current = performance.now() + (behavior === 'smooth' ? 500 : 100)
-    bottomRef.current?.scrollIntoView({ block: 'end', behavior })
+    scrollToEnd(messagesRef.current, behavior)
   }, [visibleMessages])
 
   // Load pills — retry on sync (account data may not be in-memory until first SYNCING)
@@ -1086,7 +1096,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // Scroll to bottom when own message is sent
   const scrollToBottom = useCallback(() => {
     stickToBottomRef.current = true
-    bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'instant' })
+    scrollToEnd(messagesRef.current)
   }, [])
 
   // Load older messages

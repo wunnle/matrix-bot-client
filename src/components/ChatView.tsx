@@ -559,6 +559,29 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
   const visibleMessages = renderStart > 0 ? messages.slice(renderStart) : messages
 
+  // Tool group IDs: each tool message maps to the eventId its group starts at,
+  // and a group is "collapsible" once something non-tool follows it (i.e. the
+  // run moved on). Derived from the message list alone, so it is memoised
+  // rather than recomputed inside the render.
+  const toolGroups = useMemo(() => {
+    const toolGroupId: Record<string, string> = {}
+    const collapsibleGroups = new Set<string>()
+    let currentGroupStart = ''
+    for (let i = 0; i < visibleMessages.length; i++) {
+      const m = visibleMessages[i]
+      const p = i > 0 ? visibleMessages[i - 1] : null
+      const n = i + 1 < visibleMessages.length ? visibleMessages[i + 1] : null
+      const iT = isBotToolProgress(m)
+      if (!iT) continue
+      const pT = p && isBotToolProgress(p)
+      const nT = n && isBotToolProgress(n)
+      if (!pT) currentGroupStart = m.eventId
+      toolGroupId[m.eventId] = currentGroupStart
+      if (!nT && n !== null) collapsibleGroups.add(currentGroupStart)
+    }
+    return { toolGroupId, collapsibleGroups }
+  }, [visibleMessages])
+
   // What the bot looks like it's doing, for the status row above the composer.
   // Any typing member counts as "the run is alive": the room's bot isn't
   // separable from a peer by user id here (getRoomBotMeta only takes the first
@@ -853,7 +876,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // `messages` so resolution doesn't mutate the message array and
   // re-trigger this effect in a feedback loop.
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
-  const [expandedToolGroups] = useState<Set<string>>(new Set())
   const [toolDialog, setToolDialog] = useState<{ lines: ReturnType<typeof parseToolProgressMessage> } | null>(null)
   const [lightbox, setLightbox] = useState<{ url: string; alt: string } | null>(null)
   const [approvalDialog, setApprovalDialog] = useState<ConstructApproval | null>(null)
@@ -1466,6 +1488,34 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     void copyTextToClipboard(body).then(() => showToast('Copied'))
   }, [showToast])
 
+  // MessageRow is memoised, so everything handed to it has to be referentially
+  // stable — these wrappers exist so a row never re-renders just because an
+  // inline arrow function was recreated.
+  const toolGroupsRef = useRef<{ toolGroupId: Record<string, string>; messages: Message[] }>({
+    toolGroupId: {},
+    messages: [],
+  })
+  useEffect(() => {
+    toolGroupsRef.current = { toolGroupId: toolGroups.toolGroupId, messages: visibleMessages }
+  }, [toolGroups, visibleMessages])
+  const openToolDialog = useCallback((eventId: string) => {
+    const { toolGroupId, messages: msgs } = toolGroupsRef.current
+    const groupId = toolGroupId[eventId]
+    const lines = msgs
+      .filter((m) => toolGroupId[m.eventId] === groupId)
+      .flatMap((m) => parseToolProgressMessage(m.body, m))
+    setToolDialog({ lines })
+  }, [])
+  const openLightbox = useCallback((url: string, alt: string) => setLightbox({ url, alt }), [])
+  const toggleMeta = useCallback(
+    (eventId: string) => setMetaOpenId((id) => (id === eventId ? null : eventId)),
+    [],
+  )
+  // togglePin is defined further down and changes identity; the ref keeps the
+  // callback handed to rows constant.
+  const togglePinRef = useRef<(id: string) => Promise<void>>(async () => {})
+  const togglePinById = useCallback((eventId: string) => { void togglePinRef.current(eventId) }, [])
+
   const inspectMessage = useCallback((eventId: string) => {
     const room = client.getRoom(roomId)
     const ev = room?.findEventById(eventId)
@@ -1504,6 +1554,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       setPinInFlight(false)
     }
   }, [roomId])
+  useEffect(() => {
+    togglePinRef.current = togglePin
+  }, [togglePin])
 
   return (
     <div
@@ -1675,22 +1728,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           )}
 
           {((() => {
-            // Precompute tool group IDs: each tool msg maps to its group's start eventId
-            const toolGroupId: Record<string, string> = {}
-            const collapsibleGroups = new Set<string>()
-            let currentGroupStart = ''
-            for (let i = 0; i < visibleMessages.length; i++) {
-              const m = visibleMessages[i]
-              const p = i > 0 ? visibleMessages[i - 1] : null
-              const n = i + 1 < visibleMessages.length ? visibleMessages[i + 1] : null
-              const iT = isBotToolProgress(m)
-              if (!iT) continue
-              const pT = p && isBotToolProgress(p)
-              const nT = n && isBotToolProgress(n)
-              if (!pT) currentGroupStart = m.eventId
-              toolGroupId[m.eventId] = currentGroupStart
-              if (!nT && n !== null) collapsibleGroups.add(currentGroupStart)
-            }
+            const { toolGroupId, collapsibleGroups } = toolGroups
             return <>{visibleMessages.map((msg, i) => {
             const showDateDivider = i === 0 || !sameDay(visibleMessages[i - 1].timestamp, msg.timestamp)
             const imageUrl = msg.imageUrl ?? (msg.imageMxc ? imageUrls[msg.eventId] : undefined)
@@ -1698,257 +1736,52 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             const isTool = isBotToolProgress(msg)
             const prev = i > 0 ? visibleMessages[i - 1] : null
             const next = i + 1 < visibleMessages.length ? visibleMessages[i + 1] : null
-            const prevIsTool = !showDateDivider && prev && isBotToolProgress(prev)
-            const nextIsTool = next && isBotToolProgress(next) &&
-              sameDay(msg.timestamp, next.timestamp)
+            const prevIsTool = !!(!showDateDivider && prev && isBotToolProgress(prev))
+            const nextIsTool = !!(next && isBotToolProgress(next) &&
+              sameDay(msg.timestamp, next.timestamp))
             const canPin = !msg.isDecryptionFailure
+            // Only the row that starts a tool group renders a summary, so only
+            // that row needs one computed.
+            const groupId = toolGroupId[msg.eventId]
+            const isGroupStart = isTool && !prevIsTool
+            const toolSummary = isGroupStart
+              ? summarizeToolLines(
+                  visibleMessages
+                    .filter(m => toolGroupId[m.eventId] === groupId)
+                    .flatMap(m => parseToolProgressMessage(m.body, m)),
+                )
+              : ''
+            const toolLive = isGroupStart && !collapsibleGroups.has(groupId)
             return (
-              <div
+              <MessageRow
                 key={msg.eventId}
-                data-event-id={msg.eventId}
-                className={isTool ? `tool-progress-wrap${prevIsTool ? ' tool-progress-wrap-cont' : ''}${nextIsTool ? ' tool-progress-wrap-open' : ''}` : undefined}
-              >
-                {showDateDivider && (
-                  <div className="date-divider">
-                    <span>{formatDate(msg.timestamp)}</span>
-                  </div>
-                )}
-                <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}${msg.isPeerMessage ? ' peer' : ''}${prev && !showDateDivider && (prev.isOwnMessage !== msg.isOwnMessage || prev.senderName !== msg.senderName) ? ' sender-switch' : ''}`}>
-                  <div className="message-body">
-                    {/* Another member's request, not the bot's own voice — say whose. */}
-                    {msg.isPeerMessage && (!prev || showDateDivider || prev.senderName !== msg.senderName) && (
-                      <div className="peer-sender">{msg.senderName}</div>
-                    )}
-                    {msg.isOwnMessage ? (
-                      <>
-                        <div className="message-pin-surface message-pin-surface--own">
-                          <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${imageUrl ? 'bubble-image' : ''} ${msg.source === 'voice' ? 'bubble-voice' : ''}`}>
-                            {msg.source === 'voice' && (
-                              <span className="material-icons bubble-voice-icon" title="Voice input">mic</span>
-                            )}
-                            {imageUrl
-                              ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" onClick={e => { e.stopPropagation(); setLightbox({ url: imageUrl, alt: msg.body || 'image' }) }} />
-                              : fileUrl
-                                ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
-                                : msg.fileMxc && !fileUrl
-                                  ? <span className="msg-file msg-file-loading"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</span>
-                                  : msg.body}
-                          </div>
-                        </div>
-                        <div className={`msg-status ${msg.isRead ? 'msg-status-read' : ''}`}>
-                          {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                            <span className="reaction-bar reaction-bar--own-inline">
-                              {Object.entries(msg.reactions).map(([emoji, senders]) => (
-                                <span key={emoji} className="reaction-pill--own">
-                                  {emoji}{senders.length > 1 && <span className="reaction-count">{senders.length}</span>}
-                                </span>
-                              ))}
-                            </span>
-                          )}
-                          <span className="material-icons">{msg.isRead ? 'done_all' : 'done'}</span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        {(() => {
-                          if (isTool) {
-                            const groupId = toolGroupId[msg.eventId]
-                            const isGroupStart = !prevIsTool
-                            // isGroupEnd = !nextIsTool (unused but kept for clarity)
-                            void collapsibleGroups
-                            void expandedToolGroups
-
-                            // Non-start messages in any group are hidden — summary shown at group start
-                            if (!isGroupStart) return null
-
-                            // All groups show as a summary chip (live group updates in real time)
-                            const allLines = visibleMessages
-                              .filter(m => toolGroupId[m.eventId] === groupId)
-                              .flatMap(m => parseToolProgressMessage(m.body, m))
-                            const summary = summarizeToolLines(allLines)
-                            const isLive = !collapsibleGroups.has(groupId)
-                            return (
-                              <div
-                                className={`tool-progress tool-progress-collapsed${isLive ? ' tool-progress-live' : ''}`}
-                                onClick={() => setToolDialog({ lines: allLines })}
-                              >
-                                <span className="tool-progress-tool">{summary}</span>
-                                {isLive && <span className="tool-progress-live-dot" />}
-                              </div>
-                            )
-
-                            // dead code kept for type-checker
-                            const lines = parseToolProgressMessage(msg.body, msg)
-                            return (
-                              <div
-                                className={`message-pin-surface message-pin-surface--tool tool-progress${prevIsTool ? ' tool-progress-cont' : ''}${nextIsTool ? ' tool-progress-open' : ''}`}
-                               
-                              >
-                                {lines.map((l, idx) => (
-                                  <div key={idx} className="tool-progress-line">
-                                    <span className="tool-progress-emoji">{l.emoji}</span>
-                                    <span className="tool-progress-tool">{l.tool}</span>
-                                    {l.content !== undefined && (
-                                      <span className="tool-progress-content">{l.content}</span>
-                                    )}
-                                    {l.repeat !== undefined && (
-                                      <span className="tool-progress-repeat">×{l.repeat}</span>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )
-                          }
-                          const { text } = parseActions(msg.body)
-                          const cleanHtml = msg.formattedBody
-                            ? stripActionMarkersInRichHtml(msg.formattedBody).trim()
-                            : undefined
-                          return (
-                            <>
-                              <div className="message-pin-surface">
-                                <div
-                                  className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.machine ? 'bot-text-machine' : ''}`}
-                                  onClick={cleanHtml ? onBotRichTextClick : undefined}
-                                  onPointerDown={cleanHtml ? onBotRichTextPointerDown : undefined}
-                                  title={msg.machine?.source ? `Machine message from ${msg.machine.source}` : undefined}
-                                >
-                                  {msg.threads
-                                    ? <div className="msg-threads">{msg.threads.map((t, i) => <ThreadBlock key={i} thread={t} />)}</div>
-                                    : msg.cards
-                                    ? <div className="msg-cards">
-                                        {msg.cards.map((card, ci) => {
-                                          const hasActions = card.actions && card.actions.length > 0
-                                          const hasFooter = hasActions || !!card.price
-                                          const isLinkCard = !hasFooter && !!card.url
-                                          const inner = (
-                                            <>
-                                              {card.image && <img className="msg-card-image" src={card.image} alt="" loading="lazy" />}
-                                              <div className="msg-card-body">
-                                                <div className="msg-card-title">{card.title}</div>
-                                                {card.subtitle && <div className="msg-card-subtitle">{card.subtitle}</div>}
-                                                {card.description && <div className="msg-card-description">{card.description}</div>}
-                                                {card.fields && card.fields.length > 0 && (
-                                                  <dl className="msg-card-fields">
-                                                    {card.fields.map((f, fi) => (
-                                                      <div key={fi} className="msg-card-field">
-                                                        <dt>{f.label}</dt>
-                                                        <dd>{f.value}</dd>
-                                                      </div>
-                                                    ))}
-                                                  </dl>
-                                                )}
-                                              </div>
-                                              {hasFooter && (
-                                                <div className="msg-card-footer">
-                                                  {card.price && <span className="msg-card-price">{card.price}</span>}
-                                                  {hasActions && (
-                                                    <div className="msg-card-actions">
-                                                      {card.actions!.map((a, ai) => (
-                                                        <a key={ai} className="msg-card-action" href={a.url} target="_blank" rel="noopener noreferrer">{a.label}</a>
-                                                      ))}
-                                                    </div>
-                                                  )}
-                                                </div>
-                                              )}
-                                            </>
-                                          )
-                                          return isLinkCard
-                                            ? <a key={ci} className="msg-card msg-card-link" href={card.url} target="_blank" rel="noopener noreferrer">{inner}</a>
-                                            : <div key={ci} className="msg-card">{inner}</div>
-                                        })}
-                                      </div>
-                                    : imageUrl
-                                    ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" onClick={e => { e.stopPropagation(); setLightbox({ url: imageUrl, alt: msg.body || 'image' }) }} />
-                                    : fileUrl
-                                      ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
-                                      : msg.fileMxc && !fileUrl
-                                        ? <span className="msg-file msg-file-loading"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</span>
-                                        : cleanHtml
-                                          ? <div className="rich-html" dangerouslySetInnerHTML={{ __html: cleanHtml }} />
-                                          : text}
-                                </div>
-                                {msg.approval && (
-                                  <button
-                                    className="approval-full-btn"
-                                    onClick={(e) => { e.stopPropagation(); setApprovalDialog(msg.approval!) }}
-                                  >
-                                    <span className="material-icons approval-full-icon">unfold_more</span>
-                                    View all {msg.approval.lines} lines
-                                  </button>
-                                )}
-                              </div>
-                              {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                <div className="reaction-bar">
-                                  {Object.entries(msg.reactions).map(([emoji, senders]) => (
-                                    <button
-                                      key={emoji}
-                                      className={`reaction-btn${senders.includes(userId) ? ' reaction-btn--active' : ''}`}
-                                      onClick={() => sendReaction(msg.eventId, emoji)}
-                                    >
-                                      {emoji}<span className="reaction-count">{senders.length}</span>
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </>
-                          )
-                        })()}
-                      </>
-                    )}
-                    {canPin && (
-                      // Always rendered, only hidden: reserving the row's height
-                      // keeps messages from jumping on hover, and the reserved
-                      // space doubles as the gap between messages.
-                      <div className={`message-meta${metaOpenId === msg.eventId ? ' message-meta--open' : ''}`}>
-                        {/* Touch only (hidden on hover devices by CSS): the row
-                            is too crowded to sit there permanently, so it hides
-                            behind this. */}
-                        <button
-                          type="button"
-                          className="message-meta-kebab"
-                          aria-label="Message actions"
-                          aria-expanded={metaOpenId === msg.eventId}
-                          onClick={() => setMetaOpenId(id => (id === msg.eventId ? null : msg.eventId))}
-                        >
-                          <span className="material-symbols-outlined">more_horiz</span>
-                        </button>
-                        <span className="message-meta-actions">
-                          <button
-                            type="button"
-                            className="message-meta-btn"
-                            aria-label="Copy message"
-                            onClick={() => copyMessage(msg.body)}
-                          >
-                            <span className="material-symbols-outlined">content_copy</span>
-                          </button>
-                          <button
-                            type="button"
-                            className={`message-meta-btn${pinnedEventIds.includes(msg.eventId) ? ' message-meta-btn--on' : ''}`}
-                            aria-label={pinnedEventIds.includes(msg.eventId) ? 'Unpin message' : 'Pin message'}
-                            disabled={pinInFlight}
-                            onClick={() => { void togglePin(msg.eventId) }}
-                          >
-                            <span className="material-symbols-outlined">keep</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="message-meta-btn"
-                            aria-label="Inspect event"
-                            onClick={() => inspectMessage(msg.eventId)}
-                          >
-                            <span className="material-symbols-outlined">data_object</span>
-                          </button>
-                        </span>
-                        <span className="message-meta-info">
-                          {/* Own messages: the bubble's side already says who
-                              sent it, so only the time is worth showing. */}
-                          {msg.isOwnMessage ? '' : <>{msg.authorName}{msg.authorName ? ' · ' : ''}</>}{formatSentAt(msg.timestamp)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+                msg={msg}
+                userId={userId}
+                showDateDivider={showDateDivider}
+                senderSwitch={!!(prev && !showDateDivider && (prev.isOwnMessage !== msg.isOwnMessage || prev.senderName !== msg.senderName))}
+                showPeerSender={!prev || showDateDivider || prev.senderName !== msg.senderName}
+                isTool={isTool}
+                prevIsTool={prevIsTool}
+                nextIsTool={nextIsTool}
+                canPin={canPin}
+                toolSummary={toolSummary}
+                toolLive={toolLive}
+                imageUrl={imageUrl}
+                fileUrl={fileUrl}
+                metaOpen={metaOpenId === msg.eventId}
+                isPinned={pinnedEventIds.includes(msg.eventId)}
+                pinInFlight={pinInFlight}
+                onOpenToolDialog={openToolDialog}
+                onOpenLightbox={openLightbox}
+                onOpenApproval={setApprovalDialog}
+                onRichClick={onBotRichTextClick}
+                onRichPointerDown={onBotRichTextPointerDown}
+                onReact={sendReaction}
+                onCopy={copyMessage}
+                onTogglePin={togglePinById}
+                onInspect={inspectMessage}
+                onToggleMeta={toggleMeta}
+              />
             )
             })}</>
           })()) as React.ReactNode}
@@ -2520,3 +2353,313 @@ function formatDate(ts: number): string {
 // lists synchronously. That reconciliation was causing a ~1s main-thread
 // stall on mobile when returning to the rooms screen.
 export default memo(ChatView)
+export interface MessageRowProps {
+  msg: Message
+  userId: string
+  /** Row shape, all precomputed by the parent from neighbouring messages. */
+  showDateDivider: boolean
+  senderSwitch: boolean
+  showPeerSender: boolean
+  isTool: boolean
+  prevIsTool: boolean
+  nextIsTool: boolean
+  canPin: boolean
+  /** Tool-group summary, for the one row that starts a group. */
+  toolSummary: string
+  toolLive: boolean
+  imageUrl?: string
+  fileUrl?: string
+  metaOpen: boolean
+  isPinned: boolean
+  pinInFlight: boolean
+  onOpenToolDialog: (eventId: string) => void
+  onOpenLightbox: (url: string, alt: string) => void
+  onOpenApproval: (approval: ConstructApproval) => void
+  onRichClick: (e: React.MouseEvent<HTMLDivElement>) => void
+  onRichPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void
+  onReact: (eventId: string, emoji: string) => void
+  onCopy: (body: string) => void
+  onTogglePin: (eventId: string) => void
+  onInspect: (eventId: string) => void
+  onToggleMeta: (eventId: string) => void
+}
+
+/**
+ * One row of the timeline.
+ *
+ * Memoised on purpose: the bot sends a tool-progress line every few seconds
+ * during a run, and without this every arrival re-rendered every row in the
+ * room — which rebuilds their code blocks and kills a scrollbar drag in
+ * progress. Props are therefore primitives and stable callbacks only; anything
+ * derived from neighbouring messages is computed by the parent so this compares
+ * cheaply.
+ */
+function MessageRowInner({
+  msg,
+  userId,
+  showDateDivider,
+  senderSwitch,
+  showPeerSender,
+  isTool,
+  prevIsTool,
+  nextIsTool,
+  canPin,
+  toolSummary,
+  toolLive,
+  imageUrl,
+  fileUrl,
+  metaOpen,
+  isPinned,
+  pinInFlight,
+  onOpenToolDialog,
+  onOpenLightbox,
+  onOpenApproval,
+  onRichClick,
+  onRichPointerDown,
+  onReact,
+  onCopy,
+  onTogglePin,
+  onInspect,
+  onToggleMeta,
+}: MessageRowProps) {
+  return (
+              <div
+                data-event-id={msg.eventId}
+                className={isTool ? `tool-progress-wrap${prevIsTool ? ' tool-progress-wrap-cont' : ''}${nextIsTool ? ' tool-progress-wrap-open' : ''}` : undefined}
+              >
+                {showDateDivider && (
+                  <div className="date-divider">
+                    <span>{formatDate(msg.timestamp)}</span>
+                  </div>
+                )}
+                <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}${msg.isPeerMessage ? ' peer' : ''}${senderSwitch ? ' sender-switch' : ''}`}>
+                  <div className="message-body">
+                    {/* Another member's request, not the bot's own voice — say whose. */}
+                    {msg.isPeerMessage && showPeerSender && (
+                      <div className="peer-sender">{msg.senderName}</div>
+                    )}
+                    {msg.isOwnMessage ? (
+                      <>
+                        <div className="message-pin-surface message-pin-surface--own">
+                          <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${imageUrl ? 'bubble-image' : ''} ${msg.source === 'voice' ? 'bubble-voice' : ''}`}>
+                            {msg.source === 'voice' && (
+                              <span className="material-icons bubble-voice-icon" title="Voice input">mic</span>
+                            )}
+                            {imageUrl
+                              ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" onClick={e => { e.stopPropagation(); onOpenLightbox(imageUrl, msg.body || 'image') }} />
+                              : fileUrl
+                                ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
+                                : msg.fileMxc && !fileUrl
+                                  ? <span className="msg-file msg-file-loading"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</span>
+                                  : msg.body}
+                          </div>
+                        </div>
+                        <div className={`msg-status ${msg.isRead ? 'msg-status-read' : ''}`}>
+                          {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                            <span className="reaction-bar reaction-bar--own-inline">
+                              {Object.entries(msg.reactions).map(([emoji, senders]) => (
+                                <span key={emoji} className="reaction-pill--own">
+                                  {emoji}{senders.length > 1 && <span className="reaction-count">{senders.length}</span>}
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                          <span className="material-icons">{msg.isRead ? 'done_all' : 'done'}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {(() => {
+                          if (isTool) {
+                            const isGroupStart = !prevIsTool
+
+                            // Non-start messages in any group are hidden — summary shown at group start
+                            if (!isGroupStart) return null
+
+                            // All groups show as a summary chip (live group updates in real time)
+                            return (
+                              <div
+                                className={`tool-progress tool-progress-collapsed${toolLive ? ' tool-progress-live' : ''}`}
+                                onClick={() => onOpenToolDialog(msg.eventId)}
+                              >
+                                <span className="tool-progress-tool">{toolSummary}</span>
+                                {toolLive && <span className="tool-progress-live-dot" />}
+                              </div>
+                            )
+
+                            // dead code kept for type-checker
+                            const lines = parseToolProgressMessage(msg.body, msg)
+                            return (
+                              <div
+                                className={`message-pin-surface message-pin-surface--tool tool-progress${prevIsTool ? ' tool-progress-cont' : ''}${nextIsTool ? ' tool-progress-open' : ''}`}
+                               
+                              >
+                                {lines.map((l, idx) => (
+                                  <div key={idx} className="tool-progress-line">
+                                    <span className="tool-progress-emoji">{l.emoji}</span>
+                                    <span className="tool-progress-tool">{l.tool}</span>
+                                    {l.content !== undefined && (
+                                      <span className="tool-progress-content">{l.content}</span>
+                                    )}
+                                    {l.repeat !== undefined && (
+                                      <span className="tool-progress-repeat">×{l.repeat}</span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )
+                          }
+                          const { text } = parseActions(msg.body)
+                          const cleanHtml = msg.formattedBody
+                            ? stripActionMarkersInRichHtml(msg.formattedBody).trim()
+                            : undefined
+                          return (
+                            <>
+                              <div className="message-pin-surface">
+                                <div
+                                  className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.machine ? 'bot-text-machine' : ''}`}
+                                  onClick={cleanHtml ? onRichClick : undefined}
+                                  onPointerDown={cleanHtml ? onRichPointerDown : undefined}
+                                  title={msg.machine?.source ? `Machine message from ${msg.machine.source}` : undefined}
+                                >
+                                  {msg.threads
+                                    ? <div className="msg-threads">{msg.threads.map((t, i) => <ThreadBlock key={i} thread={t} />)}</div>
+                                    : msg.cards
+                                    ? <div className="msg-cards">
+                                        {msg.cards.map((card, ci) => {
+                                          const hasActions = card.actions && card.actions.length > 0
+                                          const hasFooter = hasActions || !!card.price
+                                          const isLinkCard = !hasFooter && !!card.url
+                                          const inner = (
+                                            <>
+                                              {card.image && <img className="msg-card-image" src={card.image} alt="" loading="lazy" />}
+                                              <div className="msg-card-body">
+                                                <div className="msg-card-title">{card.title}</div>
+                                                {card.subtitle && <div className="msg-card-subtitle">{card.subtitle}</div>}
+                                                {card.description && <div className="msg-card-description">{card.description}</div>}
+                                                {card.fields && card.fields.length > 0 && (
+                                                  <dl className="msg-card-fields">
+                                                    {card.fields.map((f, fi) => (
+                                                      <div key={fi} className="msg-card-field">
+                                                        <dt>{f.label}</dt>
+                                                        <dd>{f.value}</dd>
+                                                      </div>
+                                                    ))}
+                                                  </dl>
+                                                )}
+                                              </div>
+                                              {hasFooter && (
+                                                <div className="msg-card-footer">
+                                                  {card.price && <span className="msg-card-price">{card.price}</span>}
+                                                  {hasActions && (
+                                                    <div className="msg-card-actions">
+                                                      {card.actions!.map((a, ai) => (
+                                                        <a key={ai} className="msg-card-action" href={a.url} target="_blank" rel="noopener noreferrer">{a.label}</a>
+                                                      ))}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              )}
+                                            </>
+                                          )
+                                          return isLinkCard
+                                            ? <a key={ci} className="msg-card msg-card-link" href={card.url} target="_blank" rel="noopener noreferrer">{inner}</a>
+                                            : <div key={ci} className="msg-card">{inner}</div>
+                                        })}
+                                      </div>
+                                    : imageUrl
+                                    ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" onClick={e => { e.stopPropagation(); onOpenLightbox(imageUrl, msg.body || 'image') }} />
+                                    : fileUrl
+                                      ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
+                                      : msg.fileMxc && !fileUrl
+                                        ? <span className="msg-file msg-file-loading"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</span>
+                                        : cleanHtml
+                                          ? <div className="rich-html" dangerouslySetInnerHTML={{ __html: cleanHtml }} />
+                                          : text}
+                                </div>
+                                {msg.approval && (
+                                  <button
+                                    className="approval-full-btn"
+                                    onClick={(e) => { e.stopPropagation(); onOpenApproval(msg.approval!) }}
+                                  >
+                                    <span className="material-icons approval-full-icon">unfold_more</span>
+                                    View all {msg.approval.lines} lines
+                                  </button>
+                                )}
+                              </div>
+                              {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                <div className="reaction-bar">
+                                  {Object.entries(msg.reactions).map(([emoji, senders]) => (
+                                    <button
+                                      key={emoji}
+                                      className={`reaction-btn${senders.includes(userId) ? ' reaction-btn--active' : ''}`}
+                                      onClick={() => onReact(msg.eventId, emoji)}
+                                    >
+                                      {emoji}<span className="reaction-count">{senders.length}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          )
+                        })()}
+                      </>
+                    )}
+                    {canPin && (
+                      // Always rendered, only hidden: reserving the row's height
+                      // keeps messages from jumping on hover, and the reserved
+                      // space doubles as the gap between messages.
+                      <div className={`message-meta${metaOpen ? ' message-meta--open' : ''}`}>
+                        {/* Touch only (hidden on hover devices by CSS): the row
+                            is too crowded to sit there permanently, so it hides
+                            behind this. */}
+                        <button
+                          type="button"
+                          className="message-meta-kebab"
+                          aria-label="Message actions"
+                          aria-expanded={metaOpen}
+                          onClick={() => onToggleMeta(msg.eventId)}
+                        >
+                          <span className="material-symbols-outlined">more_horiz</span>
+                        </button>
+                        <span className="message-meta-actions">
+                          <button
+                            type="button"
+                            className="message-meta-btn"
+                            aria-label="Copy message"
+                            onClick={() => onCopy(msg.body)}
+                          >
+                            <span className="material-symbols-outlined">content_copy</span>
+                          </button>
+                          <button
+                            type="button"
+                            className={`message-meta-btn${isPinned ? ' message-meta-btn--on' : ''}`}
+                            aria-label={isPinned ? 'Unpin message' : 'Pin message'}
+                            disabled={pinInFlight}
+                            onClick={() => { onTogglePin(msg.eventId) }}
+                          >
+                            <span className="material-symbols-outlined">keep</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="message-meta-btn"
+                            aria-label="Inspect event"
+                            onClick={() => onInspect(msg.eventId)}
+                          >
+                            <span className="material-symbols-outlined">data_object</span>
+                          </button>
+                        </span>
+                        <span className="message-meta-info">
+                          {/* Own messages: the bubble's side already says who
+                              sent it, so only the time is worth showing. */}
+                          {msg.isOwnMessage ? '' : <>{msg.authorName}{msg.authorName ? ' · ' : ''}</>}{formatSentAt(msg.timestamp)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+  )
+}
+
+export const MessageRow = memo(MessageRowInner)

@@ -2292,7 +2292,9 @@ function eventsToMessages(events: sdk.MatrixEvent[], userId: string, room: sdk.R
     })
 }
 
-const ALLOWED_TAGS = /^(p|br|strong|b|em|i|u|s|del|code|pre|ul|ol|li|blockquote|h[1-6]|a|span|table|thead|tbody|tr|th|td)$/i
+// `hr` earns its place: a `---` is how a reply marks a section break, and
+// stripping the tag silently collapsed two sections into one wall of text.
+const ALLOWED_TAGS = /^(p|br|hr|strong|b|em|i|u|s|del|code|pre|ul|ol|li|blockquote|h[1-6]|a|span|table|thead|tbody|tr|th|td)$/i
 const ALLOWED_ATTRS: Record<string, string[]> = { a: ['href', 'target', 'rel'], span: ['class'], code: ['class'] }
 // Class names are an allowlist, not free text: the bot marks up diff lines with
 // these and nothing else may borrow the app's styling.

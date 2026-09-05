@@ -6,6 +6,11 @@
   --bg-input: #1e1e28;
   --border: #2a2a38;
   --text: #e2e2f0;
+  /* One step above --text, for the few things that carry a reply's structure:
+     headings and bold lead-ins. The gap is deliberately small — hierarchy in a
+     chat column comes from size and space, and a second bright colour would
+     just make body text look dimmed. */
+  --text-strong: #f4f4ff;
   --text-muted: #6b6b85;
   --text-faint: #3e3e52;
   --accent: #7c6af7;
@@ -1025,7 +1030,64 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   background: transparent;
   padding: 0;
 }
-.bot-text p { margin-bottom: 0.5em; }
+/* ── Reply hierarchy ───────────────────────────────────────────────
+   Bot replies are the only long-form prose in the app, and until now they had
+   no heading rules at all: a `##` came out at the browser default (2em, huge
+   margins) and blew the column apart. The scale below is deliberately shallow —
+   in a ~340px column the readable range between body and title is small, so
+   separation is carried by space above, weight, and colour rather than size.
+   Every level keeps a much bigger top margin than bottom margin so a heading
+   binds to the text under it instead of floating between two sections. */
+.bot-text h1,
+.bot-text h2,
+.bot-text h3,
+.bot-text h4,
+.bot-text h5,
+.bot-text h6 {
+  color: var(--text-strong);
+  line-height: 1.3;
+  /* Headings are short and structural: a mid-word break reads as a typo. */
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+.bot-text h1 { font-size: 1.45em; font-weight: 650; margin: 1.5em 0 0.45em; }
+.bot-text h2 { font-size: 1.25em; font-weight: 650; margin: 1.6em 0 0.4em; }
+.bot-text h3 { font-size: 1.05em; font-weight: 650; margin: 1.4em 0 0.3em; }
+/* Below h3 the size run-out is exhausted, so the distinction switches to weight
+   and colour: a small muted label, still clearly a heading, no longer competing
+   with the h3s above it.
+   Deliberately NOT text-transform: uppercase. Replies here are Turkish as often
+   as English, and CSS uppercasing is locale-blind unless the element carries
+   lang="tr" — which nothing in the rendered body does. It would turn "iyi" into
+   "IYI" rather than "İYİ", i.e. misspell every heading with a dotted i. */
+.bot-text h4,
+.bot-text h5,
+.bot-text h6 {
+  font-size: 0.9em;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 1.1em 0 0.3em;
+}
+/* A rule under the top two levels is what makes a multi-section reply scannable
+   at a glance; deeper levels stay unruled so the page doesn't stripe. */
+.bot-text h1,
+.bot-text h2 {
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--border);
+}
+/* A reply that opens with a heading must not be pushed off its own top edge. */
+.bot-text > :first-child,
+.bot-text-rich > *:first-child,
+.rich-html > *:first-child { margin-top: 0; }
+
+.bot-text hr {
+  height: 0;
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.3em 0;
+}
+
+.bot-text p { margin-bottom: 0.7em; }
 .bot-text p:last-child { margin-bottom: 0; }
 /* Prose right after a code block needs more air than prose after prose: the
    block's scrollbar sits at its bottom edge. Margins collapse, so this is the
@@ -1033,18 +1095,42 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .bot-text pre + p,
 .bot-text pre + ul,
 .bot-text pre + ol { margin-top: 1.2em; }
-.bot-text ul, .bot-text ol { padding-left: 1.4em; margin-bottom: 0.5em; }
-.bot-text li { margin-bottom: 0.2em; }
-.bot-text strong, .bot-text b { font-weight: 600; }
+.bot-text ul, .bot-text ol { padding-left: 1.4em; margin-bottom: 0.7em; }
+/* Bullets and numbers are structure, not content: muting them stops a dense
+   list reading as a column of dots and lets the text hold the eye. */
+.bot-text li::marker { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.bot-text li { margin-bottom: 0.3em; }
+.bot-text li:last-child { margin-bottom: 0; }
+/* A list item long enough to be split into paragraphs still belongs to one
+   bullet — it must not open up as wide as the gap between top-level items. */
+.bot-text li > p { margin-bottom: 0.35em; }
+.bot-text li > p:last-child { margin-bottom: 0; }
+/* A nested list is a sub-point of the line above it, so it hugs its parent
+   rather than starting a new block. */
+.bot-text li > ul,
+.bot-text li > ol { margin: 0.3em 0 0; padding-left: 1.2em; }
+.bot-text strong, .bot-text b { font-weight: 650; color: var(--text-strong); }
 .bot-text em, .bot-text i { font-style: italic; }
 .bot-text code {
   font-family: ui-monospace, monospace;
-  font-size: 0.9em;
+  /* 0.86, not 0.9: a monospace face at the same nominal size reads noticeably
+     larger than the surrounding sans, so matching the numbers makes the literal
+     shout over the sentence it sits in. */
+  font-size: 0.86em;
   background: var(--bg-active);
-  padding: 0.1em 0.35em;
+  /* Tinted rather than plain --text. A literal is a different *kind* of thing
+     from prose, and colour says so without the extra weight that bold already
+     owns. Cool enough to sit beside the accent without competing. */
+  color: #cdc6ee;
+  /* Tight horizontal padding: a chip padded like a button leaves a visible gap
+     before a following comma or full stop, which reads as a typo. */
+  padding: 0.05em 0.28em;
   border-radius: 4px;
-  word-break: break-all;
-  overflow-wrap: break-word;
+  /* `anywhere`, not `break-all`: a long path or hash still wraps rather than
+     stretching the column, but a short identifier is no longer chopped in the
+     middle when it would have fit on the next line. */
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 .bot-text pre {
   font-size: 0.9em;
@@ -1144,7 +1230,17 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .bot-text-rich pre { cursor: pointer; }
 .bot-text-rich code:hover { background: var(--bg-hover); }
 .bot-text-rich pre:hover { background: var(--bg-hover); }
-.bot-text blockquote { border-left: 3px solid var(--border); padding-left: 0.8em; color: var(--text-muted); margin-bottom: 0.5em; }
+/* Quoted or set-aside text: tinted as well as ruled, so it reads as a distinct
+   block at a glance rather than as prose that happens to be indented. */
+.bot-text blockquote {
+  border-left: 3px solid var(--border);
+  background: rgba(255, 255, 255, 0.025);
+  border-radius: 0 6px 6px 0;
+  padding: 0.5em 0.8em;
+  color: var(--text-muted);
+  margin-bottom: 0.7em;
+}
+.bot-text blockquote > :last-child { margin-bottom: 0; }
 /* Tables scroll sideways rather than widening the timeline, the same way <pre>
    is contained above. display:block is what makes overflow-x apply at all. */
 .bot-text table {
@@ -1157,16 +1253,54 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-size: 0.9em;
   margin-bottom: 0.5em;
 }
+/* Horizontal rules only — a full grid draws nine borders around every cell and
+   turns a four-row table into the loudest thing in the reply. Rows are what you
+   read; the columns are held by alignment, which is enough. */
 .bot-text th, .bot-text td {
-  border: 1px solid var(--border);
-  padding: 4px 8px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 6px 14px 6px 0;
   text-align: left;
   vertical-align: top;
   white-space: nowrap;
 }
-.bot-text th { font-weight: 600; background: var(--bg-active); }
-.bot-text a { color: var(--accent); text-decoration: none; }
-.bot-text a:hover { text-decoration: underline; }
+/* Only the final column drops its gutter — applying this to every th collapses
+   the space between headers and runs them into one word. */
+.bot-text tr > :last-child { padding-right: 0; }
+/* The header is a label, not a cell: small, muted and lettered like the h4s,
+   so the data below it is the only bright thing in the block. */
+.bot-text th {
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  border-bottom-color: var(--text-faint);
+  padding-bottom: 4px;
+}
+.bot-text tbody tr:last-child td { border-bottom: none; }
+/* Underlined by default, not only on hover: on a phone there is no hover, so a
+   link that only differs by colour is a link you have to guess at. */
+.bot-text a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.bot-text a:hover { text-decoration-color: currentColor; }
+
+/* Trailing air inside a reply is the timeline's job — a block that ends the
+   message must not add its own, or every code block and list looks like it has
+   an empty line after it. */
+.bot-text > :last-child,
+.bot-text-rich > *:last-child,
+.rich-html > *:last-child { margin-bottom: 0; }
+/* Except a code block: a classic scrollbar is *added* below its box, so a
+   trailing <pre> still needs a lane or the bar lands on the next message.
+   See the margin-bottom note on .bot-text pre. */
+.bot-text > pre:last-child,
+.bot-text-rich > pre:last-child,
+.rich-html > pre:last-child { margin-bottom: 0.35em; }
 
 .msg-status {
   display: flex;

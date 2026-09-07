@@ -1001,7 +1001,11 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   if (body.startsWith('!model')) {
     const entry = sessions[roomId]
     if (!entry) {
-      await sendRoomText(roomId,'Not an agent room.')
+      // Stay quiet rather than answering. This handler sits above the
+      // "agent rooms only" guard so !spawn works anywhere, which also means
+      // !model fires in the Bender room — where `!model` is donbot's picker,
+      // not ours, and a "Not an agent room." reply is pure noise.
+      log(`Ignoring !model in non-agent room ${roomId}`)
       return
     }
     const provider = providerFor(entry)

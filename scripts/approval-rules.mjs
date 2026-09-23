@@ -176,8 +176,10 @@ const SECRET_BASENAMES = new Set([
 ])
 const SECRET_PATTERNS = [
   /(^|\/)\.env(\.[^/]*)?$/,          // .env, .env.local
-  /(^|\/)\.ssh\//,
-  /(^|\/)\.gnupg\//,
+  // The directory itself counts, not just a file inside it: `grep -r token
+  // ~/.ssh` names no file and leaked every key past a `\.ssh/` pattern.
+  /(^|\/)\.ssh(\/|$)/,
+  /(^|\/)\.gnupg(\/|$)/,
   /(^|\/)\.aws\/credentials$/,
   /(^|\/)id_(rsa|dsa|ecdsa|ed25519)$/,
 ]
@@ -420,6 +422,98 @@ export function bashIsSafe(command, cwd) {
     if (base === 'git' && sub === 'worktree') return tokens[at + 1] === 'list'
     return true
   })
+}
+
+// ---------------------------------------------------------------------------
+// Auto mode: the few things that still ask even when the human has stood down.
+//
+// `!auto on` makes a room approve its own tool calls. That is a deliberate
+// loosening, not a blank cheque: the calls below are the ones whose damage is
+// not contained by the room's worktree — they escalate privilege, leave the
+// machine, publish, or touch something outside the sandbox roots. Those keep
+// their card. Everything else the hook would have asked about is allowed and
+// merely reported.
+//
+// Note the asymmetry with bashIsSafe: that function decides whether to ask at
+// all and errs towards asking, so anything reaching here is already unsafe by
+// its lights. This one only decides whether auto mode may answer for Sinan, so
+// it errs towards keeping the human — an unrecognised command is auto-approved
+// (it was judged worth a prompt, not worth a veto), but an unrecognised *shape*
+// of danger is exactly what the explicit lists below are for.
+const NEVER_AUTO_BINS = new Set([
+  // Privilege escalation — the worktree stops mattering the moment these run.
+  'sudo', 'doas', 'su', 'pkexec',
+  // The machine itself. A Pi that reboots mid-turn cannot be asked about it.
+  'shutdown', 'reboot', 'poweroff', 'halt', 'systemctl', 'mkfs', 'fdisk', 'dd',
+  // Leaving this machine: publishing, deploying, or reaching another host.
+  'ssh', 'scp', 'rsync', 'vercel', 'gh',
+])
+// Bins that destroy or relocate whatever they are pointed at. Allowed under auto
+// mode only while every path argument stays in a sandbox root.
+const PATH_DESTRUCTIVE_BINS = new Set(['rm', 'rmdir', 'mv', 'cp', 'chmod', 'chown', 'truncate', 'ln', 'install'])
+
+// The program a segment really runs, or null when it names none. Same unwrapping
+// bashIsSafe does — keywords, VAR=val assignments, wrappers — kept separate
+// because that function answers a different question and returns a boolean.
+function segmentHead(seg) {
+  let tokens = unquoted(seg).trim().split(/\s+/).filter(Boolean)
+  while (tokens.length && KEYWORD_NOOPS.has(tokens[0])) tokens = tokens.slice(1)
+  if (tokens.length && KEYWORD_HEADS.has(tokens[0])) {
+    const at = tokens.findIndex((t) => t === 'do' || t === 'then')
+    tokens = at === -1 ? [] : tokens.slice(at + 1)
+  }
+  while (tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens = tokens.slice(1)
+  if (!tokens.length) return null
+  let base = tokens[0].split('/').pop()
+  while (WRAPPERS.has(base) || DURATION_WRAPPERS.has(base)) {
+    tokens = tokens.slice(DURATION_WRAPPERS.has(base) ? 2 : 1)
+    while (tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens = tokens.slice(1)
+    // A flagged wrapper (`env -i …`) hides what runs; say so rather than guess.
+    if (!tokens.length || tokens[0].startsWith('-')) return { base: null, tokens }
+    base = tokens[0].split('/').pop()
+  }
+  return { base, tokens }
+}
+
+// Why this call still needs a human despite auto mode, or null if it does not.
+// The string is shown in the room, so it reads as a reason and not a code.
+export function requiresHuman({ toolName, summary, cwd } = {}) {
+  const dir = cwd ?? '.'
+  // Credentials first, and for every tool: a secret leaving is the one mistake
+  // that cannot be undone by throwing the worktree away.
+  if (commandTouchesSecret(summary ?? '', dir)) return 'it touches a credential file'
+
+  // A write reaching here already failed the sandbox check in the hook, so the
+  // target is outside the room's worktree and scratch space by definition.
+  if (PATH_SCOPED.has(toolName)) return 'it writes outside the room worktree'
+
+  if (toolName !== 'Bash') return null
+
+  const cmd = stripHeredocs(String(summary ?? ''))
+  for (const seg of splitSegments(cmd)) {
+    if (!redirectTargetsAllowed(seg, dir)) return 'it redirects output outside the worktree'
+    const head = segmentHead(seg)
+    if (!head) continue
+    const { base, tokens } = head
+    if (!base) return 'the wrapper hides which program runs'
+    if (NEVER_AUTO_BINS.has(base)) return `\`${base}\` reaches outside this room`
+    // `git push` is the step that leaves the Pi. Everything else git does is
+    // either already allowed without asking or confined to the branch.
+    if (base === 'git' && tokens.slice(1).some((t) => t === 'push')) return 'it pushes to a remote'
+    if (base === 'npm' && tokens[1] === 'publish') return 'it publishes a package'
+    if (PATH_DESTRUCTIVE_BINS.has(base)) {
+      const args = tokens.slice(1).filter((t) => !t.startsWith('-'))
+      // Only the destination is written by a copy, and reading is unrestricted;
+      // `mv` is judged on every argument because it deletes its source too.
+      const paths = base === 'chmod' || base === 'chown' ? args.slice(1)
+        : base === 'cp' || base === 'install' ? args.slice(-1)
+        : args
+      if (!paths.length || !paths.every((p) => isSandboxPath(p, dir))) {
+        return `\`${base}\` is pointed outside the worktree`
+      }
+    }
+  }
+  return null
 }
 
 // A git write is pre-approved only when it acts on the room's own worktree: the

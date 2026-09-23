@@ -11,6 +11,7 @@ import * as http from 'node:http'
 import { execFile } from 'node:child_process'
 import { providerFor, resolveModel, allModelAliases, DEFAULT_PROVIDER, PROVIDERS } from './providers/index.mjs'
 import { createApprovalQueue } from './approval-queue.mjs'
+import { requiresHuman } from './approval-rules.mjs'
 import { detectLimitBlock } from './limit-block.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
@@ -218,13 +219,16 @@ const approvals = createApprovalQueue({
   onTimeout: (roomId, toolName) =>
     sendRoomText(roomId, `⏱️ No answer — denied \`${toolName}\`.`).catch(() => {}),
   present: (roomId, request, abandon) => {
-    const { toolName, summary, full, lang, allowSession = false } = request
+    const { toolName, summary, full, lang, allowSession = false, vetoReason } = request
     const buttons = allowSession
       ? '[[Deny]] [[Approve]] [[Always allow]]'
       : '[[Deny]] [[Approve]]'
     // Anything that isn't a diff is a command or a bare argument dump; both read
     // better wrapped than scrolled.
-    const body = `🔐 Approve \`${toolName}\`?\n\n${fencedBlock(summary, lang ?? 'cmd')}\n\n${buttons}`
+    const head = vetoReason
+      ? `🔐 Approve \`${toolName}\`? _(auto mode won't answer this one — ${vetoReason})_`
+      : `🔐 Approve \`${toolName}\`?`
+    const body = `${head}\n\n${fencedBlock(summary, lang ?? 'cmd')}\n\n${buttons}`
     // The card shows a clipped change; the rest rides along for Construct to
     // open in a dialog. Nobody should have to approve a change they can only
     // see part of.
@@ -244,7 +248,72 @@ const approvals = createApprovalQueue({
   },
 })
 
-const askForApproval = (roomId, request) => approvals.ask(roomId, request)
+// Auto mode: the room answers its own approvals for a while.
+//
+// Off by default and only the owner can turn it on — the `!` guard in the
+// message handler already sees to that. It expires on its own because the
+// failure mode is a room left unattended in auto mode weeks later, which is
+// worse than having to type `!auto on` again; `expiresAt` is a timestamp rather
+// than a timer so a bot restart cannot resurrect a lapsed one.
+const AUTO_DEFAULT_MS = Number(process.env.AGENT_AUTO_TTL_MS ?? 2 * 60 * 60 * 1000)
+
+// The live auto-mode state for a room, or null. Lapsed entries are cleared as
+// they are read, so nothing has to sweep them.
+function autoMode(roomId) {
+  const entry = sessions[roomId]
+  const auto = entry?.auto
+  if (!auto) return null
+  if (Date.now() >= auto.expiresAt) {
+    delete entry.auto
+    saveSessions()
+    return null
+  }
+  return auto
+}
+
+function setAutoMode(roomId, on, ms = AUTO_DEFAULT_MS) {
+  const entry = sessions[roomId]
+  if (!entry) return null
+  if (!on) {
+    const had = Boolean(entry.auto)
+    delete entry.auto
+    saveSessions()
+    return had
+  }
+  entry.auto = { expiresAt: Date.now() + ms }
+  saveSessions()
+  return entry.auto
+}
+
+function formatRemaining(ms) {
+  const mins = Math.max(1, Math.round(ms / 60000))
+  if (mins < 60) return `${mins} min`
+  const hours = mins / 60
+  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`
+}
+
+// Approvals still go through the queue unless the room is in auto mode and the
+// call is one auto mode is allowed to answer. The veto list lives in
+// approval-rules.mjs next to the rules that decided to ask in the first place.
+const askForApproval = (roomId, request) => {
+  const auto = autoMode(roomId)
+  if (auto) {
+    const veto = requiresHuman(request)
+    if (!veto) {
+      // Reported, not silent: auto mode moves the decision, not the record. One
+      // line per call is what makes a room worth scrolling back through.
+      const first = String(request.summary ?? '').split('\n')[0]
+      sendRoomText(roomId, `⚡ Auto-approved \`${request.toolName}\`: ${fencedBlock(first, 'cmd')}`).catch(() => {})
+      log(`[${roomId}] auto-approved ${request.toolName}`)
+      return Promise.resolve({ decision: 'allow', reason: 'Auto-approved (auto mode is on for this room).' })
+    }
+    // Auto mode is on and this one still asks — say which, or the card looks
+    // like auto mode silently stopped working.
+    log(`[${roomId}] auto mode declined to answer ${request.toolName}: ${veto}`)
+    return approvals.ask(roomId, { ...request, vetoReason: veto })
+  }
+  return approvals.ask(roomId, request)
+}
 const settleApproval = (roomId, decision, reason) => approvals.settle(roomId, decision, reason)
 const dropQueuedApprovals = (roomId, reason) => approvals.dropQueued(roomId, reason)
 
@@ -1049,6 +1118,49 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   // fall back to the marker baked into m.room.create.
   if (!sessions[roomId] && !isAgentRoom(roomId)) return
 
+  // !auto [on|off|<duration>] — approve this room's own tool calls for a while.
+  // Owner-only by the `!` guard above, per-room, and off unless asked for: a
+  // loosening that applied everywhere, or outlived the job it was for, is the
+  // one version of this worth not building.
+  if (body.startsWith('!auto')) {
+    const arg = body.slice('!auto'.length).trim().toLowerCase()
+    const auto = autoMode(roomId)
+    if (!arg) {
+      await sendRoomText(roomId, auto
+        ? `⚡ Auto mode is **on** — ${formatRemaining(auto.expiresAt - Date.now())} left.\n\n[[!auto off]] [[!auto 2h]]`
+        : 'Auto mode is **off** — I ask before anything that changes the world.\n\n[[!auto on]] [[!auto 30m]]')
+      return
+    }
+    if (arg === 'off') {
+      await sendRoomText(roomId, setAutoMode(roomId, false)
+        ? '🔐 Auto mode off — back to asking.'
+        : 'Auto mode was already off.')
+      return
+    }
+    // `on` takes the default; a bare duration is also an `on`, since asking for
+    // half an hour of it can only mean turning it on.
+    const spec = arg === 'on' ? '' : arg.replace(/^on\s+/, '')
+    let ms = AUTO_DEFAULT_MS
+    if (spec) {
+      const m = /^(\d+)\s*(m|min|mins|h|hr|hrs)$/.exec(spec)
+      if (!m) {
+        await sendRoomText(roomId, `Didn't understand "${spec}". Try !auto on, !auto 30m, !auto 2h, or !auto off.`)
+        return
+      }
+      ms = Number(m[1]) * (m[2].startsWith('h') ? 3600_000 : 60_000)
+    }
+    const started = setAutoMode(roomId, true, ms)
+    if (!started) {
+      await sendRoomText(roomId, 'No session in this room yet — send me something first.')
+      return
+    }
+    await sendRoomText(roomId,
+      `⚡ Auto mode **on** for ${formatRemaining(ms)}. I'll approve my own tool calls and report each one.\n\n` +
+      'Still asking: credentials, writes outside this worktree, `sudo`, `systemctl`, pushes, and anything that ' +
+      'leaves this machine.\n\n[[!auto off]]')
+    return
+  }
+
   // !stop — abandon the running turn and everything queued behind it. Handled
   // above the queue check for the same reason approval answers are: the room it
   // is for is always busy, so queueing it would park the stop behind the very
@@ -1078,7 +1190,11 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
     const dropped = queued.get(roomId)?.length ?? 0
     queued.delete(roomId)
-    await sendRoomText(roomId, `🛑 Stopped.${dropped ? ` Dropped ${dropped} queued message${dropped === 1 ? '' : 's'}.` : ''}`)
+    // !stop is what you send when the turn was doing something you did not
+    // want, so it is the wrong moment to leave it approving itself.
+    const wasAuto = setAutoMode(roomId, false)
+    await sendRoomText(roomId, `🛑 Stopped.${dropped ? ` Dropped ${dropped} queued message${dropped === 1 ? '' : 's'}.` : ''}`
+      + (wasAuto ? ' Auto mode is off again.' : ''))
     return
   }
 
@@ -1118,9 +1234,13 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       await sendRoomText(roomId, 'A turn is still running — try again once it finishes.')
       return
     }
-    sessions[roomId] = { ...sessions[roomId], sessionId: null }
+    // Auto mode was granted to a conversation, and that conversation is what
+    // !reset throws away — it does not carry over to the one starting now.
+    const { auto, ...kept } = sessions[roomId]
+    sessions[roomId] = { ...kept, sessionId: null }
     saveSessions()
-    await sendRoomText(roomId, '↺ Fresh session. Directory and model are unchanged; I have no memory of this conversation now.')
+    await sendRoomText(roomId, '↺ Fresh session. Directory and model are unchanged; I have no memory of this conversation now.'
+      + (auto ? ' Auto mode is off again.' : ''))
     return
   }
 

@@ -33,7 +33,9 @@ export const AGENT_ROOM_TYPE = 'com.construct.agent'
 // the user's own token.
 // !stop leads: it is the only one that is urgent when you reach for it, and the
 // row is where you look while a turn you no longer want is running.
-const AGENT_PILLS = ['!stop', '!model', '!end', '!reset']
+// !auto sits after the two you reach for mid-turn and before the two that end
+// things; it is a setting, not an interruption.
+const AGENT_PILLS = ['!stop', '!model', '!auto', '!end', '!reset']
 
 // A default added after rooms already exist reaches nobody: pills are seeded
 // once, on accept. Backfilling has to be a one-shot migration rather than a
@@ -43,26 +45,33 @@ const AGENT_PILLS = ['!stop', '!model', '!end', '!reset']
 // Recorded under a key that cannot collide with a room id, since those always
 // begin with '!'.
 const MIGRATIONS_KEY = '__migrations'
-const STOP_PILL_MIGRATION = 'stop-pill'
+// Each entry adds one pill to rooms that already have a row, once. `at: 'start'`
+// is for pills you reach for in a hurry — appending would bury them behind
+// whatever the user has added since.
+const PILL_MIGRATIONS: { id: string; pill: string; at: 'start' | 'end' }[] = [
+  { id: 'stop-pill', pill: '!stop', at: 'start' },
+  { id: 'auto-pill', pill: '!auto', at: 'end' },
+]
 
 export async function backfillAgentPills(client: MatrixClient): Promise<void> {
   const store = client.getAccountData(ACCOUNT_DATA_TYPE)?.getContent<PillsStore>() ?? {}
   const done = store[MIGRATIONS_KEY] ?? []
-  if (done.includes(STOP_PILL_MIGRATION)) return
+  const pending = PILL_MIGRATIONS.filter((m) => !done.includes(m.id))
+  if (!pending.length) return
 
   const next: PillsStore = { ...store }
   for (const room of client.getRooms()) {
     if (room.getMyMembership() !== 'join') continue
     if (!isAgentRoom(client, room.roomId)) continue
-    const pills = next[room.roomId]
-    // An agent room with no pills yet is seedAgentPills' job — it will lay down
-    // the full set including !stop, so touching it here would only half-seed it.
-    if (!pills?.length || pills.includes('!stop')) continue
-    // Front of the row, matching AGENT_PILLS: it is the one you reach for in a
-    // hurry, and appending would bury it behind whatever the user has added.
-    next[room.roomId] = ['!stop', ...pills]
+    for (const { pill, at } of pending) {
+      const pills = next[room.roomId]
+      // An agent room with no pills yet is seedAgentPills' job — it lays down
+      // the full set, so touching it here would only half-seed it.
+      if (!pills?.length || pills.includes(pill)) continue
+      next[room.roomId] = at === 'start' ? [pill, ...pills] : [...pills, pill]
+    }
   }
-  next[MIGRATIONS_KEY] = [...done, STOP_PILL_MIGRATION]
+  next[MIGRATIONS_KEY] = [...done, ...pending.map((m) => m.id)]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await client.setAccountData(ACCOUNT_DATA_TYPE, next as any)
 }

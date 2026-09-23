@@ -257,9 +257,11 @@ function roomForRequest({ roomId, sessionId }) {
 }
 
 // Construct reads com.construct.model off incoming messages and shows it in the
-// chat header (see ChatView.tsx). Hermes tags its messages the same way, so
-// agent rooms get the model indicator for free — including rooms spawned before
-// the model was part of the room name.
+// chat header (see ChatView.tsx), so agent rooms get the model indicator for
+// free — including rooms spawned before the model was part of the room name.
+// Hermes tags its messages the same way as of 2026-09-06; until then it sent
+// the key nowhere, and this comment claimed otherwise, which is why the header
+// stayed blank in the Bender room for so long without anyone chasing it.
 function sendRoomText(roomId, text, extra = {}) {
   const model = sessions[roomId]?.model
   return client.sendMessage(roomId, {
@@ -669,6 +671,15 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null) {
   }
   const { room_id } = await client.createRoom({
     name,
+    // ⚠️ Pinned. matrix.org started defaulting to room version 12 on 2026-09-22,
+    // and matrix-js-sdk 41.3.0 — what this bot and Construct both run — tops out
+    // at KNOWN_SAFE_ROOM_VERSION = "10" (models/room.js:54). It cannot read a v12
+    // room at all: the one spawned before this pin had no name, no members, and
+    // never appeared in the joined-rooms list, because v12 changes the room-ID
+    // format and the shape of m.room.create. Creating the room succeeds and the
+    // room is then unusable, which is worse than failing. Lift this only once the
+    // SDK ships v12 support — and check Construct's copy of it too.
+    room_version: '10',
     // The header renders this. A worktree's path is a store-internal location
     // nobody navigates to, so name it by its branch instead — that is the
     // handle you actually use once the work leaves the room.
@@ -680,6 +691,14 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null) {
     // The creator is admin by default and everyone else PL0, which left the
     // owner unable to rename their own room (rename needs PL50). It is their
     // room; give them the same level as the bot.
+    //
+    // ⚠️ Listing USER_ID — the bot, i.e. the creator — is what room version 12
+    // rejects: there the creator has an implicit infinite power level and any
+    // override naming it makes /createRoom answer a bare 400. That is what broke
+    // every !spawn on 2026-09-22. It stays listed anyway, because `room_version`
+    // above pins these rooms to v10, where an override replaces the defaults
+    // outright — drop the creator here and the bot itself lands at PL0. The two
+    // settings only make sense together: unpin the version and this line must go.
     power_level_content_override: {
       users: { [USER_ID]: 100, ...(OWNER_ID ? { [OWNER_ID]: 100 } : {}) },
     },

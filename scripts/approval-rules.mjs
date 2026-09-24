@@ -23,21 +23,41 @@ const PROJECTS_ROOT = process.env.AGENT_PROJECTS_ROOT
   ?? path.join(process.env.HOME ?? '/home/wunnle', 'projects')
 const SCRATCH_ROOTS = ['/tmp', '/var/tmp', WORKTREES_ROOT, PROJECTS_ROOT]
 
-// curl stays untrusted in general — it fetches remote code, and `curl … | sh` is
-// exactly the shape this hook exists to stop. The single exception is confirming
-// a deploy went live, which is the last step of every sandbox turn: a plain GET
-// of one of Sinan's own hosts, with the body thrown away. Anything that sends a
-// body, changes the method, uploads, or saves the response to a file is out, and
-// so is any other host.
-const DEPLOY_HOSTS = /^https:\/\/([a-z0-9-]+\.)*kafagoz\.com(\/|$)/i
-const CURL_MUTATES = /(^|\s)(-X\s*(?!GET\b)|--request\s+(?!GET\b)|-d\b|--data\S*|-F\b|--form\b|-T\b|--upload-file\b|--config\b|-K\b|-O\b|--remote-name\b)|(^|\s)(-o|--output)\s+(?!\/dev\/null(\s|$))/
-function curlIsDeployCheck(tokens) {
+// A plain GET is a read of the public internet, and `WebFetch` — which is in
+// AUTO_ALLOW, unrestricted, any URL — already does exactly that. Holding curl to
+// one allowlisted host while the more capable tool asks nobody was an
+// inconsistency rather than a boundary: it only pushed the agent towards the
+// tool with less scrutiny. So the host check is gone and the *method* check is
+// what remains. Anything that sends a body, changes the method, uploads, or
+// saves the response outside the sandbox still asks — `curl … | sh` is the shape
+// this hook exists to stop, and that is caught by `sh` being an unknown program
+// in the next segment, not by the URL.
+const HTTP_MUTATES = /(^|\s)(-X\s*(?!GET\b)|--request\s+(?!GET\b)|-d\b|--data\S*|-F\b|--form\b|-T\b|--upload-file\b|--config\b|-K\b|--post\S*|--method\s+(?!GET\b))/
+// Where a download may land: discarded, stdout, or inside a sandbox root.
+function outputTargetOk(target, effCwd, cwd) {
+  if (!target) return false
+  const t = target.replace(/^['"]|['"]$/g, '')
+  return t === '/dev/null' || t === '-' || isSandboxPathFrom(t, effCwd, cwd)
+}
+function httpIsRead(tokens, effCwd, cwd) {
   const args = tokens.slice(1)
-  if (CURL_MUTATES.test(args.join(' '))) return false
-  const urls = args.filter((t) => /^[a-z]+:\/\//i.test(t.replace(/^['"]|['"]$/g, '')))
-  // No URL at all is not a deploy check; more than one host widens it silently.
-  if (!urls.length) return false
-  return urls.every((u) => DEPLOY_HOSTS.test(u.replace(/^['"]|['"]$/g, '')))
+  if (HTTP_MUTATES.test(args.join(' '))) return false
+  // -O/--remote-name writes a file named by the server into the working
+  // directory. Predictable only when that directory is a sandbox root.
+  if (args.some((a) => a === '-O' || a === '--remote-name')) {
+    if (!isSandboxPathFrom('.', effCwd, cwd)) return false
+  }
+  for (let i = 0; i < args.length; i++) {
+    if (['-o', '--output', '--output-document'].includes(args[i]) && !outputTargetOk(args[i + 1], effCwd, cwd)) return false
+  }
+  // wget writes to the current directory unless told otherwise, so it needs an
+  // explicit destination — curl prints to stdout and needs none.
+  if (tokens[0].split('/').pop() === 'wget') {
+    const at = args.findIndex((a) => a === '-O' || a === '--output-document')
+    if (at === -1 ? !isSandboxPathFrom('.', effCwd, cwd) : !outputTargetOk(args[at + 1], effCwd, cwd)) return false
+  }
+  // No URL at all is not a fetch — it is some other use of the tool.
+  return args.some((t) => /^['"]?[a-z]+:\/\//i.test(t))
 }
 
 // True when the turn is running inside the projects tree, where the extra
@@ -104,7 +124,10 @@ const GUARDED_BINS = {
   chmod: /-R\b|--recursive\b/,
 }
 // Bins whose non-flag arguments are paths that must land in a sandbox root.
-const PATH_ARG_BINS = new Set(['chmod', 'mkdir', 'touch'])
+const PATH_ARG_BINS = new Set(['chmod', 'mkdir', 'touch', 'cp'])
+// For these only the destination is written; the sources are reads, and reading
+// is unrestricted. `mv` is deliberately not here — it deletes its source too.
+const DEST_ONLY_BINS = new Set(['cp'])
 // Run another program rather than doing anything themselves, so the wrapper's
 // own name says nothing about what actually executes: `env rm -rf …` must be
 // judged on `rm`, not on `env`.
@@ -114,6 +137,17 @@ const DURATION_WRAPPERS = new Set(['timeout'])
 // Not read-only, but pre-authorised: the Linear CLI only ever touches Sinan's
 // own issue tracker, and prompting for every search made the bots unusable.
 const PREAPPROVED_BINS = new Set(['linear', 'obsidian'])
+// Sinan's own one-liner wrappers in ~/.local/bin. They exist *because* a
+// compound command cannot be allowlisted, so making the agent ask for them
+// defeats the reason they were written.
+//
+// Matched only when invoked as a bare name — no slash — so the shell resolves
+// them through PATH to ~/.local/bin. A path token would be a bypass: /tmp is
+// writable without a prompt, so `/tmp/wait-for` must not inherit this.
+const HELPER_BINS = new Set(['wait-for', 'page-grep'])
+function isHelperBin(token) {
+  return !token.includes('/') && HELPER_BINS.has(token)
+}
 // Helper scripts an agent may run unprompted: the CLIs reached the long way
 // round (`node /path/to/linear.js …`), and the ones a skill tells it to call.
 //
@@ -213,6 +247,16 @@ export function isSandboxPath(target, cwd) {
     const root = path.resolve(rootIsh)
     return resolved === root || resolved.startsWith(root + path.sep)
   })
+}
+
+// isSandboxPath treats the cwd it is given as a root of its own, so handing it
+// `effCwd` after a `cd` answers "is this inside the directory we just cd'd
+// into" — always yes, which quietly allowed `cd ~/.hermes && mkdir x`. Relative
+// paths must resolve against where the command actually runs while still being
+// judged against the roots of the directory the *turn* started in.
+export function isSandboxPathFrom(target, effCwd, cwd) {
+  const resolved = path.resolve(effCwd, String(target).replace(/^~(?=\/|$)/, HOME))
+  return isSandboxPath(resolved, cwd)
 }
 
 // Splits a command line on unquoted `|`, `||`, `&&`, `;` and newline. A naive
@@ -376,10 +420,26 @@ export function bashIsSafe(command, cwd) {
       if (!tokens.length || tokens[0].startsWith('-')) return false
       base = tokens[0].split('/').pop()
     }
-    if (base === 'curl') return curlIsDeployCheck(tokens)
+    if (base === 'curl' || base === 'wget') return httpIsRead(tokens, effCwd, cwd)
+    if (isHelperBin(tokens[0])) return true
     if (SAFE_BASH_BINS.has(base) || PREAPPROVED_BINS.has(base)) {
       const binGuard = GUARDED_BINS[base]
       return binGuard ? !binGuard.test(tokens.slice(1).join(' ')) : true
+    }
+    // Standing up a Python environment inside the sandbox, the counterpart of
+    // the `npm install` latitude below. Both run third-party setup code, so both
+    // are scoped to a directory whose contents are disposable — a venv is a
+    // directory you throw away, and asking about every `pip install -r` made
+    // Python work in a room cost a tap per dependency.
+    if ((base === 'python3' || base === 'python') && tokens[1] === '-m' && tokens[2] === 'venv') {
+      const target = tokens.slice(3).find((t) => !t.startsWith('-'))
+      return Boolean(target) && isSandboxPathFrom(target, effCwd, cwd)
+    }
+    if (base === 'pip' || base === 'pip3') {
+      const sub = tokens.slice(1).find((t) => !t.startsWith('-'))
+      if (['list', 'show', 'freeze', 'check'].includes(sub)) return true
+      if (sub === 'install' || sub === 'download') return isSandboxPathFrom('.', effCwd, cwd)
+      return false
     }
     if (SCRIPT_INTERPRETERS.has(base)) {
       const arg = tokens[1]
@@ -395,8 +455,13 @@ export function bashIsSafe(command, cwd) {
       if (guard && guard.test(tokens.slice(1).join(' '))) return false
       const args = tokens.slice(1).filter((t) => !t.startsWith('-'))
       // chmod's first argument is a mode, not a path.
-      const paths = base === 'chmod' ? args.slice(1) : args
-      return paths.length > 0 && paths.every((p) => isSandboxPath(p, cwd))
+      const paths = base === 'chmod' ? args.slice(1)
+        : DEST_ONLY_BINS.has(base) ? args.slice(-1)
+        : args
+      // A copy with only one argument names no destination; judge it as unknown
+      // rather than treating the source as the thing being written.
+      if (DEST_ONLY_BINS.has(base) && args.length < 2) return false
+      return paths.length > 0 && paths.every((p) => isSandboxPathFrom(p, effCwd, cwd))
     }
     const guard = GUARDED_BINS[base]
     if (guard) return !guard.test(tokens.slice(1).join(' '))
@@ -501,6 +566,9 @@ export function requiresHuman({ toolName, summary, cwd } = {}) {
     // either already allowed without asking or confined to the branch.
     if (base === 'git' && tokens.slice(1).some((t) => t === 'push')) return 'it pushes to a remote'
     if (base === 'npm' && tokens[1] === 'publish') return 'it publishes a package'
+    // A plain GET is a read and auto mode may answer it; a request that carries
+    // a body is data leaving the machine, which is the same class as a push.
+    if ((base === 'curl' || base === 'wget') && !httpIsRead(tokens, dir, dir)) return 'it sends data off this machine'
     if (PATH_DESTRUCTIVE_BINS.has(base)) {
       const args = tokens.slice(1).filter((t) => !t.startsWith('-'))
       // Only the destination is written by a copy, and reading is unrestricted;

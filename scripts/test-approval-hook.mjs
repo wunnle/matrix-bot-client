@@ -64,6 +64,11 @@ const CASES = [
   ['page text https://example.com --selector h1', 'allow'],
   ['page errors http://localhost:3000/', 'allow'],
   ['./page shot https://example.com', 'deny'],                           // not the PATH one
+  // The real call that prompted: a project create, which the CLI cannot do.
+  ['linear-gql \'mutation { projectCreate(input: { name: "Hermes Upstream Upgrade" }) { success } }\'', 'allow'],
+  ['linear-gql < /tmp/issues.graphql', 'allow'],
+  // Reading the key by hand is what the wrapper exists to stop, and still asks.
+  ["KEY=$(grep '^LINEAR_API_KEY=' ~/.openclaw/workspace/integrations/linear/.env)", 'deny'],
   // 2e — Python environments inside the sandbox, mirroring npm install.
   ['python3 -m venv .venv', 'allow'],
   ['.venv/bin/pip install -q -r requirements.txt', 'allow'],

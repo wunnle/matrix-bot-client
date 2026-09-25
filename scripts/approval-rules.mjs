@@ -144,7 +144,15 @@ const PREAPPROVED_BINS = new Set(['linear', 'obsidian'])
 // Matched only when invoked as a bare name — no slash — so the shell resolves
 // them through PATH to ~/.local/bin. A path token would be a bypass: /tmp is
 // writable without a prompt, so `/tmp/wait-for` must not inherit this.
-const HELPER_BINS = new Set(['wait-for', 'page-grep'])
+// `page` drives a real headless Chromium (shot/text/dom/eval/errors). It is the
+// widest of these by far — it fetches any URL and runs JS on it — and it is
+// here anyway, for two reasons. WebFetch is already in AUTO_ALLOW for any URL,
+// so the fetching half asks nobody today; and the browser it drives keeps its
+// own throwaway profile in /tmp, logged out, so a page cannot act as Sinan.
+// Driving a browser was the single worst category in the approval audit: 74% of
+// browser-shaped calls prompted, against 51% overall, and a third of them were
+// nothing but starting a browser or picking a port.
+const HELPER_BINS = new Set(['wait-for', 'page-grep', 'page'])
 function isHelperBin(token) {
   return !token.includes('/') && HELPER_BINS.has(token)
 }

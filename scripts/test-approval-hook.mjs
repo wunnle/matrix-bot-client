@@ -60,6 +60,10 @@ const CASES = [
   ['wait-for https://sandbox.kafagoz.com/x "Hello"', 'allow'],
   ['page-grep "some text"', 'allow'],
   ['/tmp/wait-for https://example.com', 'deny'],                         // not the PATH one
+  ['page shot https://sandbox.kafagoz.com/x --width 390', 'allow'],
+  ['page text https://example.com --selector h1', 'allow'],
+  ['page errors http://localhost:3000/', 'allow'],
+  ['./page shot https://example.com', 'deny'],                           // not the PATH one
   // 2e — Python environments inside the sandbox, mirroring npm install.
   ['python3 -m venv .venv', 'allow'],
   ['.venv/bin/pip install -q -r requirements.txt', 'allow'],

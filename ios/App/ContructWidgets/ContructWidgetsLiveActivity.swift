@@ -15,32 +15,66 @@ import ImageIO
 // type name and Codable shape — keep both definitions identical.
 struct ConstructActivityAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
-        var status: String
-        // The user's own message, shown faded above the reply. Defaulted so a
-        // push whose content-state omits it (or an in-flight older activity)
-        // still decodes.
-        var question: String = ""
-        var detail: String
-        // Room the reply came from, so a quick-reply button can send back to it.
-        // Empty until the gateway's reply push fills it. Defaulted for decode.
+        var title: String = ""
+        var body: String = ""
+        // "neutral" | "success" | "warning" | "error"; anything else draws as neutral.
+        var tone: String = "neutral"
+        // 0...1. Shown as a bar when set.
+        var progress: Double? = nil
+        // e.g. "3/5". Shown as a label when set.
+        var step: String? = nil
+        // Up to 3 one-tap QuickReplyIntent buttons; `send` is posted to roomId.
+        var actions: [Action] = []
         var roomId: String = ""
-        // Bender's [[CTA]] chips, sent as one-tap QuickReplyIntent buttons.
-        var actions: [String] = []
-        // Which room the current message is from. Lives here rather than in the
-        // attributes because a single activity now serves every room, and
-        // attributes are immutable once an activity starts. Defaulted so
-        // activities started before this field existed still decode; the views
-        // fall back to attributes.roomName when it's empty.
         var roomName: String = ""
+        // Unix seconds (since 1970). Deliberately not Date: a Codable Date in
+        // content-state decodes as seconds since 2001.
+        var endsAt: Double? = nil
+
+        struct Action: Codable, Hashable {
+            var label: String = ""
+            var send: String = ""
+        }
     }
 
-    var roomName: String
+    var activityId: String
 }
 
-/// Deep link that opens the room a message came from. Same URL the app builds
-/// for a notification tap, and RoomsLayout already routes it — without one, a
-/// tap just opens the app wherever it happened to be, which is especially wrong
-/// now that a single activity stands in for every room.
+// Synthesized Decodable ignores property defaults and throws on any missing key,
+// and ActivityKit drops a push whose content-state doesn't decode without a
+// word. Decode every field leniently so a partial push still lands.
+extension ConstructActivityAttributes.ContentState {
+    private enum Keys: String, CodingKey {
+        case title, body, tone, progress, step, actions, roomId, roomName, endsAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        body = try c.decodeIfPresent(String.self, forKey: .body) ?? ""
+        tone = try c.decodeIfPresent(String.self, forKey: .tone) ?? "neutral"
+        progress = try c.decodeIfPresent(Double.self, forKey: .progress)
+        step = try c.decodeIfPresent(String.self, forKey: .step)
+        actions = try c.decodeIfPresent([Action].self, forKey: .actions) ?? []
+        roomId = try c.decodeIfPresent(String.self, forKey: .roomId) ?? ""
+        roomName = try c.decodeIfPresent(String.self, forKey: .roomName) ?? ""
+        endsAt = try c.decodeIfPresent(Double.self, forKey: .endsAt)
+    }
+}
+
+extension ConstructActivityAttributes.ContentState.Action {
+    private enum Keys: String, CodingKey { case label, send }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
+        send = try c.decodeIfPresent(String.self, forKey: .send) ?? ""
+    }
+}
+
+/// Deep link that opens the activity's room. Same URL the app builds for a
+/// notification tap, and RoomsLayout already routes it — without one, a tap
+/// just opens the app wherever it happened to be.
 private func roomDeepLink(_ roomId: String) -> URL? {
     guard !roomId.isEmpty else { return nil }
     var allowed = CharacterSet.urlQueryAllowed
@@ -49,22 +83,30 @@ private func roomDeepLink(_ roomId: String) -> URL? {
     return URL(string: "construct://room?room=\(encoded)")
 }
 
-/// The room a message came from. One activity serves every room now, so this
-/// lives in the state; the attribute is only a fallback for activities started
-/// before that moved (their state has no roomName).
-private func displayRoomName(_ state: ConstructActivityAttributes.ContentState,
-                             _ attributes: ConstructActivityAttributes) -> String {
-    state.roomName.isEmpty ? attributes.roomName : state.roomName
+private extension ConstructActivityAttributes.ContentState {
+    /// The tone's accent. Unknown tones fall back to neutral.
+    var accent: Color {
+        switch tone {
+        case "success": return .green
+        case "warning": return Color(red: 1.0, green: 0.72, blue: 0.2)
+        case "error": return .red
+        default: return .purple
+        }
+    }
+
+    /// endsAt as a Date, only while it's still ahead — a timer view needs a
+    /// non-empty range, and a finished countdown has nothing to show.
+    var endDate: Date? {
+        guard let endsAt else { return nil }
+        let date = Date(timeIntervalSince1970: endsAt)
+        return date > Date() ? date : nil
+    }
 }
 
-/// "Reply" is the only terminal (non-working) status; everything else
-/// (Listening…/Waiting…/Thinking…) shows the working ring.
-private func isReply(_ status: String) -> Bool { status == "Reply" }
-
 /// Extension-side twin of the app's QuickReplyIntent (AppDelegate.swift). The
-/// quick-reply buttons below reference this so they compile; the app's copy is
-/// what actually performs (resolved by type name, like ListenIntent). Keep the
-/// type name and @Parameter names identical so the tap routes across.
+/// buttons below reference this so they compile; the app's copy is what
+/// actually performs (resolved by type name, like ListenIntent). Keep the type
+/// name and @Parameter names identical so the tap routes across.
 @available(iOS 17.0, *)
 struct QuickReplyIntent: AppIntent, LiveActivityIntent {
     static let title: LocalizedStringResource = "Quick Reply"
@@ -75,78 +117,42 @@ struct QuickReplyIntent: AppIntent, LiveActivityIntent {
     @Parameter(title: "Room")
     var roomId: String
 
+    @Parameter(title: "Activity")
+    var activityId: String
+
     init() {}
-    init(text: String, roomId: String) {
+    init(text: String, roomId: String, activityId: String) {
         self.text = text
         self.roomId = roomId
+        self.activityId = activityId
     }
 
     func perform() async throws -> some IntentResult { .result() }
 }
 
-/// Fades the bottom edge to transparent, so a reply too long for the fixed
-/// height trails off rather than being cut with a hard line.
-private extension View {
-    func bottomFade() -> some View {
-        mask(
-            LinearGradient(
-                stops: [
-                    .init(color: .black, location: 0),
-                    .init(color: .black, location: 0.92),
-                    .init(color: .clear, location: 1),
-                ],
-                startPoint: .top, endPoint: .bottom
-            )
-        )
-    }
-}
-
-/// The reply, faded at the bottom ONLY when it's too long to fit. ViewThatFits
-/// shows the full text at natural size when it fits the available height, and
-/// falls back to the shrunk-and-faded version only when it doesn't — so a short
-/// reply has no fade.
-private struct ReplyText: View {
-    let text: String
-    var lines: Int
-    var scale: CGFloat
-    var body: some View {
-        ViewThatFits(in: .vertical) {
-            Text(text)
-                .font(.subheadline)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text(text)
-                .font(.subheadline)
-                .lineLimit(lines)
-                .minimumScaleFactor(scale)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .bottomFade()
-        }
-    }
-}
-
-/// Bender's suggested quick-reply chips as one-tap buttons. Tapping fires
-/// QuickReplyIntent, which sends the label back to the room from the background
-/// without opening the app. iOS 17+ (interactive Live Activity buttons).
+/// The activity's action buttons. Tapping fires QuickReplyIntent, which posts
+/// the action's `send` text to the room from the background without opening
+/// the app. iOS 17+ (interactive Live Activity buttons).
 @available(iOS 17.0, *)
-private struct QuickReplyButtons: View {
-    let actions: [String]
-    let roomId: String
+private struct ActionButtons: View {
+    let state: ConstructActivityAttributes.ContentState
+    let activityId: String
     var body: some View {
         HStack(spacing: 8) {
-            ForEach(actions.prefix(3), id: \.self) { action in
-                Button(intent: QuickReplyIntent(text: action, roomId: roomId)) {
-                    Text(action)
+            ForEach(Array(state.actions.prefix(3).enumerated()), id: \.offset) { _, action in
+                Button(intent: QuickReplyIntent(text: action.send, roomId: state.roomId,
+                                                activityId: activityId)) {
+                    Text(action.label)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                        // Three chips share the width, so a long label shrinks
-                        // rather than truncating; the floor is lower now that
-                        // the base size is bigger.
+                        // Three buttons share the width, so a long label shrinks
+                        // rather than truncating.
                         .minimumScaleFactor(0.7)
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 11)
+                        .padding(.vertical, 10)
                         .frame(maxWidth: .infinity)
-                        .background(Color.white.opacity(0.14), in: Capsule())
+                        .background(state.accent.opacity(0.3), in: Capsule())
                 }
                 .buttonStyle(.plain)
             }
@@ -217,40 +223,6 @@ private struct RoomAvatar: View {
     }
 }
 
-/// Animated activity ring. Plain ProgressView spinners render as a static
-/// snapshot in Live Activities; only timer-driven progress actually animates,
-/// so this fills slowly over a few minutes — enough perceptible motion.
-private struct WorkingRing: View {
-    var size: CGFloat = 16
-    var body: some View {
-        if isXcodePreview {
-            // A timer-driven ProgressView is a live, always-ticking view, so the
-            // Xcode canvas never settles and shows "loading" forever. Render a
-            // static ring in previews; the real timer animation is on-device only.
-            Circle()
-                .trim(from: 0, to: 0.3)
-                .stroke(Color.purple, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .frame(width: size, height: size)
-        } else {
-            ProgressView(timerInterval: Date()...Date().addingTimeInterval(180), countsDown: false) {
-                EmptyView()
-            } currentValueLabel: {
-                EmptyView()
-            }
-            .progressViewStyle(.circular)
-            .tint(.purple)
-            .frame(width: size, height: size)
-        }
-    }
-}
-
-/// True when the view is rendering in Xcode's preview canvas rather than on a
-/// device — used to swap out live/animating views that would stall the canvas.
-private var isXcodePreview: Bool {
-    ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
-}
-
 // MARK: - Extracted content views
 //
 // The Lock Screen body and the Dynamic Island bottom content are plain Views so
@@ -258,67 +230,87 @@ private var isXcodePreview: Bool {
 // ActivityConfiguration preview harness is unreliable and often hangs the
 // canvas "loading forever"; plain-View previews render instantly.
 
+/// The step label and the endsAt countdown, in the tone's accent. Empty when
+/// neither is set. The countdown is a timer-driven Text, which keeps ticking in
+/// a Live Activity without any pushes.
+private struct MetaLabel: View {
+    let state: ConstructActivityAttributes.ContentState
+    var body: some View {
+        HStack(spacing: 6) {
+            if let step = state.step, !step.isEmpty {
+                Text(step)
+            }
+            if let end = state.endDate {
+                Text(timerInterval: Date()...end, countsDown: true)
+            }
+        }
+        .font(.caption.weight(.semibold).monospacedDigit())
+        .foregroundStyle(state.accent)
+        .lineLimit(1)
+        .fixedSize()
+    }
+}
+
+/// Title over body. Fewer lines when buttons need the room: the lock screen
+/// banner hard-caps its height, and overflow clips the buttons first.
+private struct MessageText: View {
+    let state: ConstructActivityAttributes.ContentState
+    var body: some View {
+        let hasActions = !state.actions.isEmpty
+        VStack(alignment: .leading, spacing: 2) {
+            if !state.title.isEmpty {
+                Text(state.title)
+                    .font(.headline)
+                    .lineLimit(hasActions ? 1 : 2)
+            }
+            if !state.body.isEmpty {
+                Text(state.body)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(hasActions ? 2 : 4)
+                    .minimumScaleFactor(0.85)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Progress bar in the tone's accent, when the state carries progress.
+private struct ProgressBar: View {
+    let state: ConstructActivityAttributes.ContentState
+    var body: some View {
+        if let progress = state.progress {
+            ProgressView(value: min(max(progress, 0), 1))
+                .tint(state.accent)
+        }
+    }
+}
+
 /// Lock Screen / banner content.
 struct LockScreenView: View {
     let state: ConstructActivityAttributes.ContentState
+    let activityId: String
     var body: some View {
-        let reply = isReply(state.status)
         HStack(alignment: .top, spacing: 12) {
             RoomAvatar(size: 40, roomId: state.roomId)
-            if reply {
-                // Answer phase. A plain line-limited Text (no ViewThatFits) so
-                // the banner hugs the reply: ViewThatFits measured against a
-                // smaller height than the system's final banner, truncating
-                // early and leaving empty space below. Replies are gateway-
-                // capped at 300 chars (~7 lines), so 10 lines shows them fully;
-                // anything longer truncates with an ellipsis. Quick-reply chips
-                // sit beneath it when bender suggests any.
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        // One activity serves every room now, so the card has to
-                        // say which room this is from. The avatar alone isn't
-                        // enough for agent rooms, whose names carry the task.
-                        if !state.roomName.isEmpty {
-                            Text(state.roomName)
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        Text(state.detail)
-                            // The banner hard-caps at 160pt. With chips below, a tall
-                            // reply would push them past the clip, so cap the reply's
-                            // lines when actions are present to reserve room for them.
-                            .font(.body)
-                            .lineLimit(state.actions.isEmpty ? 9 : 3)
-                            .minimumScaleFactor(0.85)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    if #available(iOS 17.0, *) {
-                        if !state.actions.isEmpty {
-                            QuickReplyButtons(actions: state.actions, roomId: state.roomId)
-                        }
-                    }
-                }
-            } else {
-                // Loading phase: the question, faded, with a working
-                // indicator beneath it.
-                VStack(alignment: .leading, spacing: 6) {
-                    if !state.question.isEmpty {
-                        Text(state.question)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 8) {
-                        WorkingRing(size: 14)
-                        Text(state.detail.isEmpty ? state.status : state.detail)
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(2)
+                        Text(state.roomName)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        MetaLabel(state: state)
+                    }
+                    MessageText(state: state)
+                }
+                ProgressBar(state: state)
+                if #available(iOS 17.0, *) {
+                    if !state.actions.isEmpty {
+                        ActionButtons(state: state, activityId: activityId)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.horizontal, 18)
@@ -327,30 +319,63 @@ struct LockScreenView: View {
     }
 }
 
-/// Dynamic Island expanded bottom region: the reply, or the faded question
-/// while waiting. Shared by the real region and the preview mock.
+/// Dynamic Island expanded bottom region. Shared by the real region and the
+/// preview mock.
 struct IslandBottomView: View {
     let state: ConstructActivityAttributes.ContentState
+    let activityId: String
     var body: some View {
-        if isReply(state.status) {
-            // Answer phase: reply, full width, with quick-reply chips beneath.
-            // Fewer reply lines when chips are present so they aren't clipped.
-            VStack(alignment: .leading, spacing: 12) {
-                ReplyText(text: state.detail, lines: state.actions.isEmpty ? 8 : 4, scale: 0.75)
-                if #available(iOS 17.0, *) {
-                    if !state.actions.isEmpty {
-                        QuickReplyButtons(actions: state.actions, roomId: state.roomId)
-                    }
+        VStack(alignment: .leading, spacing: 10) {
+            MessageText(state: state)
+            ProgressBar(state: state)
+            if #available(iOS 17.0, *) {
+                if !state.actions.isEmpty {
+                    ActionButtons(state: state, activityId: activityId)
                 }
             }
-        } else {
-            // Loading phase: the faded question.
-            Text(state.question.isEmpty ? state.status : state.question)
-                .font(.subheadline)
+        }
+    }
+}
+
+/// Dynamic Island expanded top-left: avatar and room name.
+private struct IslandRoomLabel: View {
+    let state: ConstructActivityAttributes.ContentState
+    var body: some View {
+        HStack(spacing: 6) {
+            RoomAvatar(size: 18, roomId: state.roomId)
+            Text(state.roomName)
+                .font(.footnote.weight(.medium))
                 .foregroundStyle(.secondary)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .lineLimit(1)
+        }
+    }
+}
+
+/// Compact island, right of the notch: the most time-sensitive thing the state
+/// has — countdown, then step, then progress, else a plain tone-tinted glyph.
+private struct CompactTrailing: View {
+    let state: ConstructActivityAttributes.ContentState
+    var body: some View {
+        if let end = state.endDate {
+            // Timer Text reserves its widest layout; cap it to the compact slot.
+            Text(timerInterval: Date()...end, countsDown: true)
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: 40)
+                .foregroundStyle(state.accent)
+        } else if let step = state.step, !step.isEmpty {
+            Text(step)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .foregroundStyle(state.accent)
+        } else if let progress = state.progress {
+            ProgressView(value: min(max(progress, 0), 1))
+                .progressViewStyle(.circular)
+                .tint(state.accent)
+                .frame(width: 16, height: 16)
+        } else {
+            Image(systemName: "bubble.left.fill")
+                .foregroundStyle(state.accent)
         }
     }
 }
@@ -358,7 +383,7 @@ struct IslandBottomView: View {
 struct ContructWidgetsLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ConstructActivityAttributes.self) { context in
-            LockScreenView(state: context.state)
+            LockScreenView(state: context.state, activityId: context.attributes.activityId)
                 // Our background is always dark, but on Mac the Live Activity
                 // renders in the light color scheme, so .primary/.secondary text
                 // resolved to black → black-on-black. Pin the content to dark so
@@ -369,41 +394,30 @@ struct ContructWidgetsLiveActivity: Widget {
                 .widgetURL(roomDeepLink(context.state.roomId))
 
         } dynamicIsland: { context in
-            let reply = isReply(context.state.status)
-            return DynamicIsland {
-                // Room name fills the otherwise-empty top-left; the working ring
-                // sits top-right while waiting.
+            DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Text(displayRoomName(context.state, context.attributes))
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(.secondary)
+                    IslandRoomLabel(state: context.state)
                         // Inset from the island's rounded top-left corner, which
                         // was clipping the name.
                         .padding(.leading, 10)
                         .padding(.top, 6)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    if !reply {
-                        WorkingRing(size: 16)
-                            .padding(.trailing, 4)
-                    }
+                    MetaLabel(state: context.state)
+                        .padding(.trailing, 4)
+                        .padding(.top, 6)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    IslandBottomView(state: context.state)
-                        // Match the room name's leading inset (10) so the reply's
-                        // left edge lines up with the title above it.
+                    IslandBottomView(state: context.state, activityId: context.attributes.activityId)
+                        // Match the room label's leading inset (10) so the text's
+                        // left edge lines up with it.
                         .padding(.leading, 10)
                         .padding(.trailing, 4)
                 }
             } compactLeading: {
                 RoomAvatar(size: 20, roomId: context.state.roomId)
             } compactTrailing: {
-                if reply {
-                    Image(systemName: "bubble.left.fill")
-                        .foregroundStyle(.purple)
-                } else {
-                    WorkingRing(size: 14)
-                }
+                CompactTrailing(state: context.state)
             } minimal: {
                 RoomAvatar(size: 20, roomId: context.state.roomId)
             }
@@ -416,43 +430,56 @@ struct ContructWidgetsLiveActivity: Widget {
 // MARK: - Previews
 //
 // Fast iteration lives here: edit a view above, and Xcode's canvas re-renders
-// every state below without a build/install/push. Sample states cover the two
-// phases (loading, reply) and short vs. overflow-length replies.
-
-private extension ConstructActivityAttributes {
-    static let preview = ConstructActivityAttributes(roomName: "Bender")
-}
+// every state below without a build/install/push. Samples cover each tone and
+// the combinations that stress the banner's height.
 
 private extension ConstructActivityAttributes.ContentState {
-    // Loading phase: still waiting on a reply. Non-"Reply" status shows the ring.
-    static let loading = ConstructActivityAttributes.ContentState(
-        status: "Thinking…",
-        question: "What's the fastest way to iterate on the Live Activity UI?",
-        detail: ""
+    // Neutral, step + progress, no buttons.
+    static let running = ConstructActivityAttributes.ContentState(
+        title: "Deploying construct",
+        body: "Building the web bundle and uploading to Vercel.",
+        progress: 0.6,
+        step: "3/5",
+        roomName: "Bender"
     )
-    // Answer phase, short: should sit solid on its last line, no fade.
-    static let shortReply = ConstructActivityAttributes.ContentState(
-        status: "Reply",
-        question: "Is the deploy green?",
-        detail: "Yes — all checks passed and it's live.",
-        actions: ["Ship it", "Hold", "Details"]
+    // Success with the full three buttons.
+    static let done = ConstructActivityAttributes.ContentState(
+        title: "Deploy is live",
+        body: "All checks passed. Promote to production?",
+        tone: "success",
+        actions: [.init(label: "Ship it", send: "ship it"),
+                  .init(label: "Hold", send: "hold"),
+                  .init(label: "Details", send: "details")],
+        roomName: "Bender"
     )
-    // Answer phase, long: should shrink a touch then fade at the bottom.
-    static let longReply = ConstructActivityAttributes.ContentState(
-        status: "Reply",
-        question: "Walk me through the push flow",
-        detail: "The Shortcut starts an activity with a push token and registers it against the room. When bender replies, the gateway looks up the token and sends a liveactivity push with the reply in content-state plus an alert block for sound. The token is kept, so a follow-up message updates the same activity rather than starting a new one. This reply is deliberately long to exercise the shrink-then-fade behaviour."
+    // Warning with a countdown, progress and buttons: the tallest case.
+    static let approval = ConstructActivityAttributes.ContentState(
+        title: "Approve rm -rf build/?",
+        body: "The agent wants to clear the build directory before a clean rebuild. It will wait for an answer, then skip the step.",
+        tone: "warning",
+        progress: 0.3,
+        actions: [.init(label: "Approve", send: "approve"),
+                  .init(label: "Deny", send: "deny")],
+        roomName: "agent: clean rebuild",
+        endsAt: Date().addingTimeInterval(299).timeIntervalSince1970
+    )
+    // Error, long body, no buttons: should truncate, not clip.
+    static let failed = ConstructActivityAttributes.ContentState(
+        title: "Build failed",
+        body: "tsc exited with 2 errors in src/lib/liveActivity.ts. The first one is a type mismatch on the plugin's start options; the second follows from it. This body is deliberately long to exercise truncation.",
+        tone: "error",
+        roomName: "Bender"
     )
 }
 
 /// Simulated Lock Screen banner: the dark rounded container iOS draws around a
-/// Live Activity, at a fixed height so the overflow/fade behaves as on device
-/// (the real banner is a bounded box, not content-sized).
+/// Live Activity, at a fixed height so overflow behaves as on device (the real
+/// banner is a bounded box, not content-sized).
 private struct PreviewBanner: View {
     let state: ConstructActivityAttributes.ContentState
     var body: some View {
-        LockScreenView(state: state)
-            .frame(width: 360, height: 150, alignment: .top)
+        LockScreenView(state: state, activityId: "preview")
+            .frame(width: 360, height: 160, alignment: .top)
             .background(Color(red: 0.07, green: 0.07, blue: 0.1))
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .foregroundStyle(.white)
@@ -460,24 +487,20 @@ private struct PreviewBanner: View {
 }
 
 /// Simulated expanded Dynamic Island: a black rounded pill with the same
-/// regions the real island lays out (room name + ring on top, content below).
+/// regions the real island lays out (room label + meta on top, content below).
 private struct IslandExpandedMock: View {
-    let attributes: ConstructActivityAttributes
     let state: ConstructActivityAttributes.ContentState
     var body: some View {
-        let reply = isReply(state.status)
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
-                Text(displayRoomName(state, attributes))
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.secondary)
+                IslandRoomLabel(state: state)
                 Spacer()
-                if !reply { WorkingRing(size: 16) }
+                MetaLabel(state: state)
             }
-            IslandBottomView(state: state)
+            IslandBottomView(state: state, activityId: "preview")
         }
         .padding(18)
-        .frame(width: 360, height: 170, alignment: .top)
+        .frame(width: 360, height: 180, alignment: .top)
         .background(Color.black)
         .clipShape(RoundedRectangle(cornerRadius: 42, style: .continuous))
         .foregroundStyle(.white)
@@ -486,9 +509,10 @@ private struct IslandExpandedMock: View {
 
 #Preview("Lock Screen", traits: .sizeThatFitsLayout) {
     VStack(spacing: 20) {
-        PreviewBanner(state: .loading)
-        PreviewBanner(state: .shortReply)
-        PreviewBanner(state: .longReply)
+        PreviewBanner(state: .running)
+        PreviewBanner(state: .done)
+        PreviewBanner(state: .approval)
+        PreviewBanner(state: .failed)
     }
     .padding()
     .preferredColorScheme(.dark)
@@ -496,9 +520,10 @@ private struct IslandExpandedMock: View {
 
 #Preview("Island — expanded", traits: .sizeThatFitsLayout) {
     VStack(spacing: 20) {
-        IslandExpandedMock(attributes: .preview, state: .loading)
-        IslandExpandedMock(attributes: .preview, state: .shortReply)
-        IslandExpandedMock(attributes: .preview, state: .longReply)
+        IslandExpandedMock(state: .running)
+        IslandExpandedMock(state: .done)
+        IslandExpandedMock(state: .approval)
+        IslandExpandedMock(state: .failed)
     }
     .padding()
     .preferredColorScheme(.dark)

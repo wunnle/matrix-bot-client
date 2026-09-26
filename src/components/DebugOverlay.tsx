@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { isDebugEnabled } from '../lib/debug'
-import { liveActivityPlugin, updateLiveActivity, endLiveActivity } from '../lib/liveActivity'
+import { liveActivityPlugin, type LiveActivityState } from '../lib/liveActivity'
 
 /** Measure a CSS length by probing a throwaway fixed-position element. */
 function probe(height: string): number {
@@ -11,6 +11,40 @@ function probe(height: string): number {
   const h = el.offsetHeight
   el.remove()
   return h
+}
+
+/**
+ * Two local test activities with fixed ids, so the overlay can show several
+ * running at once and drive each one independently. Their buttons post to the
+ * default room (no roomId), tagged source "live-activity".
+ */
+const LA_TESTS: Record<'A' | 'B', () => LiveActivityState> = {
+  A: () => ({
+    roomName: 'Bender',
+    title: 'Test A: deploying',
+    body: 'Building the web bundle.',
+    step: '1/3',
+    progress: 0.2,
+  }),
+  B: () => ({
+    roomName: 'Bender',
+    title: 'Test B: approve?',
+    body: 'Tapping a button posts its text to the default room.',
+    tone: 'warning',
+    actions: [
+      { label: 'Approve', send: 'LA test: approve' },
+      { label: 'Deny', send: 'LA test: deny' },
+    ],
+    endsAt: Date.now() / 1000 + 300,
+  }),
+}
+
+async function laCall(what: string, fn: () => Promise<unknown>) {
+  try {
+    await fn()
+  } catch (e) {
+    alert(`LA ${what} failed: ${e instanceof Error ? e.message : JSON.stringify(e)}`)
+  }
 }
 
 /**
@@ -121,21 +155,29 @@ export default function DebugOverlay() {
           left: 8,
           zIndex: 9999,
           display: 'flex',
+          flexDirection: 'column',
           gap: 6,
         }}
       >
-        <button
-          style={btn}
-          onClick={async () => {
-            try {
-              await liveActivityPlugin.start({ roomName: 'Bender', status: 'Thinking…', detail: 'starting up' })
-            } catch (e) {
-              alert(`LA start failed: ${e instanceof Error ? e.message : JSON.stringify(e)}`)
-            }
-          }}
-        >LA start</button>
-        <button style={btn} onClick={() => updateLiveActivity('Running tool', 'read_file src/App.tsx')}>update</button>
-        <button style={btn} onClick={() => endLiveActivity()}>end</button>
+        {(['A', 'B'] as const).map(id => (
+          <div key={id} style={{ display: 'flex', gap: 6 }}>
+            <button style={btn} onClick={() => laCall(`start ${id}`, () =>
+              liveActivityPlugin.start({ activityId: `debug-${id}`, ...LA_TESTS[id]() }))}
+            >LA {id}</button>
+            <button style={btn} onClick={() => laCall(`update ${id}`, () =>
+              liveActivityPlugin.update({
+                activityId: `debug-${id}`,
+                body: `Updated ${new Date().toLocaleTimeString()}`,
+                tone: 'success',
+                step: '2/3',
+                progress: 0.7,
+              }))}
+            >update</button>
+            <button style={btn} onClick={() => laCall(`end ${id}`, () =>
+              liveActivityPlugin.end({ activityId: `debug-${id}` }))}
+            >end</button>
+          </div>
+        ))}
       </div>
     )}
     </>

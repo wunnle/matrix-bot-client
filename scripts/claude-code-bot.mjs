@@ -506,13 +506,18 @@ function runTurn(roomId, prompt) {
   // Room policy, not provider policy: what the agent should be told about this
   // room. The adapter decides where these end up.
   const instructions = [QUICK_ANSWER_INSTRUCTION]
+  // The rename nudge rides on the prompt, not the instructions: it drops out
+  // after turn two, and changing the system prompt of a resumed session
+  // throws away its cached prefix (and, on Opus 5.5 / Fable 5.1, its earlier
+  // thinking). Instructions must stay the same for a session's whole life.
+  let turnPrompt = prompt
   if (entry.turns <= RENAME_UNTIL_TURN && ROOM_NAME_RE.test(client.getRoom(roomId)?.name ?? '')) {
-    instructions.push(RENAME_INSTRUCTION)
+    turnPrompt = `${prompt}\n\n${RENAME_INSTRUCTION}`
   }
 
   return provider.run({
     roomId,
-    prompt,
+    prompt: turnPrompt,
     cwd: entry.cwd,
     model,
     sessionId: entry.sessionId,

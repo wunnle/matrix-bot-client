@@ -4,11 +4,12 @@
  *
  * Receives push notifications from the homeserver and fans them out to each
  * pushkey it provides: Web Push subscriptions (browsers/PWA) and APNs device
- * tokens (native iOS), plus any running Live Activity for the room.
+ * tokens (native iOS). Live Activities are not driven from here: bots start
+ * them explicitly.
  */
 import webpush from "web-push";
-import { apnsSend, apnsSendWithFallback, apnsConfigured, isEnvMismatch, APNS_BUNDLE_ID, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
-import { liveActivityEntry, clearTokens, recordPushResult, startLiveActivityIfNeeded, recordNotify, activeClients, seenEventBefore } from "./live-activity.js";
+import { apnsSend, apnsConfigured, isEnvMismatch } from "./_apns.js";
+import { recordNotify, activeClients, seenEventBefore } from "./live-activity.js";
 
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
@@ -91,7 +92,7 @@ function stripMarkdown(text) {
 }
 
 /* Bender marks quick-reply CTAs in the body as [[label]]. Mirror the web app's
-   parseActions (src/components/ChatView.tsx) so the Live Activity can render the
+   parseActions (src/components/ChatView.tsx) so the notification can render the
    same one-tap buttons: pull the labels out and strip the markers from the text.
    [[label]] / [[button]] are the doc-example placeholders and aren't real CTAs. */
 function parseActions(text) {
@@ -129,7 +130,7 @@ export default async function handler(req, res) {
   if (!room_id || !content?.body) return res.status(200).json({ rejected: [] });
 
   // Machine message — a component announcing something, not a person talking.
-  // Suppressed before push and before the Live Activity: a file watcher
+  // Suppressed before push: a file watcher
   // reporting that a note changed must not light up the lock screen. It is
   // still in the room, styled quietly, for whenever the app is opened.
   if (content["com.construct.machine"]) return res.status(200).json({ rejected: [] });
@@ -151,187 +152,54 @@ export default async function handler(req, res) {
     : sender_display_name
     ? `New message from ${sender_display_name}`
     : "New message";
-  // Pull the [[CTA]] chips out once — reused for the Live Activity content-state
-  // and the notification's quick-reply buttons. `body` is the marker-free text.
+  // Pull the [[CTA]] chips out for the notification's quick-reply buttons.
+  // `body` is the marker-free text.
   const { text: body, actions } = parseActions(rawBody);
 
   const rejected = [];
-  // Counted so the trace can say a notification was skipped *because a client
-  // was in the foreground*, which alertSuppressed (activity-based) can't.
+  // Counted so the trace can say a notification was skipped because the device
+  // was already showing the room.
   let presenceSkipped = 0;
   const startedAt = Date.now();
 
-  // Three independent reads from the homeserver feed everything below: who is
-  // in the foreground, the Live Activity registry, and the room avatar. Awaited
-  // one after another they stacked several matrix.org round trips ahead of the
-  // Live Activity push, which is what makes an update land seconds late. Started
-  // together here and awaited at their use sites instead.
+  // Two independent reads from the homeserver: who is in the foreground, and
+  // the room avatar. Started together and awaited at their use sites.
   //
-  // Safe to start before the duplicate check below: all three are pure reads,
-  // and each swallows its own errors, so an early return leaves nothing
-  // rejecting unhandled.
+  // Safe to start before the duplicate check below: both are pure reads, and
+  // each swallows its own errors, so an early return leaves nothing rejecting
+  // unhandled.
   const activePromise = activeClients(75_000);
-  const entryPromise = apnsConfigured() ? liveActivityEntry(room_id) : Promise.resolve(null);
   const avatarPromise = resolveRoomAvatarMxc(room_id, sender);
 
   // The homeserver re-delivers an event it didn't get a timely 200 for, and
   // this handler makes several sequential round-trips before answering — so a
-  // slow run comes back as the same event twice and pushes the Live Activity
-  // twice. Recognise the repeat and acknowledge it without acting again.
+  // slow run comes back as the same event twice and notifies twice. Recognise
+  // the repeat and acknowledge it without acting again.
   if (await seenEventBefore(event_id, 5 * 60 * 1000)) {
     return res.status(200).json({ rejected: [], duplicate: true });
   }
 
-  // Which clients are in the foreground, and where. Two rules follow, so which
-  // device it is matters, not just that something is active:
-  //   • the active device itself still wants other rooms — only the room
-  //     already on its screen would be noise;
-  //   • every other device stays quiet, because you're reading elsewhere.
+  // Which clients are in the foreground, and which room each is showing. The
+  // only rule left: a device doesn't notify for the room already on its own
+  // screen. Being active on one device no longer mutes the others — an open
+  // PWA on the laptop used to silence the phone completely.
   //
   // Empty on any error, so an unreadable heartbeat notifies rather than mutes.
   const active = await activePromise;
-  // A client whose pushkey matches one of this user's push devices is that
-  // device; anything else (a browser without notifications) is "somewhere else"
-  // by definition, since it is never a device being notified.
   const nativePushkeys = new Set(
     devices.map((d) => d.pushkey).filter((k) => k && !parseWebPushKey(k))
   );
   const isNativeClient = (c) => c.native || nativePushkeys.has(c.pushkey);
-  // "You're reading this on some other device." A client that hasn't registered
-  // a pushkey yet can't be told apart from the device being notified, so a
-  // *native* one is assumed to be that phone rather than another screen: during
-  // the seconds between app launch and APNs registration the phone used to read
-  // as somewhere-else and mute itself. Unidentifiable means notify.
-  const readingElsewhere = (pushkey) =>
-    active.some((c) => (c.pushkey ? c.pushkey !== pushkey : !isNativeClient(c)));
-  const activeNativeHere = active.find(isNativeClient);
-  // Only for the trace below, but it has to exist: an undefined name there
-  // throws *after* the Live Activity has already been pushed, so the handler
-  // 500s, the homeserver retries, and the retry pushes the activity again once
-  // the dedupe window has passed.
-  const activeNonNative = active.some((c) => !isNativeClient(c));
-  // Nothing on the phone while you're reading on another device, and nothing
-  // for a room the phone itself already has open.
-  const suppressLiveActivity =
-    active.some((c) => !isNativeClient(c)) || activeNativeHere?.roomId === room_id;
-
-  // Push the reply into any running Live Activity for this room, and report
-  // whether it was delivered. Independent of the per-device loop below: Live
-  // Activity tokens are per-activity, not per Matrix device, so they aren't in
-  // `devices`. Awaited before that loop so a delivered Live Activity can
-  // suppress the duplicate alert on the same phone.
-  const liveActivityDelivered = await (async () => {
-    if (!apnsConfigured()) return false;
-    // Reading on another device (or already looking at this room): don't touch
-    // the activity at all. Dropping only the alert still refreshed it on the
-    // lock screen, which is exactly what "no Live Activities" rules out. The
-    // cost is that it holds its last message until you're away again.
-    if (suppressLiveActivity) return false;
-    const entry = await entryPromise;
-    if (!entry) return false;
-
-    // `update`, not `end`: ending finishes the activity after a single reply,
-    // so a follow-up message had nothing left to update. Every message for the
-    // room now refreshes the activity, and the token is kept (see below).
-    //
-    // No `dismissal-date` — it is only meaningful for `end`, and the one time
-    // this payload carried one it never delivered. Worth revisiting with the
-    // test endpoint if auto-dismissal is wanted; the earlier reading of it was
-    // confounded by a test that ended the activity first.
-    //
-    // stale-date is pushed forward on every update so the activity dims only
-    // after a genuine lull rather than 15 minutes after the ask.
-    const nowSec = Math.floor(Date.now() / 1000);
-    const payload = {
-      aps: {
-        timestamp: nowSec,
-        event: "update",
-        "stale-date": nowSec + 900,
-        // Keys must match ConstructActivityAttributes.ContentState exactly —
-        // a mismatch is dropped silently by ActivityKit. `question` is echoed
-        // from the registry so it stays visible (faded) above the reply.
-        // `roomId` rides along so a button can send back to this room.
-        // roomName rides along because one activity serves every room now: it
-        // has to re-label itself for whichever room this message came from.
-        "content-state": {
-          status: "Reply",
-          question: entry.question || "",
-          detail: body.slice(0, 300),
-          roomId: room_id,
-          roomName: room_name || title,
-          actions: actions.slice(0, 3),
-        },
-        // An `alert` block turns this into an alerting update: iOS plays sound
-        // and a haptic and surfaces the activity prominently (Dynamic Island
-        // expands) instead of updating it silently. The push-payload equivalent
-        // of ActivityKit's alertConfiguration, which the app can't set while
-        // suspended.
-        alert: {
-          title: title,
-          body: body.slice(0, 150),
-          sound: "default",
-        },
-      },
-    };
-
-    const r = await apnsSendWithFallback(entry.token, payload, {
-      topic: LIVE_ACTIVITY_TOPIC,
-      pushType: "liveactivity",
-    });
-    await recordPushResult(room_id, {
-      results: [{ env: r.env, status: r.status, body: r.body, apnsId: r.apnsId }],
-      topic: LIVE_ACTIVITY_TOPIC,
-    });
-    // A dead token (activity ended/dismissed, grace window passed) comes back
-    // 410 Unregistered — clear it so it can't linger and suppress this room's
-    // notifications. Otherwise the token is kept: it's what lets the next
-    // message update the same activity.
-    if (r.status === 410 || (r.status === 400 && (r.body || "").includes("BadDeviceToken"))) {
-      await clearTokens(room_id);
-      return false;
-    }
-    return r.status === 200;
-  })();
-
-  // Push-to-start (iOS 17.2+) creates an activity for a room the app has never
-  // opened, which is what extends Live Activities beyond the ones the app
-  // starts itself. Set LIVE_ACTIVITY_PUSH_TO_START=0 to switch it off.
-  //
-  // Deliberately does NOT suppress this message's notification, even though the
-  // start push carries its own alert: APNs answers 200 whether or not iOS goes
-  // on to create the activity, so "accepted" is not evidence of anything, and
-  // acting on it silently dropped a message. The cost is a double alert on the
-  // first message in a room (once per cooldown); the alternative risks a
-  // message with no surface at all, which is worse.
-  // Only the invocation carrying an APNs device starts one. The homeserver runs
-  // an HTTP pusher per pusher row and POSTs this handler once for each, so a
-  // user with both a web and a native pusher gets two concurrent invocations for
-  // one event — and both used to start an Activity, because the guards that
-  // should have stopped the second (seenEventBefore above, and the cooldown in
-  // startLiveActivityIfNeeded) are read-check-write over Matrix account data
-  // with no compare-and-swap: both read "not yet" before either writes. The
-  // observed result was two Activities for one message, only one of which could
-  // ever be updated, since the app registers its update token under a single
-  // key.
-  //
-  // Deciding by device rather than by shared state needs no atomicity: exactly
-  // one pusher row is the phone's APNs token, so exactly one invocation passes.
-  // A Live Activity is a native-app surface anyway — its push-to-start token
-  // comes from the same app that registers this pusher, so an invocation with
-  // no APNs device has no activity to speak for.
-  const ownsLiveActivity = nativePushkeys.size > 0;
-  const activityStarted = process.env.LIVE_ACTIVITY_PUSH_TO_START !== "0" && ownsLiveActivity && !liveActivityDelivered && !suppressLiveActivity
-    ? await startLiveActivityIfNeeded(room_id, {
-        roomName: room_name || title,
-        alertTitle: sender_display_name || title,
-        detail: body,
-        actions,
-      }).then((r) => r?.accepted === true).catch(() => false)
-    : false;
+  const showingRoom = (pushkey) =>
+    active.some((c) => c.pushkey === pushkey && c.roomId === room_id);
+  // A native client that hasn't registered its APNs token yet can't be matched
+  // to its pushkey. It is assumed to be the phone, so the room on its screen
+  // stays quiet during the seconds between app launch and registration.
+  const unregisteredNativeHere = active.some(
+    (c) => !c.pushkey && isNativeClient(c) && c.roomId === room_id
+  );
 
   // Shared by the APNs payload (service extension) and the Web Push icon.
-  // Awaited here rather than above the Live Activity block: a cold avatar cache
-  // is one or two more round trips, and nothing about the activity needs it.
   const avatarUrl = mxcToProxyUrl(await avatarPromise);
 
   await Promise.all(
@@ -346,28 +214,10 @@ export default async function handler(req, res) {
         if (!apnsConfigured()) {
           return; // APNs not configured — don't reject, token may be valid later
         }
-        // Silent when you're reading on another device, and when this device is
-        // the active one but already showing this very room.
-        //
-        // The third clause covers the window before APNs registration, when the
-        // foreground native client carries no pushkey and so can't be matched to
-        // this token: it already suppressed the Live Activity for this room, and
-        // without this the phone still buzzed for the room on its screen.
-        if (readingElsewhere(pushkey) ||
-            active.some((c) => c.pushkey === pushkey && c.roomId === room_id) ||
-            (activeNativeHere && !activeNativeHere.pushkey && activeNativeHere.roomId === room_id)) {
+        if (showingRoom(pushkey) || unregisteredNativeHere) {
           presenceSkipped += 1;
           return;
         }
-        // Suppress the alert on the phone that is showing the Live Activity: it
-        // already got an alerting Live Activity push (sound + haptic) for this
-        // same message, so a banner here is a second buzz. Web Push (other
-        // devices, e.g. desktop) is untouched — this only skips the native
-        // iOS alert, and only when the Live Activity push actually landed.
-        // Only a *delivered update* suppresses the banner — an activity that
-        // was already running proved itself by registering its token. A start
-        // is never trusted for this; see the note above.
-        if (liveActivityDelivered) return;
         // Sender as the title reads better than the room on iOS; the room
         // becomes the subtitle. Falls back to the web-push title when the
         // notification carries no sender.
@@ -384,8 +234,9 @@ export default async function handler(req, res) {
             },
             sound: "default",
             "thread-id": room_id,
-            // Surfaces through Focus/DND — an agent reply is worth interrupting for.
-            "interruption-level": "time-sensitive",
+            // Respects Focus. Breaking through it is for the Live Activity
+            // channel, where a bot asks for it explicitly.
+            "interruption-level": "active",
             // Enables the inline Reply action registered in AppDelegate.swift.
             category: "MESSAGE",
             // Lets the notification service extension rewrite this into a
@@ -428,10 +279,9 @@ export default async function handler(req, res) {
         return;
       }
 
-      // Same rule as the native branch above: quiet on every other device while
-      // you're reading, and quiet here for the room already on screen.
-      if (readingElsewhere(pushkey) ||
-          active.some((c) => c.pushkey === pushkey && c.roomId === room_id)) {
+      // Same rule as the native branch above: quiet only for the room already
+      // on this device's screen.
+      if (showingRoom(pushkey)) {
         presenceSkipped += 1;
         return;
       }
@@ -462,15 +312,9 @@ export default async function handler(req, res) {
     // How long the handler took: the homeserver retries when this runs long,
     // which is what duplicate deliveries look like from the device.
     ms: Date.now() - startedAt,
-    liveActivityDelivered,
-    activityStarted,
     devices: devices.length,
-    // The alert is suppressed when a Live Activity carried the message instead.
-    alertSuppressed: liveActivityDelivered,
     activeClients: active.length,
-    activeNonNative,
     presenceSkipped,
-    liveActivitySuppressed: suppressLiveActivity,
   });
 
   // Matrix spec requires returning rejected pushkeys so the homeserver unregisters them

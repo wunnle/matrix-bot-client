@@ -21,6 +21,7 @@
  */
 import { apnsSendWithFallback, apnsConfigured, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
 import { authorized } from "./_auth.js";
+import { ID_PATTERN, registerToken, forgetActivity, reconcile, listActivities } from "./_activities.js";
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN;
@@ -142,6 +143,8 @@ export default async function handler(req, res) {
           lastStart: blob.lastStart ?? null,
           lastNotify: blob.lastNotify ?? null,
           lastPush: lastPushCache,
+          // The Live Activity channel's registry (_activities.js). No tokens.
+          channel: await listActivities().catch((err) => ({ error: String(err?.message || err) })),
           // Pushkeys are credentials — only their tail is shown, which is
           // enough to tell two clients apart.
           activeClients: (await activeClients(75_000)).map((c) => ({
@@ -230,6 +233,33 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: false, error: String(err?.message || err) });
     }
     return res.status(200).json({ ok: true });
+  }
+
+  // Per-activity registry (the Live Activity channel, see _activities.js):
+  //   { activityId, token }                   — an activity's update token
+  //   { action: "end", activityId }           — it ended on the device
+  //   { action: "reconcile", activityIds }    — these are alive, drop the rest
+  // Checked before the room-keyed paths below, which only builds from before
+  // the channel still use.
+  const { activityId } = req.body || {};
+  try {
+    if (action === "reconcile") {
+      const ids = req.body?.activityIds;
+      if (!Array.isArray(ids) || !ids.every((i) => typeof i === "string" && ID_PATTERN.test(i))) {
+        return res.status(400).json({ error: "activityIds must be an array of activity ids" });
+      }
+      return res.status(200).json(await reconcile(ids));
+    }
+    if (activityId !== undefined) {
+      if (typeof activityId !== "string" || !ID_PATTERN.test(activityId)) {
+        return res.status(400).json({ error: "bad activityId" });
+      }
+      if (action === "end") return res.status(200).json(await forgetActivity(activityId));
+      if (!token) return res.status(400).json({ error: "missing token" });
+      return res.status(200).json(await registerToken(activityId, token));
+    }
+  } catch (err) {
+    return res.status(200).json({ ok: false, error: String(err?.message || err) });
   }
 
   if (!roomId) return res.status(400).json({ error: "missing roomId" });

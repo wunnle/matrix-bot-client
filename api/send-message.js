@@ -16,7 +16,7 @@ export default async function handler(req, res) {
 
   if (!(await authorized(req))) return res.status(403).json({ error: 'forbidden' })
 
-  const { room, text, source } = req.body ?? {}
+  const { room, text, source, activityId } = req.body ?? {}
   if (!room || !text) return res.status(400).json({ error: 'missing room or text' })
   if (!ACCESS_TOKEN) return res.status(500).json({ error: 'server not configured' })
 
@@ -30,6 +30,10 @@ export default async function handler(req, res) {
     'com.construct.client': 'construct-web',
   }
   if (source) event['com.construct.source'] = source
+  // A Live Activity button tap: tells the bot which activity was answered.
+  if (typeof activityId === 'string' && activityId && activityId.length <= 64) {
+    event['com.construct.activity_id'] = activityId
+  }
 
   const response = await fetch(url, {
     method: 'PUT',

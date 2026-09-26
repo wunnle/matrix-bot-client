@@ -17,11 +17,11 @@
  * Shape, under account data type `com.construct.live_activity`:
  *   { rooms: { "<roomId>": { token, ts } } }
  *
- * Auth: x-intent-secret header — never the URL or body.
+ * Auth: x-intent-secret header — never the URL or body. See _auth.js.
  */
 import { apnsSendWithFallback, apnsConfigured, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
+import { authorized } from "./_auth.js";
 
-const SECRET = process.env.INTENT_SECRET;
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN;
 const ACCOUNT_DATA_TYPE = "com.construct.live_activity";
@@ -114,10 +114,8 @@ async function writeRooms(rooms, lastPush) {
 }
 
 export default async function handler(req, res) {
-  if (!SECRET || !ACCESS_TOKEN) return res.status(500).json({ error: "server not configured" });
-  if (req.headers["x-intent-secret"] !== SECRET) {
-    return res.status(403).json({ error: "forbidden" });
-  }
+  if (!ACCESS_TOKEN) return res.status(500).json({ error: "server not configured" });
+  if (!(await authorized(req))) return res.status(403).json({ error: "forbidden" });
 
   // Diagnostic: how many tokens are registered for a room. Counts only — token
   // values are credentials. Without this there is no way to tell a token that

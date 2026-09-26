@@ -1,5 +1,6 @@
 import * as sdk from 'matrix-js-sdk'
 import type { AuthState } from '../types'
+import { loadAuth } from './auth'
 
 let client: sdk.MatrixClient | null = null
 let initPromise: Promise<RoomSummary[]> | null = null
@@ -7,6 +8,21 @@ let initPromise: Promise<RoomSummary[]> | null = null
 export function getClient(): sdk.MatrixClient {
   if (!client) throw new Error('Matrix client not initialized')
   return client
+}
+
+/**
+ * Credential for Construct's own /api intent endpoints, sent as the
+ * `x-intent-secret` header: the signed-in user's Matrix access token, which the
+ * server checks with the homeserver (api/_auth.js). Falls back to the stored
+ * login, since some callers run on launch before the client is initialized.
+ * null when signed out.
+ */
+export function intentCredential(): string | null {
+  try {
+    return getClient().getAccessToken()
+  } catch {
+    return loadAuth()?.accessToken ?? null
+  }
 }
 
 /**

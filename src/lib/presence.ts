@@ -8,6 +8,7 @@
  * little longer than this interval so a missed beat doesn't flap.
  */
 import { Capacitor } from '@capacitor/core'
+import { intentCredential } from './matrix'
 
 const BEAT_MS = 45_000
 
@@ -37,8 +38,8 @@ function clientId(): string {
 }
 
 async function beat() {
-  const secret = import.meta.env.VITE_INTENT_SECRET
-  // Builds without the secret (the public one) simply never suppress.
+  const secret = intentCredential()
+  // Not signed in yet: nothing to report, and the gateway simply notifies.
   if (!secret || document.visibilityState !== 'visible') return
   try {
     await fetch('/api/live-activity', {

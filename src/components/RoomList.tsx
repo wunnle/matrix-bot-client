@@ -4,7 +4,7 @@ import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSe
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
-import { fetchJoinedRooms, getCachedRooms, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, type RoomSummary } from '../lib/matrix'
+import { fetchJoinedRooms, getCachedRooms, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, intentCredential, type RoomSummary } from '../lib/matrix'
 import { useNavigate } from 'react-router-dom'
 import { seedAgentPills, backfillAgentPills } from '../lib/roomMeta'
 import { findSpawnHostRoom, spawnAgentRoom } from '../lib/spawnAgent'
@@ -659,8 +659,8 @@ export default function RoomList({
                   // when it misfires there's nothing to see. Listing who is
                   // holding the phone quiet is the whole diagnosis.
                   await line('Foreground clients', async () => {
-                    const secret = import.meta.env.VITE_INTENT_SECRET
-                    if (!secret) return 'n/a (no intent secret in this build)'
+                    const secret = intentCredential()
+                    if (!secret) return 'n/a (not signed in)'
                     const r = await fetch('/api/live-activity', { headers: { 'x-intent-secret': secret } })
                     const clients = (await r.json())?.activeClients ?? []
                     if (!clients.length) return 'none — notifications flow normally'

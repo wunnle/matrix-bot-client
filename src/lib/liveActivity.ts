@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
-import { getClient } from './matrix'
+import { getClient, intentCredential } from './matrix'
 import { resolveMediaBase64 } from './mediaUrl'
 
 /**
@@ -30,12 +30,14 @@ const plugin = registerPlugin<LiveActivityPlugin>('LiveActivity')
 
 /**
  * Hand the background "Ask Construct" App Intent what it needs (it runs
- * without the webview): the intent secret, API base, and default room.
- * Call once on launch. No-op off native or without a secret.
+ * without the webview): its API credential, API base, and default room.
+ * The credential is the signed-in Matrix access token (see intentCredential);
+ * the native side sends it as `x-intent-secret` unchanged. Call once on
+ * launch, after login. No-op off native or before login.
  */
 export async function saveIntentConfig(room: string): Promise<void> {
   if (!Capacitor.isNativePlatform()) return
-  const secret = import.meta.env.VITE_INTENT_SECRET
+  const secret = intentCredential()
   if (!secret) return
   await plugin.saveIntentConfig({
     secret,

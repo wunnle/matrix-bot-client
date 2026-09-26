@@ -1,22 +1,19 @@
 // Simple single-slot room intent store.
 // POST /api/room-intent { room } → stores room
 // GET  /api/room-intent          → returns { room } and clears it
-// Auth: x-intent-secret header — never the URL or body.
-
-const SECRET = process.env.INTENT_SECRET
+// Auth: x-intent-secret header — never the URL or body. See _auth.js.
+import { authorized } from './_auth.js'
 
 let pendingRoom = null
 let pendingAction = null
 let pendingText = null
 let expiresAt = 0
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', 'https://construct.kafagoz.com')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-intent-secret')
 
-  if (!SECRET) return res.status(500).json({ error: 'server not configured' })
-
-  if (req.headers['x-intent-secret'] !== SECRET) return res.status(403).json({ error: 'forbidden' })
+  if (!(await authorized(req))) return res.status(403).json({ error: 'forbidden' })
 
   if (req.method === 'POST') {
     const { room, action, text } = req.body ?? {}

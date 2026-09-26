@@ -1,8 +1,8 @@
 // POST /api/send-message { room, text } → sends message via Matrix HTTP API
-// Auth: x-intent-secret header — never the URL or body.
+// Auth: x-intent-secret header — never the URL or body. See _auth.js.
 import crypto from 'crypto'
+import { authorized } from './_auth.js'
 
-const SECRET = process.env.INTENT_SECRET
 const HOMESERVER = process.env.MATRIX_HOMESERVER || 'https://matrix-client.matrix.org'
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN
 
@@ -12,11 +12,9 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  if (!SECRET) return res.status(500).json({ error: 'server not configured' })
-
   if (req.method !== 'POST') return res.status(405).end()
 
-  if (req.headers['x-intent-secret'] !== SECRET) return res.status(403).json({ error: 'forbidden' })
+  if (!(await authorized(req))) return res.status(403).json({ error: 'forbidden' })
 
   const { room, text, source } = req.body ?? {}
   if (!room || !text) return res.status(400).json({ error: 'missing room or text' })

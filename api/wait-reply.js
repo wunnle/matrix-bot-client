@@ -6,7 +6,8 @@
 // surface the reply in a Live Activity without launching the app. Kept under
 // ~9s so it fits a single serverless invocation; the intent may call again.
 
-const SECRET = process.env.INTENT_SECRET
+import { authorized } from './_auth.js'
+
 const HOMESERVER = process.env.MATRIX_HOMESERVER || 'https://matrix-client.matrix.org'
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN
 
@@ -50,9 +51,8 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-intent-secret')
 
   if (req.method === 'OPTIONS') return res.status(200).end()
-  if (!SECRET) return res.status(500).json({ error: 'server not configured' })
   if (req.method !== 'POST') return res.status(405).end()
-  if (req.headers['x-intent-secret'] !== SECRET) return res.status(403).json({ error: 'forbidden' })
+  if (!(await authorized(req))) return res.status(403).json({ error: 'forbidden' })
   if (!ACCESS_TOKEN) return res.status(500).json({ error: 'server not configured' })
 
   const { room, since } = req.body ?? {}

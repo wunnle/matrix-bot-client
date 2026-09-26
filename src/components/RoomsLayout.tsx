@@ -11,7 +11,7 @@ import UpdateBanner from './UpdateBanner'
 import RoomToast from './RoomToast'
 import { useRoomNotifications } from '../hooks/useRoomNotifications'
 import { useVisualViewportVars } from '../hooks/useVisualViewport'
-import { getClient, getCachedRooms, resyncNow } from '../lib/matrix'
+import { getClient, getCachedRooms, resyncNow, intentCredential } from '../lib/matrix'
 import { getDictationAutoSend, setDictationAutoSend } from '../lib/clientSettings'
 import { resolveRoomIdFromParam } from '../lib/roomAliases'
 import { isAgentRoom } from '../lib/roomMeta'
@@ -160,7 +160,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   }, [navigate])
 
   const fetchIntent = useCallback(() => {
-    const secret = import.meta.env.VITE_INTENT_SECRET
+    const secret = intentCredential()
     if (!secret) return
     fetch('/api/room-intent', { headers: { 'x-intent-secret': secret } })
       .then(r => r.json())

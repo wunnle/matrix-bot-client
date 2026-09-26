@@ -162,7 +162,11 @@ const PREAPPROVED_BINS = new Set(['linear', 'obsidian'])
 // Driving a browser was the single worst category in the approval audit: 74% of
 // browser-shaped calls prompted, against 51% overall, and a third of them were
 // nothing but starting a browser or picking a port.
-const HELPER_BINS = new Set(['wait-for', 'page-grep', 'page', 'linear-gql'])
+// `construct-activity` puts a Live Activity on Sinan's lock screen. That is the
+// whole point of it, and a prompt asking whether to notify him would itself
+// notify him. Its reach is his own phone and a message into a room he owns; the
+// server caps it at three activities and rate-limits updates.
+const HELPER_BINS = new Set(['wait-for', 'page-grep', 'page', 'linear-gql', 'construct-activity'])
 function isHelperBin(token) {
   return !token.includes('/') && HELPER_BINS.has(token)
 }

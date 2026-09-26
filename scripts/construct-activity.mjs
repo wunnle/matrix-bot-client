@@ -1,0 +1,130 @@
+#!/usr/bin/env node
+// Start, update and end Live Activities on Sinan's phone — the channel bots use
+// to notify him actionably (buttons post a message back into a room).
+//
+//   construct-activity start  --id ID --title T [--body B] [--room !id] [options]
+//   construct-activity update --id ID [--title T] [--body B] [options]
+//   construct-activity end    --id ID [--body B] [--tone T] [--dismiss-in SECS]
+//   construct-activity list
+//
+// Options:
+//   --tone neutral|success|warning|error
+//   --progress 0..1 | none        --step "3/5" | none
+//   --action "Label" | "Label=text to send"   (repeat, up to 3)
+//   --no-actions                  remove the buttons
+//   --alert none|quiet|loud       (start: quiet by default; updates: none)
+//   --ttl SECS                    lifetime, default 3600, max 28800
+//
+// --room defaults to $AGENT_ROOM_ID, set for every Claude agent turn. A button
+// tap arrives in that room as a message tagged com.construct.activity_id.
+//
+// Installed as ~/.local/bin/construct-activity (a symlink here). Talks to
+// /api/activity with CONSTRUCT_INTENT_SECRET from ~/.hermes/.env, which never
+// appears on the command line. Prints the server's JSON reply; exits non-zero
+// when the call failed.
+import fs from 'node:fs'
+import os from 'node:os'
+import { parseArgs } from 'node:util'
+
+const API = process.env.CONSTRUCT_API ?? 'https://construct.kafagoz.com/api/activity'
+const ENV_FILE = `${os.homedir()}/.hermes/.env`
+
+function die(message) {
+  console.error(`construct-activity: ${message}`)
+  process.exit(2)
+}
+
+function secret() {
+  let text
+  try {
+    text = fs.readFileSync(ENV_FILE, 'utf8')
+  } catch {
+    die(`cannot read ${ENV_FILE}`)
+  }
+  const value = text.match(/^CONSTRUCT_INTENT_SECRET=(.*)$/m)?.[1]?.trim().replace(/^["']|["']$/g, '')
+  if (!value) die(`CONSTRUCT_INTENT_SECRET is not set in ${ENV_FILE}`)
+  return value
+}
+
+const [command, ...rest] = process.argv.slice(2)
+if (!command || command === '-h' || command === '--help') {
+  console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 23).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'))
+  process.exit(command ? 0 : 2)
+}
+if (!['start', 'update', 'end', 'list'].includes(command)) die(`unknown command "${command}" (start, update, end, list)`)
+
+let values
+try {
+  ({ values } = parseArgs({
+    args: rest,
+    options: {
+      id: { type: 'string' },
+      room: { type: 'string' },
+      title: { type: 'string' },
+      body: { type: 'string' },
+      tone: { type: 'string' },
+      progress: { type: 'string' },
+      step: { type: 'string' },
+      action: { type: 'string', multiple: true },
+      'no-actions': { type: 'boolean' },
+      alert: { type: 'string' },
+      ttl: { type: 'string' },
+      'dismiss-in': { type: 'string' },
+    },
+  }))
+} catch (e) {
+  die(e.message)
+}
+
+const headers = { 'x-intent-secret': secret() }
+
+if (command === 'list') {
+  const r = await fetch(API, { headers })
+  console.log(JSON.stringify(await r.json().catch(() => ({ error: `HTTP ${r.status}` }))))
+  process.exit(r.ok ? 0 : 1)
+}
+
+if (!values.id) die('--id is required')
+const body = { id: values.id }
+for (const key of ['title', 'body', 'tone', 'alert']) {
+  if (values[key] !== undefined) body[key] = values[key]
+}
+for (const key of ['progress', 'step']) {
+  const v = values[key]
+  if (v === undefined) continue
+  body[key] = v === 'none' ? null : key === 'progress' ? Number(v) : v
+}
+if (values.ttl !== undefined) body.ttl = Number(values.ttl)
+if (values['no-actions']) body.actions = []
+else if (values.action) {
+  body.actions = values.action.map((a) => {
+    const i = a.indexOf('=')
+    return i === -1 ? { label: a } : { label: a.slice(0, i), send: a.slice(i + 1) }
+  })
+}
+
+if (command === 'start') {
+  body.room = values.room ?? process.env.AGENT_ROOM_ID
+  if (!body.room) die('--room is required outside an agent room')
+  if (!body.title) die('--title is required to start')
+} else if (values.room) {
+  die('--room only applies to start')
+}
+if (command === 'end') {
+  body.end = true
+  if (values['dismiss-in'] !== undefined) body.dismissIn = Number(values['dismiss-in'])
+}
+
+const r = await fetch(API, {
+  method: 'POST',
+  headers: { ...headers, 'content-type': 'application/json' },
+  body: JSON.stringify(body),
+})
+const reply = await r.json().catch(() => ({ error: `HTTP ${r.status}` }))
+// An update to an id that isn't running reads, server-side, as a start without
+// a title. Say what actually happened.
+if (command === 'update' && r.status === 400 && /missing (title|room)/.test(reply.error ?? '')) {
+  reply.error = `no running activity "${values.id}" (use start)`
+}
+console.log(JSON.stringify(reply))
+process.exit(r.ok && reply.ok !== false ? 0 : 1)

@@ -488,6 +488,23 @@ const QUICK_ANSWER_INSTRUCTION =
   'few words at most and be a reply the user could plausibly send. Omit them ' +
   'when you are not asking anything.'
 
+// The Live Activity channel: a lock-screen card with buttons, for moments worth
+// reaching the phone for. Part of the fixed instructions, so adding it changed
+// every existing session's system prompt once, at the deploy that introduced it.
+// The room id is spelled out because Codex rooms share one app-server process
+// and so have no per-room AGENT_ROOM_ID; it never changes for a room, so the
+// instructions stay fixed for the session's life.
+const liveActivityInstruction = (roomId) =>
+  'You can put a Live Activity on the user\'s phone lock screen with the ' +
+  '`construct-activity` command (run `construct-activity --help`). Use it ' +
+  'sparingly, for moments the user would want to know about while away from ' +
+  'the chat: a long task finishing or failing, or being blocked on a decision ' +
+  'from them. Give it up to three buttons (--action "Label=text to send"); a ' +
+  `tap posts that text into this room, whose id is ${roomId} (pass it as ` +
+  '--room). Update the same --id as things change instead of starting new ' +
+  'ones, and end it once it has served its purpose. Do not use it for ' +
+  'ordinary replies; those already notify.'
+
 // Runs one turn through the room's provider, resuming its session if it has one.
 // Everything provider-specific — how a turn is invoked, how instructions are
 // injected, how the resumable id comes back — lives behind the adapter.
@@ -505,7 +522,7 @@ function runTurn(roomId, prompt) {
 
   // Room policy, not provider policy: what the agent should be told about this
   // room. The adapter decides where these end up.
-  const instructions = [QUICK_ANSWER_INSTRUCTION]
+  const instructions = [QUICK_ANSWER_INSTRUCTION, liveActivityInstruction(roomId)]
   // The rename nudge rides on the prompt, not the instructions: it drops out
   // after turn two, and changing the system prompt of a resumed session
   // throws away its cached prefix (and, on Opus 5.5 / Fable 5.1, its earlier
@@ -868,6 +885,13 @@ async function downloadAttachment(event) {
 async function promptFor(event, body) {
   const content = event.getContent()
   const msgtype = content?.msgtype
+  // A Live Activity button tap arrives as plain text; the tag says which
+  // activity it answers, which the text alone doesn't.
+  const activityId = content?.['com.construct.activity_id']
+  if (typeof activityId === 'string' && activityId) {
+    return `${body}\n\n(Sent by tapping a button on the Live Activity "${activityId}". ` +
+      'Update or end that activity if this answer settles it.)'
+  }
   if (msgtype !== 'm.image' && msgtype !== 'm.file') return body
 
   const file = await downloadAttachment(event)

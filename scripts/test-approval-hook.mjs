@@ -69,6 +69,10 @@ const CASES = [
   ['linear-gql < /tmp/issues.graphql', 'allow'],
   // Reading the key by hand is what the wrapper exists to stop, and still asks.
   ["KEY=$(grep '^LINEAR_API_KEY=' ~/.openclaw/workspace/integrations/linear/.env)", 'deny'],
+  // The Live Activity channel: notifying Sinan is the point, so no prompt.
+  ['construct-activity start --id deploy --title "Deploy ready" --action "Ship=ship it"', 'allow'],
+  ['construct-activity end --id deploy --tone success', 'allow'],
+  ['/tmp/construct-activity start --id x --title y', 'deny'],             // not the PATH one
   // 2e — Python environments inside the sandbox, mirroring npm install.
   ['python3 -m venv .venv', 'allow'],
   ['.venv/bin/pip install -q -r requirements.txt', 'allow'],

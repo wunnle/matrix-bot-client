@@ -70,8 +70,8 @@ None.
 ## Tested
 
 - Builds cleanly (Release archive, all five targets, development signing, App
-  Group on all of them). Install on Sinan's iPhone: pending, first attempt
-  refused because the phone was locked.
+  Group on all of them). Installed and launched on Sinan's iPhone from commit
+  93255ed.
 - Not yet on device: two local activities side by side, button tap → message,
   notification reply without a Thinking activity, Shortcuts still posting.
   Those need Sinan at the phone (or the web inspector route above).

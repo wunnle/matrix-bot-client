@@ -77,6 +77,24 @@ None.
   Those need Sinan at the phone (or the web inspector route above).
 - Remote start/update/end from the Pi: pending the server deploy.
 
+## Also on this branch: scene lifecycle (not Live Activity work)
+
+Builds from Xcode 27 (iOS 27 SDK) trapped at launch on iOS 27 in
+`_UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`: the SDK now
+requires the UIScene lifecycle. Added `UIApplicationSceneManifest` to
+`Info.plist` and a `SceneDelegate` (in AppDelegate.swift). Activation work moved
+from `applicationDidBecomeActive` to `sceneDidBecomeActive`; URL opens and user
+activities are forwarded to Capacitor's `ApplicationDelegateProxy` from the
+scene callbacks, including the cold-launch ones in `willConnectTo`. Any native
+build made with Xcode 27 needs this, so main needs it too.
+
+## Debug demo
+
+Debug builds launched with `-LiveActivityDemo` start three sample activities
+(neutral/step+progress, success/3 buttons, warning/countdown+2 buttons) and
+later re-post each with an alert, which pops the expanded Dynamic Island. Used
+on the simulator: `xcrun simctl launch <device> com.wunnle.construct -LiveActivityDemo`.
+
 ## Open problems
 
 - Layout was checked in code only. Check the tallest case (warning + countdown

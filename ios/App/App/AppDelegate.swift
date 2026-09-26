@@ -39,14 +39,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Capacitor's push plugin claims the notification delegate when it
         // loads; take it back (chaining to it) so Reply keeps working.
         if #available(iOS 15.0, *) { NotificationActionRouter.shared.install() }
-        // Clear any Live Activity token left over from a dismissed/killed
-        // activity, so a stale token doesn't keep suppressing this room's
-        // notifications.
+        // Drop server tokens for activities dismissed while the app was away;
+        // they'd only waste pushes and count toward the server's activity cap.
         if #available(iOS 16.2, *) { Task { await reconcileLiveActivityTokens() } }
-        // Pick up activities the gateway started while this process was away, so
-        // the next message updates them instead of starting yet another one.
+        // Pick up activities the server started while this process was away, so
+        // their update tokens get registered.
         if #available(iOS 16.2, *) { adoptRunningLiveActivities() }
-        // Let the gateway create activities for rooms the app hasn't opened.
+        // Let the server start activities by push.
         if #available(iOS 17.2, *) { observeLiveActivityStartsOnce() }
         // Hide the assistant/"language" bar on iPad + Mac (and the blank software
         // keyboard on Mac). No-op on iPhone.
@@ -291,12 +290,6 @@ private func configureWebKeyboardOnce() {
 /// webview, so they can't reach import.meta.env). Persisted in the shared App
 /// Group suite so extensions in their own processes (e.g. the notification
 /// content extension) can read the secret too, not just the app process.
-/// The app keeps one Live Activity for every room, so its update token is
-/// registered under a single key rather than per room — the room a message came
-/// from travels in the content-state. Must match GLOBAL_KEY in
-/// api/live-activity.js.
-let liveActivityGlobalKey = "*"
-
 enum IntentConfig {
     static let appGroup = "group.com.wunnle.construct"
     static let secret = "construct.intentSecret"
@@ -334,16 +327,16 @@ enum AvatarCache {
     }
 }
 
-/// Registers an Activity's APNs push token with the server so `matrix-push.js`
-/// can update the Live Activity while the app is suspended — the only way to
-/// move it past whatever state the app last set.
+/// Registers an Activity's APNs push token with the server so it can update the
+/// Live Activity while the app is suspended — the only way to move it past
+/// whatever state the app last set.
 ///
 /// The token is per-activity and rotates, so this observes `pushTokenUpdates`
 /// for the activity's lifetime rather than reading it once.
-/// Activities can arrive from two directions now — created here, or created by
-/// the gateway and handed to us via `activityUpdates` — and the same one can
-/// arrive both ways. Observing it twice would post its token again on every
-/// rotation, so each activity is claimed once.
+/// Activities can arrive from two directions — created here, or created by the
+/// server and handed to us via `activityUpdates` — and the same one can arrive
+/// both ways. Observing it twice would post its token again on every rotation,
+/// so each activity is claimed once.
 private final class TrackedActivities {
     static let shared = TrackedActivities()
     private let lock = NSLock()
@@ -362,24 +355,30 @@ private final class TrackedActivities {
 }
 
 @available(iOS 16.2, *)
-private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<T>, room: String, question: String = "") {
+private extension Activity {
+    /// Still on screen. A `.stale` activity is dimmed but visible, and still
+    /// takes pushes.
+    var isLive: Bool { activityState == .active || activityState == .stale }
+}
+
+@available(iOS 16.2, *)
+private func trackLiveActivityToken(_ activity: Activity<ConstructActivityAttributes>) {
     guard TrackedActivities.shared.claim(activity.id) else { return }
+    let activityId = activity.attributes.activityId
     Task {
         for await tokenData in activity.pushTokenUpdates {
-            _ = await postLiveActivityToken(tokenData, room: room, question: question)
+            await postLiveActivity(["activityId": activityId, "token": hexString(tokenData)])
         }
     }
-    // When the activity ends or the user dismisses it, drop the server token.
-    // A lingering token makes the gateway suppress the phone notification for
-    // this room (it assumes a Live Activity will surface the message), so a
-    // dismissed activity would silently swallow notifications until the token
-    // expired. Only terminal states clear it — a `.stale` activity is still on
-    // screen (dimmed) and should keep receiving pushes.
+    // When the activity ends or the user dismisses it, drop its server token
+    // right away (the fast path), then reconcile to sweep anything else that
+    // ended while nobody was watching. Only terminal states count — a `.stale`
+    // activity is still on screen.
     Task {
         for await state in activity.activityStateUpdates {
             if state == .ended || state == .dismissed {
-                await clearLiveActivityTokens(room: room)
-                // Let a future activity for this room be tracked again.
+                await postLiveActivity(["action": "end", "activityId": activityId])
+                await reconcileLiveActivityTokens()
                 TrackedActivities.shared.release(activity.id)
                 break
             }
@@ -391,28 +390,25 @@ private func trackLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<
 /// activities as they are *created*, and a push-started one is created while
 /// this process is suspended — that creation is never replayed on resume, so
 /// without sweeping the current list its update token is never registered and
-/// the gateway can only ever start a new activity instead of updating this one.
+/// the server can't update it.
 ///
 /// Safe to call on every activation: trackLiveActivityToken claims each
 /// activity once.
 @available(iOS 16.2, *)
 private func adoptRunningLiveActivities() {
     for activity in Activity<ConstructActivityAttributes>.activities {
-        trackLiveActivityToken(activity, room: liveActivityGlobalKey,
-                               question: activity.content.state.question)
+        trackLiveActivityToken(activity)
     }
 }
 
-/// Wires up the two streams that let the *gateway* create Live Activities, so
-/// every room can have one rather than only the rooms an activity was started
-/// for from inside the app (see startLiveActivityIfNeeded in api/live-activity.js):
+/// Wires up the two streams that let the *server* create Live Activities:
 ///
-///  * `pushToStartTokenUpdates` — a per-device token the gateway pushes to in
+///  * `pushToStartTokenUpdates` — a per-device token the server pushes to in
 ///    order to create an activity. It rotates, so it is observed rather than
 ///    read once.
 ///  * `activityUpdates` — an activity created remotely has nothing observing
 ///    its own update token, so it would be stuck on whatever content started
-///    it. Adopt each one and register its token under the room in its state.
+///    it. Adopt each one and register its token under its activityId.
 @available(iOS 17.2, *)
 private func observeLiveActivityStartsOnce() {
     guard !didObserveLiveActivityStarts else { return }
@@ -420,103 +416,42 @@ private func observeLiveActivityStartsOnce() {
 
     Task {
         for await tokenData in Activity<ConstructActivityAttributes>.pushToStartTokenUpdates {
-            await postPushToStartToken(tokenData)
+            await postLiveActivity(["action": "push-to-start", "token": hexString(tokenData)])
         }
     }
 
     Task {
         for await activity in Activity<ConstructActivityAttributes>.activityUpdates {
-            trackLiveActivityToken(activity, room: liveActivityGlobalKey,
-                                   question: activity.content.state.question)
+            trackLiveActivityToken(activity)
         }
     }
 }
 
-/// Registers the device-level push-to-start token. Distinct from the per-room
-/// update tokens: this one authorises *creating* an activity, so it is stored
-/// once for the device rather than against a room.
-private func postPushToStartToken(_ tokenData: Data) async {
-    let d = IntentConfig.defaults
-    guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
-    let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
-    let token = tokenData.map { String(format: "%02x", $0) }.joined()
-    _ = await intentPost("\(apiBase)/api/live-activity", secret: secret,
-                         body: ["action": "push-to-start", "token": token])
-}
-
-/// Registers the activity's first push token and *waits* for it.
-///
-/// `AskConstructIntent` runs in a background shortcut process that is torn down
-/// as soon as `perform()` returns, so a detached observer task can be killed
-/// before it ever POSTs — leaving the server with no token and the activity
-/// unreachable by push. Awaiting the first token inline closes that window;
-/// `trackLiveActivityToken` then handles later rotations.
-///
-/// Bounded, because `pushTokenUpdates` never finishes on its own: if APNs is
-/// slow or unavailable we give up rather than stall the intent.
+/// Tells the server which activities are still on screen; it drops every
+/// update token not in the list (an empty list clears them all). The safety
+/// net behind the per-activity "end": an activity dismissed while the app was
+/// closed vanishes from `Activity.activities`, so its id is gone and nothing
+/// else would ever end it.
 @available(iOS 16.2, *)
-private func awaitLiveActivityToken<T: ActivityAttributes>(_ activity: Activity<T>,
-                                                           room: String,
-                                                           question: String = "",
-                                                           timeout: Duration = .seconds(5)) async -> String {
-    return await withTaskGroup(of: String.self) { group -> String in
-        group.addTask {
-            for await tokenData in activity.pushTokenUpdates {
-                return await postLiveActivityToken(tokenData, room: room, question: question)
-            }
-            return "stream-ended"
-        }
-        group.addTask {
-            try? await Task.sleep(for: timeout)
-            return "no-token"
-        }
-        let first = await group.next() ?? "none"
-        group.cancelAll()
-        return first
-    }
+private func reconcileLiveActivityTokens() async {
+    let live = Activity<ConstructActivityAttributes>.activities
+        .filter(\.isLive)
+        .map(\.attributes.activityId)
+    await postLiveActivity(["action": "reconcile", "activityIds": live])
 }
 
-/// Returns a short status string. NSLog from app code is not relayed to the
-/// device syslog on iOS 26, so the only reliable way to see what happened here
-/// is to surface it — currently into the Live Activity's own text.
-private func postLiveActivityToken(_ tokenData: Data, room: String, question: String = "") async -> String {
+/// POSTs to api/live-activity with the stored credential. No-op until the app
+/// has saved one (saveIntentConfig, after login).
+@discardableResult
+private func postLiveActivity(_ body: [String: Any]) async -> [String: Any]? {
     let d = IntentConfig.defaults
-    guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else {
-        return "no-secret"
-    }
+    guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return nil }
     let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
-    let token = tokenData.map { String(format: "%02x", $0) }.joined()
-    // question travels with the token so the gateway can echo it in the reply's
-    // content-state — the gateway only knows the room and bender's reply, not
-    // what was asked.
-    guard let result = await intentPost("\(apiBase)/api/live-activity", secret: secret,
-                                        body: ["roomId": room, "token": token, "question": question]) else {
-        return "post-failed"
-    }
-    return (result["ok"] as? Bool) == true ? "registered" : "rejected:\(result)"
+    return await intentPost("\(apiBase)/api/live-activity", secret: secret, body: body)
 }
 
-/// Clears the room's tokens once an activity ends, so the gateway stops pushing
-/// into a dismissed activity.
-private func clearLiveActivityTokens(room: String) async {
-    let d = IntentConfig.defaults
-    guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
-    let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
-    _ = await intentPost("\(apiBase)/api/live-activity", secret: secret,
-                         body: ["roomId": room, "action": "end"])
-}
-
-/// Flips the room's Live Activity to the "Thinking…" loading state, echoing the
-/// just-tapped quick reply as the question. Gives instant "sent" feedback (the
-/// working ring appears) before bender's reply pushes in and replaces it.
-@available(iOS 16.2, *)
-private func markActivitySending(room: String, question: String) async {
-    for activity in Activity<ConstructActivityAttributes>.activities
-    where activity.content.state.roomId == room || activity.content.state.roomId.isEmpty {
-        let sending = ConstructActivityAttributes.ContentState(
-            status: "Thinking…", question: question, detail: "", roomId: room)
-        await activity.update(.init(state: sending, staleDate: .now + 900))
-    }
+private func hexString(_ data: Data) -> String {
+    data.map { String(format: "%02x", $0) }.joined()
 }
 
 private func intentPost(_ urlString: String, secret: String, body: [String: Any]) async -> [String: Any]? {
@@ -530,38 +465,6 @@ private func intentPost(_ urlString: String, secret: String, body: [String: Any]
     req.timeoutInterval = 12
     guard let (respData, _) = try? await URLSession.shared.data(for: req) else { return nil }
     return (try? JSONSerialization.jsonObject(with: respData)) as? [String: Any]
-}
-
-private func intentGet(_ urlString: String, secret: String) async -> [String: Any]? {
-    guard let url = URL(string: urlString) else { return nil }
-    var req = URLRequest(url: url)
-    req.setValue(secret, forHTTPHeaderField: "x-intent-secret")
-    req.timeoutInterval = 12
-    guard let (data, _) = try? await URLSession.shared.data(for: req) else { return nil }
-    return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-}
-
-/// On app foreground, drop server-side Live Activity tokens whose activity is no
-/// longer on screen — otherwise the gateway keeps suppressing this room's phone
-/// notifications, thinking a Live Activity will show the message.
-///
-/// Only reconciles when NO activity is active: the loading ("Thinking…") state
-/// carries no roomId, so an active activity can't be reliably mapped to a room,
-/// and we won't risk clearing a live one. With none active, every registered
-/// token is stale and safe to clear.
-@available(iOS 16.2, *)
-private func reconcileLiveActivityTokens() async {
-    guard Activity<ConstructActivityAttributes>.activities.allSatisfy({ $0.activityState != .active }) else { return }
-    let d = IntentConfig.defaults
-    guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
-    let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
-    guard let result = await intentGet("\(apiBase)/api/live-activity", secret: secret),
-          let rooms = result["rooms"] as? [[String: Any]] else { return }
-    for entry in rooms {
-        if let roomId = entry["roomId"] as? String {
-            await clearLiveActivityTokens(room: roomId)
-        }
-    }
 }
 
 /// Upload raw file bytes to send-file (room + filename in the query, secret in
@@ -581,86 +484,11 @@ private func intentUpload(_ urlString: String, secret: String, room: String,
     _ = try? await URLSession.shared.data(for: req)
 }
 
-/// Shared "ask" flow behind the message and screenshot intents: start a
-/// push-token Live Activity, run the caller's `send`, then watch the room ~30s
-/// and update/wind down the activity (leaving it live for the gateway's push
-/// if the reply is slower than the polling window).
+/// Shortcut entry point: send a dictated message to Construct — no app launch.
 @available(iOS 17.0, *)
-private func runAskWatch(room: String, apiBase: String, secret: String,
-                         initialDetail: String, send: () async -> Void) async {
-    let attributes = ConstructActivityAttributes(roomName: "Bender")
-    // The question rides in its own field so it stays visible (faded) once the
-    // reply replaces `detail`; `detail` is empty while waiting.
-    let thinking = ConstructActivityAttributes.ContentState(status: "Thinking…", question: initialDetail, detail: "")
-    // Reuse a running activity rather than stacking a second one: asking again
-    // while an activity is on screen should replace its content, not leave the
-    // previous one orphaned.
-    // Reuse an active or stale activity; dismiss anything else still on screen.
-    // An ended activity lingers for its dismissal window and is still visible,
-    // so leaving it there while starting a new one is what produced duplicates.
-    let all = Activity<ConstructActivityAttributes>.activities
-    let reusable = all.first { $0.activityState == .active || $0.activityState == .stale }
-    for other in all where other.id != reusable?.id {
-        await other.end(nil, dismissalPolicy: .immediate)
-    }
-
-    // Drop the stored token before registering a new one. Ending an activity
-    // does not invalidate its push token server-side, so a token belonging to
-    // the activity just dismissed would linger for its full TTL — and APNs
-    // returns 200 for a push aimed at a dead activity, so the failure is
-    // completely silent. Better to hold no token than a stale one.
-    if reusable == nil { await clearLiveActivityTokens(room: room) }
-
-    let activity: Activity<ConstructActivityAttributes>?
-    if let existing = reusable {
-        await existing.update(.init(state: thinking, staleDate: nil))
-        activity = existing
-    } else {
-        // pushType: .token is what makes ActivityKit mint a push token; without
-        // it the activity can only ever be updated from a running app.
-        activity = try? Activity.request(attributes: attributes,
-                                         content: .init(state: thinking, staleDate: nil),
-                                         pushType: .token)
-    }
-    await send()
-
-    // Register the activity's push token, then return. The intent's job is done
-    // once the message is sent and the gateway knows where to push: the reply is
-    // delivered by api/matrix-push.js whenever bender answers, however long that
-    // takes.
-    //
-    // This used to poll wait-reply for 15–30s before returning, which was only
-    // ever a stand-in for push. It cost a visible hang in the Dynamic Island, it
-    // ran the action against the Shortcuts background budget (producing "an
-    // unknown error occurred"), and its clear-on-reply deleted the token before
-    // any push could use it — so the fast path actively prevented the slow path
-    // from ever working.
-    //
-    // Awaited rather than detached: this process is torn down when perform()
-    // returns, which would kill a fire-and-forget registration.
-    let tokenStatus = activity == nil ? "no-activity"
-                                      : await awaitLiveActivityToken(activity!, room: room, question: initialDetail)
-
-    // staleDate dims the activity if the push never lands, rather than leaving a
-    // confident working state on the lock screen indefinitely.
-    if let activity {
-        // Registration failures leave the activity unreachable by push, so
-        // say so rather than waiting forever on a reply that can't arrive.
-        let waiting = ConstructActivityAttributes.ContentState(
-            status: "Thinking…",
-            question: initialDetail,
-            detail: tokenStatus == "registered" ? "" : "push unavailable (\(tokenStatus))")
-        await activity.update(.init(state: waiting, staleDate: .now + 900))
-    }
-}
-
-/// Shortcut entry point: send a dictated message and surface the reply in a
-/// Live Activity — no app launch. LiveActivityIntent grants the background
-/// permission to start/update Live Activities.
-@available(iOS 17.0, *)
-struct AskConstructIntent: AppIntent, LiveActivityIntent {
+struct AskConstructIntent: AppIntent {
     static let title: LocalizedStringResource = "Ask Construct"
-    static let description = IntentDescription("Send a message to Construct and watch for the reply on the lock screen.")
+    static let description = IntentDescription("Send a message to Construct.")
 
     @Parameter(title: "Message")
     var message: String
@@ -675,24 +503,23 @@ struct AskConstructIntent: AppIntent, LiveActivityIntent {
         let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
         let room = d.string(forKey: IntentConfig.room) ?? "!DpRWqhWOHJAxyvjOGI:matrix.org"
 
-        await runAskWatch(room: room, apiBase: apiBase, secret: secret, initialDetail: message) {
-            _ = await intentPost("\(apiBase)/api/send-message", secret: secret,
-                                 body: ["room": room, "text": message, "source": "shortcut"])
-        }
+        _ = await intentPost("\(apiBase)/api/send-message", secret: secret,
+                             body: ["room": room, "text": message, "source": "shortcut"])
         return .result()
     }
 }
 
-/// One-tap quick reply from a Live Activity button: sends the chip's text back
-/// to its room in the background — no app launch — over the same send-message
-/// route the notification reply uses. The widget target holds a no-op twin
-/// (ContructWidgetsLiveActivity.swift) that the button references; this copy is
-/// what actually performs, resolved by type name in the app's AppIntents
-/// metadata (same mechanism as ListenIntent).
+/// One-tap button on a Live Activity: posts the action's `send` text back to
+/// its room in the background — no app launch — over the same send-message
+/// route the notification reply uses, tagged with the activity it came from.
+/// The widget target holds a no-op twin (ContructWidgetsLiveActivity.swift)
+/// that the button references; this copy is what actually performs, resolved
+/// by type name in the app's AppIntents metadata (same mechanism as
+/// ListenIntent).
 @available(iOS 17.0, *)
 struct QuickReplyIntent: AppIntent, LiveActivityIntent {
     static let title: LocalizedStringResource = "Quick Reply"
-    static let description = IntentDescription("Send a suggested quick reply to Construct.")
+    static let description = IntentDescription("Send a Live Activity button's reply to Construct.")
 
     @Parameter(title: "Text")
     var text: String
@@ -701,10 +528,14 @@ struct QuickReplyIntent: AppIntent, LiveActivityIntent {
     @Parameter(title: "Room")
     var roomId: String
 
+    @Parameter(title: "Activity")
+    var activityId: String
+
     init() {}
-    init(text: String, roomId: String) {
+    init(text: String, roomId: String, activityId: String) {
         self.text = text
         self.roomId = roomId
+        self.activityId = activityId
     }
 
     func perform() async throws -> some IntentResult {
@@ -716,22 +547,20 @@ struct QuickReplyIntent: AppIntent, LiveActivityIntent {
         let room = roomId.isEmpty
             ? (d.string(forKey: IntentConfig.room) ?? "!DpRWqhWOHJAxyvjOGI:matrix.org")
             : roomId
-        // Instant feedback before the network round-trip and bender's reply.
-        await markActivitySending(room: room, question: trimmed)
         _ = await intentPost("\(apiBase)/api/send-message", secret: secret,
-                             body: ["room": room, "text": trimmed, "source": "live-activity"])
+                             body: ["room": room, "text": trimmed, "source": "live-activity",
+                                    "activityId": activityId])
         return .result()
     }
 }
 
-/// Shortcut entry point: send a screenshot (or any image) to Construct and
-/// surface bender's reply in a Live Activity — no app launch. Pair with the
-/// Shortcuts "Take Screenshot" action, which is the only thing that can capture
-/// the screen (an intent can't screenshot other apps).
+/// Shortcut entry point: send a screenshot (or any image) to Construct — no app
+/// launch. Pair with the Shortcuts "Take Screenshot" action, which is the only
+/// thing that can capture the screen (an intent can't screenshot other apps).
 @available(iOS 17.0, *)
-struct SendScreenshotIntent: AppIntent, LiveActivityIntent {
+struct SendScreenshotIntent: AppIntent {
     static let title: LocalizedStringResource = "Send Screenshot to Construct"
-    static let description = IntentDescription("Send an image to Construct and watch for the reply on the lock screen.")
+    static let description = IntentDescription("Send an image to Construct.")
 
     // supportedContentTypes: on a file parameter is iOS 18+, so this stays a
     // plain IntentFile — the Shortcuts "Take Screenshot" output passes fine.
@@ -751,40 +580,24 @@ struct SendScreenshotIntent: AppIntent, LiveActivityIntent {
         let bytes = image.data
         let mime = image.type?.preferredMIMEType ?? "image/jpeg"
         let ext = image.type?.preferredFilenameExtension ?? "jpg"
-
-        await runAskWatch(room: room, apiBase: apiBase, secret: secret, initialDetail: "Screenshot") {
-            await intentUpload("\(apiBase)/api/send-file", secret: secret, room: room,
-                               filename: "screenshot.\(ext)", contentType: mime, body: bytes)
-        }
+        await intentUpload("\(apiBase)/api/send-file", secret: secret, room: room,
+                           filename: "screenshot.\(ext)", contentType: mime, body: bytes)
         return .result()
     }
 }
 
-/// Reliable companion to the screenshot flow: this takes no file parameter, so
-/// it sidesteps the iOS-17 Shortcuts friction with IntentFile inputs. Pair it
-/// with an upload done in the Shortcut itself (Take Screenshot → Get Contents
-/// of URL → send-file) — this just shows the "Thinking…" Live Activity and
-/// watches for bender's reply.
+/// Used to show a "Thinking…" Live Activity after a Shortcut uploaded a
+/// screenshot itself. Live Activities are now started only by the server, so
+/// this does nothing; it stays so shortcuts that still end with it don't fail
+/// on a missing action.
 @available(iOS 17.0, *)
-struct WatchConstructReplyIntent: AppIntent, LiveActivityIntent {
+struct WatchConstructReplyIntent: AppIntent {
     static let title: LocalizedStringResource = "Watch Construct Reply"
-    static let description = IntentDescription("Show a Live Activity and watch for Construct's reply on the lock screen.")
+    static let description = IntentDescription("No longer does anything. Safe to remove from your shortcuts.")
 
     init() {}
 
-    func perform() async throws -> some IntentResult {
-        let d = IntentConfig.defaults
-        guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else {
-            throw NSError(domain: "construct", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Open Construct once to enable this."])
-        }
-        let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
-        let room = d.string(forKey: IntentConfig.room) ?? "!DpRWqhWOHJAxyvjOGI:matrix.org"
-
-        // The upload already happened in the Shortcut; just watch for the reply.
-        await runAskWatch(room: room, apiBase: apiBase, secret: secret, initialDetail: "Screenshot") {}
-        return .result()
-    }
+    func perform() async throws -> some IntentResult { .result() }
 }
 
 // MARK: - Live Activities
@@ -924,23 +737,61 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
 // definitions must stay identical.
 struct ConstructActivityAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
-        var status: String
-        var question: String = ""
-        var detail: String
-        // Room the reply came from, so a quick-reply button can send back to it.
-        // Empty until the gateway's reply push fills it. Defaulted for decode.
+        var title: String = ""
+        var body: String = ""
+        // "neutral" | "success" | "warning" | "error"; anything else draws as neutral.
+        var tone: String = "neutral"
+        // 0...1. Shown as a bar when set.
+        var progress: Double? = nil
+        // e.g. "3/5". Shown as a label when set.
+        var step: String? = nil
+        // Up to 3 one-tap QuickReplyIntent buttons; `send` is posted to roomId.
+        var actions: [Action] = []
         var roomId: String = ""
-        // Bender's [[CTA]] chips, sent as one-tap QuickReplyIntent buttons.
-        var actions: [String] = []
-        // Which room the current message is from. Lives here rather than in the
-        // attributes because a single activity now serves every room, and
-        // attributes are immutable once an activity starts. Defaulted so
-        // activities started before this field existed still decode; the views
-        // fall back to attributes.roomName when it's empty.
         var roomName: String = ""
+        // Unix seconds (since 1970). Deliberately not Date: a Codable Date in
+        // content-state decodes as seconds since 2001.
+        var endsAt: Double? = nil
+
+        struct Action: Codable, Hashable {
+            var label: String = ""
+            var send: String = ""
+        }
     }
 
-    var roomName: String
+    var activityId: String
+}
+
+// Synthesized Decodable ignores property defaults and throws on any missing key,
+// and ActivityKit drops a push whose content-state doesn't decode without a
+// word. Decode every field leniently so a partial push still lands.
+extension ConstructActivityAttributes.ContentState {
+    private enum Keys: String, CodingKey {
+        case title, body, tone, progress, step, actions, roomId, roomName, endsAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        body = try c.decodeIfPresent(String.self, forKey: .body) ?? ""
+        tone = try c.decodeIfPresent(String.self, forKey: .tone) ?? "neutral"
+        progress = try c.decodeIfPresent(Double.self, forKey: .progress)
+        step = try c.decodeIfPresent(String.self, forKey: .step)
+        actions = try c.decodeIfPresent([Action].self, forKey: .actions) ?? []
+        roomId = try c.decodeIfPresent(String.self, forKey: .roomId) ?? ""
+        roomName = try c.decodeIfPresent(String.self, forKey: .roomName) ?? ""
+        endsAt = try c.decodeIfPresent(Double.self, forKey: .endsAt)
+    }
+}
+
+extension ConstructActivityAttributes.ContentState.Action {
+    private enum Keys: String, CodingKey { case label, send }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
+        send = try c.decodeIfPresent(String.self, forKey: .send) ?? ""
+    }
 }
 
 /// Bridges ActivityKit to JS. Lives in AppDelegate.swift because the App
@@ -1051,75 +902,96 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Starts a local activity (the debug overlay's test path; real ones are
+    /// started by the server). Missing activityId → a fresh UUID. Starting an id
+    /// that is already on screen updates it rather than stacking a duplicate.
     @objc func start(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else {
             call.reject("Live Activities require iOS 16.2 or later")
             return
         }
-        let roomName = call.getString("roomName") ?? "Construct"
-        let attributes = ConstructActivityAttributes(roomName: roomName)
-        let question = call.getString("question") ?? ""
-        let state = ConstructActivityAttributes.ContentState(
-            status: call.getString("status") ?? "",
-            question: question,
-            detail: call.getString("detail") ?? "",
-            roomId: call.getString("roomId") ?? "",
-            roomName: roomName
-        )
-        // One activity serves every room, so re-point the running one at this
-        // room rather than adding a second to the lock screen.
-        if let existing = Activity<ConstructActivityAttributes>.activities.first(where: { $0.activityState == .active }) {
+        let activityId = call.getString("activityId") ?? UUID().uuidString
+        if let existing = Self.liveActivity(activityId) {
+            let state = Self.contentState(from: call, over: existing.content.state)
             Task {
                 await existing.update(.init(state: state, staleDate: nil))
-                trackLiveActivityToken(existing, room: liveActivityGlobalKey, question: question)
-                call.resolve(["activityId": existing.id, "reused": true])
+                call.resolve(["activityId": activityId])
             }
             return
         }
         do {
             let activity = try Activity.request(
-                attributes: attributes,
-                content: .init(state: state, staleDate: nil),
+                attributes: ConstructActivityAttributes(activityId: activityId),
+                content: .init(state: Self.contentState(from: call, over: .init()), staleDate: nil),
                 pushType: .token
             )
-            trackLiveActivityToken(activity, room: liveActivityGlobalKey, question: question)
-            call.resolve(["activityId": activity.id])
+            trackLiveActivityToken(activity)
+            call.resolve(["activityId": activityId])
         } catch {
             call.reject("Failed to start Live Activity: \(error.localizedDescription)")
         }
     }
 
+    /// Merges the given fields into one activity's current state; fields left
+    /// out keep their value.
     @objc func update(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else {
             call.reject("Live Activities require iOS 16.2 or later")
             return
         }
-        let state = ConstructActivityAttributes.ContentState(
-            status: call.getString("status") ?? "",
-            question: call.getString("question") ?? "",
-            detail: call.getString("detail") ?? ""
-        )
+        guard let activityId = call.getString("activityId"),
+              let activity = Self.liveActivity(activityId) else {
+            call.reject("No Live Activity on screen with that activityId")
+            return
+        }
+        let state = Self.contentState(from: call, over: activity.content.state)
         Task {
-            for activity in Activity<ConstructActivityAttributes>.activities {
-                await activity.update(.init(state: state, staleDate: nil))
-            }
+            await activity.update(.init(state: state, staleDate: nil))
             call.resolve()
         }
     }
 
+    /// Ends one activity, or every one when no activityId is given. The token
+    /// tracker sees each end and clears its server token.
     @objc func end(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else {
             call.reject("Live Activities require iOS 16.2 or later")
             return
         }
+        let activityId = call.getString("activityId")
         Task {
-            // Clear tokens first, so the gateway can't push into an activity
-            // that is about to be dismissed.
-            await clearLiveActivityTokens(room: liveActivityGlobalKey)
-            for activity in Activity<ConstructActivityAttributes>.activities {
+            for activity in Activity<ConstructActivityAttributes>.activities
+            where activityId == nil || activity.attributes.activityId == activityId {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }
             call.resolve()
         }
+    }
+
+    @available(iOS 16.2, *)
+    private static func liveActivity(_ activityId: String) -> Activity<ConstructActivityAttributes>? {
+        Activity<ConstructActivityAttributes>.activities.first {
+            $0.attributes.activityId == activityId && $0.isLive
+        }
+    }
+
+    private static func contentState(from call: CAPPluginCall,
+                                     over base: ConstructActivityAttributes.ContentState)
+        -> ConstructActivityAttributes.ContentState {
+        var s = base
+        if let v = call.getString("title") { s.title = v }
+        if let v = call.getString("body") { s.body = v }
+        if let v = call.getString("tone") { s.tone = v }
+        if let v = call.getDouble("progress") { s.progress = v }
+        if let v = call.getString("step") { s.step = v }
+        if let v = call.getArray("actions", JSObject.self) {
+            s.actions = v.prefix(3).map {
+                .init(label: $0["label"] as? String ?? "", send: $0["send"] as? String ?? "")
+            }
+        }
+        if let v = call.getString("roomId") { s.roomId = v }
+        if let v = call.getString("roomName") { s.roomName = v }
+        if let v = call.getDouble("endsAt") { s.endsAt = v }
+        return s
     }
 }

@@ -6,18 +6,43 @@ import { resolveMediaBase64 } from './mediaUrl'
  * Live Activity (Dynamic Island / lock screen) bridge — native iOS only.
  * Implemented by LiveActivityPlugin in ios/App/App/AppDelegate.swift.
  *
- * Pass a roomId when starting: the native side registers the activity's APNs
- * push token against that room, which is what lets api/matrix-push.js update
- * the activity once the app is suspended. Without it the activity still works,
- * but can only be updated while the app is running.
+ * Real activities are started by the server; start/update/end
+ * here exist for the debug overlay to exercise the widget locally.
  */
+
+export type LiveActivityTone = 'neutral' | 'success' | 'warning' | 'error'
+
+export interface LiveActivityAction {
+  label: string
+  /** Text posted to roomId when the button is tapped. */
+  send: string
+}
+
+/** Mirrors ConstructActivityAttributes.ContentState. */
+export interface LiveActivityState {
+  title?: string
+  body?: string
+  tone?: LiveActivityTone
+  /** 0...1 */
+  progress?: number
+  /** e.g. "3/5" */
+  step?: string
+  /** At most 3; extras are dropped. */
+  actions?: LiveActivityAction[]
+  roomId?: string
+  roomName?: string
+  /** Unix seconds. */
+  endsAt?: number
+}
+
 interface LiveActivityPlugin {
   isSupported(): Promise<{ supported: boolean }>
-  // roomId is what lets the native side register the activity's push token
-  // against a room; without it the activity can only be updated in-app.
-  start(options: { roomName: string; status: string; detail?: string; roomId?: string; question?: string }): Promise<{ activityId: string }>
-  update(options: { status: string; detail?: string; question?: string }): Promise<void>
-  end(options?: { roomId?: string }): Promise<void>
+  // No activityId → a fresh one. An id already on screen is updated instead.
+  start(options: LiveActivityState & { activityId?: string }): Promise<{ activityId: string }>
+  // Merges into the activity's current state; omitted fields keep their value.
+  update(options: LiveActivityState & { activityId: string }): Promise<void>
+  // No activityId → ends every activity.
+  end(options?: { activityId?: string }): Promise<void>
   saveIntentConfig(options: { secret: string; apiBase: string; room: string }): Promise<void>
   donateShareTargets(options: { rooms: { roomId: string; name: string; avatar?: string }[]; remove?: string[] }): Promise<void>
   // Separate from the donation above: the Live Activity needs an avatar on disk
@@ -115,34 +140,4 @@ export async function liveActivitySupported(): Promise<boolean> {
   } catch {
     return false
   }
-}
-
-/** Room the current activity belongs to, so end() can clear its push token. */
-let currentRoomId: string | null = null
-/** The user's message, shown faded above the reply and kept across updates. */
-let currentQuestion = ''
-
-export async function startLiveActivity(roomName: string, status: string, detail = '', roomId?: string, question = ''): Promise<string | null> {
-  if (!Capacitor.isNativePlatform()) return null
-  try {
-    currentRoomId = roomId ?? null
-    currentQuestion = question
-    const { activityId } = await plugin.start({ roomName, status, detail, roomId, question })
-    return activityId
-  } catch {
-    return null
-  }
-}
-
-export async function updateLiveActivity(status: string, detail = ''): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return
-  // Carry the question forward so an update doesn't wipe it.
-  await plugin.update({ status, detail, question: currentQuestion }).catch(() => {})
-}
-
-export async function endLiveActivity(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return
-  const roomId = currentRoomId ?? undefined
-  currentRoomId = null
-  await plugin.end({ roomId }).catch(() => {})
 }

@@ -143,14 +143,14 @@ private struct ActionButtons: View {
                 Button(intent: QuickReplyIntent(text: action.send, roomId: state.roomId,
                                                 activityId: activityId)) {
                     Text(action.label)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         // Three buttons share the width, so a long label shrinks
                         // rather than truncating.
                         .minimumScaleFactor(0.7)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
                         .frame(maxWidth: .infinity)
                         .background(state.accent.opacity(0.3), in: Capsule())
                 }
@@ -241,13 +241,18 @@ private struct MetaLabel: View {
                 Text(step)
             }
             if let end = state.endDate {
+                // A timer Text lays out at its widest possible value and
+                // left-aligns inside that, which parked it at the far left.
+                // Right-align it and cap the width so it hugs the edge.
                 Text(timerInterval: Date()...end, countsDown: true)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: 44, alignment: .trailing)
             }
         }
         .font(.caption.weight(.semibold).monospacedDigit())
         .foregroundStyle(state.accent)
         .lineLimit(1)
-        .fixedSize()
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 
@@ -260,15 +265,15 @@ private struct MessageText: View {
         VStack(alignment: .leading, spacing: 2) {
             if !state.title.isEmpty {
                 Text(state.title)
-                    .font(.headline)
+                    // One step above the 13pt body: no text style sits there.
+                    .font(.system(size: 14, weight: .semibold))
                     .lineLimit(hasActions ? 1 : 2)
             }
             if !state.body.isEmpty {
                 Text(state.body)
-                    .font(.subheadline)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(hasActions ? 2 : 4)
-                    .minimumScaleFactor(0.85)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -300,7 +305,7 @@ struct LockScreenView: View {
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                        Spacer(minLength: 0)
+                            .layoutPriority(1)
                         MetaLabel(state: state)
                     }
                     MessageText(state: state)
@@ -344,7 +349,7 @@ private struct IslandRoomLabel: View {
         HStack(spacing: 6) {
             RoomAvatar(size: 18, roomId: state.roomId)
             Text(state.roomName)
-                .font(.footnote.weight(.medium))
+                .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -494,7 +499,6 @@ private struct IslandExpandedMock: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 IslandRoomLabel(state: state)
-                Spacer()
                 MetaLabel(state: state)
             }
             IslandBottomView(state: state, activityId: "preview")

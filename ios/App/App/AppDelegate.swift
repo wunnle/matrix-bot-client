@@ -47,6 +47,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         if #available(iOS 16.2, *) { adoptRunningLiveActivities() }
         // Let the server start activities by push.
         if #available(iOS 17.2, *) { observeLiveActivityStartsOnce() }
+        #if DEBUG
+        if #available(iOS 16.2, *) { startLiveActivityDemoOnce() }
+        #endif
         // Hide the assistant/"language" bar on iPad + Mac (and the blank software
         // keyboard on Mac). No-op on iPhone.
         if #available(iOS 14.0, *) { configureWebKeyboardOnce() }
@@ -426,6 +429,60 @@ private func observeLiveActivityStartsOnce() {
         }
     }
 }
+
+#if DEBUG
+private var didStartLiveActivityDemo = false
+
+/// Debug builds only: launching with `-LiveActivityDemo` starts one activity
+/// per sample state, so the widget can be checked on a simulator with no
+/// server push. Ten seconds later each gets an alerting update, which pops the
+/// expanded Dynamic Island if the app has been backgrounded by then.
+@available(iOS 16.2, *)
+private func startLiveActivityDemoOnce() {
+    guard !didStartLiveActivityDemo,
+          ProcessInfo.processInfo.arguments.contains("-LiveActivityDemo") else { return }
+    didStartLiveActivityDemo = true
+    typealias State = ConstructActivityAttributes.ContentState
+    let samples: [State] = [
+        State(title: "Deploying construct", body: "Building the web bundle and uploading to Vercel.",
+              progress: 0.6, step: "3/5", roomName: "Bender"),
+        State(title: "Deploy is live", body: "All checks passed. Promote to production?", tone: "success",
+              actions: [.init(label: "Ship it", send: "ship it"), .init(label: "Hold", send: "hold"),
+                        .init(label: "Details", send: "details")],
+              roomName: "Bender"),
+        State(title: "Approve rm -rf build/?",
+              body: "The agent wants to clear the build directory before a clean rebuild.",
+              tone: "warning", progress: 0.3,
+              actions: [.init(label: "Approve", send: "approve"), .init(label: "Deny", send: "deny")],
+              roomName: "agent: clean rebuild", endsAt: Date().addingTimeInterval(300).timeIntervalSince1970),
+    ]
+    Task {
+        for activity in Activity<ConstructActivityAttributes>.activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+        var started: [Activity<ConstructActivityAttributes>] = []
+        for (i, state) in samples.enumerated() {
+            do {
+                started.append(try Activity.request(
+                    attributes: ConstructActivityAttributes(activityId: "demo-\(i)"),
+                    content: .init(state: state, staleDate: nil)))
+            } catch {
+                NSLog("LiveActivityDemo: request \(i) failed: \(error)")
+            }
+        }
+        NSLog("LiveActivityDemo: started \(started.count)")
+        // The app is suspended once backgrounded; hold it awake for the alerts.
+        let bg = await UIApplication.shared.beginBackgroundTask(withName: "live-activity-demo")
+        defer { Task { @MainActor in UIApplication.shared.endBackgroundTask(bg) } }
+        try? await Task.sleep(for: .seconds(10))
+        for activity in started {
+            await activity.update(.init(state: activity.content.state, staleDate: nil),
+                                  alertConfiguration: .init(title: "Demo", body: "Demo", sound: .default))
+            try? await Task.sleep(for: .seconds(6))
+        }
+    }
+}
+#endif
 
 /// Tells the server which activities are still on screen; it drops every
 /// update token not in the list (an empty list clears them all). The safety

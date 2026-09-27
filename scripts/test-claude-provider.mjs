@@ -4,16 +4,32 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { claude, progressForToolUse, progressForEvent } from './providers/claude.mjs'
 
-// Progress names the kind of work, never its arguments.
+// Progress carries the agent's own description and file names, never raw
+// commands, patterns, queries or URLs.
 const progressCases = [
   [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'TOKEN=secret npm test', description: 'Run tests' } },
-    { id: 't1', emoji: '💻', tool: 'terminal', content: 'Running a command' }],
-  [{ type: 'tool_use', id: 't2', name: 'Read', input: { file_path: '/repo/.env' } },
-    { id: 't2', emoji: '📖', tool: 'read', content: 'Reading a file' }],
-  [{ type: 'tool_use', id: 't3', name: 'Edit', input: { file_path: '/repo/.env', old_string: 'a', new_string: 'b' } },
-    { id: 't3', emoji: '✏️', tool: 'edit', content: 'Editing a file' }],
+    { id: 't1', emoji: '💻', tool: 'terminal', content: 'Run tests' }],
+  [{ type: 'tool_use', id: 't1b', name: 'Bash', input: { command: 'TOKEN=secret npm test' } },
+    { id: 't1b', emoji: '💻', tool: 'terminal', content: 'Running a command' }],
+  [{ type: 'tool_use', id: 't1c', name: 'Bash', input: { command: 'x', description: `  Line one\n  line two ${'y'.repeat(100)}` } },
+    { id: 't1c', emoji: '💻', tool: 'terminal', content: `Line one line two ${'y'.repeat(61)}…` }],
+  [{ type: 'tool_use', id: 't2', name: 'Read', input: { file_path: '/repo/src/app.ts' } },
+    { id: 't2', emoji: '📖', tool: 'read', content: 'src/app.ts' }],
+  // Outside the checkout: the file name only, not where it lives.
+  [{ type: 'tool_use', id: 't2b', name: 'Read', input: { file_path: '/home/me/.secrets/token.json' } },
+    { id: 't2b', emoji: '📖', tool: 'read', content: 'token.json' }],
+  [{ type: 'tool_use', id: 't2c', name: 'Read', input: { file_path: '/repo-other/a.txt' } },
+    { id: 't2c', emoji: '📖', tool: 'read', content: 'a.txt' }],
+  [{ type: 'tool_use', id: 't3', name: 'Edit', input: { file_path: '/repo/.env', old_string: 'SECRET=a', new_string: 'SECRET=b' } },
+    { id: 't3', emoji: '✏️', tool: 'edit', content: '.env' }],
+  [{ type: 'tool_use', id: 't3b', name: 'Grep', input: { pattern: 'sk-live-secret' } },
+    { id: 't3b', emoji: '🔎', tool: 'search', content: 'Searching the code' }],
+  [{ type: 'tool_use', id: 't3c', name: 'Agent', input: { description: 'Survey repo layout', prompt: 'secret' } },
+    { id: 't3c', emoji: '🤖', tool: 'agent', content: 'Survey repo layout' }],
   [{ type: 'tool_use', id: 't4', name: 'WebSearch', input: { query: 'private acquisition target' } },
     { id: 't4', emoji: '🌐', tool: 'websearch', content: 'Searching the web' }],
+  [{ type: 'tool_use', id: 't4b', name: 'WebFetch', input: { url: 'https://x.test/?token=secret' } },
+    { id: 't4b', emoji: '🌐', tool: 'fetch', content: 'Fetching a page' }],
   [{ type: 'tool_use', id: 't5', name: 'mcp__private__lookup', input: { token: 'secret' } },
     { id: 't5', emoji: '🔧', tool: 'lookup', content: 'Using private' }],
   [{ type: 'tool_use', id: 't6', name: 'Skill', input: { skill: 'deploy', args: 'secret' } },
@@ -24,11 +40,13 @@ const progressCases = [
   [{ type: 'text', text: 'hello' }, null],
 ]
 for (const [block, expected] of progressCases) {
-  assert.deepEqual(progressForToolUse(block), expected)
+  assert.deepEqual(progressForToolUse(block, '/repo'), expected)
 }
+// No checkout known: never a full path.
+assert.equal(progressForToolUse(progressCases[3][0]).content, 'app.ts')
 
 const assistant = (content, extra = {}) => ({ type: 'assistant', message: { content }, parent_tool_use_id: null, ...extra })
-assert.deepEqual(progressForEvent(assistant([{ type: 'text', text: 'x' }, progressCases[0][0]])), [progressCases[0][1]])
+assert.deepEqual(progressForEvent(assistant([{ type: 'text', text: 'x' }, progressCases[0][0]]), '/repo'), [progressCases[0][1]])
 // A subagent's own tool calls stay out of the room.
 assert.deepEqual(progressForEvent(assistant([progressCases[0][0]], { parent_tool_use_id: 'task1' })), [])
 assert.deepEqual(progressForEvent({ type: 'user', message: { content: [] } }), [])

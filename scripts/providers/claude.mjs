@@ -36,9 +36,10 @@ const running = new Map()
 // Kept stderr is only for the error message; a chatty CLI must not grow it forever.
 const STDERR_LIMIT = 64 * 1024
 
-// Tool name -> what the room is told. Like the Codex path, a line names the
-// kind of work and never its arguments: commands, paths and queries can carry
-// secrets, and progress lines stay in the room's history.
+// Tool name -> what the room is told when there is nothing more specific. Raw
+// arguments never reach the room: commands, search patterns, queries and URLs
+// can carry secrets, and progress lines stay in the room's history. The detail
+// a line may carry is chosen per tool in `detailFor`.
 const TOOL_PROGRESS = {
   Bash: { emoji: '💻', tool: 'terminal', content: 'Running a command' },
   Read: { emoji: '📖', tool: 'read', content: 'Reading a file' },
@@ -57,12 +58,54 @@ const TOOL_PROGRESS = {
 // bury the ones that do.
 const SILENT_TOOLS = new Set(['TodoWrite', 'ToolSearch', 'BashOutput', 'KillShell'])
 
+// Long enough for a sentence or a nested path, short enough for a phone row.
+const DETAIL_LIMIT = 80
+
+function oneLine(text) {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > DETAIL_LIMIT ? `${flat.slice(0, DETAIL_LIMIT - 1)}…` : flat
+}
+
+// Repo-relative inside the room's checkout; outside it only the file name,
+// since a full path elsewhere (a home dir, a secrets dir) says more than needed.
+function displayPath(filePath, cwd) {
+  if (!cwd) return path.basename(filePath)
+  const rel = path.relative(cwd, filePath)
+  return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : path.basename(filePath)
+}
+
+// The safe, specific part of a call, or null to fall back to the generic line.
+// Descriptions are prose the agent writes for a human, not the command itself.
+function detailFor(name, input, cwd) {
+  const str = (v) => (typeof v === 'string' && v.trim() ? v : null)
+  switch (name) {
+    case 'Bash':
+    case 'Task':
+    case 'Agent': {
+      const description = str(input?.description)
+      return description && oneLine(description)
+    }
+    case 'Read':
+    case 'Edit':
+    case 'Write':
+    case 'NotebookEdit': {
+      const file = str(input?.file_path) ?? str(input?.notebook_path)
+      return file && oneLine(displayPath(file, cwd))
+    }
+    default:
+      return null
+  }
+}
+
 // One `tool_use` content block -> a progress record, or null to say nothing.
-export function progressForToolUse(block) {
+export function progressForToolUse(block, cwd = '') {
   if (block?.type !== 'tool_use' || !block.id || !block.name) return null
   if (SILENT_TOOLS.has(block.name)) return null
   const known = TOOL_PROGRESS[block.name]
-  if (known) return { id: block.id, ...known }
+  if (known) {
+    const detail = detailFor(block.name, block.input, cwd)
+    return { id: block.id, ...known, ...(detail ? { content: detail } : {}) }
+  }
   if (block.name === 'Skill') {
     // A skill name is ours, not user data, and "Using a skill" says nothing.
     const skill = typeof block.input?.skill === 'string' ? block.input.skill : null
@@ -77,11 +120,11 @@ export function progressForToolUse(block) {
 // Progress records for one stream-json event. Only the main agent's calls:
 // a subagent's own tool use (parent_tool_use_id set) would flood the room,
 // and its Task line already says one is at work.
-export function progressForEvent(event) {
+export function progressForEvent(event, cwd = '') {
   if (event?.type !== 'assistant' || event.parent_tool_use_id) return []
   const content = event.message?.content
   if (!Array.isArray(content)) return []
-  return content.map(progressForToolUse).filter(Boolean)
+  return content.map((block) => progressForToolUse(block, cwd)).filter(Boolean)
 }
 
 export const claude = {
@@ -148,7 +191,7 @@ export const claude = {
         let event
         try { event = JSON.parse(line) } catch { return }
         if (event.type === 'result') { result = event; return }
-        for (const progress of progressForEvent(event)) {
+        for (const progress of progressForEvent(event, cwd)) {
           // Cheap insurance: nothing documents that a block is streamed once.
           if (reported.has(progress.id)) continue
           reported.add(progress.id)

@@ -43,7 +43,7 @@ import { HeaderUsageBar } from './PlanUsageMeter'
 import { usePlanUsage, useCodexUsage } from '../hooks/usePlanUsage'
 import { Marked } from 'marked'
 import type { Message, RoomConfig, ConstructThread, ConstructApproval, ToolProgressLine } from '../types'
-import { useAgentRun } from '../hooks/useAgentActivity'
+import { useAgentRun, type AgentRun } from '../hooks/useAgentActivity'
 import { AgentActivityBar } from './AgentActivityBar'
 import MessageActionSheet from './MessageActionSheet'
 import ApprovalBar from './ApprovalBar'
@@ -1135,6 +1135,21 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const scrollAnchorRef = useRef<number | null>(null)
   const suppressRenderStartRef = useRef(false)
 
+  // Content that grows without a new message — the run's live step appearing
+  // under its tool history, an image finishing its load — would otherwise
+  // slide the end of the chat under the composer. Follow it if you were there.
+  useLayoutEffect(() => {
+    const inner = messagesRef.current?.firstElementChild
+    if (!inner) return
+    const observer = new ResizeObserver(() => {
+      const list = messagesRef.current
+      if (!list || list.offsetHeight === 0) return
+      if (stickToBottomRef.current && !loadingMoreRef.current) scrollToEnd(list)
+    })
+    observer.observe(inner)
+    return () => observer.disconnect()
+  }, [])
+
   // When this room is shown again, its ChatView was only hidden (display)
   // but kept state — scroll position and renderStart are preserved, so
   // we never auto-scroll. Reset to the tail and pin to bottom.
@@ -1731,6 +1746,13 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
   const composing = input.trim() !== '' && !addingPill
 
+  // The tool group the run is adding to right now — the one the timeline ends
+  // in, when a run is on. Its chip carries the step in flight.
+  const tailMessage = visibleMessages[visibleMessages.length - 1]
+  const liveToolGroupId = agentRun && tailMessage && isBotToolProgress(tailMessage)
+    ? toolGroups.toolGroupId[tailMessage.eventId] ?? null
+    : null
+
   // The card's own full-change dialog when it has one; otherwise the card is
   // already complete in the timeline, so bring it into view.
   const viewApprovalCard = (msg: Message) => {
@@ -2005,6 +2027,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 isPinned={pinnedEventIds.includes(msg.eventId)}
                 pinInFlight={pinInFlight}
                 selecting={selectingId === msg.eventId}
+                liveRun={groupId === liveToolGroupId ? agentRun : null}
+                botTyping={groupId === liveToolGroupId && typingUsers.length > 0}
+                onLiveChange={setAgentActivity}
                 onOpenToolDialog={openToolDialog}
                 onOpenLightbox={openLightbox}
                 onOpenApproval={setApprovalDialog}
@@ -2018,6 +2043,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             )
             })}</>
           })()) as React.ReactNode}
+          {/* A run with no tool history to hang off yet (thinking, or talking
+              between tools): its step still belongs at the end of the chat. */}
+          {agentRun && !liveToolGroupId && (
+            <div className="message other">
+              <div className="message-body">
+                <AgentActivityBar run={agentRun} botTyping={typingUsers.length > 0} onLiveChange={setAgentActivity} />
+              </div>
+            </div>
+          )}
           <div ref={bottomRef} />
         </div>
       </div>
@@ -2070,13 +2104,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           </div>
         )}
 
-        {agentRun && (
-          <AgentActivityBar
-            run={agentRun}
-            botTyping={typingUsers.length > 0}
-            onLiveChange={setAgentActivity}
-          />
-        )}
 
         {pendingApproval && (
           <ApprovalBar
@@ -2614,6 +2641,11 @@ export interface MessageRowProps {
   pinInFlight: boolean
   /** "Select text" from the action sheet re-enabled selection on this row. */
   selecting: boolean
+  /** Only on the row that starts the tool group the run is adding to: the run,
+   *  so the chip can show the step in flight under its summary. */
+  liveRun: AgentRun | null
+  botTyping: boolean
+  onLiveChange: (live: boolean) => void
   onOpenToolDialog: (eventId: string) => void
   onOpenLightbox: (url: string, alt: string) => void
   onOpenApproval: (approval: ConstructApproval) => void
@@ -2652,6 +2684,9 @@ function MessageRowInner({
   isPinned,
   pinInFlight,
   selecting,
+  liveRun,
+  botTyping,
+  onLiveChange,
   onOpenToolDialog,
   onOpenLightbox,
   onOpenApproval,
@@ -2717,13 +2752,23 @@ function MessageRowInner({
                             if (!isGroupStart) return null
 
                             // All groups show as a summary chip (live group updates in real time)
-                            return (
+                            const chip = (
                               <div
                                 className={`tool-progress tool-progress-collapsed${toolLive ? ' tool-progress-live' : ''}`}
                                 onClick={() => onOpenToolDialog(msg.eventId)}
                               >
                                 <span className="tool-progress-tool">{toolSummary}</span>
                                 {toolLive && <span className="tool-progress-live-dot" />}
+                              </div>
+                            )
+                            // While the run is on, the group is just what it's
+                            // doing now ("Searching AppDelegate.swift"), changing
+                            // as it moves on; the summary of what it did takes
+                            // over once it's done — or if the run goes quiet.
+                            if (!liveRun) return chip
+                            return (
+                              <div className="tool-progress-now" onClick={() => onOpenToolDialog(msg.eventId)}>
+                                <AgentActivityBar run={liveRun} botTyping={botTyping} onLiveChange={onLiveChange} fallback={chip} />
                               </div>
                             )
 

@@ -1902,11 +1902,15 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 /* What the bot is doing right now — sits between the timeline and the pills,
    where the eye already is when you're waiting on a reply. */
+/* The step a run is on, as the last line of the chat: standing in for its tool
+   group while the run is live, on its own while it only thinks. */
+.tool-progress-now { cursor: pointer; }
+
 .agent-activity {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 6px 2px 2px;
+  padding: 2px 0 4px;
   font-size: 12px;
   color: var(--text-muted);
   min-width: 0;

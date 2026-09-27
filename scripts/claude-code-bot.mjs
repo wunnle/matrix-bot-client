@@ -499,9 +499,10 @@ const liveActivityInstruction = (roomId) =>
   '`construct-activity` command (run `construct-activity --help`). Use it ' +
   'sparingly, for moments the user would want to know about while away from ' +
   'the chat: a long task finishing or failing, or being blocked on a decision ' +
-  'from them. Give it up to three buttons (--action "Label=text to send"); a ' +
-  `tap posts that text into this room, whose id is ${roomId} (pass it as ` +
-  '--room). Update the same --id as things change instead of starting new ' +
+  'from them. Give it up to three buttons (--action "Label"); a tap posts ' +
+  `the label into this room, whose id is ${roomId} (pass it as --room), so ` +
+  'word labels as the reply you want, e.g. "Ship it". Add --countdown only ' +
+  'for a real deadline. Update the same --id as things change instead of starting new ' +
   'ones, and end it once it has served its purpose. Do not use it for ' +
   'ordinary replies; those already notify.'
 

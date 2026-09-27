@@ -246,6 +246,50 @@ async function roomName(roomId) {
   return roomId;
 }
 
+/* ── Agent rooms ──────────────────────────────────────────────────────── */
+
+/** Room type the Claude bot gives its agent rooms (m.room.create), where a
+    message from Sinan is an instruction to an agent with a shell. Keep in
+    sync with AGENT_ROOM_TYPE in scripts/claude-code-bot.mjs. */
+const AGENT_ROOM_TYPE = "com.construct.agent";
+const roomTypeCache = new Map(); // roomId -> type | null (types never change)
+
+/** True for agent rooms, and when the type can't be read: callers use this to
+    refuse hidden button payloads, so an unknown room gets the strict rule. */
+async function isAgentRoom(roomId) {
+  if (!roomTypeCache.has(roomId)) {
+    try {
+      const r = await fetch(
+        `${HOMESERVER}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.create/`,
+        { headers: { Authorization: `Bearer ${ACCESS_TOKEN}` } },
+      );
+      if (!r.ok) return true;
+      roomTypeCache.set(roomId, (await r.json())?.type ?? null);
+    } catch {
+      return true;
+    }
+  }
+  return roomTypeCache.get(roomId) === AGENT_ROOM_TYPE;
+}
+
+/**
+ * A button shows its label but posts its `send` text, as Sinan. In an agent
+ * room that text is an instruction to an agent that runs shell commands, so a
+ * card there may not hide one behind an innocent label: send must equal the
+ * label. Guards against an injected bot (one reading mail or web pages)
+ * minting an "OK" button that posts a command. Pure.
+ */
+export function assertVisibleSends(actions) {
+  const hidden = (actions ?? []).filter((a) => a.send !== a.label).map((a) => a.label);
+  if (hidden.length) {
+    throw new ActivityError(400, `in agent rooms a button must send its own label (${hidden.join(", ")})`);
+  }
+}
+
+async function checkButtons(roomId, actions) {
+  if (actions?.some((a) => a.send !== a.label) && (await isAgentRoom(roomId))) assertVisibleSends(actions);
+}
+
 /* ── APNs ─────────────────────────────────────────────────────────────── */
 
 function summarize(r) {
@@ -416,6 +460,7 @@ export async function upsertActivity(input) {
       { explicitTtl: input.ttl !== undefined, nowMs: now },
     );
     const alert = alertBlock(parseAlert(input.alert, "none"), content);
+    if (input.actions !== undefined) await checkButtons(entry.roomId, content.actions);
 
     if (!entry.token) {
       // Started, but the app hasn't reported the activity's token yet. Keep
@@ -448,6 +493,7 @@ export async function upsertActivity(input) {
     explicitTtl: input.ttl !== undefined,
     nowMs: now,
   });
+  await checkButtons(room, content.actions);
   // A start must alert or iOS drops it; "none" becomes quiet.
   const level = parseAlert(input.alert, "quiet");
   const alert = alertBlock(level === "none" ? "quiet" : level, content);

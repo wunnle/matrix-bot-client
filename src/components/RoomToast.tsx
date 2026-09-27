@@ -23,17 +23,49 @@ function renderInlineMarkdown(text: string): React.ReactNode[] {
   return parts
 }
 
+// Buttons ignore taps this soon after a toast appears or changes: it drops in
+// under a cursor or thumb that was aiming at something else, and one of those
+// buttons may be Approve.
+const ARM_DELAY_MS = 600
+
+// Answers that say no get the quieter button style.
+const DECLINE = /^(deny|no|cancel|reject|decline|skip|ignore|dismiss|stop)\b/i
+
 interface ToastCardProps {
   notification: RoomNotification
   onDismiss: (roomId: string) => void
   onNavigate: (roomId: string, roomName: string) => void
+  onHold: (roomId: string, held: boolean) => void
+  onRespond: (roomId: string, label: string) => Promise<void>
 }
 
-function ToastCard({ notification, onDismiss, onNavigate }: ToastCardProps) {
+function ToastCard({ notification, onDismiss, onNavigate, onHold, onRespond }: ToastCardProps) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  // Cards are keyed by room, so a newer message replaces this one's content in
+  // place. Send state is tagged with the message it belongs to, so it resets
+  // by itself when that happens.
+  const [attempt, setAttempt] = useState<{ eventId: string; label: string | null; failed: boolean } | null>(null)
+  const current = attempt?.eventId === notification.eventId ? attempt : null
+  const sending = current?.label ?? null
+  const error = current?.failed ?? false
   const cardRef = useRef<HTMLDivElement>(null)
   const touchStartY = useRef<number | null>(null)
   const dismissedRef = useRef(false)
+  // performance.now() time the current message appeared; compared against the
+  // click's own timeStamp, which is on the same clock.
+  const shownAtRef = useRef(0)
+  useEffect(() => { shownAtRef.current = performance.now() }, [notification.eventId])
+
+  const respond = async (label: string, at: number) => {
+    if (sending || at - shownAtRef.current < ARM_DELAY_MS) return
+    const eventId = notification.eventId
+    setAttempt({ eventId, label, failed: false })
+    try {
+      await onRespond(notification.roomId, label)
+    } catch {
+      setAttempt({ eventId, label: null, failed: true })
+    }
+  }
 
   useEffect(() => {
     if (!notification.avatarMxc) return
@@ -95,11 +127,15 @@ function ToastCard({ notification, onDismiss, onNavigate }: ToastCardProps) {
     }
   }
 
+  const { lines, code, actions, approval } = notification
+
   return (
     <div
       ref={cardRef}
-      className="room-toast"
+      className={`room-toast${approval ? ' room-toast-approval' : ''}`}
       onClick={handleClick}
+      onMouseEnter={() => onHold(notification.roomId, true)}
+      onMouseLeave={() => onHold(notification.roomId, false)}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -113,7 +149,37 @@ function ToastCard({ notification, onDismiss, onNavigate }: ToastCardProps) {
           <span className="room-toast-room">{notification.roomName}</span>
           <span className="room-toast-sender">{notification.senderName}</span>
         </div>
-        <div className="room-toast-body">{renderInlineMarkdown(notification.body)}</div>
+        {(lines.length ? lines : [notification.body]).map((line, i) => (
+          <div key={i} className="room-toast-body">{renderInlineMarkdown(line)}</div>
+        ))}
+        {code && <pre className="room-toast-code">{code}</pre>}
+        {approval?.lines && (
+          <button
+            className="room-toast-more"
+            onClick={(e) => { e.stopPropagation(); handleClick() }}
+          >
+            View all {approval.lines} lines
+          </button>
+        )}
+        {actions.length > 0 && (
+          <div className="room-toast-actions">
+            {actions.map((label) => (
+              <button
+                key={label}
+                className={`room-toast-action${DECLINE.test(label) ? ' room-toast-action-secondary' : ''}`}
+                disabled={sending !== null}
+                // Keeps a focused composer focused, like the chat's pills.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={(e) => { e.stopPropagation(); void respond(label, e.timeStamp) }}
+                onTouchStart={(e) => e.stopPropagation()}
+                onTouchEnd={(e) => e.stopPropagation()}
+              >
+                {sending === label ? '…' : label}
+              </button>
+            ))}
+          </div>
+        )}
+        {error && <div className="room-toast-error">Couldn't send — try again</div>}
       </div>
       <button
         className="room-toast-close"
@@ -128,9 +194,11 @@ interface Props {
   toasts: RoomNotification[]
   onDismiss: (roomId: string) => void
   onNavigate: (roomId: string, roomName: string) => void
+  onHold: (roomId: string, held: boolean) => void
+  onRespond: (roomId: string, label: string) => Promise<void>
 }
 
-export default function RoomToast({ toasts, onDismiss, onNavigate }: Props) {
+export default function RoomToast({ toasts, onDismiss, onNavigate, onHold, onRespond }: Props) {
   if (toasts.length === 0) return null
 
   return (
@@ -141,6 +209,8 @@ export default function RoomToast({ toasts, onDismiss, onNavigate }: Props) {
           notification={n}
           onDismiss={onDismiss}
           onNavigate={onNavigate}
+          onHold={onHold}
+          onRespond={onRespond}
         />
       ))}
     </div>

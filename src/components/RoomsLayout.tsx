@@ -53,7 +53,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   const activeRoomIdRef = useRef<string | null>(activeRoomId)
   useEffect(() => { activeRoomIdRef.current = activeRoomId }, [activeRoomId])
 
-  const { notifications, toasts, dismiss } = useRoomNotifications(activeRoomId, clientReady, auth.userId)
+  const { notifications, toasts, dismiss, hold, respond } = useRoomNotifications(activeRoomId, clientReady, auth.userId)
 
   useEffect(() => {
     setDictationAutoSendState(getDictationAutoSend(auth.userId))
@@ -276,6 +276,8 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
           toasts={toasts}
           onDismiss={dismiss}
           onNavigate={handleSelectRoom}
+          onHold={hold}
+          onRespond={respond}
         />
       )}
       <div className="layout-body">

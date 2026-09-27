@@ -3042,20 +3042,25 @@ a.msg-card-link:hover {
 }
 
 /* ── In-room toasts (top of screen, auto-dismiss) ─────────────────────── */
+/* Top-right on desktop, so a toast from another room can be answered without
+   leaving the one you're in; centred under the notch on phones. */
 .room-toast-stack {
-  display: none;
+  display: flex;
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 380px;
+  z-index: 300;
+  flex-direction: column;
+  gap: 8px;
 }
 @media (max-width: 640px) {
   .room-toast-stack {
-    display: flex;
-    position: fixed;
     top: calc(env(safe-area-inset-top) + 12px);
+    right: auto;
     left: 50%;
     transform: translateX(-50%);
     width: min(380px, calc(100vw - 24px));
-    z-index: 300;
-    flex-direction: column;
-    gap: 8px;
   }
 }
 .room-toast {
@@ -3063,7 +3068,7 @@ a.msg-card-link:hover {
   border-radius: 16px;
   padding: 10px 12px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   box-shadow: 0 4px 32px rgba(0,0,0,0.5);
   cursor: pointer;
@@ -3138,6 +3143,66 @@ a.msg-card-link:hover {
   line-height: 1;
 }
 .room-toast-close:hover { color: #444460; }
+/* Approval requests: stay until answered, and look like it. */
+.room-toast-approval {
+  background: #fff6e5;
+  box-shadow: 0 0 0 1.5px #e0a83a, 0 4px 32px rgba(0,0,0,0.5);
+}
+.room-toast-approval:hover { background: #ffefd2; }
+.room-toast-code {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  background: rgba(26,26,46,0.06);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #1a1a2e;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: calc(4 * 1.4em + 12px);
+}
+.room-toast-more {
+  background: none;
+  border: none;
+  padding: 4px 0 0;
+  font-size: 12px;
+  color: #5c4fd6;
+  cursor: pointer;
+}
+.room-toast-more:hover { text-decoration: underline; }
+.room-toast-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.room-toast-action {
+  border: none;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background: #5c4fd6;
+  color: #fff;
+  cursor: pointer;
+}
+.room-toast-action:hover:not(:disabled) { background: #4a3ec0; }
+/* Declines (Deny, No, Cancel…) are outlined so they can't be mistaken for
+   Approve at a glance. */
+.room-toast-action-secondary {
+  background: transparent;
+  color: #5c4fd6;
+  box-shadow: inset 0 0 0 1.5px #5c4fd6;
+}
+.room-toast-action-secondary:hover:not(:disabled) { background: rgba(92,79,214,0.1); }
+.room-toast-action:disabled { opacity: 0.55; cursor: default; }
+.room-toast-error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #c0392b;
+}
 
 /* ── Notification center (sidebar, above room list) ────────────────────── */
 .notif-center {

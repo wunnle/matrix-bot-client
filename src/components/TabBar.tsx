@@ -36,7 +36,7 @@ const TABS: { id: Tab, label: string }[] = [
 /** iOS-style floating tab bar with a liquid-glass capsule. */
 export default function TabBar({ active, onSelect }: { active: Tab, onSelect: (tab: Tab) => void }) {
   return (
-    <nav className="tab-bar glass" aria-label="Tabs">
+    <nav className="tab-bar" aria-label="Tabs">
       {TABS.map(({ id, label }) => (
         <button
           key={id}

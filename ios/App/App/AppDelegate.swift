@@ -10,50 +10,19 @@ import Intents
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
-    var window: UIWindow?
-
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Must be in place before iOS delivers a notification action to a
-        // cold-launched app; re-asserted in didBecomeActive once Capacitor's
+        // cold-launched app; re-asserted on every activation once Capacitor's
         // push plugin has installed its own delegate.
         if #available(iOS 15.0, *) { NotificationActionRouter.shared.install() }
+        #if DEBUG
+        // Reproduces a cold launch holding a stale credential: token posts are
+        // refused until the web layer stores the real one via saveIntentConfig.
+        if ProcessInfo.processInfo.arguments.contains("-JunkIntentSecret") {
+            IntentConfig.defaults.set("junk", forKey: IntentConfig.secret)
+        }
+        #endif
         return true
-    }
-
-    func applicationWillResignActive(_ application: UIApplication) {
-        // Sent when the application is about to move from active to inactive state. This can occur for certain types of temporary interruptions (such as an incoming phone call or SMS message) or when the user quits the application and it begins the transition to the background state.
-        // Use this method to pause ongoing tasks, disable timers, and invalidate graphics rendering callbacks. Games should use this method to pause the game.
-    }
-
-    func applicationDidEnterBackground(_ application: UIApplication) {
-        // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later.
-        // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
-    }
-
-    func applicationWillEnterForeground(_ application: UIApplication) {
-        // Called as part of the transition from the background to the active state; here you can undo many of the changes made on entering the background.
-    }
-
-    func applicationDidBecomeActive(_ application: UIApplication) {
-        // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
-        // Capacitor's push plugin claims the notification delegate when it
-        // loads; take it back (chaining to it) so Reply keeps working.
-        if #available(iOS 15.0, *) { NotificationActionRouter.shared.install() }
-        // Drop server tokens for activities dismissed while the app was away;
-        // they'd only waste pushes and count toward the server's activity cap.
-        if #available(iOS 16.2, *) { Task { await reconcileLiveActivityTokens() } }
-        // Pick up activities the server started while this process was away, so
-        // their update tokens get registered.
-        if #available(iOS 16.2, *) { adoptRunningLiveActivities() }
-        // Let the server start activities by push.
-        if #available(iOS 17.2, *) { observeLiveActivityStartsOnce() }
-        // Hide the assistant/"language" bar on iPad + Mac (and the blank software
-        // keyboard on Mac). No-op on iPhone.
-        if #available(iOS 14.0, *) { configureWebKeyboardOnce() }
-    }
-
-    func applicationWillTerminate(_ application: UIApplication) {
-        // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
     }
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
@@ -63,20 +32,53 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
     }
+}
 
-    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        // Called when the app was launched with a url. Feel free to add additional processing here,
-        // but if you want the App API to support tracking app url opens, make sure to keep this call
-        return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
+/// Scene lifecycle. Apps built against the iOS 27 SDK trap at launch without
+/// one (UIKit's "no scene lifecycle adoption" check). Under scenes UIKit stops
+/// calling the app delegate's activation and URL methods, so they live here;
+/// URLs and user activities are handed to Capacitor's ApplicationDelegateProxy
+/// exactly as the app delegate used to, which is what feeds the App plugin's
+/// appUrlOpen and getLaunchUrl.
+class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+
+    var window: UIWindow?
+
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        // A cold launch delivers its URL or activity here, not through the
+        // openURLContexts / continue callbacks below.
+        if let url = connectionOptions.urlContexts.first?.url {
+            _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, open: url, options: [:])
+        }
+        if let activity = connectionOptions.userActivities.first {
+            _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, continue: activity) { _ in }
+        }
     }
 
-    func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
-        // Called when the app was launched with an activity, including Universal Links.
-        // Feel free to add additional processing here, but if you want the App API to support
-        // tracking app url opens, make sure to keep this call
-        return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        guard let url = URLContexts.first?.url else { return }
+        _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, open: url, options: [:])
     }
 
+    func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+        _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, continue: userActivity) { _ in }
+    }
+
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        // Capacitor's push plugin claims the notification delegate when it
+        // loads; take it back (chaining to it) so Reply keeps working.
+        if #available(iOS 15.0, *) { NotificationActionRouter.shared.install() }
+        // Register Live Activity tokens: drop ones dismissed while the app was
+        // away, adopt activities the server started meanwhile, retry anything
+        // the server refused, and (re)post the push-to-start token.
+        if #available(iOS 16.2, *) { syncLiveActivityRegistrations() }
+        #if DEBUG
+        if #available(iOS 16.2, *) { startLiveActivityDemoOnce() }
+        #endif
+        // Hide the assistant/"language" bar on iPad + Mac (and the blank software
+        // keyboard on Mac). No-op on iPhone.
+        if #available(iOS 14.0, *) { configureWebKeyboardOnce() }
+    }
 }
 
 // MARK: - Notification reply
@@ -327,30 +329,62 @@ enum AvatarCache {
     }
 }
 
-/// Registers an Activity's APNs push token with the server so it can update the
-/// Live Activity while the app is suspended — the only way to move it past
-/// whatever state the app last set.
+/// Registers Activity APNs push tokens with the server so it can update a Live
+/// Activity while the app is suspended — the only way to move it past whatever
+/// state the app last set.
 ///
-/// The token is per-activity and rotates, so this observes `pushTokenUpdates`
-/// for the activity's lifetime rather than reading it once.
-/// Activities can arrive from two directions — created here, or created by the
-/// server and handed to us via `activityUpdates` — and the same one can arrive
-/// both ways. Observing it twice would post its token again on every rotation,
-/// so each activity is claimed once.
-private final class TrackedActivities {
-    static let shared = TrackedActivities()
+/// Two separate records:
+///  * observed — activities whose token/state streams are being watched. Each
+///    is observed exactly once: it can arrive both as created here and via
+///    `activityUpdates`, and a second observer would post every rotation twice.
+///  * registered — the token the server last *accepted* per activityId. Only a
+///    2xx marks it. On a cold launch the first posts can go out before the web
+///    layer stores the signed-in credential, and a refused post must stay
+///    retryable: the token streams only yield again on rotation.
+private final class LiveActivityRegistry {
+    static let shared = LiveActivityRegistry()
     private let lock = NSLock()
-    private var ids = Set<String>()
+    private var observed = Set<String>()
+    private var registered: [String: String] = [:]
+    private var pushToStart: String?
 
-    /// True only for the first caller to claim this activity.
-    func claim(_ id: String) -> Bool {
+    /// True only for the first caller to observe this activity (by Activity.id).
+    func startObserving(_ id: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        return ids.insert(id).inserted
+        return observed.insert(id).inserted
     }
 
-    func release(_ id: String) {
+    func stopObserving(_ id: String) {
         lock.lock(); defer { lock.unlock() }
-        ids.remove(id)
+        observed.remove(id)
+    }
+
+    func isRegistered(_ activityId: String, token: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return registered[activityId] == token
+    }
+
+    func markRegistered(_ activityId: String, token: String) {
+        lock.lock(); defer { lock.unlock() }
+        registered[activityId] = token
+    }
+
+    func forget(_ activityId: String) {
+        lock.lock(); defer { lock.unlock() }
+        registered.removeValue(forKey: activityId)
+    }
+
+    /// After a credential change nothing the server accepted under the old one
+    /// can be assumed to still hold.
+    func forgetRegistrations() {
+        lock.lock(); defer { lock.unlock() }
+        registered.removeAll()
+    }
+
+    /// Last push-to-start token seen, so every activation can re-post it.
+    var lastPushToStartToken: String? {
+        get { lock.lock(); defer { lock.unlock() }; return pushToStart }
+        set { lock.lock(); defer { lock.unlock() }; pushToStart = newValue }
     }
 }
 
@@ -361,13 +395,28 @@ private extension Activity {
     var isLive: Bool { activityState == .active || activityState == .stale }
 }
 
+/// Posts an activity's update token unless the server already accepted this
+/// exact one. Marked registered only on success.
 @available(iOS 16.2, *)
-private func trackLiveActivityToken(_ activity: Activity<ConstructActivityAttributes>) {
-    guard TrackedActivities.shared.claim(activity.id) else { return }
+private func registerUpdateToken(_ token: String, activityId: String) async {
+    let registry = LiveActivityRegistry.shared
+    guard !registry.isRegistered(activityId, token: token) else { return }
+    if await postLiveActivity(["activityId": activityId, "token": token]) {
+        registry.markRegistered(activityId, token: token)
+    }
+}
+
+/// Observes an activity's token rotations and end, once. Returns true when this
+/// call started the observers (their first token yield does the registration).
+@available(iOS 16.2, *)
+@discardableResult
+private func trackLiveActivityToken(_ activity: Activity<ConstructActivityAttributes>) -> Bool {
+    let registry = LiveActivityRegistry.shared
+    guard registry.startObserving(activity.id) else { return false }
     let activityId = activity.attributes.activityId
     Task {
         for await tokenData in activity.pushTokenUpdates {
-            await postLiveActivity(["activityId": activityId, "token": hexString(tokenData)])
+            await registerUpdateToken(hexString(tokenData), activityId: activityId)
         }
     }
     // When the activity ends or the user dismisses it, drop its server token
@@ -377,27 +426,32 @@ private func trackLiveActivityToken(_ activity: Activity<ConstructActivityAttrib
     Task {
         for await state in activity.activityStateUpdates {
             if state == .ended || state == .dismissed {
+                registry.forget(activityId)
                 await postLiveActivity(["action": "end", "activityId": activityId])
                 await reconcileLiveActivityTokens()
-                TrackedActivities.shared.release(activity.id)
+                registry.stopObserving(activity.id)
                 break
             }
         }
     }
+    return true
 }
 
-/// Adopts activities that are already running. `activityUpdates` only delivers
-/// activities as they are *created*, and a push-started one is created while
-/// this process is suspended — that creation is never replayed on resume, so
-/// without sweeping the current list its update token is never registered and
-/// the server can't update it.
-///
-/// Safe to call on every activation: trackLiveActivityToken claims each
-/// activity once.
+/// Adopts activities that are already running, and retries any registration
+/// the server hasn't accepted. `activityUpdates` only delivers activities as
+/// they are *created*, and a push-started one is created while this process is
+/// suspended, so without sweeping the current list its token would never be
+/// registered. For activities already observed, the current token
+/// (`activity.pushToken`) is re-posted if it isn't registered yet — the
+/// stream won't offer it again until it rotates.
 @available(iOS 16.2, *)
 private func adoptRunningLiveActivities() {
     for activity in Activity<ConstructActivityAttributes>.activities {
-        trackLiveActivityToken(activity)
+        let justObserved = trackLiveActivityToken(activity)
+        if !justObserved, activity.isLive, let token = activity.pushToken {
+            let activityId = activity.attributes.activityId
+            Task { await registerUpdateToken(hexString(token), activityId: activityId) }
+        }
     }
 }
 
@@ -409,14 +463,19 @@ private func adoptRunningLiveActivities() {
 ///  * `activityUpdates` — an activity created remotely has nothing observing
 ///    its own update token, so it would be stuck on whatever content started
 ///    it. Adopt each one and register its token under its activityId.
+///
+/// Returns true on the call that started them.
 @available(iOS 17.2, *)
-private func observeLiveActivityStartsOnce() {
-    guard !didObserveLiveActivityStarts else { return }
+@discardableResult
+private func observeLiveActivityStartsOnce() -> Bool {
+    guard !didObserveLiveActivityStarts else { return false }
     didObserveLiveActivityStarts = true
 
     Task {
         for await tokenData in Activity<ConstructActivityAttributes>.pushToStartTokenUpdates {
-            await postLiveActivity(["action": "push-to-start", "token": hexString(tokenData)])
+            let token = hexString(tokenData)
+            LiveActivityRegistry.shared.lastPushToStartToken = token
+            await postLiveActivity(["action": "push-to-start", "token": token])
         }
     }
 
@@ -425,7 +484,88 @@ private func observeLiveActivityStartsOnce() {
             trackLiveActivityToken(activity)
         }
     }
+    return true
 }
+
+/// Re-posts the current push-to-start token. The stream only yields on
+/// rotation, so a refused post would otherwise stand until the next one.
+@available(iOS 17.2, *)
+private func repostPushToStartToken() {
+    guard let token = LiveActivityRegistry.shared.lastPushToStartToken
+            ?? Activity<ConstructActivityAttributes>.pushToStartToken.map(hexString) else { return }
+    Task { await postLiveActivity(["action": "push-to-start", "token": token]) }
+}
+
+/// Everything that registers Live Activity tokens with the server. Runs on
+/// every activation, and again when saveIntentConfig stores a different
+/// credential: on a cold launch activation happens before the web layer has
+/// stored the signed-in token, so the first round can be refused.
+@available(iOS 16.2, *)
+private func syncLiveActivityRegistrations() {
+    Task { await reconcileLiveActivityTokens() }
+    adoptRunningLiveActivities()
+    if #available(iOS 17.2, *) {
+        // On the first call the new stream's own first yield posts the token.
+        if !observeLiveActivityStartsOnce() { repostPushToStartToken() }
+    }
+}
+
+#if DEBUG
+private var didStartLiveActivityDemo = false
+
+/// Debug builds only: launching with `-LiveActivityDemo` starts one activity
+/// per sample state, so the widget can be checked on a simulator with no
+/// server push. Ten seconds later each gets an alerting update, which pops the
+/// expanded Dynamic Island if the app has been backgrounded by then.
+@available(iOS 16.2, *)
+private func startLiveActivityDemoOnce() {
+    guard !didStartLiveActivityDemo,
+          ProcessInfo.processInfo.arguments.contains("-LiveActivityDemo") else { return }
+    didStartLiveActivityDemo = true
+    typealias State = ConstructActivityAttributes.ContentState
+    let samples: [State] = [
+        State(title: "Deploying construct", body: "Building the web bundle and uploading to Vercel.",
+              progress: 0.6, step: "3/5", roomName: "Bender"),
+        State(title: "Deploy is live", body: "All checks passed. Promote to production?", tone: "success",
+              actions: [.init(label: "Ship it", send: "ship it"), .init(label: "Hold", send: "hold"),
+                        .init(label: "Details", send: "details")],
+              roomName: "Bender"),
+        State(title: "Approve rm -rf build/?",
+              body: "The agent wants to clear the build directory before a clean rebuild.",
+              tone: "warning", progress: 0.3,
+              actions: [.init(label: "Approve", send: "approve"), .init(label: "Deny", send: "deny")],
+              roomName: "agent: clean rebuild", endsAt: Date().addingTimeInterval(300).timeIntervalSince1970),
+    ]
+    Task {
+        for activity in Activity<ConstructActivityAttributes>.activities
+        where activity.attributes.activityId.hasPrefix("demo-") {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+        var started: [Activity<ConstructActivityAttributes>] = []
+        for (i, state) in samples.enumerated() {
+            do {
+                started.append(try Activity.request(
+                    attributes: ConstructActivityAttributes(activityId: "demo-\(i)"),
+                    content: .init(state: state, staleDate: nil),
+                    // A token, so the demo also exercises registration.
+                    pushType: .token))
+            } catch {
+                NSLog("LiveActivityDemo: request \(i) failed: \(error)")
+            }
+        }
+        NSLog("LiveActivityDemo: started \(started.count)")
+        // The app is suspended once backgrounded; hold it awake for the alerts.
+        let bg = await UIApplication.shared.beginBackgroundTask(withName: "live-activity-demo")
+        defer { Task { @MainActor in UIApplication.shared.endBackgroundTask(bg) } }
+        try? await Task.sleep(for: .seconds(10))
+        for activity in started {
+            await activity.update(.init(state: activity.content.state, staleDate: nil),
+                                  alertConfiguration: .init(title: "Demo", body: "Demo", sound: .default))
+            try? await Task.sleep(for: .seconds(6))
+        }
+    }
+}
+#endif
 
 /// Tells the server which activities are still on screen; it drops every
 /// update token not in the list (an empty list clears them all). The safety
@@ -440,14 +580,20 @@ private func reconcileLiveActivityTokens() async {
     await postLiveActivity(["action": "reconcile", "activityIds": live])
 }
 
-/// POSTs to api/live-activity with the stored credential. No-op until the app
-/// has saved one (saveIntentConfig, after login).
+/// POSTs to api/live-activity with the stored credential. True only on a 2xx;
+/// false with no credential yet (saveIntentConfig runs after login), on a
+/// refusal, or on a network failure.
 @discardableResult
-private func postLiveActivity(_ body: [String: Any]) async -> [String: Any]? {
+private func postLiveActivity(_ body: [String: Any]) async -> Bool {
     let d = IntentConfig.defaults
-    guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return nil }
+    guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return false }
     let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
-    return await intentPost("\(apiBase)/api/live-activity", secret: secret, body: body)
+    let status = await intentPostResponse("\(apiBase)/api/live-activity", secret: secret, body: body)?.status
+    #if DEBUG
+    // Tokens and the credential stay out of the log.
+    print("live-activity \(body["action"] ?? "token") \(body["activityId"] ?? "") → \(status.map(String.init) ?? "no response")")
+    #endif
+    return status.map { (200..<300).contains($0) } ?? false
 }
 
 private func hexString(_ data: Data) -> String {
@@ -455,6 +601,11 @@ private func hexString(_ data: Data) -> String {
 }
 
 private func intentPost(_ urlString: String, secret: String, body: [String: Any]) async -> [String: Any]? {
+    await intentPostResponse(urlString, secret: secret, body: body)?.body
+}
+
+private func intentPostResponse(_ urlString: String, secret: String,
+                                body: [String: Any]) async -> (status: Int, body: [String: Any]?)? {
     guard let url = URL(string: urlString),
           let data = try? JSONSerialization.data(withJSONObject: body) else { return nil }
     var req = URLRequest(url: url)
@@ -463,8 +614,9 @@ private func intentPost(_ urlString: String, secret: String, body: [String: Any]
     req.setValue(secret, forHTTPHeaderField: "x-intent-secret")
     req.httpBody = data
     req.timeoutInterval = 12
-    guard let (respData, _) = try? await URLSession.shared.data(for: req) else { return nil }
-    return (try? JSONSerialization.jsonObject(with: respData)) as? [String: Any]
+    guard let (respData, response) = try? await URLSession.shared.data(for: req),
+          let http = response as? HTTPURLResponse else { return nil }
+    return (http.statusCode, (try? JSONSerialization.jsonObject(with: respData)) as? [String: Any])
 }
 
 /// Upload raw file bytes to send-file (room + filename in the query, secret in
@@ -888,10 +1040,18 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     /// access to the webview's env). Called once per launch from JS.
     @objc func saveIntentConfig(_ call: CAPPluginCall) {
         let d = IntentConfig.defaults
+        let previousSecret = d.string(forKey: IntentConfig.secret)
         if let s = call.getString("secret") { d.set(s, forKey: IntentConfig.secret) }
         if let a = call.getString("apiBase") { d.set(a, forKey: IntentConfig.apiBase) }
         if let r = call.getString("room") { d.set(r, forKey: IntentConfig.room) }
         call.resolve()
+        // Activation already registered tokens with whatever was stored then —
+        // on a cold launch that can be a stale credential the server refuses.
+        // Re-register everything under the new one now, not on next launch.
+        if let s = call.getString("secret"), s != previousSecret, #available(iOS 16.2, *) {
+            LiveActivityRegistry.shared.forgetRegistrations()
+            syncLiveActivityRegistrations()
+        }
     }
 
     @objc func isSupported(_ call: CAPPluginCall) {

@@ -3484,6 +3484,15 @@ a.msg-card-link:hover {
    Message action sheet (touch long-press)
 ───────────────────────────── */
 
+/* It opens under a finger that is still pressing, and iOS carries that press
+   on into a text selection of whatever landed beneath it. Nothing in the sheet
+   is meant to be selected. */
+.message-sheet {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .message-sheet-head {
   padding: 8px 20px 12px;
   border-bottom: 1px solid var(--border);

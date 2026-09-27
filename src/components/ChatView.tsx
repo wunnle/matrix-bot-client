@@ -1572,6 +1572,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       timer: setTimeout(() => {
         longPressRef.current = null
         longPressFiredRef.current = true
+        // The sheet itself is unselectable; this drops anything the held
+        // press had already started selecting before it opened.
+        window.getSelection()?.removeAllRanges()
         hapticPress()
         setActionSheetId(eventId)
       }, 450),

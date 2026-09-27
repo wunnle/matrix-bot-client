@@ -172,7 +172,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   let gauge: GaugeReading | null = null
   if (planUsage?.session && now - planUsage.fetchedAt <= STALE_MS) {
     const used = currentPercent(planUsage.session, now)
-    gauge = { remaining: 1 - Math.min(used, 100) / 100, level: usageLevel(used) }
+    gauge = { used: Math.min(used, 100) / 100, level: usageLevel(used) }
   }
 
   // Tabs keep their place like iOS: coming back to Chats reopens the room the

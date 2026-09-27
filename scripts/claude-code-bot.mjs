@@ -302,8 +302,12 @@ const askForApproval = (roomId, request) => {
     if (!veto) {
       // Reported, not silent: auto mode moves the decision, not the record. One
       // line per call is what makes a room worth scrolling back through.
+      // Machine-flagged: nothing is being asked, so it must not toast, push to
+      // the phone or count as unread — it's a record, not a question.
       const first = String(request.summary ?? '').split('\n')[0]
-      sendRoomText(roomId, `⚡ Auto-approved \`${request.toolName}\`: ${fencedBlock(first, 'cmd')}`).catch(() => {})
+      sendRoomText(roomId, `⚡ Auto-approved \`${request.toolName}\`: ${fencedBlock(first, 'cmd')}`, {
+        'com.construct.machine': { kind: 'notification', source: 'auto-approve' },
+      }).catch(() => {})
       log(`[${roomId}] auto-approved ${request.toolName}`)
       return Promise.resolve({ decision: 'allow', reason: 'Auto-approved (auto mode is on for this room).' })
     }

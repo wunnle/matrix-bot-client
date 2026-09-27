@@ -33,8 +33,55 @@ const TABS: { id: Tab, label: string }[] = [
   { id: 'settings', label: 'Settings' },
 ]
 
+/** What's left of the Claude session window, for the live gauge. */
+export interface GaugeReading {
+  /** 0 (spent) … 1 (untouched). */
+  remaining: number
+  /** usageLevel() of the used percentage: ok | warn | critical. */
+  level: string
+}
+
+// The gauge dial: a 240° arc over the top, from lower-left (empty) round to
+// lower-right (full), like a fuel gauge.
+const CX = 12
+const CY = 13.5
+const R = 8.5
+const START = 210
+const SWEEP = 240
+
+function dialPoint(deg: number, r = R): string {
+  const rad = (deg * Math.PI) / 180
+  return `${(CX + r * Math.cos(rad)).toFixed(2)} ${(CY - r * Math.sin(rad)).toFixed(2)}`
+}
+
+/** Clockwise arc from the empty end to `fraction` of the way round. */
+function dialArc(fraction: number): string {
+  const end = START - SWEEP * fraction
+  const large = SWEEP * fraction > 180 ? 1 : 0
+  return `M${dialPoint(START)}A${R} ${R} 0 ${large} 1 ${dialPoint(end)}`
+}
+
+/** The usage icon, drawn live: the arc fills and the needle points to what's left. */
+function UsageGauge({ reading }: { reading: GaugeReading }) {
+  const fraction = Math.min(1, Math.max(0, reading.remaining))
+  const needle = START - SWEEP * fraction
+  return (
+    <>
+      <path className="gauge-track" d={dialArc(1)} />
+      {fraction > 0.01 && <path className={`gauge-fill gauge-fill--${reading.level}`} d={dialArc(fraction)} />}
+      <path d={`M${CX} ${CY}L${dialPoint(needle, R - 3.2)}`} />
+      <circle cx={CX} cy={CY} r="1.3" />
+    </>
+  )
+}
+
 /** iOS-style floating tab bar with a liquid-glass capsule. */
-export default function TabBar({ active, onSelect }: { active: Tab, onSelect: (tab: Tab) => void }) {
+export default function TabBar({ active, onSelect, gauge }: {
+  active: Tab
+  onSelect: (tab: Tab) => void
+  /** Live session usage; null (no reading, or stale) draws the plain icon. */
+  gauge: GaugeReading | null
+}) {
   return (
     <nav className="tab-bar glass" aria-label="Tabs">
       {TABS.map(({ id, label }) => (
@@ -42,9 +89,12 @@ export default function TabBar({ active, onSelect }: { active: Tab, onSelect: (t
           key={id}
           className={`tab-bar-item${id === active ? ' tab-bar-item--active' : ''}`}
           aria-current={id === active ? 'page' : undefined}
+          aria-label={id === 'usage' && gauge ? `${label}, ${Math.round(gauge.remaining * 100)}% of session left` : undefined}
           onClick={() => onSelect(id)}
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true">{ICONS[id]}</svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            {id === 'usage' && gauge ? <UsageGauge reading={gauge} /> : ICONS[id]}
+          </svg>
           <span>{label}</span>
         </button>
       ))}

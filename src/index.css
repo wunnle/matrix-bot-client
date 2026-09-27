@@ -574,6 +574,13 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 .tab-bar-item--active svg { stroke-width: 2; }
 
+/* Live usage gauge in the Usage tab: a faint full dial, filled to what's left
+   of the session. The fill takes the icon's colour until the window runs low,
+   then the Usage screen's warn/critical colours. */
+.gauge-track { opacity: 0.28; }
+.gauge-fill--warn { stroke: #e0a84e; }
+.gauge-fill--critical { stroke: var(--danger); }
+
 /* Fallback where backdrop-filter isn't available: opaque enough to read. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass { background: rgba(30, 30, 42, 0.94); }

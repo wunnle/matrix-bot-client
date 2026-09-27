@@ -5,6 +5,7 @@
 
 import * as sdk from 'matrix-js-sdk'
 import { isAgentRoom } from './roomMeta'
+import { spawnCommand, type AgentProvider } from './spawnCommand'
 
 // How long to wait for the bot's invite before giving up. A spawn cuts a git
 // worktree first, which on a cold page cache is seconds rather than instant.
@@ -47,6 +48,7 @@ export function findSpawnHostRoom(client: sdk.MatrixClient): string | null {
 export async function spawnAgentRoom(
   client: sdk.MatrixClient,
   hostRoomId: string,
+  provider: AgentProvider = 'claude',
 ): Promise<string> {
   // Subscribed before the send, not after: the bot can invite faster than the
   // send's own round trip returns, and an invite that lands first is missed.
@@ -60,7 +62,7 @@ export async function spawnAgentRoom(
   )
   const invited = waitForInvite(client, known)
   try {
-    await client.sendMessage(hostRoomId, { msgtype: 'm.text', body: '!spawn' } as never)
+    await client.sendMessage(hostRoomId, { msgtype: 'm.text', body: spawnCommand(provider) } as never)
   } catch (e) {
     invited.cancel()
     throw e

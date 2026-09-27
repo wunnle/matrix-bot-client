@@ -8,6 +8,7 @@ import { fetchJoinedRooms, getCachedRooms, cacheRooms, getClient, getRoomOrder, 
 import { useNavigate } from 'react-router-dom'
 import { seedAgentPills, backfillAgentPills } from '../lib/roomMeta'
 import { findSpawnHostRoom, spawnAgentRoom } from '../lib/spawnAgent'
+import { createSpawnGate, type AgentProvider } from '../lib/spawnCommand'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { donateShareTargets, cacheRoomAvatars } from '../lib/liveActivity'
 import { getDisabledShareRooms, isShareableRoom } from '../lib/shareRooms'
@@ -90,21 +91,24 @@ const InviteTile = memo(function InviteTile({ room, busy, onAccept }: {
 // The ghost tile that spawns a new agent room. Deliberately shaped like the
 // invite tile: what it produces *is* an invite, and it sits in the same place
 // the new room's own tile will appear a moment later.
-const SpawnTile = memo(function SpawnTile({ busy, onSpawn }: {
+const SpawnTile = memo(function SpawnTile({ provider, busy, disabled, onSpawn }: {
+  provider: AgentProvider
   busy: boolean
-  onSpawn: () => void
+  disabled: boolean
+  onSpawn: (provider: AgentProvider) => void
 }) {
+  const label = provider === 'codex' ? 'codexbot' : 'claudebot'
   return (
     <button
       className="room-card room-card--spawn"
-      onClick={onSpawn}
-      disabled={busy}
-      title="Start a new Claude Code agent room"
+      onClick={() => onSpawn(provider)}
+      disabled={disabled}
+      title={`Start a new ${provider === 'codex' ? 'Codex' : 'Claude Code'} agent room`}
     >
       <div className="room-card-avatar">
         <span>{busy ? '…' : '+'}</span>
       </div>
-      <div className="room-card-name">{busy ? 'spawning…' : 'new claudebot'}</div>
+      <div className="room-card-name">{busy ? 'spawning…' : `new ${label}`}</div>
     </button>
   )
 })
@@ -140,7 +144,8 @@ export default function RoomList({
   const navigate = useNavigate()
   const [invitesBusy, setInvitesBusy] = useState<Record<string, boolean>>({})
   const [inviteError, setInviteError] = useState('')
-  const [spawning, setSpawning] = useState(false)
+  const [spawning, setSpawning] = useState<AgentProvider | null>(null)
+  const spawnGate = useRef(createSpawnGate())
 
   const invites = useMemo(() => rooms.filter(isInvite), [rooms])
   const joinedRooms = useMemo(() => rooms.filter((r) => !isInvite(r)), [rooms])
@@ -510,18 +515,18 @@ export default function RoomList({
     }
   }
 
-  async function handleSpawn() {
+  async function handleSpawn(provider: AgentProvider) {
+    if (!spawnGate.current.begin()) return
     setInviteError('')
-    let client: ReturnType<typeof getClient>
-    try { client = getClient() } catch { return }
-    const host = findSpawnHostRoom(client)
-    if (!host) {
-      setInviteError('No room to spawn from — open an agent room first.')
-      return
-    }
-    setSpawning(true)
+    setSpawning(provider)
     try {
-      const roomId = await spawnAgentRoom(client, host)
+      const client = getClient()
+      const host = findSpawnHostRoom(client)
+      if (!host) {
+        setInviteError('No room to spawn from — open an agent room first.')
+        return
+      }
+      const roomId = await spawnAgentRoom(client, host, provider)
       // The invite's own name is what the bot chose (Bender-N); accepting here
       // rather than leaving the ghost invite tile behind is the whole point of
       // the button — one tap, one room.
@@ -530,7 +535,8 @@ export default function RoomList({
     } catch (e) {
       setInviteError((e as Error).message ?? 'Could not spawn a room')
     } finally {
-      setSpawning(false)
+      spawnGate.current.end()
+      setSpawning(null)
     }
   }
 
@@ -587,9 +593,24 @@ export default function RoomList({
                   onAccept={handleAcceptInvite}
                 />
               ))}
-              {/* Last tile in the grid: it creates a room rather than opening
-                  one, so it should never sit above rooms that exist. */}
-              {canSpawn && <SpawnTile busy={spawning} onSpawn={handleSpawn} />}
+              {/* Last tiles in the grid: they create rooms rather than opening
+                  one, so they should never sit above rooms that exist. */}
+              {canSpawn && (
+                <>
+                  <SpawnTile
+                    provider="claude"
+                    busy={spawning === 'claude'}
+                    disabled={spawning !== null}
+                    onSpawn={handleSpawn}
+                  />
+                  <SpawnTile
+                    provider="codex"
+                    busy={spawning === 'codex'}
+                    disabled={spawning !== null}
+                    onSpawn={handleSpawn}
+                  />
+                </>
+              )}
             </div>
           </SortableContext>
         </DndContext>

@@ -6,8 +6,6 @@ import type { AuthState } from './types'
 import LoginScreen from './components/LoginScreen'
 import MicDemo from './components/MicDemo'
 import RoomsLayout from './components/RoomsLayout'
-import Settings from './components/Settings'
-import Usage from './components/Usage'
 import DebugOverlay from './components/DebugOverlay'
 import { Keyboard } from '@capacitor/keyboard'
 import { usePushNotifications } from './hooks/usePushNotifications'
@@ -65,21 +63,15 @@ export default function App() {
         path="/"
         element={auth ? <Navigate to="/rooms" replace /> : <LoginScreen onLogin={handleLogin} />}
       />
-      {/* One route, optional param: mounting the layout from two separate
-          <Route> elements remounted it on every list ↔ room transition,
-          throwing away clientReady/visitedRooms and re-running mount effects. */}
-      <Route
-        path="/rooms/:roomId?"
-        element={auth ? <RoomsLayout auth={auth} onSignOut={handleSignOut} /> : <Navigate to="/" replace />}
-      />
-      <Route
-        path="/settings"
-        element={auth ? <Settings auth={auth} /> : <Navigate to="/" replace />}
-      />
-      <Route
-        path="/usage"
-        element={auth ? <Usage /> : <Navigate to="/" replace />}
-      />
+      {/* One layout route for every tab: mounting the layout from separate
+          <Route> elements remounted it on every list ↔ room (and now tab)
+          transition, throwing away clientReady/visitedRooms and re-running
+          mount effects. The layout reads the path itself to pick the tab. */}
+      <Route element={auth ? <RoomsLayout auth={auth} onSignOut={handleSignOut} /> : <Navigate to="/" replace />}>
+        <Route path="/rooms/:roomId?" />
+        <Route path="/usage" />
+        <Route path="/settings" />
+      </Route>
       <Route path="/mic-demo" element={<MicDemo />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useCallback, useState, useEffect, useRef } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import { Capacitor } from '@capacitor/core'
@@ -9,6 +9,9 @@ import ChatView from './ChatView'
 import ConnectionBanner from './ConnectionBanner'
 import UpdateBanner from './UpdateBanner'
 import RoomToast from './RoomToast'
+import Usage from './Usage'
+import Settings from './Settings'
+import TabBar, { type Tab } from './TabBar'
 import { useRoomNotifications } from '../hooks/useRoomNotifications'
 import { useVisualViewportVars } from '../hooks/useVisualViewport'
 import { getClient, getCachedRooms, resyncNow, intentCredential } from '../lib/matrix'
@@ -36,7 +39,9 @@ const BACK_SUPPRESS_MS = 10_000
 export default function RoomsLayout({ auth, onSignOut }: Props) {
   useVisualViewportVars()
   const { roomId } = useParams<{ roomId: string }>()
+  const { pathname } = useLocation()
   const navigate = useNavigate()
+  const tab: Tab = pathname.startsWith('/usage') ? 'usage' : pathname.startsWith('/settings') ? 'settings' : 'chats'
   const [roomNames, setRoomNames] = useState<Record<string, string>>({})
   const [clientReady, setClientReady] = useState(false)
   const [visitedRooms, setVisitedRooms] = useState<string[]>([])
@@ -153,6 +158,19 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   const suppressedByBack = useCallback((room: string) => {
     return lastBack !== null && lastBack.room === room && Date.now() - lastBack.at < BACK_SUPPRESS_MS
   }, [])
+
+  // Tabs keep their place like iOS: coming back to Chats reopens the room the
+  // sidebar layout had open. Replace, not push — back should leave the screen,
+  // not replay tab taps.
+  const lastChatsPath = useRef('/rooms')
+  useEffect(() => { if (tab === 'chats') lastChatsPath.current = pathname }, [tab, pathname])
+  const handleSelectTab = useCallback((next: Tab) => {
+    if (next === tab) {
+      if (next === 'chats' && activeRoomIdRef.current) navigate('/rooms', { replace: true })
+      return
+    }
+    navigate(next === 'chats' ? lastChatsPath.current : `/${next}`, { replace: true })
+  }, [tab, navigate])
 
   const handleBack = useCallback(() => {
     if (activeRoomIdRef.current) lastBack = { room: activeRoomIdRef.current, at: Date.now() }
@@ -282,17 +300,29 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
       )}
       <div className="layout-body">
         <aside className="sidebar">
-          <RoomList
-            auth={auth}
-            activeRoomId={activeRoomId}
-            onSelectRoom={handleSelectRoom}
-            onSignOut={onSignOut}
-            onReady={handleReady}
-            dictationAutoSend={dictationAutoSend}
-            onDictationAutoSendChange={onDictationAutoSendChange}
-            notifications={notifications}
-            onDismissNotification={dismiss}
-          />
+          {/* The room list stays mounted behind the other tabs: it is what
+              starts the client and holds the sync listeners. */}
+          <div className="tab-pane" hidden={tab !== 'chats'}>
+            <RoomList
+              auth={auth}
+              activeRoomId={activeRoomId}
+              onSelectRoom={handleSelectRoom}
+              onReady={handleReady}
+              notifications={notifications}
+              onDismissNotification={dismiss}
+            />
+          </div>
+          {tab === 'usage' && <Usage />}
+          {tab === 'settings' && (
+            <Settings
+              auth={auth}
+              clientReady={clientReady}
+              dictationAutoSend={dictationAutoSend}
+              onDictationAutoSendChange={onDictationAutoSendChange}
+              onSignOut={onSignOut}
+            />
+          )}
+          <TabBar active={tab} onSelect={handleSelectTab} />
         </aside>
 
         <main className="main">

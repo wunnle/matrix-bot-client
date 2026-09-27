@@ -147,6 +147,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 .sidebar {
+  /* Positioned for the floating tab bar; mobile overrides this with absolute. */
+  position: relative;
   width: var(--sidebar-width);
   flex-shrink: 0;
   border-right: 1px solid var(--border);
@@ -305,7 +307,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   padding-top: 10px;
-  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  padding-bottom: var(--tab-bar-space);
   display: flex;
   flex-direction: column;
 }
@@ -475,20 +477,105 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   100% { background-position: -200% 0; }
 }
 
-/* Sidebar footer */
-.sidebar-footer {
-  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
+/* ─────────────────────────────
+   Tab bar — iOS 26 floating liquid-glass capsule
+───────────────────────────── */
+
+/* The bar floats over the tab's content, so every tab scroller pads its
+   bottom by this much to let the last row scroll clear of it. */
+.sidebar {
+  --tab-bar-space: calc(max(env(safe-area-inset-bottom), 12px) + 76px);
+}
+
+.tab-pane {
   display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.tab-pane[hidden] { display: none; }
+
+.tab-bar {
+  position: absolute;
+  left: 50%;
+  bottom: max(env(safe-area-inset-bottom), 12px);
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  gap: 2px;
+  width: min(calc(100% - 40px), 360px);
+  padding: 4px;
+  border-radius: 999px;
+  isolation: isolate;
+  /* The glass: a thin tint over blurred, saturated content, lit from the top
+     edge with a darker rim underneath. */
+  background: rgba(30, 30, 42, 0.45);
+  -webkit-backdrop-filter: blur(22px) saturate(190%);
+  backdrop-filter: blur(22px) saturate(190%);
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+    0 10px 30px rgba(0, 0, 0, 0.45),
+    0 1px 3px rgba(0, 0, 0, 0.3);
+}
+/* Specular sheen across the upper half of the capsule. */
+.tab-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 45%, transparent 55%);
+  pointer-events: none;
+}
+
+.tab-bar-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  gap: 1px;
+  height: 54px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.25s ease, color 0.25s ease, transform 0.15s ease;
 }
-.sidebar-version {
-  font-size: 11px;
-  color: var(--text-faint);
-  flex-shrink: 0;
+.tab-bar-item svg {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
+.tab-bar-item:active { transform: scale(0.94); }
+/* The selected tab sits in its own brighter drop of glass, tinted by the accent. */
+.tab-bar-item--active {
+  color: var(--accent-hover);
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.18);
+}
+.tab-bar-item--active svg { stroke-width: 2; }
+
+/* Fallback where backdrop-filter isn't available: opaque enough to read. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tab-bar { background: rgba(30, 30, 42, 0.94); }
+}
+
+/* Non-chat tabs use the page background, not the sidebar surface. */
+.sidebar:has(> .settings-screen) { background: var(--bg); }
 
 /* The 5-hour window, drawn over the header's bottom border in Claude rooms.
    Sits on the border rather than adding a row: it is ambient, not content. */
@@ -511,134 +598,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .header-usage--warn .header-usage-fill { background: #e0a84e; opacity: 0.8; }
 .header-usage--critical .header-usage-fill { background: var(--danger); opacity: 0.9; }
 .header-usage--stale .header-usage-fill { opacity: 0.2; }
-
-.user-badge-wrap {
-  position: relative;
-}
-
-.user-badge {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px 2px;
-  border-radius: 8px;
-  transition: background 0.15s;
-}
-
-.user-badge:hover {
-  background: var(--bg-active);
-}
-
-.user-menu {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 4px;
-  min-width: 220px;
-  max-width: min(280px, calc(100vw - 24px));
-  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
-  z-index: 100;
-}
-
-.user-menu-toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px 10px;
-  border-radius: 7px;
-  font-size: 13px;
-  line-height: 1.3;
-  color: var(--text);
-  cursor: pointer;
-  user-select: none;
-  transition: background 0.12s;
-}
-.user-menu-toggle-row:hover {
-  background: var(--bg-active);
-}
-
-.user-menu-toggle-label {
-  flex: 1;
-  min-width: 0;
-}
-
-.user-menu-toggle-input {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-.user-menu-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 8px 12px;
-  border-radius: 7px;
-  font-size: 14px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--text);
-  transition: background 0.12s;
-}
-
-.user-menu-item:hover {
-  background: var(--bg-active);
-}
-
-.user-menu-item--danger {
-  color: var(--danger);
-}
-
-.user-menu-item--danger:hover {
-  background: rgba(224, 92, 92, 0.1);
-}
-
-.user-menu-version {
-  padding: 4px 12px 8px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.3);
-  user-select: none;
-}
-
-.user-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--accent-dim);
-  color: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.user-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.user-id {
-  font-size: 13px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 /* ─────────────────────────────
    Empty state
@@ -3235,39 +3194,26 @@ a.msg-card-link:hover {
   border-top: 1px solid rgba(0,0,0,0.08);
 }
 
-/* ── Settings screen ─────────────────────────────────────────────────── */
-/* body is position:fixed with overflow hidden, so a full-page screen has to be
-   its own scroller — min-height alone lets it grow past the viewport, where
-   nothing can reach it. */
+/* ── Settings / Usage tabs ───────────────────────────────────────────── */
+/* A tab pane inside the sidebar: its own scroller (the layout is fixed with
+   overflow hidden), padded at the bottom to clear the floating tab bar. The
+   sidebar already carries the top safe-area inset. */
 .settings-screen {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
-  background: var(--bg);
   color: var(--text);
-  padding: max(env(safe-area-inset-top), 12px) 16px calc(env(safe-area-inset-bottom) + 24px);
-}
-.settings-header {
+  padding: 4px 16px var(--tab-bar-space);
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 4px 0 16px;
+  flex-direction: column;
+  gap: 16px;
 }
-.settings-back {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  color: var(--text);
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-}
-.settings-back:hover { background: var(--bg-hover); }
-.settings-title { font-size: 20px; font-weight: 600; margin: 0; }
+/* A flex column that scrolls: children must keep their height, not squeeze to fit. */
+.settings-screen > * { flex-shrink: 0; }
+/* iOS large title. */
+.settings-title { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; margin: 4px 4px 0; }
 .settings-section {
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -3286,17 +3232,64 @@ a.msg-card-link:hover {
   border-top: 1px solid var(--border);
   cursor: pointer;
 }
-/* Usage screen — Claude plan quota. Built from settings sections; colour only
-   changes near the limit, so a normal week reads calm. */
-.usage-screen {
+/* A section with no title starts straight on its first row. */
+.settings-section > .settings-row:first-child,
+.settings-section > .settings-action:first-child { border-top: 0; padding-top: 0; }
+.settings-section > .settings-row:last-child,
+.settings-section > .settings-action:last-child { padding-bottom: 0; }
+
+.settings-account { display: flex; align-items: center; gap: 14px; }
+.settings-account-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  overflow: hidden;
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  font-variant-numeric: tabular-nums;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 22px;
+  font-weight: 600;
 }
-/* A flex column that scrolls: children must keep their height, not squeeze to fit. */
-.usage-screen > * { flex-shrink: 0; }
-.usage-screen .settings-header { padding-bottom: 4px; }
+.settings-account-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.settings-account-text { min-width: 0; }
+.settings-account-name { font-size: 18px; font-weight: 600; }
+.settings-account-id {
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-action {
+  display: block;
+  width: 100%;
+  padding: 12px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--accent-hover);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+.settings-action:active { opacity: 0.6; }
+.settings-action--danger { color: var(--danger); }
+
+.settings-version {
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+  user-select: none;
+}
+
+/* Usage tab — plan quota. Built from settings sections; colour only changes
+   near the limit, so a normal week reads calm. */
+.usage-screen { gap: 12px; font-variant-numeric: tabular-nums; }
 .usage-provider {
   font-size: 13px;
   font-weight: 600;
@@ -3378,9 +3371,8 @@ a.msg-card-link:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* iOS-style switch (shared by settings + profile-menu toggles). */
-.settings-row-toggle,
-.user-menu-toggle-input {
+/* iOS-style switch. */
+.settings-row-toggle {
   appearance: none;
   -webkit-appearance: none;
   position: relative;
@@ -3393,8 +3385,7 @@ a.msg-card-link:hover {
   transition: background 0.2s ease;
   cursor: pointer;
 }
-.settings-row-toggle::after,
-.user-menu-toggle-input::after {
+.settings-row-toggle::after {
   content: '';
   position: absolute;
   top: 2px;
@@ -3406,12 +3397,9 @@ a.msg-card-link:hover {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   transition: transform 0.2s ease;
 }
-.settings-row-toggle:checked,
-.user-menu-toggle-input:checked { background: #34c759; }
-.settings-row-toggle:checked::after,
-.user-menu-toggle-input:checked::after { transform: translateX(20px); }
-.settings-row-toggle:disabled,
-.user-menu-toggle-input:disabled { opacity: 0.5; }
+.settings-row-toggle:checked { background: #34c759; }
+.settings-row-toggle:checked::after { transform: translateX(20px); }
+.settings-row-toggle:disabled { opacity: 0.5; }
 
 /* iPad app running on a Mac (Designed for iPad). `zoom` here breaks the
    composer (its position is computed from JS visual-viewport measurements that

@@ -1,11 +1,9 @@
-import { useNavigate } from 'react-router-dom'
 import * as sdk from 'matrix-js-sdk'
 import { getClient } from '../lib/matrix'
 import {
   STALE_MS, currentPercent, resetLabel, usageLevel, useMinuteClock, usePlanUsage, useCodexUsage,
   type UsageWindow,
 } from '../hooks/usePlanUsage'
-import { useSwipeBack } from '../hooks/useSwipeBack'
 
 /**
  * Claude and Codex plan usage, account-wide. The numbers come from the bot, which
@@ -92,27 +90,22 @@ function Freshness({ fetchedAt, now, provider }: { fetchedAt: number, now: numbe
 }
 
 export default function Usage() {
-  const navigate = useNavigate()
   let client: sdk.MatrixClient | null = null
   try { client = getClient() } catch { /* opened before the client started */ }
   const usage = usePlanUsage(client)
   const codex = useCodexUsage(client)
   const now = useMinuteClock()
-  const swipeBack = useSwipeBack(() => navigate(-1))
 
   return (
-    <div className="settings-screen usage-screen" {...swipeBack}>
-      <header className="settings-header">
-        <button className="settings-back" onClick={() => navigate(-1)} aria-label="Back">←</button>
-        <h1 className="settings-title">Usage</h1>
-      </header>
+    <div className="settings-screen usage-screen">
+      <h1 className="settings-title">Usage</h1>
 
       {!usage && !codex && (
         <section className="settings-section">
           <p className="settings-empty">
             {client
               ? 'No reading yet. The bot publishes one into an agent room every few minutes.'
-              : 'Not connected yet. Open the room list, then come back.'}
+              : 'Connecting…'}
           </p>
         </section>
       )}

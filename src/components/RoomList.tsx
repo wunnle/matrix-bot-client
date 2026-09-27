@@ -4,8 +4,7 @@ import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSe
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
-import { fetchJoinedRooms, getCachedRooms, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, intentCredential, type RoomSummary } from '../lib/matrix'
-import { useNavigate } from 'react-router-dom'
+import { fetchJoinedRooms, getCachedRooms, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, type RoomSummary } from '../lib/matrix'
 import { seedAgentPills, backfillAgentPills } from '../lib/roomMeta'
 import { findSpawnHostRoom, spawnAgentRoom } from '../lib/spawnAgent'
 import { createSpawnGate, type AgentProvider } from '../lib/spawnCommand'
@@ -13,17 +12,13 @@ import { resolveMediaUrl } from '../lib/mediaUrl'
 import { donateShareTargets, cacheRoomAvatars } from '../lib/liveActivity'
 import { getDisabledShareRooms, isShareableRoom } from '../lib/shareRooms'
 import NotificationCenter from './NotificationCenter'
-import { toggleDebug } from '../lib/debug'
 import type { RoomNotification } from '../hooks/useRoomNotifications'
 
 interface Props {
   auth: AuthState
   activeRoomId: string | null
   onSelectRoom: (roomId: string, roomName: string) => void
-  onSignOut: () => void
   onReady: () => void
-  dictationAutoSend: boolean
-  onDictationAutoSendChange: (value: boolean) => void
   notifications: RoomNotification[]
   onDismissNotification: (roomId: string) => void
 }
@@ -117,10 +112,7 @@ export default function RoomList({
   auth,
   activeRoomId,
   onSelectRoom,
-  onSignOut,
   onReady,
-  dictationAutoSend,
-  onDictationAutoSendChange,
   notifications,
   onDismissNotification,
 }: Props) {
@@ -137,11 +129,6 @@ export default function RoomList({
   const [clientReady, setClientReady] = useState(false)
   const [error, setError] = useState('')
   const [roomAvatars, setRoomAvatars] = useState<Record<string, string>>({})
-  const [userAvatarUrl, setUserAvatarUrl] = useState<string | null>(null)
-  const [profileOpen, setProfileOpen] = useState(false)
-  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null)
-  const profileRef = useRef<HTMLDivElement>(null)
-  const navigate = useNavigate()
   const [invitesBusy, setInvitesBusy] = useState<Record<string, boolean>>({})
   const [inviteError, setInviteError] = useState('')
   const [spawning, setSpawning] = useState<AgentProvider | null>(null)
@@ -263,72 +250,8 @@ export default function RoomList({
     })
   }, [rooms, clientReady])
 
-  // Own profile picture (from homeserver; client is ready after room list fetch)
-  useEffect(() => {
-    if (!clientReady) return
-    let cancelled = false
-    let client: ReturnType<typeof getClient>
-    try { client = getClient() } catch { return }
-    void (async () => {
-      try {
-        const info = (await client.getProfileInfo(
-          auth.userId,
-        )) as { avatar_url?: string }
-        const mxc = info?.avatar_url
-        if (!mxc || cancelled) {
-          if (!cancelled) setUserAvatarUrl(null)
-          return
-        }
-        const url = await resolveMediaUrl(client, mxc, 64, 64, 'crop')
-        if (cancelled) return
-        setUserAvatarUrl(url ?? null)
-      } catch {
-        if (!cancelled) setUserAvatarUrl(null)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [auth.userId, clientReady])
-
   // Keep active room in a ref so the timeline subscription below doesn't
   // tear down and re-subscribe every time the active room changes.
-  useEffect(() => {
-    if (!profileOpen) return
-    function onClickOutside(e: MouseEvent) {
-      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
-        setProfileOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onClickOutside)
-    return () => document.removeEventListener('mousedown', onClickOutside)
-  }, [profileOpen])
-
-  // Read master push rule state when menu opens
-  useEffect(() => {
-    if (!profileOpen) return
-    let cancelled = false;
-    (async () => {
-      try {
-        const client = getClient()
-        const rules = await client.getPushRules()
-        if (cancelled) return
-        const master = rules?.global?.override?.find(
-          (r: sdk.IPushRule) => r.rule_id === '.m.rule.master'
-        )
-        setNotificationsEnabled(master ? !master.enabled : true)
-      } catch {}
-    })()
-    return () => { cancelled = true }
-  }, [profileOpen])
-
-  const toggleNotifications = async () => {
-    try {
-      const client = getClient()
-      const next = !notificationsEnabled
-      await client.setPushRuleEnabled('global', sdk.PushRuleKind.Override, '.m.rule.master', !next)
-      setNotificationsEnabled(next)
-    } catch {}
-  }
-
   const activeRoomIdRef = useRef(activeRoomId)
   useEffect(() => { activeRoomIdRef.current = activeRoomId }, [activeRoomId])
 
@@ -619,133 +542,6 @@ export default function RoomList({
           onDismiss={onDismissNotification}
           onNavigate={onSelectRoom}
         />
-      </div>
-
-      <div className="sidebar-footer">
-        <div className="user-badge-wrap" ref={profileRef}>
-          {profileOpen && (
-            <div className="user-menu">
-              <label
-                className="user-menu-toggle-row"
-                onClick={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-              >
-                <span className="user-menu-toggle-label">Auto-send when done talking</span>
-                <input
-                  type="checkbox"
-                  className="user-menu-toggle-input"
-                  checked={dictationAutoSend}
-                  onChange={(e) => onDictationAutoSendChange(e.target.checked)}
-                  aria-label="Auto-send when done talking"
-                />
-              </label>
-              <label
-                className="user-menu-toggle-row"
-                onClick={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-              >
-                <span className="user-menu-toggle-label">Notifications</span>
-                <input
-                  type="checkbox"
-                  className="user-menu-toggle-input"
-                  checked={notificationsEnabled ?? false}
-                  disabled={notificationsEnabled === null}
-                  onChange={toggleNotifications}
-                  aria-label="Notifications"
-                />
-              </label>
-              <button className="user-menu-item" onClick={async () => {
-                // Each probe reports on its own: this runs in two very different
-                // environments (Safari/PWA and WKWebView, which has no Web Push
-                // and no Matrix client until sync), and one missing API used to
-                // throw away the whole report.
-                const line = async (label: string, probe: () => Promise<string>) => {
-                  try { return `${label}: ${await probe()}` } catch (e: any) { return `${label}: error — ${e?.message}` }
-                }
-                const report = [
-                  `Origin: ${location.origin}`,
-                  // Whether the offline shell is in place. In WKWebView a
-                  // service worker only runs on app-bound domains, so this is
-                  // the quickest way to tell a native build can cold-start offline.
-                  await line('Service worker', async () => {
-                    if (!('serviceWorker' in navigator)) return 'unsupported (no offline shell)'
-                    const reg = await navigator.serviceWorker.getRegistration()
-                    if (!reg) return 'not registered'
-                    const state = reg.active ? 'active' : reg.installing ? 'installing' : 'registered'
-                    return `${state} @ ${reg.scope}`
-                  }),
-                  await line('Shell cache', async () => {
-                    if (!('caches' in window)) return 'unsupported'
-                    const keys = await (await caches.open('construct-shell-v1')).keys()
-                    return keys.length ? `${keys.length} entries` : 'empty'
-                  }),
-                  // Absent in WKWebView — the native app is pushed via APNs.
-                  await line('Push subscription', async () => {
-                    const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null
-                    if (!reg?.pushManager) return 'n/a (native push)'
-                    const sub = await reg.pushManager.getSubscription()
-                    return sub?.endpoint ? `...${sub.endpoint.slice(-20)}` : 'none'
-                  }),
-                  // This feature works by making notifications *not* happen, so
-                  // when it misfires there's nothing to see. Listing who is
-                  // holding the phone quiet is the whole diagnosis.
-                  await line('Foreground clients', async () => {
-                    const secret = intentCredential()
-                    if (!secret) return 'n/a (not signed in)'
-                    const r = await fetch('/api/live-activity', { headers: { 'x-intent-secret': secret } })
-                    const clients = (await r.json())?.activeClients ?? []
-                    if (!clients.length) return 'none — notifications flow normally'
-                    return '\n' + clients.map((c: { client: string; viewingRoom: string | null; ageMs: number }) =>
-                      `  ${c.client}${c.viewingRoom ? ` in ${c.viewingRoom.slice(0, 12)}…` : ''} (${Math.round(c.ageMs / 1000)}s ago)`
-                    ).join('\n')
-                  }),
-                  await line('Registered pushers', async () => {
-                    const pushers = await getClient().getPushers()
-                    return '\n' + ((pushers?.pushers ?? []).map((p: any) =>
-                      `  ${p.app_display_name} / ${p.device_display_name}: ...${String(p.pushkey).slice(-20)}`
-                    ).join('\n') || '  none')
-                  }),
-                ]
-                alert(report.join('\n'))
-              }}>
-                Debug notifications
-              </button>
-              <button className="user-menu-item" onClick={() => navigate('/usage')}>
-                Usage
-              </button>
-              <button className="user-menu-item" onClick={() => navigate('/settings')}>
-                Settings
-              </button>
-              {/* The web app is served over the network (see capacitor.config.ts),
-                  so this picks up a deploy without reinstalling: the reload is a
-                  navigation, and the service worker fetches those network-first.
-                  Refresh the worker itself first — otherwise a changed sw.js is
-                  only noticed on the browser's own schedule, leaving the caching
-                  rules a deploy behind. */}
-              <button className="user-menu-item" onClick={async () => {
-                try {
-                  const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null
-                  await reg?.update()
-                } catch { /* not fatal — reload anyway */ }
-                window.location.reload()
-              }}>
-                Reload app
-              </button>
-              <button className="user-menu-item user-menu-item--danger" onClick={onSignOut}>
-                Sign out
-              </button>
-            </div>
-          )}
-          <button className="user-badge" onClick={() => setProfileOpen(p => !p)}>
-            <div className="user-avatar">
-              {userAvatarUrl
-                ? <img src={userAvatarUrl} alt="" />
-                : (auth.userId[1]?.toUpperCase() ?? '?')}
-            </div>
-            <div className="user-id">{shortUserId(auth.userId)}</div>
-          </button>
-        </div>
-        <div className="sidebar-version" onClick={toggleDebug}>v{__CONSTRUCT_VERSION__}</div>
       </div>
     </div>
   )

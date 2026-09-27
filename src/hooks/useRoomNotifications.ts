@@ -102,6 +102,9 @@ export function useRoomNotifications(activeRoomId: string | null, clientReady: b
   const activeRoomIdRef = useRef(activeRoomId)
   const notificationsRef = useRef(notifications)
   useEffect(() => { notificationsRef.current = notifications }, [notifications])
+  // Rooms whose toast just sent an answer. Its echo must not clear the toast
+  // mid-checkmark; the card dismisses itself once it has shown it.
+  const answeringRef = useRef<Set<string>>(new Set())
   const toastRoomIdsRef = useRef(toastRoomIds)
   useEffect(() => { toastRoomIdsRef.current = toastRoomIds }, [toastRoomIds])
 
@@ -156,6 +159,7 @@ export function useRoomNotifications(activeRoomId: string | null, clientReady: b
 
   // Dismiss = remove notification + send read receipt so badge clears too
   const dismiss = useCallback((roomId: string) => {
+    answeringRef.current.delete(roomId)
     setNotifications(prev => prev.filter(n => n.roomId !== roomId))
     hideToast(roomId)
 
@@ -179,10 +183,11 @@ export function useRoomNotifications(activeRoomId: string | null, clientReady: b
   }, [clearTimer, armTimer])
 
   /** A toast button: send its label to that room, exactly as tapping the pill
-      in the chat would, then clear the toast. Throws so the card can show
-      the failure and stay up. */
+      in the chat would. The card confirms and dismisses itself; this throws
+      so it can show the failure and stay up instead. */
   const respond = useCallback(async (roomId: string, label: string) => {
     const client = getClient()
+    answeringRef.current.add(roomId)
     // Same content as ChatView's sendMessage. The com.construct.* keys aren't
     // in the SDK's content type, hence the cast.
     await client.sendMessage(roomId, {
@@ -192,9 +197,10 @@ export function useRoomNotifications(activeRoomId: string | null, clientReady: b
       'com.construct.client': 'construct-web',
       'com.construct.version': __CONSTRUCT_VERSION__,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any)
-    dismiss(roomId)
-  }, [dismiss])
+    } as any).catch((err) => { answeringRef.current.delete(roomId); throw err })
+    // No timer may close it mid-checkmark; the card's own dismiss follows.
+    clearTimer(roomId)
+  }, [clearTimer])
 
   // Live event listener
   useEffect(() => {
@@ -218,6 +224,7 @@ export function useRoomNotifications(activeRoomId: string | null, clientReady: b
       // You answered in that room — from the other device, or the chat itself.
       // Whatever the toast was asking has been dealt with.
       if (event.getSender() === client.getUserId()) {
+        if (answeringRef.current.has(room.roomId)) return
         setNotifications(prev => prev.filter(n => n.roomId !== room.roomId))
         hideToast(room.roomId)
         return

@@ -28,6 +28,9 @@ function renderInlineMarkdown(text: string): React.ReactNode[] {
 // buttons may be Approve.
 const ARM_DELAY_MS = 600
 
+// How long the tapped button shows its checkmark before the toast leaves.
+const CONFIRM_MS = 700
+
 // Answers that say no get the quieter button style.
 const DECLINE = /^(deny|no|cancel|reject|decline|skip|ignore|dismiss|stop)\b/i
 
@@ -44,9 +47,10 @@ function ToastCard({ notification, onDismiss, onNavigate, onHold, onRespond }: T
   // Cards are keyed by room, so a newer message replaces this one's content in
   // place. Send state is tagged with the message it belongs to, so it resets
   // by itself when that happens.
-  const [attempt, setAttempt] = useState<{ eventId: string; label: string | null; failed: boolean } | null>(null)
+  const [attempt, setAttempt] = useState<{ eventId: string; label: string | null; failed: boolean; sent: boolean } | null>(null)
   const current = attempt?.eventId === notification.eventId ? attempt : null
   const sending = current?.label ?? null
+  const sent = current?.sent ?? false
   const error = current?.failed ?? false
   const cardRef = useRef<HTMLDivElement>(null)
   const touchStartY = useRef<number | null>(null)
@@ -59,11 +63,15 @@ function ToastCard({ notification, onDismiss, onNavigate, onHold, onRespond }: T
   const respond = async (label: string, at: number) => {
     if (sending || at - shownAtRef.current < ARM_DELAY_MS) return
     const eventId = notification.eventId
-    setAttempt({ eventId, label, failed: false })
+    setAttempt({ eventId, label, failed: false, sent: false })
     try {
       await onRespond(notification.roomId, label)
+      // A checkmark on the tapped button is the confirmation; the bot's own
+      // "✅ Approved" reply is machine-flagged and doesn't toast.
+      setAttempt({ eventId, label, failed: false, sent: true })
+      setTimeout(() => animateOut(), CONFIRM_MS)
     } catch {
-      setAttempt({ eventId, label: null, failed: true })
+      setAttempt({ eventId, label: null, failed: true, sent: false })
     }
   }
 
@@ -166,7 +174,7 @@ function ToastCard({ notification, onDismiss, onNavigate, onHold, onRespond }: T
             {actions.map((label) => (
               <button
                 key={label}
-                className={`room-toast-action${DECLINE.test(label) ? ' room-toast-action-secondary' : ''}`}
+                className={`room-toast-action${DECLINE.test(label) ? ' room-toast-action-secondary' : ''}${sent && sending === label ? ' room-toast-action-done' : ''}`}
                 disabled={sending !== null}
                 // Keeps a focused composer focused, like the chat's pills.
                 onMouseDown={(e) => e.preventDefault()}
@@ -174,7 +182,7 @@ function ToastCard({ notification, onDismiss, onNavigate, onHold, onRespond }: T
                 onTouchStart={(e) => e.stopPropagation()}
                 onTouchEnd={(e) => e.stopPropagation()}
               >
-                {sending === label ? '…' : label}
+                {sending === label ? (sent ? `✓ ${label}` : '…') : label}
               </button>
             ))}
           </div>

@@ -1350,10 +1350,15 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
 
   // Approval answers must be handled before the busy check — the room is always
   // busy when one is outstanding, since the turn is blocked inside the hook.
+  //
+  // The acknowledgements are machine-flagged: you just gave the answer, so
+  // echoing it back must not toast, push to the phone or count as unread.
+  // The toast you answered from shows its own checkmark instead.
+  const ack = { 'com.construct.machine': { kind: 'ack', source: 'approval' } }
   const answer = body.toLowerCase()
   if (answer === 'approve' || answer === 'yes' || answer === 'y') {
     if (settleApproval(roomId, 'allow', 'Approved in chat.')) {
-      await sendRoomText(roomId,'✅ Approved — continuing.')
+      await sendRoomText(roomId, '✅ Approved — continuing.', ack)
       return
     }
   }
@@ -1361,13 +1366,13 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   // never have posted the button, so this can only match a prompt that did.
   if (answer === 'always allow' || answer === 'always') {
     if (settleApproval(roomId, 'allow_session', 'Approved for the session in chat.')) {
-      await sendRoomText(roomId, '✅ Approved — and I won\'t ask again this session.')
+      await sendRoomText(roomId, '✅ Approved — and I won\'t ask again this session.', ack)
       return
     }
   }
   if (answer === 'deny' || answer === 'no' || answer === 'n') {
     if (settleApproval(roomId, 'deny', 'Denied in chat.')) {
-      await sendRoomText(roomId,'🚫 Denied.')
+      await sendRoomText(roomId, '🚫 Denied.', ack)
       return
     }
   }

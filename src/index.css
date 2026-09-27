@@ -3100,6 +3100,15 @@ a.msg-card-link:hover {
 }
 .room-toast-action-secondary:hover:not(:disabled) { background: rgba(92,79,214,0.1); }
 .room-toast-action:disabled { opacity: 0.55; cursor: default; }
+/* The answer that went through: solid green, fully opaque, while its
+   siblings stay dimmed. */
+.room-toast-action.room-toast-action-done,
+.room-toast-action.room-toast-action-done:disabled {
+  opacity: 1;
+  background: #2e9d5b;
+  color: #fff;
+  box-shadow: none;
+}
 .room-toast-error {
   margin-top: 6px;
   font-size: 12px;

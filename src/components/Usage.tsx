@@ -2,13 +2,13 @@ import { useNavigate } from 'react-router-dom'
 import * as sdk from 'matrix-js-sdk'
 import { getClient } from '../lib/matrix'
 import {
-  STALE_MS, currentPercent, resetLabel, usageLevel, useMinuteClock, usePlanUsage,
+  STALE_MS, currentPercent, resetLabel, usageLevel, useMinuteClock, usePlanUsage, useCodexUsage,
   type ExtraUsage, type UsageWindow,
 } from '../hooks/usePlanUsage'
 
 /**
- * Claude plan usage, account-wide. The numbers come from the bot, which polls
- * the quota on the Pi and publishes it as room state (see usePlanUsage); this
+ * Claude and Codex plan usage, account-wide. The numbers come from the bot, which
+ * polls the quotas on the Pi and publishes them as room state (see usePlanUsage); this
  * screen only reads them, so it is as fresh as the bot's last check.
  */
 
@@ -47,7 +47,7 @@ function WindowCard({ title, window, lengthMs, now }: {
   now: number
 }) {
   const percent = currentPercent(window, now)
-  const elapsed = window.resetsAt ? Math.min(1, Math.max(0, 1 - (window.resetsAt - now) / lengthMs)) : null
+  const elapsed = window.resetsAt && lengthMs > 0 ? Math.min(1, Math.max(0, 1 - (window.resetsAt - now) / lengthMs)) : null
   const paceText = pace(window, lengthMs, now)
   return (
     <section className={`settings-section usage-card usage-card--${usageLevel(percent)}`}>
@@ -101,15 +101,33 @@ function ExtraCard({ extra }: { extra: ExtraUsage }) {
   )
 }
 
+function windowTitle(minutes: number | null): string {
+  if (minutes === 10080) return 'Week'
+  if (minutes === 1440) return 'Day'
+  if (minutes && minutes % 60 === 0) return `${minutes / 60} hours`
+  return minutes ? `${minutes} minutes` : 'Limit'
+}
+
+/** "Checked 3 min ago", plus the stale warning once the bot has gone quiet. */
+function Freshness({ fetchedAt, now, provider }: { fetchedAt: number, now: number, provider: string }) {
+  const checked = Math.max(0, Math.round((now - fetchedAt) / 60_000))
+  if (now - fetchedAt > STALE_MS) {
+    return (
+      <p className="usage-stale">
+        Last checked {checked} min ago — the bot may be down or its {provider} login expired.
+      </p>
+    )
+  }
+  return <p className="usage-footnote">Checked {checked === 0 ? 'just now' : `${checked} min ago`}.</p>
+}
+
 export default function Usage() {
   const navigate = useNavigate()
   let client: sdk.MatrixClient | null = null
   try { client = getClient() } catch { /* opened before the client started */ }
   const usage = usePlanUsage(client)
+  const codex = useCodexUsage(client)
   const now = useMinuteClock()
-
-  const stale = usage ? now - usage.fetchedAt > STALE_MS : false
-  const checked = usage ? Math.max(0, Math.round((now - usage.fetchedAt) / 60_000)) : 0
 
   return (
     <div className="settings-screen usage-screen">
@@ -118,7 +136,7 @@ export default function Usage() {
         <h1 className="settings-title">Usage</h1>
       </header>
 
-      {!usage && (
+      {!usage && !codex && (
         <section className="settings-section">
           <p className="settings-empty">
             {client
@@ -130,11 +148,7 @@ export default function Usage() {
 
       {usage && (
         <>
-          {stale && (
-            <p className="usage-stale">
-              Last checked {checked} min ago — the bot may be down or its Claude login expired.
-            </p>
-          )}
+          <h2 className="usage-provider">Claude</h2>
           {usage.session && <WindowCard title="Session · 5 hours" window={usage.session} lengthMs={WINDOW_MS.session} now={now} />}
           {usage.weekly && <WindowCard title="Week · all models" window={usage.weekly} lengthMs={WINDOW_MS.weekly} now={now} />}
           {Object.entries(usage.models).map(([name, w]) => (
@@ -147,30 +161,42 @@ export default function Usage() {
             />
           ))}
 
-          {usage.breakdown.length > 0 && (
-            <section className="settings-section usage-card">
-              <h2 className="settings-section-title">Where this week went</h2>
-              {usage.breakdown.map((row) => (
-                <div key={row.name} className={`usage-row${row.percent === 0 ? ' usage-row--zero' : ''}`}>
-                  <span>{row.name}</span>
-                  <span className="usage-row-bar">
-                    <span className="usage-track usage-track--thin">
-                      <span className="usage-fill" style={{ width: `${Math.min(row.percent, 100)}%` }} />
-                    </span>
-                    <span className="usage-row-percent">{row.percent}%</span>
-                  </span>
-                </div>
-              ))}
-            </section>
-          )}
-
           {usage.extra && <ExtraCard extra={usage.extra} />}
-
-          <p className="usage-footnote">
-            Checked {checked === 0 ? 'just now' : `${checked} min ago`}. The bot re-checks every
-            5 minutes and after each agent turn.
-          </p>
+          <Freshness fetchedAt={usage.fetchedAt} now={now} provider="Claude" />
         </>
+      )}
+
+      {codex && (
+        <>
+          <h2 className="usage-provider">OpenAI Codex</h2>
+          {codex.windows.map((w, i) => (
+            <WindowCard
+              key={`${w.minutes}-${i}`}
+              title={windowTitle(w.minutes)}
+              window={w}
+              lengthMs={(w.minutes ?? 0) * 60_000}
+              now={now}
+            />
+          ))}
+          <section className="settings-section usage-card">
+            <h2 className="settings-section-title">Account</h2>
+            {codex.plan && (
+              <div className="usage-row">
+                <span>Plan</span>
+                <span>{codex.plan[0].toUpperCase()}{codex.plan.slice(1)}</span>
+              </div>
+            )}
+            <div className="usage-row">
+              <span>Free resets available</span>
+              <span className={codex.resetCredits > 0 ? 'usage-on' : 'usage-off'}>{codex.resetCredits}</span>
+            </div>
+          </section>
+          <Freshness fetchedAt={codex.fetchedAt} now={now} provider="Codex" />
+        </>
+      )}
+
+      {(usage || codex) && (
+        <p className="usage-footnote">The bot re-checks every 5 minutes and after each agent turn.</p>
       )}
     </div>
   )

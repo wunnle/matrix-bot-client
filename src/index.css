@@ -3279,6 +3279,15 @@ a.msg-card-link:hover {
   font-variant-numeric: tabular-nums;
 }
 .usage-screen .settings-header { padding-bottom: 4px; }
+.usage-provider {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 12px 4px 0;
+}
+.usage-provider:first-of-type { margin-top: 0; }
 .usage-card { --usage-color: var(--accent); }
 .usage-card--warn { --usage-color: #e0a84e; }
 .usage-card--critical { --usage-color: var(--danger); }
@@ -3304,7 +3313,6 @@ a.msg-card-link:hover {
   border-radius: 3px;
   background: var(--bg-active);
 }
-.usage-track--thin { height: 4px; }
 .usage-fill {
   display: block;
   height: 100%;
@@ -3333,15 +3341,6 @@ a.msg-card-link:hover {
   font-size: 14px;
 }
 .usage-card > .settings-section-title + .usage-row { margin-top: 8px; }
-.usage-row--zero { color: var(--text-muted); }
-.usage-row-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 50%;
-}
-.usage-row-bar .usage-track { flex: 1; }
-.usage-row-percent { width: 44px; flex-shrink: 0; text-align: right; }
 .usage-on { color: #34c759; }
 .usage-off { color: var(--text-muted); }
 .usage-stale {

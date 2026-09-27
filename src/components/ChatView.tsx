@@ -38,7 +38,7 @@ import { useToast } from '../hooks/useToast'
 import { useVisualViewportResize } from '../hooks/useVisualViewport'
 import RoomEditor from './RoomEditor'
 import { HeaderUsageBar } from './PlanUsageMeter'
-import { usePlanUsage } from '../hooks/usePlanUsage'
+import { usePlanUsage, useCodexUsage } from '../hooks/usePlanUsage'
 import { Marked } from 'marked'
 import type { Message, RoomConfig, ConstructThread, ConstructApproval, ToolProgressLine } from '../types'
 import { useAgentRun } from '../hooks/useAgentActivity'
@@ -866,9 +866,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [messages, roomId, userId])
 
   const shownModel = currentModel ?? scannedModel
-  // The plan quota only means something where Claude is the one spending it.
+  // A plan quota only means something in a room that spends it.
   const isClaudeRoom = !!shownModel && /claude|opus|sonnet|haiku|fable/i.test(shownModel)
+  const isCodexRoom = !!shownModel && /gpt|codex/i.test(shownModel)
   const planUsage = usePlanUsage(isClaudeRoom ? client : null)
+  const codexUsage = useCodexUsage(isCodexRoom ? client : null)
 
   useEffect(() => {
     if (scannedModel) setRoomModel(roomId, scannedModel)
@@ -1617,7 +1619,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             </button>
           )}
         </div>
-        {isClaudeRoom && <HeaderUsageBar usage={planUsage} />}
+        {isClaudeRoom && planUsage && (
+          <HeaderUsageBar window={planUsage.session} fetchedAt={planUsage.fetchedAt} label="Claude session usage" />
+        )}
+        {isCodexRoom && codexUsage && (
+          <HeaderUsageBar window={codexUsage.windows[0]} fetchedAt={codexUsage.fetchedAt} label="Codex usage" />
+        )}
       </div>
 
       {showEditor &&<RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} onLeave={() => { setShowEditor(false); onBack() }} />}

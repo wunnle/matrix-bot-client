@@ -1,16 +1,23 @@
-import { STALE_MS, currentPercent, usageLevel, useMinuteClock, type PlanUsage } from '../hooks/usePlanUsage'
+import { STALE_MS, currentPercent, usageLevel, useMinuteClock, type UsageWindow } from '../hooks/usePlanUsage'
 
-/** The 5-hour window as a line along the chat header's bottom border. */
-export function HeaderUsageBar({ usage }: { usage: PlanUsage | null }) {
+/**
+ * A plan window as a line along the chat header's bottom border — the 5-hour
+ * window in Claude rooms, Codex's shortest window in Codex rooms.
+ */
+export function HeaderUsageBar({ window, fetchedAt, label }: {
+  window: UsageWindow | null
+  fetchedAt: number
+  label: string
+}) {
   const now = useMinuteClock()
-  if (!usage?.session) return null
-  const percent = currentPercent(usage.session, now)
-  const stale = now - usage.fetchedAt > STALE_MS
+  if (!window) return null
+  const percent = currentPercent(window, now)
+  const stale = now - fetchedAt > STALE_MS
   return (
     <div
       className={`header-usage header-usage--${usageLevel(percent)}${stale ? ' header-usage--stale' : ''}`}
       role="meter"
-      aria-label="Claude session usage"
+      aria-label={label}
       aria-valuenow={percent}
       aria-valuemin={0}
       aria-valuemax={100}

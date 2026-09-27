@@ -13,7 +13,7 @@ import { providerFor, resolveModel, allModelAliases, DEFAULT_PROVIDER, PROVIDERS
 import { createApprovalQueue } from './approval-queue.mjs'
 import { requiresHuman } from './approval-rules.mjs'
 import { detectLimitBlock } from './limit-block.mjs'
-import { fetchPlanUsage, sameUsage } from './plan-usage.mjs'
+import { fetchPlanUsage, sameUsage, fetchCodexUsage, sameCodexUsage } from './plan-usage.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
@@ -937,19 +937,54 @@ async function setBlocked(roomId, block) {
   }, '').catch((e) => log(`Could not set blocked state on ${roomId}: ${e.message}`))
 }
 
-// The plan quota, published for Construct's footer meter. It is account-wide,
-// so one copy in one room is enough: it goes to the most recently active agent
-// room, and Construct reads the newest copy across every room it can see. Sent
-// only when the meter would change, plus a heartbeat so a quiet stretch does
-// not look like a dead poller.
+// The plan quotas, published for Construct's Usage screen. They are
+// account-wide, so one copy in one room is enough: it goes to the most recently
+// active agent room, and Construct reads the newest copy across every room it
+// can see. Sent only when the numbers change, plus a heartbeat so a quiet
+// stretch does not look like a dead poller. Claude uses state key '' (what
+// Construct first shipped reading), Codex uses 'codex'.
 const USAGE_EVENT = 'com.construct.plan_usage'
 const USAGE_POLL_MS = 5 * 60 * 1000
 const USAGE_HEARTBEAT_MS = 30 * 60 * 1000
 // A turn just spent quota, but a burst of turns should not mean a burst of polls.
 const USAGE_MIN_GAP_MS = 60 * 1000
-let lastUsage = null
-let lastUsagePublishedAt = 0
 let lastUsagePollAt = 0
+
+const win = (w) => w && { percent: w.percent, resets_at: w.resetsAt }
+const USAGE_SOURCES = [
+  {
+    name: 'Claude',
+    stateKey: '',
+    fetch: fetchPlanUsage,
+    same: sameUsage,
+    content: (u) => ({
+      session: win(u.session),
+      weekly: win(u.weekly),
+      models: Object.fromEntries(Object.entries(u.models).map(([name, w]) => [name, win(w)])),
+      extra: u.extra && {
+        enabled: u.extra.enabled,
+        used: u.extra.used,
+        limit: u.extra.limit,
+        currency: u.extra.currency,
+        exponent: u.extra.exponent,
+        disabled_reason: u.extra.disabledReason,
+      },
+      fetched_at: u.fetchedAt,
+    }),
+  },
+  {
+    name: 'Codex',
+    stateKey: 'codex',
+    fetch: fetchCodexUsage,
+    same: sameCodexUsage,
+    content: (u) => ({
+      windows: u.windows.map((w) => ({ minutes: w.minutes, ...win(w) })),
+      plan: u.plan,
+      reset_credits: u.resetCredits,
+      fetched_at: u.fetchedAt,
+    }),
+  },
+].map((s) => ({ ...s, last: null, publishedAt: 0 }))
 
 function usageRoom() {
   return client.getRooms()
@@ -963,35 +998,23 @@ function usageRoom() {
 async function refreshUsage({ force = false } = {}) {
   if (!force && Date.now() - lastUsagePollAt < USAGE_MIN_GAP_MS) return
   lastUsagePollAt = Date.now()
-  let usage
-  try {
-    usage = await fetchPlanUsage()
-  } catch (e) {
-    log(`Plan usage: ${e.message}`)
-    return
-  }
-  if (sameUsage(usage, lastUsage) && Date.now() - lastUsagePublishedAt < USAGE_HEARTBEAT_MS) return
-  const room = usageRoom()
-  if (!room) return
-  const win = (w) => w && { percent: w.percent, resets_at: w.resetsAt }
-  await client.sendStateEvent(room.roomId, USAGE_EVENT, {
-    session: win(usage.session),
-    weekly: win(usage.weekly),
-    models: Object.fromEntries(Object.entries(usage.models).map(([name, w]) => [name, win(w)])),
-    breakdown: usage.breakdown,
-    extra: usage.extra && {
-      enabled: usage.extra.enabled,
-      used: usage.extra.used,
-      limit: usage.extra.limit,
-      currency: usage.extra.currency,
-      exponent: usage.extra.exponent,
-      disabled_reason: usage.extra.disabledReason,
-    },
-    fetched_at: usage.fetchedAt,
-  }, '').then(() => {
-    lastUsage = usage
-    lastUsagePublishedAt = Date.now()
-  }).catch((e) => log(`Could not publish plan usage to ${room.roomId}: ${e.message}`))
+  // One provider failing (logged out, CLI missing) must not starve the other.
+  await Promise.all(USAGE_SOURCES.map(async (source) => {
+    let usage
+    try {
+      usage = await source.fetch()
+    } catch (e) {
+      log(`${source.name} usage: ${e.message}`)
+      return
+    }
+    if (source.same(usage, source.last) && Date.now() - source.publishedAt < USAGE_HEARTBEAT_MS) return
+    const room = usageRoom()
+    if (!room) return
+    await client.sendStateEvent(room.roomId, USAGE_EVENT, source.content(usage), source.stateKey).then(() => {
+      source.last = usage
+      source.publishedAt = Date.now()
+    }).catch((e) => log(`Could not publish ${source.name} usage to ${room.roomId}: ${e.message}`))
+  }))
 }
 
 refreshUsage({ force: true })

@@ -112,9 +112,10 @@ const CASES = [
   ['grep -rn env src/', 'allow'],
 
   // Skill helper scripts, matched by absolute path.
-  ['python3 /home/wunnle/.openclaw/workspace/scripts/ha_helper.py states', 'allow'],
-  ['python3 /home/wunnle/.openclaw/workspace/scripts/ha_helper.py call light.turn_on --entity-id light.desk', 'allow'],
-  ['node /home/wunnle/matrix-pwa/scripts/room-rename.mjs "A Name"', 'allow'],
+  // The rules resolve these against $HOME, so the cases must too.
+  [`python3 ${os.homedir()}/.openclaw/workspace/scripts/ha_helper.py states`, 'allow'],
+  [`python3 ${os.homedir()}/.openclaw/workspace/scripts/ha_helper.py call light.turn_on --entity-id light.desk`, 'allow'],
+  [`node ${os.homedir()}/matrix-pwa/scripts/room-rename.mjs "A Name"`, 'allow'],
   ['obsidian search:context query="bender"', 'allow'],
   ['obsidian daily:append content="note"', 'allow'],
   // The basename hole: /tmp is writable without a prompt, so a same-named

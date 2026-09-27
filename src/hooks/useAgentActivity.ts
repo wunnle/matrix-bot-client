@@ -110,7 +110,7 @@ function getClockSnapshot(): number {
   return Math.floor(Date.now() / 1000)
 }
 
-function isBotMessage(m: Message): boolean {
+function isBotMessage(m: Pick<Message, 'isOwnMessage' | 'isPeerMessage'>): boolean {
   return !m.isOwnMessage && !m.isPeerMessage
 }
 
@@ -132,36 +132,42 @@ export interface AgentRun {
  * @param messages full room timeline, oldest first
  */
 export function useAgentRun(messages: Message[]): AgentRun | null {
+  return useMemo(() => agentRunFrom(messages), [messages])
+}
+
+/** The fields a run is derived from — all a caller without full Messages needs. */
+export type RunMessage = Pick<Message, 'isOwnMessage' | 'isPeerMessage' | 'toolProgress' | 'interim' | 'timestamp'>
+
+/** useAgentRun without the hook, for callers outside a room (the room grid). */
+export function agentRunFrom(messages: RunMessage[]): AgentRun | null {
   // Everything below is a function of "the run that started at the user's last
   // message", so find that anchor once.
-  return useMemo(() => {
-    let anchor = -1
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].isOwnMessage) { anchor = i; break }
-    }
-    if (anchor === -1) return null
+  let anchor = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].isOwnMessage) { anchor = i; break }
+  }
+  if (anchor === -1) return null
 
-    let lastTool: Message | null = null
-    for (let i = anchor + 1; i < messages.length; i++) {
-      const m = messages[i]
-      if (!isBotMessage(m)) continue
-      // A plain reply from the bot ends the run; tool lines keep it alive, and
-      // so does narration the bot marked as mid-turn.
-      if (m.toolProgress?.length) lastTool = m
-      else if (!m.interim) return null
-    }
+  let lastTool: RunMessage | null = null
+  for (let i = anchor + 1; i < messages.length; i++) {
+    const m = messages[i]
+    if (!isBotMessage(m)) continue
+    // A plain reply from the bot ends the run; tool lines keep it alive, and
+    // so does narration the bot marked as mid-turn.
+    if (m.toolProgress?.length) lastTool = m
+    else if (!m.interim) return null
+  }
 
-    const startedAt = messages[anchor].timestamp
-    const line = lastTool?.toolProgress?.[lastTool.toolProgress.length - 1]
-    return {
-      phase: (line ? 'working' : 'thinking') as AgentActivity['phase'],
-      label: line ? labelForTool(line.tool) : 'Thinking',
-      detail: line?.content,
-      startedAt,
-      // The freshest evidence the run is alive, for the silence check below.
-      lastSignalAt: lastTool?.timestamp ?? startedAt,
-    }
-  }, [messages])
+  const startedAt = messages[anchor].timestamp
+  const line = lastTool?.toolProgress?.[lastTool.toolProgress.length - 1]
+  return {
+    phase: (line ? 'working' : 'thinking') as AgentActivity['phase'],
+    label: line ? labelForTool(line.tool) : 'Thinking',
+    detail: line?.content,
+    startedAt,
+    // The freshest evidence the run is alive, for the silence check below.
+    lastSignalAt: lastTool?.timestamp ?? startedAt,
+  }
 }
 
 /**

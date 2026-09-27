@@ -19,6 +19,12 @@
   --own-bubble: #2d2a5e;
   --other-bubble: #1a1a24;
   --danger: #e05c5c;
+  /* Agent state on the room grid: iOS system hues, the orange and green taken
+     darker so the white glyph on them still reads. */
+  --agent-working: #0a84ff;
+  --agent-approval: #c96f00;
+  --agent-question: #1f9a45;
+  --agent-blocked: var(--danger);
   --diff-add: #7ee2a8;
   --diff-add-bg: rgba(72, 187, 120, 0.14);
   --diff-del: #f08c8c;
@@ -415,21 +421,53 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   color: var(--accent);
 }
 
+/* The tile's one badge, iOS-style: cut out of the icon by a ring of the grid's
+   background. A bare dot for unread; a glyph on a state colour for the agent. */
 .room-card-badge {
+  --badge-color: var(--accent);
   position: absolute;
-  top: -4px;
-  right: -4px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  min-width: 16px;
-  height: 16px;
-  border-radius: 99px;
+  top: -5px;
+  right: -5px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--badge-color);
+  box-shadow: 0 0 0 2.5px var(--bg-surface);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 4px;
+  color: #fff;
+}
+.room-card-badge--unread {
+  top: -3px;
+  right: -3px;
+  width: 12px;
+  height: 12px;
+}
+.room-card-badge .material-symbols-outlined {
+  font-size: 15px;
+  line-height: 1;
+  font-variation-settings: 'opsz' 20, 'wght' 400, 'FILL' 1, 'GRAD' 0;
+}
+.room-card-badge--working { --badge-color: var(--agent-working); }
+.room-card-badge--approval { --badge-color: var(--agent-approval); }
+.room-card-badge--question { --badge-color: var(--agent-question); }
+.room-card-badge--blocked { --badge-color: var(--agent-blocked); }
+.room-card-badge-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: room-card-badge-spin 0.9s linear infinite;
+}
+
+@keyframes room-card-badge-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-card-badge-spinner { animation: none; }
 }
 
 .room-card-name {

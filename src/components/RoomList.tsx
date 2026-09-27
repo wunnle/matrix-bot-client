@@ -13,6 +13,8 @@ import { donateShareTargets, cacheRoomAvatars } from '../lib/liveActivity'
 import { getDisabledShareRooms, isShareableRoom } from '../lib/shareRooms'
 import NotificationCenter from './NotificationCenter'
 import { hapticPress } from '../lib/haptics'
+import { useRoomAgentStates } from '../hooks/useRoomAgentStates'
+import type { RoomAgentState } from '../lib/roomAgentState'
 import type { RoomNotification } from '../hooks/useRoomNotifications'
 
 interface Props {
@@ -24,11 +26,12 @@ interface Props {
   onDismissNotification: (roomId: string) => void
 }
 
-const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar, hasNotification, onSelect }: {
+const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar, hasNotification, agent, onSelect }: {
   room: RoomSummary
   isActive: boolean
   avatar?: string
   hasNotification: boolean
+  agent?: RoomAgentState
   onSelect: (roomId: string, name: string) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: room.roomId })
@@ -44,22 +47,61 @@ const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar
       {...attributes}
       className={`room-card${isActive ? ' active' : ''}`}
       onClick={() => onSelect(room.roomId, room.name)}
+      aria-description={
+        (agent && agentStatusLabel(agent)) ?? (room.unreadCount > 0 || hasNotification ? 'Unread' : undefined)
+      }
     >
       {/* touch-action:none only on the avatar so the drag sensor can
           capture touch events there, while the card name area still
           allows the list to scroll naturally */}
       <div className="room-card-avatar" {...listeners}>
         {avatar ? <img src={avatar} alt="" /> : <span>{roomInitial(room.name)}</span>}
-        {(room.unreadCount > 0 || hasNotification) && (
-          <span className="room-card-badge">
-            {room.unreadCount > 99 ? '99+' : Math.max(room.unreadCount, 1)}
-          </span>
-        )}
+        <RoomCardBadge agent={agent} unread={room.unreadCount > 0 || hasNotification} />
       </div>
       <div className="room-card-name">{room.name}</div>
     </button>
   )
 })
+
+// One iOS-style badge per tile, showing only what matters most: the agent is
+// waiting on you, else it's working, else there's something unread. The count
+// never mattered — a dot says "go look" just as well.
+const AGENT_BADGE_ICON: Record<Exclude<RoomAgentState['kind'], 'idle' | 'working'>, string> = {
+  approval: 'lock',
+  question: 'question_mark',
+  blocked: 'hourglass_top',
+}
+
+function RoomCardBadge({ agent, unread }: { agent?: RoomAgentState; unread: boolean }) {
+  if (agent?.kind === 'working') {
+    // Drawn, not a glyph: a spinning font glyph wobbles off-centre by however
+    // far the font's metrics put it from the middle of its box.
+    return (
+      <span className="room-card-badge room-card-badge--working" aria-hidden>
+        <span className="room-card-badge-spinner" />
+      </span>
+    )
+  }
+  if (agent && agent.kind !== 'idle') {
+    return (
+      <span className={`room-card-badge room-card-badge--${agent.kind}`} aria-hidden>
+        <span className="material-symbols-outlined">{AGENT_BADGE_ICON[agent.kind]}</span>
+      </span>
+    )
+  }
+  if (unread) return <span className="room-card-badge room-card-badge--unread" aria-hidden />
+  return null
+}
+
+function agentStatusLabel(agent: RoomAgentState): string | undefined {
+  switch (agent.kind) {
+    case 'approval': return 'Needs approval'
+    case 'question': return 'Has a question'
+    case 'blocked': return 'Usage limit'
+    case 'working': return `${agent.label}…`
+    case 'idle': return undefined
+  }
+}
 
 // An invite renders as a faded version of the room tile it will become.
 // Tapping accepts and opens it — the two-button card was a second visual
@@ -137,6 +179,8 @@ export default function RoomList({
 
   const invites = useMemo(() => rooms.filter(isInvite), [rooms])
   const joinedRooms = useMemo(() => rooms.filter((r) => !isInvite(r)), [rooms])
+  const joinedRoomIds = useMemo(() => joinedRooms.map((r) => r.roomId), [joinedRooms])
+  const agentStates = useRoomAgentStates(clientReady, joinedRoomIds, auth.userId)
 
   // Only offered when there is somewhere to send `!spawn` — the command needs a
   // room the bot is already in, and a dead button is worse than no button.
@@ -504,6 +548,7 @@ export default function RoomList({
                   isActive={room.roomId === activeRoomId}
                   avatar={roomAvatars[room.roomId]}
                   hasNotification={notifications.some(n => n.roomId === room.roomId)}
+                  agent={agentStates[room.roomId]}
                   onSelect={onSelectRoom}
                 />
               ))}

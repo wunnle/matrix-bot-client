@@ -8,7 +8,7 @@
 // Nothing here touches the network.
 import assert from 'node:assert'
 import {
-  buildContentState, parseAlert, parseTtl, parseUntil, lifetimeFor, expiredIds, evictionIds,
+  buildContentState, parseAlert, parseTtl, parseUntil, lifetimeFor, expiredIds, evictionIds, assertVisibleSends,
   ActivityError, ID_PATTERN, DEFAULT_TTL_S, MAX_TTL_S, MAX_LIVE,
 } from '../api/_activities.js'
 
@@ -124,6 +124,12 @@ check('lifetime stretches to cover a countdown, unless ttl was explicit', () => 
   const long = buildContentState({ title: 'T', until: NOW / 1000 + 2 * 3600 }, null, ctx)
   assert.strictEqual(lifetimeFor(long, lifetime, { explicitTtl: false, nowMs: NOW }), NOW + (2 * 3600 + 600) * 1000)
   rejects(() => lifetimeFor(long, lifetime, { explicitTtl: true, nowMs: NOW }), 400, /after the activity's ttl/)
+})
+
+check('agent rooms: a button may not hide a different payload behind its label', () => {
+  assertVisibleSends([{ label: 'Ship it', send: 'Ship it' }, { label: 'Hold', send: 'Hold' }])
+  assertVisibleSends([])
+  rejects(() => assertVisibleSends([{ label: 'OK', send: 'rm -rf ~' }]), 400, /must send its own label \(OK\)/)
 })
 
 check('alert levels', () => {

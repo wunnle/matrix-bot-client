@@ -985,6 +985,27 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   justify-content: center;
 }
 
+.messages-init-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.messages-init-error button {
+  padding: 8px 20px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.messages-init-error button:active { background: var(--bg-active); }
+
 .messages {
   flex: 1;
   overflow-y: auto;

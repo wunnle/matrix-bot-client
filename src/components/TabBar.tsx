@@ -33,16 +33,17 @@ const TABS: { id: Tab, label: string }[] = [
   { id: 'settings', label: 'Settings' },
 ]
 
-/** What's left of the Claude session window, for the live gauge. */
+/** How much of the Claude session window is used, for the live gauge. */
 export interface GaugeReading {
-  /** 0 (spent) … 1 (untouched). */
-  remaining: number
+  /** 0 (untouched) … 1 (limit reached) — the Usage screen's percentage. */
+  used: number
   /** usageLevel() of the used percentage: ok | warn | critical. */
   level: string
 }
 
-// The gauge dial: a 240° arc over the top, from lower-left (empty) round to
-// lower-right (full), like a fuel gauge.
+// The gauge dial: a 240° arc over the top, from lower-left (0%) round to
+// lower-right (100%), like a speedometer — so it reads the same way as the
+// percentages on the Usage screen.
 const CX = 12
 const CY = 13.5
 const R = 8.5
@@ -54,16 +55,16 @@ function dialPoint(deg: number, r = R): string {
   return `${(CX + r * Math.cos(rad)).toFixed(2)} ${(CY - r * Math.sin(rad)).toFixed(2)}`
 }
 
-/** Clockwise arc from the empty end to `fraction` of the way round. */
+/** Clockwise arc from the 0% end to `fraction` of the way round. */
 function dialArc(fraction: number): string {
   const end = START - SWEEP * fraction
   const large = SWEEP * fraction > 180 ? 1 : 0
   return `M${dialPoint(START)}A${R} ${R} 0 ${large} 1 ${dialPoint(end)}`
 }
 
-/** The usage icon, drawn live: the arc fills and the needle points to what's left. */
+/** The usage icon, drawn live: the arc fills and the needle points to how much is used. */
 function UsageGauge({ reading }: { reading: GaugeReading }) {
-  const fraction = Math.min(1, Math.max(0, reading.remaining))
+  const fraction = Math.min(1, Math.max(0, reading.used))
   const needle = START - SWEEP * fraction
   return (
     <>
@@ -89,7 +90,7 @@ export default function TabBar({ active, onSelect, gauge }: {
           key={id}
           className={`tab-bar-item${id === active ? ' tab-bar-item--active' : ''}`}
           aria-current={id === active ? 'page' : undefined}
-          aria-label={id === 'usage' && gauge ? `${label}, ${Math.round(gauge.remaining * 100)}% of session left` : undefined}
+          aria-label={id === 'usage' && gauge ? `${label}, ${Math.round(gauge.used * 100)}% of session used` : undefined}
           onClick={() => onSelect(id)}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">

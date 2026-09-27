@@ -8,7 +8,7 @@
 // Nothing here touches the network.
 import assert from 'node:assert'
 import {
-  buildContentState, parseAlert, parseTtl, expiredIds, evictionIds,
+  buildContentState, parseAlert, parseTtl, parseUntil, lifetimeFor, expiredIds, evictionIds,
   ActivityError, ID_PATTERN, DEFAULT_TTL_S, MAX_TTL_S, MAX_LIVE,
 } from '../api/_activities.js'
 
@@ -26,14 +26,15 @@ const rejects = (fn, status, pattern) => {
   assert.throws(fn, (e) => e instanceof ActivityError && e.status === status && pattern.test(e.message))
 }
 
-const ctx = { roomId: '!r:local', roomName: 'Room', endsAtMs: 1_800_000_000_000 }
+const NOW = 1_800_000_000_000
+const ctx = { roomId: '!r:local', roomName: 'Room', nowMs: NOW }
 
-check('start builds the full contract shape', () => {
+check('start builds the full contract shape, with no countdown by default', () => {
   const c = buildContentState({ title: 'Deploy', body: 'Tests pass', tone: 'success', actions: [{ label: 'Ship', send: 'ship it' }] }, null, ctx)
   assert.deepStrictEqual(c, {
     title: 'Deploy', body: 'Tests pass', tone: 'success',
     actions: [{ label: 'Ship', send: 'ship it' }],
-    roomId: '!r:local', roomName: 'Room', endsAt: 1_800_000_000,
+    roomId: '!r:local', roomName: 'Room',
   })
 })
 
@@ -93,9 +94,36 @@ check('long text is truncated, not refused', () => {
   assert.strictEqual(c.body.length, 300)
 })
 
-check('endsAt is unix seconds (the app decodes a Double, not a Date)', () => {
-  const c = buildContentState({ title: 'T' }, null, { ...ctx, endsAtMs: 1_700_000_123_999 })
-  assert.strictEqual(c.endsAt, 1_700_000_123)
+check('until sets endsAt in unix seconds (the app decodes a Double, not a Date)', () => {
+  const c = buildContentState({ title: 'T', until: NOW / 1000 + 600 }, null, ctx)
+  assert.strictEqual(c.endsAt, NOW / 1000 + 600)
+  const iso = buildContentState({ title: 'T', until: new Date(NOW + 90_500).toISOString() }, null, ctx)
+  assert.strictEqual(iso.endsAt, NOW / 1000 + 90)
+})
+
+check('until: past, too far, or garbage is refused', () => {
+  rejects(() => parseUntil(NOW / 1000 - 1, NOW), 400, /past/)
+  rejects(() => parseUntil(NOW / 1000 + 9 * 3600, NOW), 400, /8 hours/)
+  rejects(() => parseUntil('soon', NOW), 400, /unix seconds or an ISO/)
+})
+
+check('a countdown survives updates, clears with null, and drops once it has run out', () => {
+  const prev = buildContentState({ title: 'T', until: NOW / 1000 + 600 }, null, ctx)
+  assert.strictEqual(buildContentState({ body: 'b' }, prev, ctx).endsAt, NOW / 1000 + 600)
+  assert.ok(!('endsAt' in buildContentState({ until: null }, prev, ctx)))
+  const later = { ...ctx, nowMs: NOW + 601_000 }
+  assert.ok(!('endsAt' in buildContentState({ body: 'b' }, prev, later)))
+})
+
+check('lifetime stretches to cover a countdown, unless ttl was explicit', () => {
+  const lifetime = NOW + DEFAULT_TTL_S * 1000
+  const noTimer = buildContentState({ title: 'T' }, null, ctx)
+  assert.strictEqual(lifetimeFor(noTimer, lifetime, { explicitTtl: false, nowMs: NOW }), lifetime)
+  const short = buildContentState({ title: 'T', until: NOW / 1000 + 600 }, null, ctx)
+  assert.strictEqual(lifetimeFor(short, lifetime, { explicitTtl: false, nowMs: NOW }), lifetime)
+  const long = buildContentState({ title: 'T', until: NOW / 1000 + 2 * 3600 }, null, ctx)
+  assert.strictEqual(lifetimeFor(long, lifetime, { explicitTtl: false, nowMs: NOW }), NOW + (2 * 3600 + 600) * 1000)
+  rejects(() => lifetimeFor(long, lifetime, { explicitTtl: true, nowMs: NOW }), 400, /after the activity's ttl/)
 })
 
 check('alert levels', () => {

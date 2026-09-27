@@ -129,10 +129,28 @@ function parseActions(actions) {
 const EMPTY_CONTENT = { title: "", body: "", tone: "neutral", actions: [] };
 
 /**
- * The content-state for a start (no `prev`) or an update (merged over `prev`).
- * Pure; throws ActivityError(400) on bad input.
+ * `until` → unix seconds for the countdown. Accepts unix seconds or an ISO
+ * date string; must be in the future and within the 8-hour ceiling. Pure.
  */
-export function buildContentState(input, prev = null, { roomId, roomName, endsAtMs }) {
+export function parseUntil(value, nowMs = Date.now()) {
+  const ms = typeof value === "number" ? value * 1000 : typeof value === "string" ? Date.parse(value) : NaN;
+  if (!Number.isFinite(ms)) throw new ActivityError(400, "until must be unix seconds or an ISO date");
+  if (ms <= nowMs) throw new ActivityError(400, "until is in the past");
+  if (ms > nowMs + MAX_TTL_S * 1000) throw new ActivityError(400, "until is more than 8 hours away");
+  return Math.floor(ms / 1000);
+}
+
+/**
+ * The content-state for a start (no `prev`) or an update (merged over `prev`).
+ * Pure apart from reading the clock for `until`; throws ActivityError(400) on
+ * bad input.
+ *
+ * `endsAt` is the countdown the widget draws, so it is only set when a bot
+ * asks for one (`until`); `null` clears it. It is not the activity's lifetime:
+ * that's the TTL, which only drives stale-date and cleanup. Sending the TTL as
+ * endsAt put a meaningless "59:41" on every card.
+ */
+export function buildContentState(input, prev = null, { roomId, roomName, nowMs = Date.now() }) {
   const title = str(input.title, "title", 80, { required: !prev });
   const body = str(input.body, "body", 300);
   const step = str(input.step, "step", 12);
@@ -158,15 +176,33 @@ export function buildContentState(input, prev = null, { roomId, roomName, endsAt
     ...(actions !== undefined ? { actions } : {}),
     roomId,
     roomName,
-    endsAt: Math.floor(endsAtMs / 1000),
   };
+  const endsAt = input.until === undefined || input.until === null ? undefined : parseUntil(input.until, nowMs);
   // Optional keys are dropped rather than sent as null: Swift's defaults cover
   // a missing key, and an explicit null clears them on purpose.
-  for (const [key, value] of [["progress", progress], ["step", step]]) {
-    if (input[key] === null) delete next[key];
+  for (const [key, value, raw] of [
+    ["progress", progress, input.progress],
+    ["step", step, input.step],
+    ["endsAt", endsAt, input.until],
+  ]) {
+    if (raw === null) delete next[key];
     else if (value !== undefined) next[key] = value;
   }
+  // A countdown left over from an earlier state is dropped once it has run
+  // out, so a later update doesn't resend a finished timer.
+  if (next.endsAt !== undefined && next.endsAt * 1000 <= nowMs) delete next.endsAt;
   return next;
+}
+
+/** The activity's lifetime (ms) so it covers any countdown: a countdown past
+    the lifetime would be cut off by stale-date and cleanup. An explicit ttl
+    that's too short is refused rather than silently stretched. Pure. */
+export function lifetimeFor(content, endsAtMs, { explicitTtl, nowMs = Date.now() }) {
+  if (content.endsAt === undefined) return endsAtMs;
+  const needed = content.endsAt * 1000 + 10 * 60 * 1000;
+  if (needed <= endsAtMs) return endsAtMs;
+  if (explicitTtl) throw new ActivityError(400, "until is after the activity's ttl; raise ttl or drop it");
+  return Math.min(needed, nowMs + MAX_TTL_S * 1000);
 }
 
 export function parseAlert(value, fallback) {
@@ -218,14 +254,16 @@ function summarize(r) {
 
 const deadToken = (r) => r.status === 410 || (r.status === 400 && (r.body || "").includes("BadDeviceToken"));
 
-async function pushUpdate(entry, content, alert) {
+/** `lifetimeMs` becomes the stale-date: iOS dims the card when the activity's
+    TTL runs out, whether or not it shows a countdown. */
+async function pushUpdate(entry, content, alert, lifetimeMs = entry.endsAt) {
   const ts = nextTs(entry);
   const payload = {
     aps: {
       timestamp: ts,
       event: "update",
       "content-state": content,
-      "stale-date": content.endsAt,
+      "stale-date": Math.floor(lifetimeMs / 1000),
       ...(alert ? { alert } : {}),
     },
   };
@@ -266,7 +304,7 @@ async function pushToStartTokens() {
     .map(([t]) => t);
 }
 
-async function pushStart(id, content, alert) {
+async function pushStart(id, content, alert, lifetimeMs) {
   const tokens = await pushToStartTokens();
   if (!tokens.length) throw new ActivityError(409, "no push-to-start token registered; open the app once");
   const ts = Math.floor(Date.now() / 1000);
@@ -277,7 +315,7 @@ async function pushStart(id, content, alert) {
       "attributes-type": "ConstructActivityAttributes",
       attributes: { activityId: id },
       "content-state": content,
-      "stale-date": content.endsAt,
+      "stale-date": Math.floor(lifetimeMs / 1000),
       // Required: iOS silently drops a start push without an alert.
       alert,
     },
@@ -354,7 +392,12 @@ export async function upsertActivity(input) {
       return { ok: true, id, action: "none", reason: "not running" };
     }
     const dismiss = input.dismissIn === undefined ? DEFAULT_DISMISS_S : Math.max(0, Number(input.dismissIn) || 0);
-    const content = buildContentState(input, entry.content ?? EMPTY_CONTENT, { roomId: entry.roomId, roomName: entry.content?.roomName ?? entry.roomId, endsAtMs: entry.endsAt });
+    // An ended card shows its final state; a countdown only if one is given.
+    const content = buildContentState(
+      { ...input, until: input.until ?? null },
+      entry.content ?? EMPTY_CONTENT,
+      { roomId: entry.roomId, roomName: entry.content?.roomName ?? entry.roomId, nowMs: now },
+    );
     let apns = null;
     if (entry.token) apns = summarize((await pushEnd(entry, content, dismiss)).r);
     delete reg.activities[id];
@@ -366,8 +409,12 @@ export async function upsertActivity(input) {
     if (now - (entry.updatedAt ?? 0) < MIN_UPDATE_INTERVAL_MS) {
       throw new ActivityError(429, `updates to one activity are limited to one per ${MIN_UPDATE_INTERVAL_MS / 1000}s`);
     }
-    const endsAtMs = input.ttl !== undefined ? now + parseTtl(input.ttl) * 1000 : entry.endsAt;
-    const content = buildContentState(input, entry.content ?? EMPTY_CONTENT, { roomId: entry.roomId, roomName: entry.content?.roomName ?? entry.roomId, endsAtMs });
+    const content = buildContentState(input, entry.content ?? EMPTY_CONTENT, { roomId: entry.roomId, roomName: entry.content?.roomName ?? entry.roomId, nowMs: now });
+    const endsAtMs = lifetimeFor(
+      content,
+      input.ttl !== undefined ? now + parseTtl(input.ttl) * 1000 : entry.endsAt,
+      { explicitTtl: input.ttl !== undefined, nowMs: now },
+    );
     const alert = alertBlock(parseAlert(input.alert, "none"), content);
 
     if (!entry.token) {
@@ -378,7 +425,7 @@ export async function upsertActivity(input) {
       return { ok: true, id, action: "queued", reason: "waiting for the activity's push token" };
     }
 
-    const { r, ts } = await pushUpdate(entry, content, alert);
+    const { r, ts } = await pushUpdate(entry, content, alert, endsAtMs);
     if (deadToken(r)) {
       delete reg.activities[id];
       await writeRegistry(reg);
@@ -392,11 +439,14 @@ export async function upsertActivity(input) {
   // Start.
   const room = str(input.room, "room", 255, { required: true });
   if (!room.startsWith("!")) throw new ActivityError(400, "room must be a Matrix room id (!…)");
-  const ttl = parseTtl(input.ttl);
   const content = buildContentState(input, null, {
     roomId: room,
     roomName: str(input.roomName, "roomName", 60) || (await roomName(room)),
-    endsAtMs: now + ttl * 1000,
+    nowMs: now,
+  });
+  const endsAtMs = lifetimeFor(content, now + parseTtl(input.ttl) * 1000, {
+    explicitTtl: input.ttl !== undefined,
+    nowMs: now,
   });
   // A start must alert or iOS drops it; "none" becomes quiet.
   const level = parseAlert(input.alert, "quiet");
@@ -407,7 +457,7 @@ export async function upsertActivity(input) {
 
   let start;
   try {
-    start = await pushStart(id, content, alert);
+    start = await pushStart(id, content, alert, endsAtMs);
   } catch (err) {
     // Evictions and pruning above already pushed their ends; record them
     // even though this start didn't happen.
@@ -421,7 +471,7 @@ export async function upsertActivity(input) {
       token: null,
       startedAt: now,
       updatedAt: now,
-      endsAt: now + ttl * 1000,
+      endsAt: endsAtMs,
       lastTs: start.ts,
       content,
       pending: null,

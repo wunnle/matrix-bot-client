@@ -364,11 +364,14 @@ function sendRoomText(roomId, text, extra = {}) {
   })
 }
 
+// Machine-marked so a turn's tool lines never push or count as unread;
+// Construct folds consecutive ones into a single activity row.
 function sendToolProgress(roomId, progress) {
   const line = { emoji: progress.emoji, tool: progress.tool, content: progress.content }
+  const provider = providerFor(sessions[roomId]).name
   return sendRoomText(roomId, `${line.emoji} ${line.tool}: ${line.content}`, {
     'com.construct.tool_progress': [line],
-    'com.construct.machine': { kind: 'notification', source: 'codex-progress' },
+    'com.construct.machine': { kind: 'notification', source: `${provider}-progress` },
   })
 }
 
@@ -582,7 +585,7 @@ function runTurn(roomId, prompt) {
       drop: (reason) => questions.drop(roomId, reason),
     },
     onProgress: (progress) => {
-      sendToolProgress(roomId, progress).catch((e) => log(`Could not post Codex progress: ${e.message}`))
+      sendToolProgress(roomId, progress).catch((e) => log(`Could not post tool progress: ${e.message}`))
     },
     // A turn can block on a human answering an approval, so this must exceed
     // the approval timeout rather than race it.

@@ -7,6 +7,7 @@
 // ~9s so it fits a single serverless invocation; the intent may call again.
 
 import { authorized } from './_auth.js'
+import { cors } from './_cors.js'
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || 'https://matrix-client.matrix.org'
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN
@@ -47,10 +48,7 @@ async function latestReply(room, since, selfId) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', 'https://construct.kafagoz.com')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-intent-secret')
-
-  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (cors(req, res)) return
   if (req.method !== 'POST') return res.status(405).end()
   if (!(await authorized(req))) return res.status(403).json({ error: 'forbidden' })
   if (!ACCESS_TOKEN) return res.status(500).json({ error: 'server not configured' })

@@ -2,15 +2,13 @@
 // Auth: x-intent-secret header — never the URL or body. See _auth.js.
 import crypto from 'crypto'
 import { authorized } from './_auth.js'
+import { cors } from './_cors.js'
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || 'https://matrix-client.matrix.org'
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', 'https://construct.kafagoz.com')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-intent-secret')
-
-  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (cors(req, res)) return
 
   if (req.method !== 'POST') return res.status(405).end()
 

@@ -20,6 +20,7 @@ import { getDictationAutoSend, setDictationAutoSend } from '../lib/clientSetting
 import { resolveRoomIdFromParam } from '../lib/roomAliases'
 import { isAgentRoom } from '../lib/roomMeta'
 import { startPresenceHeartbeat, setActiveRoom } from '../lib/presence'
+import { apiUrl } from '../lib/apiUrl'
 
 interface Props {
   auth: AuthState
@@ -196,7 +197,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   const fetchIntent = useCallback(() => {
     const secret = intentCredential()
     if (!secret) return
-    fetch('/api/room-intent', { headers: { 'x-intent-secret': secret } })
+    fetch(apiUrl('/api/room-intent'), { headers: { 'x-intent-secret': secret } })
       .then(r => r.json())
       .then(({ room, action, text }: { room: string | null, action: string | null, text: string | null }) => {
         if (!room) return

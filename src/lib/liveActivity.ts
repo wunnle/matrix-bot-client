@@ -1,6 +1,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { getClient, intentCredential } from './matrix'
 import { resolveMediaBase64 } from './mediaUrl'
+import { API_ORIGIN } from './apiUrl'
 
 /**
  * Live Activity (Dynamic Island / lock screen) bridge — native iOS only.
@@ -66,7 +67,7 @@ export async function saveIntentConfig(room: string): Promise<void> {
   if (!secret) return
   await plugin.saveIntentConfig({
     secret,
-    apiBase: 'https://construct.kafagoz.com',
+    apiBase: API_ORIGIN,
     room,
   }).catch(() => {})
 }

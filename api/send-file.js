@@ -3,6 +3,7 @@
 // never the URL. Sends native Matrix media event via Matrix media upload API.
 import crypto from 'crypto'
 import { authorized } from './_auth.js'
+import { cors } from './_cors.js'
 
 export const config = {
   api: {
@@ -43,10 +44,7 @@ async function readRawBody(req) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', 'https://construct.kafagoz.com')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-intent-secret')
-
-  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (cors(req, res)) return
 
   const { room, filename, source } = req.query
   const constructSource = source || 'file-endpoint'

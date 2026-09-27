@@ -3,6 +3,7 @@
 // GET  /api/room-intent          → returns { room } and clears it
 // Auth: x-intent-secret header — never the URL or body. See _auth.js.
 import { authorized } from './_auth.js'
+import { cors } from './_cors.js'
 
 let pendingRoom = null
 let pendingAction = null
@@ -10,9 +11,7 @@ let pendingText = null
 let expiresAt = 0
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', 'https://construct.kafagoz.com')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-intent-secret')
-
+  if (cors(req, res)) return
   if (!(await authorized(req))) return res.status(403).json({ error: 'forbidden' })
 
   if (req.method === 'POST') {

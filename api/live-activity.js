@@ -21,6 +21,7 @@
  */
 import { apnsSendWithFallback, apnsConfigured, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
 import { authorized } from "./_auth.js";
+import { cors } from "./_cors.js";
 import { ID_PATTERN, registerToken, forgetActivity, reconcile, listActivities } from "./_activities.js";
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
@@ -115,6 +116,9 @@ async function writeRooms(rooms, lastPush) {
 }
 
 export default async function handler(req, res) {
+  // The native app's presence heartbeat and Settings check call this
+  // cross-origin; see _cors.js.
+  if (cors(req, res)) return;
   if (!ACCESS_TOKEN) return res.status(500).json({ error: "server not configured" });
   if (!(await authorized(req))) return res.status(403).json({ error: "forbidden" });
 

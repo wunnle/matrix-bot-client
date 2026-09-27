@@ -9,6 +9,7 @@
  */
 import { Capacitor } from '@capacitor/core'
 import { intentCredential } from './matrix'
+import { apiUrl } from './apiUrl'
 
 const BEAT_MS = 45_000
 
@@ -51,7 +52,7 @@ async function beat(leaving = false) {
   // Not signed in yet: nothing to report, and the gateway simply notifies.
   if (!secret || (!leaving && document.visibilityState !== 'visible')) return
   try {
-    await fetch('/api/live-activity', {
+    await fetch(apiUrl('/api/live-activity'), {
       method: 'POST',
       keepalive: leaving,
       headers: { 'content-type': 'application/json', 'x-intent-secret': secret },

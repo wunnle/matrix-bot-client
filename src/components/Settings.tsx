@@ -6,6 +6,7 @@ import { getDisabledShareRooms, setDisabledShareRooms, isShareableRoom } from '.
 import { donateShareTargets } from '../lib/liveActivity'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { toggleDebug } from '../lib/debug'
+import { apiUrl } from '../lib/apiUrl'
 
 interface Props {
   auth: AuthState
@@ -52,7 +53,7 @@ async function debugNotifications() {
     await line('Foreground clients', async () => {
       const secret = intentCredential()
       if (!secret) return 'n/a (not signed in)'
-      const r = await fetch('/api/live-activity', { headers: { 'x-intent-secret': secret } })
+      const r = await fetch(apiUrl('/api/live-activity'), { headers: { 'x-intent-secret': secret } })
       const clients = (await r.json())?.activeClients ?? []
       if (!clients.length) return 'none — notifications flow normally'
       return '\n' + clients.map((c: { client: string; viewingRoom: string | null; ageMs: number }) =>

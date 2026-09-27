@@ -117,14 +117,14 @@ export function progressForToolUse(block, cwd = '') {
   return { id: block.id, emoji: '🔧', tool: block.name.toLowerCase(), content: 'Using a tool' }
 }
 
-// Progress records for one stream-json event. Only the main agent's calls:
-// a subagent's own tool use (parent_tool_use_id set) would flood the room,
-// and its Task line already says one is at work.
-export function progressForEvent(event, cwd = '') {
+// The content blocks of one stream-json event that the room may hear about, in
+// order. Only the main agent's: a subagent's own text and tool use
+// (parent_tool_use_id set) would flood the room, and its Task line already
+// says one is at work.
+export function mainAgentBlocks(event) {
   if (event?.type !== 'assistant' || event.parent_tool_use_id) return []
   const content = event.message?.content
-  if (!Array.isArray(content)) return []
-  return content.map((block) => progressForToolUse(block, cwd)).filter(Boolean)
+  return Array.isArray(content) ? content : []
 }
 
 export const claude = {
@@ -149,7 +149,7 @@ export const claude = {
   // id comes back through `onSession` so the bot can persist it — the CLI only
   // reveals it once the turn ends, which is why it is a callback and not a
   // return value the caller could rely on mid-turn.
-  run({ roomId, prompt, cwd, model, sessionId, instructions = [], approval, onProgress, timeoutMs, onSession }) {
+  run({ roomId, prompt, cwd, model, sessionId, instructions = [], approval, onProgress, onText, timeoutMs, onSession }) {
     const args = [
       '-p', prompt,
       // stream-json in print mode refuses to run without --verbose.
@@ -185,17 +185,36 @@ export const claude = {
       let stderr = ''
       let timedOut = false
       const reported = new Set()
+      // Text the agent wrote, held back until the turn shows it goes on. Only
+      // then is it narration; the last block is the reply itself, which the
+      // `result` event repeats and the caller posts as the turn's answer.
+      let pendingText = null
+
+      // Callbacks may not sink the turn: a room that can't be told about
+      // progress still gets its answer.
+      const flushText = () => {
+        if (pendingText !== null) {
+          try { onText?.(pendingText) } catch {}
+        }
+        pendingText = null
+      }
 
       const handleLine = (line) => {
         if (!line.trim()) return
         let event
         try { event = JSON.parse(line) } catch { return }
         if (event.type === 'result') { result = event; return }
-        for (const progress of progressForEvent(event, cwd)) {
+        for (const block of mainAgentBlocks(event)) {
+          if (block?.type === 'text' && block.text?.trim()) {
+            flushText()
+            pendingText = block.text.trim()
+            continue
+          }
+          const progress = progressForToolUse(block, cwd)
           // Cheap insurance: nothing documents that a block is streamed once.
-          if (reported.has(progress.id)) continue
+          if (!progress || reported.has(progress.id)) continue
           reported.add(progress.id)
-          // A room that can't be told about progress still gets its answer.
+          flushText()
           try { onProgress?.(progress) } catch {}
         }
       }
@@ -227,9 +246,14 @@ export const claude = {
       child.on('close', (code, signal) => {
         handleLine(partial)
         if (result) {
+          // Held text that isn't the reply (an error result, say) is still
+          // something the agent said; post it rather than lose it.
+          if (pendingText !== (result.result ?? '').trim()) flushText()
           if (result.session_id) onSession?.(result.session_id)
           return finish({ text: result.result ?? '(no output)', isError: result.is_error })
         }
+        // No reply is coming, so whatever the agent last said is all there is.
+        flushText()
         if (timedOut) return finish({ error: `Timed out after ${Math.round(timeoutMs / 60000)} min` })
         finish({ error: stderr.trim() || `claude exited without a result (${signal ?? `code ${code}`})` })
       })

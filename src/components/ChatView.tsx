@@ -2276,6 +2276,7 @@ function eventToMessage(
     isRead,
     source,
     machine,
+    interim: content?.['com.construct.interim'] === true ? true : undefined,
   }
 }
 

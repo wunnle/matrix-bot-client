@@ -69,6 +69,8 @@ export interface Message {
   reactions?: Record<string, string[]> // emoji → list of senderIds
   source?: string // com.construct.source — e.g. "voice"
   machine?: MachineMarker // com.construct.machine — posted by a bot, not a human
+  // com.construct.interim — an agent's narration mid-turn; its run goes on.
+  interim?: boolean
 }
 
 // Marks a message as machine-generated: a notification or orchestration event

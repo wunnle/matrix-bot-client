@@ -145,9 +145,10 @@ export function useAgentRun(messages: Message[]): AgentRun | null {
     for (let i = anchor + 1; i < messages.length; i++) {
       const m = messages[i]
       if (!isBotMessage(m)) continue
-      // A plain reply from the bot ends the run; tool lines keep it alive.
+      // A plain reply from the bot ends the run; tool lines keep it alive, and
+      // so does narration the bot marked as mid-turn.
       if (m.toolProgress?.length) lastTool = m
-      else return null
+      else if (!m.interim) return null
     }
 
     const startedAt = messages[anchor].timestamp

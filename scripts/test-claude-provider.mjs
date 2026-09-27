@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { claude, progressForToolUse, progressForEvent } from './providers/claude.mjs'
+import { claude, progressForToolUse, mainAgentBlocks } from './providers/claude.mjs'
 
 // Progress carries the agent's own description and file names, never raw
 // commands, patterns, queries or URLs.
@@ -46,10 +46,11 @@ for (const [block, expected] of progressCases) {
 assert.equal(progressForToolUse(progressCases[3][0]).content, 'app.ts')
 
 const assistant = (content, extra = {}) => ({ type: 'assistant', message: { content }, parent_tool_use_id: null, ...extra })
-assert.deepEqual(progressForEvent(assistant([{ type: 'text', text: 'x' }, progressCases[0][0]]), '/repo'), [progressCases[0][1]])
-// A subagent's own tool calls stay out of the room.
-assert.deepEqual(progressForEvent(assistant([progressCases[0][0]], { parent_tool_use_id: 'task1' })), [])
-assert.deepEqual(progressForEvent({ type: 'user', message: { content: [] } }), [])
+const blocks = [{ type: 'text', text: 'x' }, progressCases[0][0]]
+assert.deepEqual(mainAgentBlocks(assistant(blocks)), blocks)
+// A subagent's own text and tool calls stay out of the room.
+assert.deepEqual(mainAgentBlocks(assistant(blocks, { parent_tool_use_id: 'task1' })), [])
+assert.deepEqual(mainAgentBlocks({ type: 'user', message: { content: [] } }), [])
 
 // End to end against a fake `claude` that streams the way the real one does.
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-claude-'))
@@ -60,7 +61,10 @@ const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n')
 if (mode === 'hang') { out({ type: 'system', subtype: 'init', session_id: 's-hang' }); setInterval(() => {}, 1000) }
 else if (mode === 'crash') { process.stderr.write('boom\\n'); process.exit(3) }
 else {
+  const say = (text, parent = null) => out({ type: 'assistant', parent_tool_use_id: parent, message: { content: [{ type: 'text', text }] } })
   out({ type: 'system', subtype: 'init', session_id: 's1' })
+  say('  Looking around. ')
+  say('subagent chatter', 'task1')
   const bash = { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id: 'a', name: 'Bash', input: { command: 'ls' } }] } }
   // Split one event across writes to exercise line reassembly.
   const line = JSON.stringify(bash) + '\\n'
@@ -68,7 +72,11 @@ else {
   setTimeout(() => {
     process.stdout.write(line.slice(20))
     out(bash) // repeated block id: reported once
+    say('Found it.')
+    say('Checking one more.') // text after text: the first is narration too
     out({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id: 'b', name: 'Read', input: {} }] } })
+    out({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id: 'c', name: 'TodoWrite', input: {} }] } })
+    say('Done.') // the reply: the result repeats it, so it is not narration
     // No trailing newline on the last event.
     process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', result: 'Done.', is_error: false, session_id: 's1' }))
   }, 50)
@@ -81,21 +89,30 @@ const approval = { url: 'http://127.0.0.1:1/approve', timeoutMs: 1000 }
 const base = { prompt: 'hi', cwd: dir, model: 'm', sessionId: null, approval }
 
 {
-  const progress = []
+  // One timeline, so the order the room would see is checked too.
+  const seen = []
   let session = null
   const res = await claude.run({
     ...base, roomId: '!ok', timeoutMs: 10000,
-    onProgress: (p) => progress.push(p),
+    onProgress: (p) => seen.push(`tool:${p.tool}`),
+    onText: (t) => seen.push(`text:${t}`),
     onSession: (id) => { session = id },
   })
   assert.deepEqual(res, { text: 'Done.', isError: false })
   assert.equal(session, 's1')
-  assert.deepEqual(progress.map((p) => p.tool), ['terminal', 'read'])
+  assert.deepEqual(seen, [
+    'text:Looking around.',
+    'tool:terminal',
+    'text:Found it.',
+    'text:Checking one more.',
+    'tool:read',
+  ])
 }
 
 {
-  // A throwing progress callback must not sink the turn.
-  const res = await claude.run({ ...base, roomId: '!throw', timeoutMs: 10000, onProgress: () => { throw new Error('x') } })
+  // Throwing callbacks must not sink the turn.
+  const fail = () => { throw new Error('x') }
+  const res = await claude.run({ ...base, roomId: '!throw', timeoutMs: 10000, onProgress: fail, onText: fail })
   assert.equal(res.text, 'Done.')
 }
 

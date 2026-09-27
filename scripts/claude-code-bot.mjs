@@ -587,6 +587,14 @@ function runTurn(roomId, prompt) {
     onProgress: (progress) => {
       sendToolProgress(roomId, progress).catch((e) => log(`Could not post tool progress: ${e.message}`))
     },
+    // What the agent says between tool calls. A real message, not machine
+    // plumbing, but tagged so Construct keeps the run's activity bar up: the
+    // turn's answer is still coming. Dropped after !stop like the answer is.
+    onText: (text) => {
+      if (stopped.has(roomId)) return
+      sendRoomText(roomId, text, { 'com.construct.interim': true })
+        .catch((e) => log(`Could not post interim text: ${e.message}`))
+    },
     // A turn can block on a human answering an approval, so this must exceed
     // the approval timeout rather than race it.
     timeoutMs: APPROVAL_TIMEOUT_MS + 15 * 60 * 1000,

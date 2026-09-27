@@ -2106,6 +2106,10 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   transition: border-color 0.15s;
 }
 
+/* No specular sheen here: the composer sits on a flat background, so there is
+   nothing for it to catch and it only reads as a gradient. */
+.input-row.glass::before { content: none; }
+
 .input-row:focus-within {
   border-color: color-mix(in srgb, var(--accent) 60%, transparent);
 }

@@ -32,7 +32,8 @@ import { loadPills, savePills } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { Capacitor } from '@capacitor/core'
 import { isMobileSafari } from '../lib/isMobileSafari'
-import { isActionPlaceholder, parseActions } from '../lib/actions'
+import { actionLabel, isActionPlaceholder, parseActions } from '../lib/actions'
+import { formatModel } from '../lib/modelLabel'
 import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
 import { useVisualViewportResize } from '../hooks/useVisualViewport'
@@ -1598,7 +1599,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           </div>
           {shownModel && (
             <span className="chat-header-model" title={`Model: ${shownModel}`}>
-              {shownModel}
+              {formatModel(shownModel)}
             </span>
           )}
           {pinnedEventIds.length > 0 && (
@@ -1873,7 +1874,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => sendMessage(action)}
             >
-              {action}
+              {actionLabel(action)}
             </button>
           ))}
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>

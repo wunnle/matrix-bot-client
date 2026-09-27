@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import type { RoomNotification } from '../hooks/useRoomNotifications'
+import { actionLabel } from '../lib/actions'
 import { getClient } from '../lib/matrix'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 
@@ -174,7 +175,7 @@ function ToastCard({ notification, onDismiss, onNavigate, onHold, onRespond }: T
                 onTouchStart={(e) => e.stopPropagation()}
                 onTouchEnd={(e) => e.stopPropagation()}
               >
-                {sending === label ? '…' : label}
+                {sending === label ? '…' : actionLabel(label)}
               </button>
             ))}
           </div>

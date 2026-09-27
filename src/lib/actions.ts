@@ -4,6 +4,14 @@
  * buttons wherever it shows up.
  */
 
+import { formatModel } from './modelLabel'
+
+/** What a pill shows for an action; the action itself is still what's sent. */
+export function actionLabel(action: string): string {
+  const model = /^!model\s+(\S+)$/.exec(action)
+  return model ? formatModel(model[1]) : action
+}
+
 // Doc examples like [[label]] or <code>[[button]]</code> — not real CTAs
 export function isActionPlaceholder(inner: string): boolean {
   const t = inner.trim().toLowerCase()

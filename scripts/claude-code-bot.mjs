@@ -1221,11 +1221,12 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       // The seeded pill sends a bare !model, so reporting alone left no way to
       // switch without typing. Offer the alternatives as tappable options —
       // only this room's provider's, since switching backend is not a model
-      // change and would strand the session.
+      // change and would strand the session. Full ids rather than aliases, so
+      // Construct can label the pill with the version ("Opus 5.5").
       const current = entry.model ?? DEFAULT_MODEL
-      const options = Object.keys(provider.models)
-        .filter((alias) => provider.models[alias] !== current)
-        .map((alias) => `[[!model ${alias}]]`)
+      const options = Object.values(provider.models)
+        .filter((id) => id !== current)
+        .map((id) => `[[!model ${id}]]`)
         .join(' ')
       await sendRoomText(roomId, `Model: ${modelLabel(current)}\n\n${options}`)
       return

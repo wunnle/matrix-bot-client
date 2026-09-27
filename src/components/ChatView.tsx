@@ -28,7 +28,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { useSearchParams } from 'react-router-dom'
 import { getClient } from '../lib/matrix'
 import { pinRoomEvent, unpinRoomEvent } from '../lib/pinRoomMessage'
-import { loadPills, savePills } from '../lib/roomMeta'
+import { loadPills, savePills, isAgentRoom } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { Capacitor } from '@capacitor/core'
 import { isMobileSafari } from '../lib/isMobileSafari'
@@ -866,9 +866,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [messages, roomId, userId])
 
   const shownModel = currentModel ?? scannedModel
-  // A plan quota only means something in a room that spends it.
-  const isClaudeRoom = !!shownModel && /claude|opus|sonnet|haiku|fable/i.test(shownModel)
-  const isCodexRoom = !!shownModel && /gpt|codex/i.test(shownModel)
+  // A plan quota only means something in a room that spends it. A freshly
+  // spawned agent room has no tagged reply yet, but the bot wrote its model
+  // into the topic ("<branch> · <model>"), so that stands in until one lands.
+  const topicModel = !shownModel && isAgentRoom(client, roomId)
+    ? roomTopic.split(' · ').pop()?.trim() || null
+    : null
+  const usageModel = shownModel ?? topicModel
+  const isClaudeRoom = !!usageModel && /claude|opus|sonnet|haiku|fable/i.test(usageModel)
+  const isCodexRoom = !!usageModel && /gpt|codex/i.test(usageModel)
   const planUsage = usePlanUsage(isClaudeRoom ? client : null)
   const codexUsage = useCodexUsage(isCodexRoom ? client : null)
 

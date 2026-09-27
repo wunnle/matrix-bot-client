@@ -922,15 +922,19 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   overflow-anchor: none;
-  mask-image: linear-gradient(to bottom, transparent 0%, black 30%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%);
+  /* Top: the long scroll fade. Bottom: a scroll-edge dim under the floating
+     footer, done just below where .messages-inner's end padding parks the last
+     message, so text passing behind the activity row and pills recedes instead
+     of colliding with them. */
+  mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black calc(100% - var(--footer-h, 0px) - 16px), rgba(0, 0, 0, 0.12) calc(100% - var(--footer-h, 0px) + 6px));
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black calc(100% - var(--footer-h, 0px) - 16px), rgba(0, 0, 0, 0.12) calc(100% - var(--footer-h, 0px) + 6px));
 }
 
 /* Centered content column */
 .messages-inner {
   max-width: 760px;
   margin: 0 auto;
-  padding: 16px 16px 8px;
+  padding: 16px 16px calc(var(--footer-h, 0px) + 20px);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1835,8 +1839,15 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   box-sizing: border-box;
 }
 
+/* Floats over the end of the list with no background of its own, so messages
+   scroll under the glass composer. ChatView measures it into --footer-h, which
+   .messages-inner pads its end by. */
 .chat-footer {
-  flex-shrink: 0;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
   /* .layout is already sized to the visual viewport (--vv-height), so the
      keyboard never needs compensating here — only the home-indicator inset.
      --vv-safe-bottom is zeroed while the native keyboard is open (the
@@ -1968,7 +1979,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 /* Small glass capsules to match the composer below them: the same top-lit rim,
    without the heavy drop shadow a whole row of them would pile up. */
 .pill {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(30, 30, 42, 0.5);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
   border: 0.5px solid rgba(255, 255, 255, 0.14);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   color: var(--text-muted);
@@ -1994,7 +2007,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 @media (hover: none) {
-  .pill:focus { background: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.14); color: var(--text-muted); outline: none; }
+  .pill:focus { background: rgba(30, 30, 42, 0.5); border-color: rgba(255, 255, 255, 0.14); color: var(--text-muted); outline: none; }
 }
 
 .pill-param {

@@ -428,6 +428,26 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     return () => document.removeEventListener('pointerdown', onDown)
   }, [metaOpenId])
   const footerRef = useRef<HTMLDivElement>(null)
+  // The footer floats over the end of the list (the composer is glass), so the
+  // list pads its end by the footer's height — which pills, the activity row
+  // and a growing textarea all change. Stay pinned to the end if you were there.
+  useLayoutEffect(() => {
+    const footer = footerRef.current
+    if (!footer) return
+    const apply = () => {
+      // A hidden (display:none) room measures 0; scrolling it would throw away
+      // its position for when it is shown again.
+      if (footer.offsetHeight === 0) return
+      const list = messagesRef.current
+      const atEnd = !!list && list.scrollHeight - list.scrollTop - list.clientHeight < 150
+      footer.parentElement?.style.setProperty('--footer-h', `${footer.offsetHeight}px`)
+      if (atEnd) scrollToEnd(list)
+    }
+    apply()
+    const observer = new ResizeObserver(apply)
+    observer.observe(footer)
+    return () => observer.disconnect()
+  }, [])
   const [dragOver, setDragOver] = useState(false)
   const dragCounterRef = useRef(0)
   const [pinnedEventIds, setPinnedEventIds] = useState<string[]>([])

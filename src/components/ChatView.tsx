@@ -46,6 +46,8 @@ import type { Message, RoomConfig, ConstructThread, ConstructApproval, ToolProgr
 import { useAgentRun } from '../hooks/useAgentActivity'
 import { AgentActivityBar } from './AgentActivityBar'
 import MessageActionSheet from './MessageActionSheet'
+import ApprovalBar from './ApprovalBar'
+import { approvalChoices, parseApprovalCard } from '../lib/approval'
 import { hapticPress, hapticSend, hapticSuccess, hapticTick, hapticWarning } from '../lib/haptics'
 import { useAgentBlocked, formatResetsAt, blockedHeadline } from '../hooks/useAgentBlocked'
 
@@ -398,14 +400,27 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // Tool lines and mid-turn narration don't count as "saying anything" — the
   // bot keeps posting those while an approval card waits on you, and letting
   // them win took the Approve / Deny pills away the moment one landed.
-  const lastActions = useMemo(() => {
+  const lastActionMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i]
       if (isBotToolProgress(m) || (m.interim && !m.isOwnMessage && !m.isPeerMessage)) continue
-      return m.isOwnMessage ? [] : parseActions(m.body).actions
+      return m.isOwnMessage ? null : m
     }
-    return []
+    return null
   }, [messages])
+  const lastActions = useMemo(
+    () => (lastActionMessage ? parseActions(lastActionMessage.body).actions : []),
+    [lastActionMessage],
+  )
+  // That message, when it is an approval card: it gets the approval bar in
+  // place of the pill row.
+  const pendingApproval = useMemo(() => {
+    if (!lastActionMessage) return null
+    const { approve, deny, always } = approvalChoices(lastActions)
+    const card = approve ? parseApprovalCard(lastActionMessage.body) : null
+    if (!approve || !card) return null
+    return { msg: lastActionMessage, card, approve, deny, always }
+  }, [lastActionMessage, lastActions])
   const [addingPill, setAddingPill] = useState(false)
   const [newPillInput, setNewPillInput] = useState('')
   const newPillRef = useRef<HTMLInputElement>(null)
@@ -1715,6 +1730,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const sheetMsg = actionSheetId ? visibleMessages.find((m) => m.eventId === actionSheetId) : undefined
 
   const composing = input.trim() !== '' && !addingPill
+
+  // The card's own full-change dialog when it has one; otherwise the card is
+  // already complete in the timeline, so bring it into view.
+  const viewApprovalCard = (msg: Message) => {
+    if (msg.approval) { setApprovalDialog(msg.approval); return }
+    messagesRef.current
+      ?.querySelector(`[data-event-id="${window.CSS.escape(msg.eventId)}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
   const footerError = sendError || dictationError || pinError
   const dismissFooterError = () => {
     setSendError('')
@@ -2054,11 +2078,23 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           />
         )}
 
-        {/* Hidden, not unmounted, while you type: the row would otherwise sit
-            between you and the autocomplete, which offers the matching pills
-            anyway. Kept in the DOM so a pill mid-drag or the add field keep
-            their state. */}
-        <div className={`pills${composing ? ' pills--hidden' : ''}`} onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>
+        {pendingApproval && (
+          <ApprovalBar
+            key={pendingApproval.msg.eventId}
+            card={pendingApproval.card}
+            approve={pendingApproval.approve}
+            deny={pendingApproval.deny}
+            always={pendingApproval.always}
+            onAnswer={(label) => { void sendMessage(label) }}
+            onView={() => viewApprovalCard(pendingApproval.msg)}
+          />
+        )}
+
+        {/* Hidden, not unmounted, while you type or while the approval bar
+            stands in for it: the row would otherwise sit between you and the
+            autocomplete, which offers the matching pills anyway. Kept in the
+            DOM so a pill mid-drag or the add field keep their state. */}
+        <div className={`pills${composing || pendingApproval ? ' pills--hidden' : ''}`} onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>
           {lastActions.map((action) => (
             <button
               key={`action-${action}`}

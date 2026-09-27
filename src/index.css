@@ -2131,6 +2131,103 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .pills--hidden { display: none; }
 
+/* Stands in for the pill row while an approval card waits on you. */
+.approval-bar {
+  /* `auto` sides, not 0 — .chat-footer > * centres on them. */
+  margin: 4px auto 10px;
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+.approval-bar-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 12px;
+}
+.approval-bar-icon {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--agent-approval);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.approval-bar-icon .material-symbols-outlined {
+  font-size: 16px;
+  font-variation-settings: 'opsz' 20, 'wght' 400, 'FILL' 1, 'GRAD' 0;
+}
+.approval-bar-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.approval-bar-tool { font-size: 14px; font-weight: 600; color: var(--text-strong); }
+.approval-bar-target {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.approval-bar-view {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent-hover);
+}
+.approval-bar-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 8px;
+}
+.approval-bar-actions--single { grid-template-columns: 1fr; }
+.approval-bar-btn {
+  height: 46px;
+  border-radius: 13px;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s, transform 0.1s;
+}
+.approval-bar-btn:active:not(:disabled) { transform: scale(0.97); }
+.approval-bar-btn:disabled { opacity: 0.6; }
+.approval-bar-btn--deny { background: var(--bg-active); color: var(--text); }
+.approval-bar-btn--approve { background: var(--accent); color: #fff; }
+.approval-bar-btn .material-symbols-outlined { font-size: 20px; }
+.approval-bar-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: room-card-badge-spin 0.9s linear infinite;
+}
+.approval-bar-always {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.approval-bar-always:disabled { opacity: 0.6; }
+
 .dictation-voice-row {
   display: flex;
   align-items: center;

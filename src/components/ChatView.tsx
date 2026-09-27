@@ -1789,6 +1789,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             // that row needs one computed.
             const groupId = toolGroupId[msg.eventId]
             const isGroupStart = isTool && !prevIsTool
+            // The rest of the group is folded into that summary. Render no row
+            // at all: an empty row still draws its meta bar (fixed height, and a
+            // ⋯ on touch), so a bot that posts one event per tool call — the
+            // agent rooms do — left a stack of blank messages under the chip.
+            if (isTool && !isGroupStart) return null
             const toolSummary = isGroupStart
               ? summarizeToolLines(
                   visibleMessages

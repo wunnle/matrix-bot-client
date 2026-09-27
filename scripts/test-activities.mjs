@@ -154,15 +154,16 @@ check('ids: safe characters only', () => {
   assert.ok(!ID_PATTERN.test('x'.repeat(65)))
 })
 
-check('expiry: past endsAt, or a start that never registered a token', () => {
+check('expiry: past endsAt only; an unregistered start is kept for its lifetime', () => {
   const now = 1_000_000_000
   const ids = expiredIds({
     live: { token: 't', startedAt: now - 5_000, endsAt: now + 60_000 },
     expired: { token: 't', startedAt: now - 90_000, endsAt: now - 1 },
+    // Showing on the phone but the app was never woken to report its token.
     neverRegistered: { token: null, startedAt: now - 11 * 60_000, endsAt: now + 60_000 },
-    justStarted: { token: null, startedAt: now - 30_000, endsAt: now + 60_000 },
+    unregisteredExpired: { token: null, startedAt: now - 90 * 60_000, endsAt: now - 1 },
   }, now)
-  assert.deepStrictEqual(ids.sort(), ['expired', 'neverRegistered'])
+  assert.deepStrictEqual(ids.sort(), ['expired', 'unregisteredExpired'])
 })
 
 check(`eviction keeps the newest ${MAX_LIVE - 1} so a start fits under ${MAX_LIVE}`, () => {

@@ -1,14 +1,9 @@
 import { useEffect } from "react";
-import { setPresencePushkey } from '../lib/presence'
+import { clientId, setPresencePushkey } from '../lib/presence'
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 
 const VAPID_PUBLIC_KEY = "BHAWGVTndxe9FH-hZmiPSoLsts1NOJLIx9uwVlJIXwDYf8JeXFb1xrKvCLIR5We0djZcWlXIvwiWW2DPLQ8SHdA";
-const APP_ACTIVE_CACHE = "construct-app-state";
-const APP_ACTIVE_KEY = "/app-active-ts";
-// SW suppresses push if timestamp is fresher than this
-const ACTIVE_TTL_MS = 15_000;
-
 function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -18,57 +13,15 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   return outputArray.buffer as ArrayBuffer;
 }
 
-async function writeActiveTimestamp() {
-  try {
-    const cache = await caches.open(APP_ACTIVE_CACHE);
-    await cache.put(APP_ACTIVE_KEY, new Response(String(Date.now())));
-  } catch {}
-}
-
-async function clearActiveTimestamp() {
-  try {
-    const cache = await caches.open(APP_ACTIVE_CACHE);
-    await cache.delete(APP_ACTIVE_KEY);
-  } catch {}
-}
-
 export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: string) => void) {
-  // Write a "last active" timestamp into the Cache API while the app is visible.
-  // The SW reads this on every push and suppresses if it's fresh — reliable even
-  // when clients.matchAll() fails to return the open window (iOS Safari quirk).
-  useEffect(() => {
-    if (!enabled) return;
-    if (!("caches" in window)) return;
-
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") {
-        writeActiveTimestamp();
-        interval = setInterval(writeActiveTimestamp, 10_000);
-      } else {
-        if (interval) { clearInterval(interval); interval = null; }
-        clearActiveTimestamp();
-      }
-    };
-
-    // Initialise for current state
-    onVisibility();
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      if (interval) clearInterval(interval);
-      clearActiveTimestamp();
-    };
-  }, [enabled]);
-
-  // Forward PUSH_SUPPRESS_CHECK to dispatch matrix-push events for toast system
+  // The SW announces each push so the room list can refresh that room's unread
+  // count without waiting for sync.
   useEffect(() => {
     if (!enabled) return;
     if (!("serviceWorker" in navigator)) return;
 
     const onServiceWorkerMessage = (event: MessageEvent) => {
-      if (event.data?.type !== "PUSH_SUPPRESS_CHECK") return;
+      if (event.data?.type !== "PUSH_RECEIVED") return;
       const { roomId } = event.data as { roomId: string | null };
       if (roomId) {
         window.dispatchEvent(new CustomEvent("matrix-push", { detail: { roomId } }));
@@ -247,6 +200,9 @@ export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: str
           data: {
             url: "https://construct.kafagoz.com/_matrix/push/v1/notify",
             format: "event_notification",
+            // Which install owns this row. The phone and the laptop share the
+            // app_id, so without it each registration retired the other's.
+            client_id: clientId(),
           },
         };
 
@@ -300,5 +256,3 @@ export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: str
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [enabled]);
 }
-
-export { ACTIVE_TTL_MS, APP_ACTIVE_CACHE, APP_ACTIVE_KEY };

@@ -1,7 +1,3 @@
-const APP_ACTIVE_CACHE = "construct-app-state";
-const APP_ACTIVE_KEY = "/app-active-ts";
-const ACTIVE_TTL_MS = 15_000;
-
 /* ── App shell cache ───────────────────────────────────────────────────
    The native app loads the web app over the network (capacitor.config.ts
    server.url) rather than from a bundled copy, so without this a launch with
@@ -26,11 +22,16 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      // Drop superseded shell caches only — APP_ACTIVE_CACHE above is live state.
+      // Drop superseded shell caches, and the "app is active" timestamp cache
+      // the push handler no longer reads.
       const names = await caches.keys();
       await Promise.all(
         names
-          .filter((n) => n.startsWith("construct-shell-") && n !== SHELL_CACHE)
+          .filter(
+            (n) =>
+              (n.startsWith("construct-shell-") && n !== SHELL_CACHE) ||
+              n === "construct-app-state"
+          )
           .map((n) => caches.delete(n))
       );
       await self.clients.claim();
@@ -91,47 +92,29 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
-async function isAppActive() {
-  try {
-    const cache = await caches.open(APP_ACTIVE_CACHE);
-    const res = await cache.match(APP_ACTIVE_KEY);
-    if (!res) return false;
-    const ts = parseInt(await res.text(), 10);
-    return !isNaN(ts) && Date.now() - ts < ACTIVE_TTL_MS;
-  } catch {
-    return false;
-  }
-}
-
+/* Every push shows a notification. Staying quiet while the app is open (it
+   toasts other rooms itself) is the gateway's job: api/matrix-push.js doesn't
+   send to a visible client at all. Suppressing here instead meant pushes that
+   showed nothing, which iOS Safari treats as silent and answers by revoking
+   the subscription. */
 self.addEventListener("push", (event) => {
   const data = event.data ? event.data.json() : { title: "Hermes", body: "" };
   const roomId = data.roomId;
 
   event.waitUntil(
     (async () => {
-      const show = (icon) =>
-        self.registration.showNotification(data.title, {
-          body: data.body,
-          icon: icon || data.icon || "/icon-192.png",
-          badge: "/icon-192.png",
-          data: { roomId: data.roomId },
-        });
-
-      if (!roomId) {
-        await show(null);
-        return;
-      }
-
-      // App wrote an active timestamp recently — suppress, let toast handle it
-      if (await isAppActive()) {
+      // Open windows refresh that room's unread count straight away.
+      if (roomId) {
         const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-        for (const c of clientList) {
-          c.postMessage({ type: "PUSH_SUPPRESS_CHECK", id: null, roomId, title: data.title, body: data.body });
-        }
-        return;
+        for (const c of clientList) c.postMessage({ type: "PUSH_RECEIVED", roomId });
       }
 
-      await show(null);
+      await self.registration.showNotification(data.title, {
+        body: data.body,
+        icon: data.icon || "/icon-192.png",
+        badge: "/icon-192.png",
+        data: { roomId: roomId ?? null },
+      });
     })()
   );
 });

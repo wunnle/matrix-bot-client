@@ -179,19 +179,35 @@ export default async function handler(req, res) {
     return res.status(200).json({ rejected: [], duplicate: true });
   }
 
-  // Which clients are in the foreground, and which room each is showing. The
-  // only rule left: a device doesn't notify for the room already on its own
-  // screen. Being active on one device no longer mutes the others — an open
-  // PWA on the laptop used to silence the phone completely.
+  // Which clients are in the foreground, and which room each is showing.
+  // Native: quiet for the room on its screen. Web: quiet for every room while
+  // visible, since the app toasts other rooms itself. Across devices, only the
+  // room you're actively chatting in elsewhere is quiet (see
+  // chattingElsewhere) — an open PWA on the laptop used to silence the phone
+  // completely.
   //
   // Empty on any error, so an unreadable heartbeat notifies rather than mutes.
-  const active = await activePromise;
+  const active = (await activePromise).filter((c) => c.visible);
   const nativePushkeys = new Set(
     devices.map((d) => d.pushkey).filter((k) => k && !parseWebPushKey(k))
   );
   const isNativeClient = (c) => c.native || nativePushkeys.has(c.pushkey);
   const showingRoom = (pushkey) =>
     active.some((c) => c.pushkey === pushkey && c.roomId === room_id);
+  const inForeground = (pushkey) => active.some((c) => c.pushkey === pushkey);
+  // This room is open on another device that had keyboard/pointer input in
+  // the last 2 minutes: you're chatting there, so don't buzz this one. The
+  // input check is what keeps a tab left open on the laptop from muting the
+  // phone indefinitely.
+  const ENGAGED_MS = 2 * 60 * 1000;
+  const chattingElsewhere = (pushkey) =>
+    active.some(
+      (c) =>
+        c.pushkey !== pushkey &&
+        c.roomId === room_id &&
+        c.lastInputAt != null &&
+        startedAt - c.lastInputAt < ENGAGED_MS
+    );
   // A native client that hasn't registered its APNs token yet can't be matched
   // to its pushkey. It is assumed to be the phone, so the room on its screen
   // stays quiet during the seconds between app launch and registration.
@@ -214,7 +230,7 @@ export default async function handler(req, res) {
         if (!apnsConfigured()) {
           return; // APNs not configured — don't reject, token may be valid later
         }
-        if (showingRoom(pushkey) || unregisteredNativeHere) {
+        if (showingRoom(pushkey) || unregisteredNativeHere || chattingElsewhere(pushkey)) {
           presenceSkipped += 1;
           return;
         }
@@ -279,9 +295,10 @@ export default async function handler(req, res) {
         return;
       }
 
-      // Same rule as the native branch above: quiet only for the room already
-      // on this device's screen.
-      if (showingRoom(pushkey)) {
+      // Skipped here rather than in the service worker: on iOS a push that
+      // shows nothing counts as silent, and Safari revokes the subscription
+      // for those. Not sending it at all is safe.
+      if (inForeground(pushkey) || chattingElsewhere(pushkey)) {
         presenceSkipped += 1;
         return;
       }

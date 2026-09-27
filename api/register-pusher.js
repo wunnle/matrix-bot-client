@@ -17,6 +17,9 @@
  * removing them — 37 of them — and every row whose endpoint still resolved
  * produced its own notification and its own Live Activity for a single
  * message.
+ *
+ * Rows are scoped to one install by `data.client_id`, so two devices on the
+ * same app_id (phone PWA + laptop PWA) keep a row each.
  */
 
 /** Homeservers this proxy will talk to. Without it the route is an open relay:
@@ -78,8 +81,19 @@ export default async function handler(req, res) {
       const listRes = await fetch(`${base}/_matrix/client/v3/pushers`, { headers: auth });
       if (listRes.ok) {
         const { pushers = [] } = await listRes.json();
+        // Only this install's own older rows. The phone and the laptop both
+        // run the PWA under one app_id, so pruning by app_id alone had each
+        // device delete the other's pusher every time it came to the
+        // foreground — only the last one opened got notified. Untagged rows
+        // predate data.client_id and are retired too; a live device re-adds
+        // its row, tagged, the next time it's opened.
+        const owner = pusher.data?.client_id;
         const stale = pushers.filter(
-          (p) => p.app_id === pusher.app_id && p.pushkey && p.pushkey !== pusher.pushkey,
+          (p) =>
+            p.app_id === pusher.app_id &&
+            p.pushkey &&
+            p.pushkey !== pusher.pushkey &&
+            (!p.data?.client_id || p.data.client_id === owner),
         );
         for (const p of stale) {
           // `kind: null` is the spec's delete, keyed on app_id + pushkey, so

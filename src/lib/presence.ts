@@ -15,6 +15,9 @@ const BEAT_MS = 45_000
 let timer: ReturnType<typeof setInterval> | null = null
 let currentRoomId: string | null = null
 let pushkey: string | null = null
+/** Last keyboard/pointer input. An open tab you walked away from stays
+    "visible" for hours; this is what tells the gateway you're actually here. */
+let lastInputAt = Date.now()
 
 /** Stable identity for this install, and the *only* thing the gateway keys
     heartbeats by. Deliberately not the pushkey: on iOS the APNs token arrives
@@ -22,8 +25,10 @@ let pushkey: string | null = null
     phone with two entries — a pushkey-less ghost plus the real token — and the
     ghost read as "another device you're reading on", muting the phone's own
     notifications and its Live Activity. One id per install means an
-    unknown → token transition updates one entry instead of adding a second. */
-function clientId(): string {
+    unknown → token transition updates one entry instead of adding a second.
+    Also tags this install's pusher, so re-registering only retires its own
+    older rows (see api/register-pusher.js). */
+export function clientId(): string {
   const KEY = 'construct:client-id'
   try {
     let id = localStorage.getItem(KEY)
@@ -37,13 +42,18 @@ function clientId(): string {
   }
 }
 
-async function beat() {
+/** `leaving`: the app is going to the background. Reports it hidden, so this
+    device stops being muted now rather than when the 75s server window runs
+    out — otherwise locking the phone right after asking something swallowed
+    the reply. keepalive lets the request outlive the page freezing. */
+async function beat(leaving = false) {
   const secret = intentCredential()
   // Not signed in yet: nothing to report, and the gateway simply notifies.
-  if (!secret || document.visibilityState !== 'visible') return
+  if (!secret || (!leaving && document.visibilityState !== 'visible')) return
   try {
     await fetch('/api/live-activity', {
       method: 'POST',
+      keepalive: leaving,
       headers: { 'content-type': 'application/json', 'x-intent-secret': secret },
       // clientId identifies the entry; pushkey (once known) is how the gateway
       // tells *this* device from the others, since it is the same value the
@@ -53,7 +63,13 @@ async function beat() {
       // rather than another screen (see api/matrix-push.js).
       body: JSON.stringify({
         action: 'heartbeat',
-        roomId: currentRoomId,
+        roomId: leaving ? null : currentRoomId,
+        // A visible web client toasts messages for other rooms itself, so the
+        // gateway skips its push entirely (api/matrix-push.js).
+        visible: !leaving,
+        // Relative, so the phone and laptop clocks never have to agree. Lets
+        // the gateway quiet the phone for a room you're chatting in here.
+        idleMs: Date.now() - lastInputAt,
         clientId: clientId(),
         pushkey,
         native: Capacitor.isNativePlatform(),
@@ -75,9 +91,12 @@ export function setPresencePushkey(value: string | null) {
   if (changed && timer) void beat()
 }
 
-/** Which room is on screen, sent with the next beat. */
+/** Which room is on screen. Reported straight away: waiting for the next beat
+    kept the old room muted, and the new one notifying, for up to BEAT_MS. */
 export function setActiveRoom(roomId: string | null) {
+  const changed = currentRoomId !== roomId
   currentRoomId = roomId
+  if (changed && timer) void beat()
 }
 
 /** Start reporting foreground presence. Safe to call more than once. */
@@ -85,12 +104,22 @@ export function startPresenceHeartbeat(): () => void {
   if (timer) return () => {}
   void beat()
   timer = setInterval(() => void beat(), BEAT_MS)
-  // Beat immediately on becoming visible too, so notifications go quiet as soon
-  // as you switch back rather than up to one interval later.
-  const onVisible = () => { if (document.visibilityState === 'visible') void beat() }
-  document.addEventListener('visibilitychange', onVisible)
+  // Beat on every visibility change: becoming visible goes quiet straight away,
+  // going hidden un-mutes the room straight away.
+  const onVisibility = () => void beat(document.visibilityState !== 'visible')
+  document.addEventListener('visibilitychange', onVisibility)
+  // Coming back after a minute idle beats at once, so the phone goes quiet for
+  // this room from your first keystroke rather than up to BEAT_MS later.
+  const onInput = () => {
+    const wasIdle = Date.now() - lastInputAt > 60_000
+    lastInputAt = Date.now()
+    if (wasIdle) void beat()
+  }
+  const INPUT_EVENTS = ['keydown', 'pointerdown', 'wheel', 'touchstart'] as const
+  for (const e of INPUT_EVENTS) window.addEventListener(e, onInput, { passive: true, capture: true })
   return () => {
     if (timer) { clearInterval(timer); timer = null }
-    document.removeEventListener('visibilitychange', onVisible)
+    document.removeEventListener('visibilitychange', onVisibility)
+    for (const e of INPUT_EVENTS) window.removeEventListener(e, onInput, { capture: true })
   }
 }

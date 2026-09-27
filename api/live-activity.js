@@ -212,6 +212,13 @@ export default async function handler(req, res) {
         roomId: roomId ?? null,
         pushkey: req.body?.pushkey ?? null,
         native: req.body?.native === true,
+        // false when the client reports going to the background.
+        visible: req.body?.visible !== false,
+        // Server clock, from the client's relative idle time.
+        lastInputAt:
+          typeof req.body?.idleMs === "number" && req.body.idleMs >= 0
+            ? Date.now() - req.body.idleMs
+            : null,
       };
       const clients = { ...(current.clients ?? {}), [key]: entry };
       // Drop the pre-fix entries this client wrote under its pushkey, so one
@@ -480,6 +487,8 @@ export async function activeClients(ms) {
       pushkey: v.pushkey ?? (clientId.startsWith("client:") ? null : clientId),
       native: v.native === true,
       roomId: v.roomId ?? null,
+      visible: v.visible !== false,
+      lastInputAt: typeof v.lastInputAt === "number" ? v.lastInputAt : null,
       ts: v.ts,
     }));
 }

@@ -1696,6 +1696,14 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
   const sheetMsg = actionSheetId ? visibleMessages.find((m) => m.eventId === actionSheetId) : undefined
 
+  const composing = input.trim() !== '' && !addingPill
+  const footerError = sendError || dictationError || pinError
+  const dismissFooterError = () => {
+    setSendError('')
+    setPinError('')
+    clearDictationError()
+  }
+
   return (
     <div
       className="chat-view"
@@ -2028,7 +2036,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           />
         )}
 
-        <div className="pills" onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>
+        {/* Hidden, not unmounted, while you type: the row would otherwise sit
+            between you and the autocomplete, which offers the matching pills
+            anyway. Kept in the DOM so a pill mid-drag or the add field keep
+            their state. */}
+        <div className={`pills${composing ? ' pills--hidden' : ''}`} onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>
           {lastActions.map((action) => (
             <button
               key={`action-${action}`}
@@ -2100,9 +2112,22 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           </ul>
         )}
 
-        {sendError && <div className="send-error">{sendError}</div>}
-        {dictationError && <div className="send-error">{dictationError}</div>}
-        {pinError && <div className="send-error">{pinError}</div>}
+        {/* One line for whichever failed last, not a stack of three: each would
+            push the composer's contents around as it came and went. */}
+        {footerError && (
+          <div className="send-error" role="alert">
+            <span className="send-error-text">{footerError}</span>
+            <button
+              type="button"
+              className="send-error-dismiss"
+              aria-label="Dismiss"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={dismissFooterError}
+            >
+              <span className="material-symbols-outlined" aria-hidden>close</span>
+            </button>
+          </div>
+        )}
 
         {showDictation && dictating && (
           <div className="dictation-voice-row" role="status" aria-live="polite">

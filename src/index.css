@@ -2103,10 +2103,33 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 .send-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   color: var(--danger);
-  padding: 4px 4px 6px;
+  padding: 2px 0 6px 4px;
 }
+.send-error-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.send-error-dismiss {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: var(--danger);
+}
+.send-error-dismiss .material-symbols-outlined { font-size: 16px; }
+
+.pills--hidden { display: none; }
 
 .dictation-voice-row {
   display: flex;
@@ -3481,7 +3504,8 @@ a.msg-card-link:hover {
   .room-toast-action,
   .notif-card-close,
   .editor-pill button,
-  .input-row button {
+  .input-row button,
+  .send-error-dismiss {
     position: relative;
   }
 
@@ -3497,7 +3521,8 @@ a.msg-card-link:hover {
   .room-toast-action::after,
   .notif-card-close::after,
   .editor-pill button::after,
-  .input-row button::after {
+  .input-row button::after,
+  .send-error-dismiss::after {
     content: '';
     position: absolute;
     top: 50%;

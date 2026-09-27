@@ -1960,7 +1960,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           </div>
         )}
 
-        <div className="input-row">
+        <div className="input-row glass">
           <input
             ref={cameraInputRef}
             type="file"
@@ -2036,8 +2036,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 dictating
                   ? 'Stop dictation'
                   : dictationAutoSend
-                    ? 'Dictate — auto-send after you pause (toggle in profile menu)'
-                    : 'Dictate — send with Send button (enable auto-send in profile menu)'
+                    ? 'Dictate — auto-send after you pause (toggle in Settings)'
+                    : 'Dictate — send with Send button (enable auto-send in Settings)'
               }
               aria-label={
                 dictating

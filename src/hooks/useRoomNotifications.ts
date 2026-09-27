@@ -4,10 +4,15 @@ import type { IRoomTimelineData } from 'matrix-js-sdk'
 import { getClient, getRoomUnreadCount, isThinkingMessage } from '../lib/matrix'
 import { parseActions } from '../lib/actions'
 
-// How long a toast stays up. Approvals have no timer at all: one that scrolls
-// away unseen times out as a denial.
+// How long a toast stays up. Something waiting on an answer — buttons, or a
+// closing question — gets long enough to actually be answered. Approvals have
+// no timer at all: one that scrolls away unseen times out as a denial.
 const TOAST_TTL_MS = 4000
-const TOAST_TTL_ACTIONS_MS = 8000
+const TOAST_TTL_QUESTION_MS = 30_000
+
+function asksSomething(n: RoomNotification): boolean {
+  return n.actions.length > 0 || (n.lines.at(-1) ?? '').trimEnd().endsWith('?')
+}
 
 const FENCE = /```([^\n`]*)\n?([\s\S]*?)(?:```|$)/g
 
@@ -123,7 +128,7 @@ export function useRoomNotifications(activeRoomId: string | null, clientReady: b
   const armTimer = useCallback((n: RoomNotification) => {
     clearTimer(n.roomId)
     if (n.approval) return
-    const ms = n.actions.length ? TOAST_TTL_ACTIONS_MS : TOAST_TTL_MS
+    const ms = asksSomething(n) ? TOAST_TTL_QUESTION_MS : TOAST_TTL_MS
     toastTimers.current.set(n.roomId, setTimeout(() => hideToast(n.roomId), ms))
   }, [clearTimer, hideToast])
 

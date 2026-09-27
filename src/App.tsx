@@ -7,6 +7,7 @@ import LoginScreen from './components/LoginScreen'
 import MicDemo from './components/MicDemo'
 import RoomsLayout from './components/RoomsLayout'
 import Settings from './components/Settings'
+import Usage from './components/Usage'
 import DebugOverlay from './components/DebugOverlay'
 import { Keyboard } from '@capacitor/keyboard'
 import { usePushNotifications } from './hooks/usePushNotifications'
@@ -74,6 +75,10 @@ export default function App() {
       <Route
         path="/settings"
         element={auth ? <Settings auth={auth} /> : <Navigate to="/" replace />}
+      />
+      <Route
+        path="/usage"
+        element={auth ? <Usage /> : <Navigate to="/" replace />}
       />
       <Route path="/mic-demo" element={<MicDemo />} />
       <Route path="*" element={<Navigate to="/" replace />} />

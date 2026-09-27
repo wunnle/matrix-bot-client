@@ -36,7 +36,29 @@ export async function fetchPlanUsage() {
   const session = window(body.five_hour)
   const weekly = window(body.seven_day)
   if (!session && !weekly) throw new Error('usage endpoint returned no windows')
-  return { session, weekly, fetchedAt: Date.now() }
+
+  // Per-model weekly caps only exist on some plans; the endpoint sends null
+  // for the rest, and those are dropped rather than drawn as empty bars.
+  const models = Object.fromEntries(
+    [['opus', body.seven_day_opus], ['sonnet', body.seven_day_sonnet]]
+      .map(([name, w]) => [name, window(w)])
+      .filter(([, w]) => w),
+  )
+  const breakdown = (body.seven_day_breakdown?.rows ?? [])
+    .filter((r) => typeof r.percent === 'number' && r.display_name)
+    .map((r) => ({ name: String(r.display_name), percent: Math.round(r.percent) }))
+  const x = body.extra_usage
+  const extra = x ? {
+    enabled: !!x.is_enabled,
+    used: typeof x.used_credits === 'number' ? x.used_credits : null,
+    limit: typeof x.monthly_limit === 'number' ? x.monthly_limit : null,
+    currency: typeof x.currency === 'string' ? x.currency : null,
+    // used/limit are minor units (2000 with 2 decimal places is $20.00).
+    exponent: typeof x.decimal_places === 'number' ? x.decimal_places : 2,
+    disabledReason: typeof x.disabled_reason === 'string' ? x.disabled_reason : null,
+  } : null
+
+  return { session, weekly, models, breakdown, extra, fetchedAt: Date.now() }
 }
 
 /**

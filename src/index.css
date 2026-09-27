@@ -490,6 +490,28 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   flex-shrink: 0;
 }
 
+/* The 5-hour window, drawn over the header's bottom border in Claude rooms.
+   Sits on the border rather than adding a row: it is ambient, not content. */
+.chat-header { position: relative; }
+.header-usage {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  pointer-events: none;
+}
+.header-usage-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  opacity: 0.55;
+  transition: width 0.4s;
+}
+.header-usage--warn .header-usage-fill { background: #e0a84e; opacity: 0.8; }
+.header-usage--critical .header-usage-fill { background: var(--danger); opacity: 0.9; }
+.header-usage--stale .header-usage-fill { opacity: 0.2; }
+
 .user-badge-wrap {
   position: relative;
 }
@@ -907,6 +929,27 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   align-items: center;
   justify-content: center;
 }
+
+.messages-init-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.messages-init-error button {
+  padding: 8px 20px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.messages-init-error button:active { background: var(--bg-active); }
 
 .messages {
   flex: 1;
@@ -3193,8 +3236,15 @@ a.msg-card-link:hover {
 }
 
 /* ── Settings screen ─────────────────────────────────────────────────── */
+/* body is position:fixed with overflow hidden, so a full-page screen has to be
+   its own scroller — min-height alone lets it grow past the viewport, where
+   nothing can reach it. */
 .settings-screen {
-  min-height: 100dvh;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   background: var(--bg);
   color: var(--text);
   padding: max(env(safe-area-inset-top), 12px) 16px calc(env(safe-area-inset-bottom) + 24px);
@@ -3236,6 +3286,92 @@ a.msg-card-link:hover {
   border-top: 1px solid var(--border);
   cursor: pointer;
 }
+/* Usage screen — Claude plan quota. Built from settings sections; colour only
+   changes near the limit, so a normal week reads calm. */
+.usage-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+/* A flex column that scrolls: children must keep their height, not squeeze to fit. */
+.usage-screen > * { flex-shrink: 0; }
+.usage-screen .settings-header { padding-bottom: 4px; }
+.usage-provider {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 12px 4px 0;
+}
+.usage-provider:first-of-type { margin-top: 0; }
+.usage-card { --usage-color: var(--accent); }
+.usage-card--warn { --usage-color: #e0a84e; }
+.usage-card--critical { --usage-color: var(--danger); }
+.usage-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+.usage-card-head .settings-section-title { margin: 0; }
+.usage-card-percent {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-strong);
+}
+.usage-card--warn .usage-card-percent,
+.usage-card--critical .usage-card-percent { color: var(--usage-color); }
+.usage-track {
+  position: relative;
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-active);
+}
+.usage-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--usage-color, var(--accent));
+  transition: width 0.4s;
+}
+.usage-time-mark {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-muted);
+}
+.usage-card-line { font-size: 13px; color: var(--text); margin: 12px 0 0; }
+.usage-card-hint { font-size: 13px; color: var(--text-muted); margin: 4px 0 0; }
+.usage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+.usage-card > .settings-section-title + .usage-row { margin-top: 8px; }
+.usage-on { color: #34c759; }
+.usage-off { color: var(--text-muted); }
+.usage-stale {
+  font-size: 13px;
+  color: #e0a84e;
+  margin: 0;
+}
+.usage-footnote {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin: 4px 4px 0;
+}
+
 .settings-row-label {
   font-size: 15px;
   overflow: hidden;

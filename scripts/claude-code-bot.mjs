@@ -11,8 +11,10 @@ import * as http from 'node:http'
 import { execFile } from 'node:child_process'
 import { providerFor, resolveModel, allModelAliases, DEFAULT_PROVIDER, PROVIDERS } from './providers/index.mjs'
 import { createApprovalQueue } from './approval-queue.mjs'
+import { createQuestionQueue } from './question-queue.mjs'
 import { requiresHuman } from './approval-rules.mjs'
 import { detectLimitBlock } from './limit-block.mjs'
+import { fetchPlanUsage, sameUsage, fetchCodexUsage, sameCodexUsage } from './plan-usage.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
@@ -248,6 +250,21 @@ const approvals = createApprovalQueue({
   },
 })
 
+// Codex can pause a turn to ask for structured input. These are not approvals:
+// any offered option is an answer, and free text is accepted only when Codex
+// says "other" is allowed. One card per room prevents replies crossing wires.
+const questions = createQuestionQueue({
+  timeoutMs: APPROVAL_TIMEOUT_MS,
+  onTimeout: (roomId, question) =>
+    sendRoomText(roomId, `⏱️ No answer to **${question.title}** — the turn will continue without it.`).catch(() => {}),
+  present: (roomId, question, abandon) => {
+    const choices = question.options.slice(0, 4).map((label) => `[[${label}]]`).join(' ')
+    const other = question.allowOther ? (choices ? '\n\n_Or type another answer._' : '') : ''
+    const body = `❓ **${question.title}**\n\n${question.prompt}${choices ? `\n\n${choices}` : ''}${other}`
+    sendRoomText(roomId, body).catch((e) => abandon(`Could not post the question: ${e.message}`))
+  },
+})
+
 // Auto mode: the room answers its own approvals for a while.
 //
 // Off by default and only the owner can turn it on — the `!` guard in the
@@ -344,6 +361,14 @@ function sendRoomText(roomId, text, extra = {}) {
     formatted_body: markdownToHtml(text),
     ...(model ? { 'com.construct.model': model } : {}),
     ...extra,
+  })
+}
+
+function sendToolProgress(roomId, progress) {
+  const line = { emoji: progress.emoji, tool: progress.tool, content: progress.content }
+  return sendRoomText(roomId, `${line.emoji} ${line.tool}: ${line.content}`, {
+    'com.construct.tool_progress': [line],
+    'com.construct.machine': { kind: 'notification', source: 'codex-progress' },
   })
 }
 
@@ -551,6 +576,13 @@ function runTurn(roomId, prompt) {
       // For providers that carry approvals on their own connection and can ask
       // the room directly, skipping the HTTP hop entirely.
       ask: (request) => askForApproval(roomId, request),
+    },
+    question: {
+      ask: (question) => questions.ask(roomId, question),
+      drop: (reason) => questions.drop(roomId, reason),
+    },
+    onProgress: (progress) => {
+      sendToolProgress(roomId, progress).catch((e) => log(`Could not post Codex progress: ${e.message}`))
     },
     // A turn can block on a human answering an approval, so this must exceed
     // the approval timeout rather than race it.
@@ -936,6 +968,81 @@ async function setBlocked(roomId, block) {
   }, '').catch((e) => log(`Could not set blocked state on ${roomId}: ${e.message}`))
 }
 
+// The plan quotas, published for Construct's Usage screen. They are
+// account-wide, so one copy in one room is enough: it goes to the most recently
+// active agent room, and Construct reads the newest copy across every room it
+// can see. Sent only when the numbers change, plus a heartbeat so a quiet
+// stretch does not look like a dead poller. Claude uses state key '' (what
+// Construct first shipped reading), Codex uses 'codex'.
+const USAGE_EVENT = 'com.construct.plan_usage'
+const USAGE_POLL_MS = 5 * 60 * 1000
+const USAGE_HEARTBEAT_MS = 30 * 60 * 1000
+// A turn just spent quota, but a burst of turns should not mean a burst of polls.
+const USAGE_MIN_GAP_MS = 60 * 1000
+let lastUsagePollAt = 0
+
+const win = (w) => w && { percent: w.percent, resets_at: w.resetsAt }
+const USAGE_SOURCES = [
+  {
+    name: 'Claude',
+    stateKey: '',
+    fetch: fetchPlanUsage,
+    same: sameUsage,
+    content: (u) => ({
+      session: win(u.session),
+      weekly: win(u.weekly),
+      models: Object.fromEntries(Object.entries(u.models).map(([name, w]) => [name, win(w)])),
+      fetched_at: u.fetchedAt,
+    }),
+  },
+  {
+    name: 'Codex',
+    stateKey: 'codex',
+    fetch: fetchCodexUsage,
+    same: sameCodexUsage,
+    content: (u) => ({
+      windows: u.windows.map((w) => ({ minutes: w.minutes, ...win(w) })),
+      plan: u.plan,
+      reset_credits: u.resetCredits,
+      fetched_at: u.fetchedAt,
+    }),
+  },
+].map((s) => ({ ...s, last: null, publishedAt: 0 }))
+
+function usageRoom() {
+  return client.getRooms()
+    // Members are lazy-loaded, so an unknown owner is not a missing one; only
+    // a room the owner has visibly left is useless to them.
+    .filter((r) => r.getMyMembership() === 'join' && isAgentRoom(r.roomId) &&
+      !['leave', 'ban'].includes(r.getMember(OWNER_ID)?.membership))
+    .sort((a, b) => b.getLastActiveTimestamp() - a.getLastActiveTimestamp())[0] ?? null
+}
+
+async function refreshUsage({ force = false } = {}) {
+  if (!force && Date.now() - lastUsagePollAt < USAGE_MIN_GAP_MS) return
+  lastUsagePollAt = Date.now()
+  // One provider failing (logged out, CLI missing) must not starve the other.
+  await Promise.all(USAGE_SOURCES.map(async (source) => {
+    let usage
+    try {
+      usage = await source.fetch()
+    } catch (e) {
+      log(`${source.name} usage: ${e.message}`)
+      return
+    }
+    if (source.same(usage, source.last) && Date.now() - source.publishedAt < USAGE_HEARTBEAT_MS) return
+    const room = usageRoom()
+    if (!room) return
+    await client.sendStateEvent(room.roomId, USAGE_EVENT, source.content(usage), source.stateKey).then(() => {
+      source.last = usage
+      source.publishedAt = Date.now()
+    }).catch((e) => log(`Could not publish ${source.name} usage to ${room.roomId}: ${e.message}`))
+  }))
+}
+
+refreshUsage({ force: true })
+setInterval(() => refreshUsage({ force: true }), USAGE_POLL_MS)
+
 // Runs `first`, then whatever piled up while it ran, until the room is idle.
 // Queued messages are coalesced into one prompt instead of one turn each: two
 // messages ten seconds apart are almost always one instruction and its
@@ -974,6 +1081,7 @@ async function drainRoom(roomId, first, firstPrompt = null) {
         override = null
         const prompt = parts.join('\n\n')
         const res = await runTurn(roomId, prompt)
+        refreshUsage()
         if (!stopped.has(roomId)) {
           // A quota block is not a failure of this prompt, so the prompt is kept
           // and the room is marked stuck instead of just printing the provider's
@@ -1136,11 +1244,12 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       // The seeded pill sends a bare !model, so reporting alone left no way to
       // switch without typing. Offer the alternatives as tappable options —
       // only this room's provider's, since switching backend is not a model
-      // change and would strand the session.
+      // change and would strand the session. Full ids rather than aliases, so
+      // Construct can label the pill with the version ("Opus 5.5").
       const current = entry.model ?? DEFAULT_MODEL
-      const options = Object.keys(provider.models)
-        .filter((alias) => provider.models[alias] !== current)
-        .map((alias) => `[[!model ${alias}]]`)
+      const options = Object.values(provider.models)
+        .filter((id) => id !== current)
+        .map((id) => `[[!model ${id}]]`)
         .join(' ')
       await sendRoomText(roomId, `Model: ${modelLabel(current)}\n\n${options}`)
       return
@@ -1224,6 +1333,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       return
     }
     stopped.add(roomId)
+    questions.drop(roomId, 'Stopped from chat.')
     // Anything queued belongs to the run being abandoned, so it goes first —
     // settling the pending one would otherwise put the next card straight up.
     dropQueuedApprovals(roomId, 'Stopped from chat.')
@@ -1279,6 +1389,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       await sendRoomText(roomId, 'No session to reset — this room is already unbound. Use !end to close it.')
       return
     }
+    questions.drop(roomId, 'Session reset.')
     dropQueuedApprovals(roomId, 'Session reset.')
     if (settleApproval(roomId, 'deny', 'Session reset.')) {
       await sendRoomText(roomId, '🚫 Denied the pending approval as part of the reset.')
@@ -1300,6 +1411,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   // !end — unbind the room and leave it. Confirmed because it cannot be undone
   // from chat and the button sits next to the others.
   if (body === '!end') {
+    questions.drop(roomId, 'Room is being ended.')
     dropQueuedApprovals(roomId, 'Room is being ended.')
     if (settleApproval(roomId, 'deny', 'Room is being ended.')) {
       await sendRoomText(roomId, '🚫 Denied the pending approval. Send !end again once the turn stops.')
@@ -1348,13 +1460,21 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
   }
 
-  // Approval answers must be handled before the busy check — the room is always
-  // busy when one is outstanding, since the turn is blocked inside the hook.
+  // Provider questions and approval answers must be handled before the busy
+  // check — the room is always busy while the turn waits for either one.
   //
   // The acknowledgements are machine-flagged: you just gave the answer, so
   // echoing it back must not toast, push to the phone or count as unread.
   // The toast you answered from shows its own checkmark instead.
   const ack = { 'com.construct.machine': { kind: 'ack', source: 'approval' } }
+  if (questions.answer(roomId, body)) {
+    await sendRoomText(roomId, '✅ Answered — continuing.', ack)
+    return
+  }
+  if (questions.has(roomId)) {
+    await sendRoomText(roomId, 'That is not one of the available answers — choose an option above.')
+    return
+  }
   const answer = body.toLowerCase()
   if (answer === 'approve' || answer === 'yes' || answer === 'y') {
     if (settleApproval(roomId, 'allow', 'Approved in chat.')) {

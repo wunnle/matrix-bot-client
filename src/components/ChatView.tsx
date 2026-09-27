@@ -28,15 +28,18 @@ import { CSS } from '@dnd-kit/utilities'
 import { useSearchParams } from 'react-router-dom'
 import { getClient } from '../lib/matrix'
 import { pinRoomEvent, unpinRoomEvent } from '../lib/pinRoomMessage'
-import { loadPills, savePills } from '../lib/roomMeta'
+import { loadPills, savePills, isAgentRoom } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { Capacitor } from '@capacitor/core'
 import { isMobileSafari } from '../lib/isMobileSafari'
-import { isActionPlaceholder, parseActions } from '../lib/actions'
+import { actionLabel, isActionPlaceholder, parseActions } from '../lib/actions'
+import { formatModel } from '../lib/modelLabel'
 import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
 import { useVisualViewportResize } from '../hooks/useVisualViewport'
 import RoomEditor from './RoomEditor'
+import { HeaderUsageBar } from './PlanUsageMeter'
+import { usePlanUsage, useCodexUsage } from '../hooks/usePlanUsage'
 import { Marked } from 'marked'
 import type { Message, RoomConfig, ConstructThread, ConstructApproval, ToolProgressLine } from '../types'
 import { useAgentRun } from '../hooks/useAgentActivity'
@@ -57,6 +60,9 @@ interface Props {
 const PAGE_SIZE = 30
 const RENDER_LIMIT = 60 // kept for isActive reset logic only
 const MSG_CAP = 200 // max messages kept in state; old ones dropped from the front
+// How long a room with nothing cached waits on the server before the spinner
+// gives way to a retry. /messages has no timeout of its own.
+const INITIAL_LOAD_TIMEOUT_MS = 8000
 
 // Our swipe-back gesture is only useful where nothing else owns the edge
 // swipe. In a regular browser (iOS Safari, most Android browsers) the
@@ -396,6 +402,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const newPillRef = useRef<HTMLInputElement>(null)
   const [sending, setSending] = useState(false)
   const [initializing, setInitializing] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const retryInitialLoadRef = useRef<() => void>(() => {})
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
   const [renderStart, setRenderStart] = useState(0)
@@ -563,12 +571,13 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setMessages([])
     setRenderStart(0)
     setInitializing(true)
+    setLoadError(false)
     resolvedImagesRef.current = new Set()
     setImageUrls({})
     setCurrentModel(getRoomModel(roomId))
 
-    const room = client.getRoom(roomId)
-    if (!room) return
+    let disposed = false
+    let giveUpTimer: ReturnType<typeof setTimeout> | undefined
 
     // The listener below only sees events that arrive while the room is open,
     // so a room opened cold showed no model until the bot happened to reply
@@ -592,18 +601,80 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       setInitializing(false)
     }
 
-    const existing = room.getLiveTimeline().getEvents()
-    if (existing.length >= 20) {
-      harvestModel(existing)
-      populate(eventsToMessages(existing, userId, room))
-    } else {
-      const load = () => {
-        const events = room.getLiveTimeline().getEvents()
-        harvestModel(events)
-        populate(eventsToMessages(events, userId, room))
-      }
-      client.scrollback(room, 20).then(load).catch(load)
+    // Nothing cached, so the first screen has to come from the server. After
+    // iOS suspends the app that request can sit on a dead socket for a long
+    // time: stop spinning after a while and offer a retry, but still take the
+    // result if it lands late.
+    const fetchInitial = (room: sdk.Room) => {
+      setLoadError(false)
+      clearTimeout(giveUpTimer)
+      giveUpTimer = setTimeout(() => { if (!disposed) setLoadError(true) }, INITIAL_LOAD_TIMEOUT_MS)
+      client.scrollback(room, 20)
+        .then(() => {
+          if (disposed) return
+          clearTimeout(giveUpTimer)
+          setLoadError(false)
+          if (room.oldState.paginationToken === null) setHasMore(false)
+          const events = room.getLiveTimeline().getEvents()
+          harvestModel(events)
+          populate(eventsToMessages(events, userId, room))
+        })
+        .catch(() => {
+          if (disposed) return
+          clearTimeout(giveUpTimer)
+          setLoadError(true)
+        })
     }
+
+    // Some history is cached but not a full screen of it — common after a
+    // limited sync on resume. Show what we have now and fetch the rest behind
+    // it, rather than holding the whole room on the network.
+    const topUp = (room: sdk.Room) => {
+      client.scrollback(room, 20)
+        .then(() => {
+          if (disposed) return
+          if (room.oldState.paginationToken === null) setHasMore(false)
+          const container = messagesRef.current
+          if (container && !stickToBottomRef.current) {
+            // eslint-disable-next-line react-hooks/immutability -- same anchor handoff loadMore uses; read by the layout effect below
+            scrollAnchorRef.current = container.scrollHeight - container.scrollTop
+          }
+          setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, room))
+        })
+        .catch(() => {}) // the cached messages are up; scrolling up retries
+    }
+
+    const loadInitial = (room: sdk.Room) => {
+      const existing = room.getLiveTimeline().getEvents()
+      const cached = eventsToMessages(existing, userId, room)
+      if (cached.length > 0) {
+        harvestModel(existing)
+        populate(cached)
+        if (existing.length < 20) topUp(room)
+      } else {
+        fetchInitial(room)
+      }
+      // Send read receipt when opening room
+      client.sendReadReceipt(room.getLiveTimeline().getEvents().at(-1) ?? null)
+        .catch(() => {})
+    }
+
+    retryInitialLoadRef.current = () => {
+      const room = client.getRoom(roomId)
+      if (room) fetchInitial(room)
+    }
+
+    // Opened before the client knows the room — a deep link or notification
+    // tap racing the first sync, or a room made on another device. Load it
+    // the moment it arrives instead of spinning forever.
+    const onRoom = (room: sdk.Room) => {
+      if (room.roomId !== roomId) return
+      client.off(sdk.ClientEvent.Room, onRoom)
+      loadInitial(room)
+    }
+    const room = client.getRoom(roomId)
+    if (room) loadInitial(room)
+    else client.on(sdk.ClientEvent.Room, onRoom)
 
     const onEvent = (event: sdk.MatrixEvent, room_: sdk.Room | undefined) => {
       if (room_?.roomId !== roomId) return
@@ -648,10 +719,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         return next.length > MSG_CAP ? next.slice(next.length - MSG_CAP) : next
       })
     }
-
-    // Send read receipt when opening room
-    client.sendReadReceipt(room.getLiveTimeline().getEvents().at(-1) ?? null)
-      .catch(() => {})
 
     // Re-render message when decryption completes late
     const onDecrypted = (event: sdk.MatrixEvent) => {
@@ -732,11 +799,32 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     client.on(sdk.RoomEvent.Timeline, onTimeline)
     client.on(sdk.RoomEvent.Receipt, onReceipt)
     return () => {
+      disposed = true
+      clearTimeout(giveUpTimer)
+      client.off(sdk.ClientEvent.Room, onRoom)
       client.off(sdk.RoomEvent.Timeline, onTimeline)
       client.off(sdk.MatrixEventEvent.Decrypted, onDecrypted)
       client.off(sdk.RoomEvent.Receipt, onReceipt)
     }
   }, [roomId, userId, client])
+
+  // A failed first load retries by itself once there is reason to think it
+  // would now work: the app is back in front, or sync has just recovered.
+  useEffect(() => {
+    if (!loadError) return
+    const retry = () => {
+      if (document.visibilityState === 'visible') retryInitialLoadRef.current()
+    }
+    const onSync = (state: string, prev: string | null) => {
+      if (state === 'SYNCING' && prev !== 'SYNCING') retry()
+    }
+    document.addEventListener('visibilitychange', retry)
+    client.on(sdk.ClientEvent.Sync, onSync)
+    return () => {
+      document.removeEventListener('visibilitychange', retry)
+      client.off(sdk.ClientEvent.Sync, onSync)
+    }
+  }, [loadError, client])
 
   // Mark the room read whenever it's actually in front of you: on becoming the
   // active room and on the app coming back to the foreground. The receipt in
@@ -779,6 +867,17 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [messages, roomId, userId])
 
   const shownModel = currentModel ?? scannedModel
+  // A plan quota only means something in a room that spends it. A freshly
+  // spawned agent room has no tagged reply yet, but the bot wrote its model
+  // into the topic ("<branch> · <model>"), so that stands in until one lands.
+  const topicModel = !shownModel && isAgentRoom(client, roomId)
+    ? roomTopic.split(' · ').pop()?.trim() || null
+    : null
+  const usageModel = shownModel ?? topicModel
+  const isClaudeRoom = !!usageModel && /claude|opus|sonnet|haiku|fable/i.test(usageModel)
+  const isCodexRoom = !!usageModel && /gpt|codex/i.test(usageModel)
+  const planUsage = usePlanUsage(isClaudeRoom ? client : null)
+  const codexUsage = useCodexUsage(isCodexRoom ? client : null)
 
   useEffect(() => {
     if (scannedModel) setRoomModel(roomId, scannedModel)
@@ -1506,7 +1605,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           </div>
           {shownModel && (
             <span className="chat-header-model" title={`Model: ${shownModel}`}>
-              {shownModel}
+              {formatModel(shownModel)}
             </span>
           )}
           {pinnedEventIds.length > 0 && (
@@ -1527,9 +1626,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             </button>
           )}
         </div>
+        {isClaudeRoom && planUsage && (
+          <HeaderUsageBar window={planUsage.session} fetchedAt={planUsage.fetchedAt} label="Claude session usage" />
+        )}
+        {isCodexRoom && codexUsage && (
+          <HeaderUsageBar window={codexUsage.windows[0]} fetchedAt={codexUsage.fetchedAt} label="Codex usage" />
+        )}
       </div>
 
-      {showEditor && <RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} onLeave={() => { setShowEditor(false); onBack() }} />}
+      {showEditor &&<RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} onLeave={() => { setShowEditor(false); onBack() }} />}
       {approvalDialog && (
         <div className="room-editor-overlay" onClick={() => setApprovalDialog(null)}>
           <div className="room-editor" onClick={e => e.stopPropagation()}>
@@ -1629,7 +1734,14 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
       {initializing && (
         <div className="messages-init-loading">
-          <span className="loading-dots"><span /><span /><span /></span>
+          {loadError ? (
+            <div className="messages-init-error">
+              <p>Couldn't load messages</p>
+              <button type="button" onClick={() => retryInitialLoadRef.current()}>Retry</button>
+            </div>
+          ) : (
+            <span className="loading-dots"><span /><span /><span /></span>
+          )}
         </div>
       )}
       <div className="messages" ref={messagesRef} onScroll={handleScroll} style={initializing ? { visibility: 'hidden' } : undefined}>
@@ -1768,7 +1880,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => sendMessage(action)}
             >
-              {action}
+              {actionLabel(action)}
             </button>
           ))}
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>

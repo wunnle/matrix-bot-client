@@ -8,7 +8,8 @@
 //   resolveModel(name) -> modelId | null    (alias or full id; null = not ours)
 //   label(modelId) -> string                (short name, for display)
 //   run({ roomId, prompt, cwd, model, sessionId, instructions, approval,
-//         timeoutMs, onSession }) -> Promise<{ text, isError } | { error }>
+//         onProgress, timeoutMs, onSession }) -> Promise<{ text, isError } | { error }>
+//                  onProgress({ id, emoji, tool, content }) once per tool call
 //   cancel(roomId) -> boolean               (false when nothing was running)
 import { claude } from './claude.mjs'
 import { codex } from './codex.mjs'

@@ -11,7 +11,8 @@ import UpdateBanner from './UpdateBanner'
 import RoomToast from './RoomToast'
 import Usage from './Usage'
 import Settings from './Settings'
-import TabBar, { type Tab } from './TabBar'
+import TabBar, { type Tab, type GaugeReading } from './TabBar'
+import { STALE_MS, currentPercent, usageLevel, useMinuteClock, usePlanUsage } from '../hooks/usePlanUsage'
 import { useRoomNotifications } from '../hooks/useRoomNotifications'
 import { useVisualViewportVars } from '../hooks/useVisualViewport'
 import { getClient, getCachedRooms, resyncNow, intentCredential } from '../lib/matrix'
@@ -158,6 +159,21 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   const suppressedByBack = useCallback((room: string) => {
     return lastBack !== null && lastBack.room === room && Date.now() - lastBack.at < BACK_SUPPRESS_MS
   }, [])
+
+  // The Usage tab's icon is a live gauge of the Claude session window. A stale
+  // reading (bot quiet for an hour) falls back to the plain icon rather than
+  // showing a number that may no longer be true.
+  let usageClient: sdk.MatrixClient | null = null
+  if (clientReady) {
+    try { usageClient = getClient() } catch { /* not started */ }
+  }
+  const planUsage = usePlanUsage(usageClient)
+  const now = useMinuteClock()
+  let gauge: GaugeReading | null = null
+  if (planUsage?.session && now - planUsage.fetchedAt <= STALE_MS) {
+    const used = currentPercent(planUsage.session, now)
+    gauge = { remaining: 1 - Math.min(used, 100) / 100, level: usageLevel(used) }
+  }
 
   // Tabs keep their place like iOS: coming back to Chats reopens the room the
   // sidebar layout had open. Replace, not push — back should leave the screen,
@@ -322,7 +338,7 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
               onSignOut={onSignOut}
             />
           )}
-          <TabBar active={tab} onSelect={handleSelectTab} />
+          <TabBar active={tab} onSelect={handleSelectTab} gauge={gauge} />
         </aside>
 
         <main className="main">

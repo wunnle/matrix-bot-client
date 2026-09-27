@@ -37,8 +37,6 @@ export const DEFAULT_TTL_S = 60 * 60;
 export const MAX_TTL_S = 8 * 60 * 60;
 /** Apple budgets Live Activity pushes; a bot looping on updates must not burn it. */
 export const MIN_UPDATE_INTERVAL_MS = 2000;
-/** A start whose token never registered: the activity never appeared. */
-const UNREGISTERED_GRACE_MS = 10 * 60 * 1000;
 /** Ended activities stay on the lock screen this long unless told otherwise. */
 export const DEFAULT_DISMISS_S = 10 * 60;
 
@@ -381,10 +379,16 @@ async function pushStart(id, content, alert, lifetimeMs) {
 
 /* ── Housekeeping ─────────────────────────────────────────────────────── */
 
-/** Entries past their TTL, and starts that never registered a token. Pure. */
+/** Entries past their TTL. Pure.
+
+    A start whose token never registered is kept too, until the same TTL: the
+    card can be on the phone even though the app was never woken to report its
+    token (seen 2026-09-27: it showed, never registered, and a 10-minute cutoff
+    dropped it, so every later update failed). Kept, its updates queue and are
+    delivered when the token arrives. */
 export function expiredIds(activities, now = Date.now()) {
   return Object.entries(activities)
-    .filter(([, e]) => now >= (e.endsAt ?? 0) || (!e.token && now - (e.startedAt ?? 0) > UNREGISTERED_GRACE_MS))
+    .filter(([, e]) => now >= (e.endsAt ?? 0))
     .map(([id]) => id);
 }
 
@@ -556,6 +560,8 @@ export async function registerToken(activityId, token) {
     if (r.status === 200) next = { ...next, pending: null, lastTs: ts };
   }
   reg.activities[activityId] = next;
+  // Diagnostics: when the phone last reported a token, and for which card.
+  reg.lastRegister = { activityId, at: now };
   await writeRegistry(reg);
   return { ok: true, pendingDelivered: delivered };
 }
@@ -580,7 +586,10 @@ export async function reconcile(liveIds) {
     .filter(([id, e]) => !keep.has(id) && now - (e.startedAt ?? 0) > 60_000)
     .map(([id]) => id);
   for (const id of drop) delete reg.activities[id];
-  if (drop.length) await writeRegistry(reg);
+  // Diagnostics: what the phone says is on it, each time the app opens. The
+  // only direct evidence of which cards actually exist on the device.
+  reg.lastReconcile = { at: now, activityIds: liveIds.slice(0, 20), removed: drop };
+  await writeRegistry(reg);
   return { ok: true, removed: drop.length };
 }
 
@@ -599,5 +608,7 @@ export async function listActivities() {
       endsInS: Math.round(((e.endsAt ?? now) - now) / 1000),
     })),
     lastStart: reg.lastStart ?? null,
+    lastRegister: reg.lastRegister ?? null,
+    lastReconcile: reg.lastReconcile ?? null,
   };
 }

@@ -3,7 +3,10 @@
  *
  * POST /api/activity
  *   { id, room, title, body?, tone?, progress?, step?, actions?: [{label, send?}],
- *     alert?: "none"|"quiet"|"loud", ttl?, end?: true, dismissIn? }
+ *     until?: unix seconds | ISO date | null, alert?: "none"|"quiet"|"loud",
+ *     ttl?, end?: true, dismissIn? }
+ *   `until` shows a countdown to that moment; without it the card has none.
+ *   `ttl` is only the card's lifetime (it dims and is cleaned up after it).
  *   An unknown id starts an activity (room and title required), a known one
  *   updates it (only the fields given change), `end: true` ends it. A button
  *   tap posts `send` (default: the label) into `room` through /api/send-message,

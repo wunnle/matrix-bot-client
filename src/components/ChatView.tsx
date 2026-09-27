@@ -393,12 +393,18 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     void copyTextToClipboard(text).then(() => showToast('Copied'))
   }, [showToast])
 
-  // Action pills reflect the very last message only: once you reply (or the bot
-  // sends anything after), the previous message's [[buttons]] should clear.
+  // Action pills reflect the last message only: once you reply (or the bot
+  // says anything after), the previous message's [[buttons]] should clear.
+  // Tool lines and mid-turn narration don't count as "saying anything" — the
+  // bot keeps posting those while an approval card waits on you, and letting
+  // them win took the Approve / Deny pills away the moment one landed.
   const lastActions = useMemo(() => {
-    const last = messages[messages.length - 1]
-    if (!last || last.isOwnMessage) return []
-    return parseActions(last.body).actions
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (isBotToolProgress(m) || (m.interim && !m.isOwnMessage && !m.isPeerMessage)) continue
+      return m.isOwnMessage ? [] : parseActions(m.body).actions
+    }
+    return []
   }, [messages])
   const [addingPill, setAddingPill] = useState(false)
   const [newPillInput, setNewPillInput] = useState('')

@@ -13,7 +13,7 @@ const TOAST_TTL_ACTIONS_MS = 30_000
 const FENCE = /```([^\n`]*)\n?([\s\S]*?)(?:```|$)/g
 
 function toastBody(raw: string): string {
-  let text = raw.replace(/```[\s\S]*?```/g, '[code]')
+  const text = raw.replace(/```[\s\S]*?```/g, '[code]')
   const firstLine = text.split('\n').map(l => l.trim()).find(l => l.length > 0) ?? text.trim()
   return firstLine.slice(0, 120)
 }
@@ -50,6 +50,10 @@ function toNotification(room: sdk.Room, event: sdk.MatrixEvent, receivedAt: numb
   const content = event.getContent()
   // Machine messages are plumbing, not someone talking.
   if (content?.['com.construct.machine']) return null
+  // Nor are tool lines — and one arriving behind an approval card must not
+  // replace that card's toast. The body check below only catches the old
+  // plain-text format; this catches the structured one whatever its wording.
+  if (Array.isArray(content?.['com.construct.tool_progress'])) return null
   const body = content?.body as string | undefined
   if (!body || isThinkingMessage(body)) return null
   const sender = event.getSender() ?? ''

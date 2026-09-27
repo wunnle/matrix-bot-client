@@ -11,6 +11,7 @@ import * as http from 'node:http'
 import { execFile } from 'node:child_process'
 import { providerFor, resolveModel, allModelAliases, DEFAULT_PROVIDER, PROVIDERS } from './providers/index.mjs'
 import { createApprovalQueue } from './approval-queue.mjs'
+import { createQuestionQueue } from './question-queue.mjs'
 import { requiresHuman } from './approval-rules.mjs'
 import { detectLimitBlock } from './limit-block.mjs'
 import { fetchPlanUsage, sameUsage, fetchCodexUsage, sameCodexUsage } from './plan-usage.mjs'
@@ -249,6 +250,21 @@ const approvals = createApprovalQueue({
   },
 })
 
+// Codex can pause a turn to ask for structured input. These are not approvals:
+// any offered option is an answer, and free text is accepted only when Codex
+// says "other" is allowed. One card per room prevents replies crossing wires.
+const questions = createQuestionQueue({
+  timeoutMs: APPROVAL_TIMEOUT_MS,
+  onTimeout: (roomId, question) =>
+    sendRoomText(roomId, `⏱️ No answer to **${question.title}** — the turn will continue without it.`).catch(() => {}),
+  present: (roomId, question, abandon) => {
+    const choices = question.options.slice(0, 4).map((label) => `[[${label}]]`).join(' ')
+    const other = question.allowOther ? (choices ? '\n\n_Or type another answer._' : '') : ''
+    const body = `❓ **${question.title}**\n\n${question.prompt}${choices ? `\n\n${choices}` : ''}${other}`
+    sendRoomText(roomId, body).catch((e) => abandon(`Could not post the question: ${e.message}`))
+  },
+})
+
 // Auto mode: the room answers its own approvals for a while.
 //
 // Off by default and only the owner can turn it on — the `!` guard in the
@@ -345,6 +361,14 @@ function sendRoomText(roomId, text, extra = {}) {
     formatted_body: markdownToHtml(text),
     ...(model ? { 'com.construct.model': model } : {}),
     ...extra,
+  })
+}
+
+function sendToolProgress(roomId, progress) {
+  const line = { emoji: progress.emoji, tool: progress.tool, content: progress.content }
+  return sendRoomText(roomId, `${line.emoji} ${line.tool}: ${line.content}`, {
+    'com.construct.tool_progress': [line],
+    'com.construct.machine': { kind: 'notification', source: 'codex-progress' },
   })
 }
 
@@ -552,6 +576,13 @@ function runTurn(roomId, prompt) {
       // For providers that carry approvals on their own connection and can ask
       // the room directly, skipping the HTTP hop entirely.
       ask: (request) => askForApproval(roomId, request),
+    },
+    question: {
+      ask: (question) => questions.ask(roomId, question),
+      drop: (reason) => questions.drop(roomId, reason),
+    },
+    onProgress: (progress) => {
+      sendToolProgress(roomId, progress).catch((e) => log(`Could not post Codex progress: ${e.message}`))
     },
     // A turn can block on a human answering an approval, so this must exceed
     // the approval timeout rather than race it.
@@ -1302,6 +1333,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       return
     }
     stopped.add(roomId)
+    questions.drop(roomId, 'Stopped from chat.')
     // Anything queued belongs to the run being abandoned, so it goes first —
     // settling the pending one would otherwise put the next card straight up.
     dropQueuedApprovals(roomId, 'Stopped from chat.')
@@ -1357,6 +1389,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       await sendRoomText(roomId, 'No session to reset — this room is already unbound. Use !end to close it.')
       return
     }
+    questions.drop(roomId, 'Session reset.')
     dropQueuedApprovals(roomId, 'Session reset.')
     if (settleApproval(roomId, 'deny', 'Session reset.')) {
       await sendRoomText(roomId, '🚫 Denied the pending approval as part of the reset.')
@@ -1378,6 +1411,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   // !end — unbind the room and leave it. Confirmed because it cannot be undone
   // from chat and the button sits next to the others.
   if (body === '!end') {
+    questions.drop(roomId, 'Room is being ended.')
     dropQueuedApprovals(roomId, 'Room is being ended.')
     if (settleApproval(roomId, 'deny', 'Room is being ended.')) {
       await sendRoomText(roomId, '🚫 Denied the pending approval. Send !end again once the turn stops.')
@@ -1426,8 +1460,16 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
   }
 
-  // Approval answers must be handled before the busy check — the room is always
-  // busy when one is outstanding, since the turn is blocked inside the hook.
+  // Provider questions and approval answers must be handled before the busy
+  // check — the room is always busy while the turn waits for either one.
+  if (questions.answer(roomId, body)) {
+    await sendRoomText(roomId, '✅ Answered — continuing.')
+    return
+  }
+  if (questions.has(roomId)) {
+    await sendRoomText(roomId, 'That is not one of the available answers — choose an option above.')
+    return
+  }
   const answer = body.toLowerCase()
   if (answer === 'approve' || answer === 'yes' || answer === 'y') {
     if (settleApproval(roomId, 'allow', 'Approved in chat.')) {

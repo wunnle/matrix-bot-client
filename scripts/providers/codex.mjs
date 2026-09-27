@@ -3,7 +3,7 @@
 // Unlike the Claude adapter, which shells out per turn, this speaks to one
 // long-lived process shared by every room: a room is a *thread* inside it, and
 // the resumable id in sessions.json is a threadId. See CLA-119 for the wire
-// shapes this was built against (codex-cli 0.130.0) and scripts/
+// shapes this was built against and re-verified against codex-cli 0.147.0; see scripts/
 // codex-app-server-spike.mjs for a standalone reference client.
 //
 // Supervision and reconnection are deliberately minimal here — CLA-123 owns
@@ -47,7 +47,6 @@ const ASKABLE = new Set([
 // Declining these is the safe answer until each gets its own treatment.
 const UNSUPPORTED = new Set([
   'item/permissions/requestApproval',
-  'item/tool/requestUserInput',
   'mcpServer/elicitation/request',
 ])
 
@@ -94,6 +93,55 @@ export function unwrapShell(command) {
   return command
 }
 
+export function progressForItem(item, cwd = '') {
+  if (!item?.id) return null
+  if (item.type === 'commandExecution') {
+    return { id: item.id, emoji: '💻', tool: 'terminal', content: 'Running a command' }
+  }
+  if (item.type === 'fileChange') {
+    const count = item.changes?.length ?? 0
+    return { id: item.id, emoji: '✏️', tool: 'edit', content: `Editing ${count} ${count === 1 ? 'file' : 'files'}` }
+  }
+  if (item.type === 'webSearch') {
+    return { id: item.id, emoji: '🌐', tool: 'websearch', content: 'Searching the web' }
+  }
+  if (item.type === 'mcpToolCall' || item.type === 'dynamicToolCall') {
+    const name = item.tool ?? 'tool'
+    const source = item.server ?? item.namespace
+    return { id: item.id, emoji: '🔧', tool: name, content: source ? `Using ${source}` : 'Using a tool' }
+  }
+  return null
+}
+
+export function questionsForRoom(questions = []) {
+  return questions.map((question) => {
+    if (question.isSecret) throw new Error(`Secret input is not supported in Matrix (${question.header || question.id})`)
+    return {
+      id: question.id,
+      title: question.header || 'Question',
+      prompt: question.question,
+      options: (question.options ?? []).map((option) => option.label),
+      allowOther: Boolean(question.isOther || !question.options?.length),
+    }
+  })
+}
+
+export function answersForCodex(protocolQuestions, answers) {
+  return {
+    answers: Object.fromEntries(protocolQuestions.map((question) => [
+      question.id,
+      { answers: [answers[question.id]] },
+    ])),
+  }
+}
+
+export function unsupportedResponse(method) {
+  if (method === 'mcpServer/elicitation/request') return { result: { action: 'decline' } }
+  return {
+    error: { code: -32601, message: 'Permission-profile escalation is not supported by this client' },
+  }
+}
+
 // Approvals the room should never see, because the same rules already let the
 // Claude side run them unattended. Codex asks about far less (its sandbox only
 // stops what it cannot do), so this fires mainly for reads that reach outside
@@ -126,8 +174,9 @@ function describeApproval(method, params = {}, turn) {
 
 // One app-server for every room. Connection is lazy: nothing starts until a
 // Codex room actually takes a turn.
-class AppServer {
-  constructor() {
+export class AppServer {
+  constructor(spawnProcess = spawn) {
+    this.spawnProcess = spawnProcess
     this.child = null
     this.nextId = 1
     this.pending = new Map()      // request id -> {resolve, reject}
@@ -166,11 +215,11 @@ class AppServer {
     // Per-invocation, so the interactive `codex` TUI keeps its connectors.
     // Anything reachable over MCP is outside the allowlist by construction; if
     // a server is ever wanted here, gate it at mcpServer/tool/call first.
-    const child = spawn('codex', ['app-server', '--disable', 'apps'], { stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = this.spawnProcess('codex', ['app-server', '--disable', 'apps'], { stdio: ['pipe', 'pipe', 'pipe'] })
     this.child = child
 
     child.stdout.setEncoding('utf8')
-    child.stdout.on('data', (chunk) => this.#onData(chunk))
+    child.stdout.on('data', (chunk) => this.#onData(child, chunk))
     // app-server dumps whole system prompts into stderr when its model refresh
     // fails, so this is truncated rather than relayed verbatim.
     child.stderr.setEncoding('utf8')
@@ -179,8 +228,8 @@ class AppServer {
         if (line.trim()) log('stderr:', line.slice(0, 200))
       }
     })
-    child.on('exit', (code, signal) => this.#onExit(code, signal))
-    child.on('error', (e) => this.#onExit(null, e.message))
+    child.on('exit', (code, signal) => this.#onExit(child, code, signal))
+    child.on('error', (e) => this.#onExit(child, null, e.message))
 
     await this.request('initialize', {
       clientInfo: { name: 'construct-agent-bot', title: 'Construct agent rooms', version: '1.0.0' },
@@ -198,11 +247,15 @@ class AppServer {
   }
 
   // Fails everything in flight. Silence here would look like a hung turn.
-  #onExit(code, signal) {
+  #onExit(child, code, signal) {
+    // An old process can report its delayed exit after a replacement has
+    // connected. Never let that stale event tear down the healthy connection.
+    if (this.child !== child) return
     const reason = `codex app-server exited (${signal ?? `code ${code}`})`
     log(reason)
     this.child = null
     this.ready = null
+    this.buf = ''
     for (const [, waiter] of this.pending) waiter.reject(new Error(reason))
     this.pending.clear()
     for (const [, turn] of this.turns) turn.fail(reason)
@@ -212,7 +265,8 @@ class AppServer {
 
   // Newline-delimited JSON, one JSON-RPC message per line. No Content-Length
   // headers — this is not LSP/MCP framing.
-  #onData(chunk) {
+  #onData(child, chunk) {
+    if (this.child !== child) return
     this.buf += chunk
     let nl
     while ((nl = this.buf.indexOf('\n')) !== -1) {
@@ -286,10 +340,15 @@ class AppServer {
       return
     }
 
+    if (msg.method === 'item/tool/requestUserInput') {
+      this.#askUserInput(msg, turn)
+      return
+    }
+
     if (UNSUPPORTED.has(msg.method)) {
       turn?.onDeclined(msg.method, msg.params?.command ?? msg.params?.reason)
       log(`declined ${msg.method} (not answerable from chat)`)
-      this.respond(msg.id, { decision: 'decline' })
+      this.send({ jsonrpc: '2.0', id: msg.id, ...unsupportedResponse(msg.method) })
       return
     }
     // Unknown request: still answer, or the turn blocks on it forever.
@@ -324,6 +383,20 @@ class AppServer {
       this.respond(msg.id, { decision })
     } catch (e) {
       log(`could not answer ${msg.method}: ${e.message}`)
+    }
+  }
+
+  async #askUserInput(msg, turn) {
+    try {
+      if (!turn?.askQuestion) throw new Error('no room is listening for this thread')
+      const roomQuestions = questionsForRoom(msg.params?.questions)
+      const answers = {}
+      for (const question of roomQuestions) answers[question.id] = await turn.askQuestion(question)
+      this.respond(msg.id, answersForCodex(msg.params?.questions ?? [], answers))
+    } catch (e) {
+      log(`user input request failed (${e.message}); returning no answers`)
+      turn?.onDeclined('user input', e.message)
+      try { this.respond(msg.id, { answers: {} }) } catch {}
     }
   }
 
@@ -386,9 +459,10 @@ const server = new AppServer()
 
 // Collects one turn's notifications into a final answer.
 class Turn {
-  constructor(threadId, roomId) {
+  constructor(threadId, roomId, cwd) {
     this.threadId = threadId
     this.roomId = roomId
+    this.cwd = cwd
     this.turnId = null
     this.text = null
     this.declined = []
@@ -398,6 +472,9 @@ class Turn {
     this.fileChanges = new Map()
     // Set by run(): how to put a question to the room this turn belongs to.
     this.ask = null
+    this.askQuestion = null
+    this.onProgress = null
+    this.progressItems = new Set()
     this.done = new Promise((resolve) => { this.finish = resolve })
   }
 
@@ -410,8 +487,15 @@ class Turn {
         break
       case 'item/started':
       case 'item/completed':
-        // The reply is the final_answer agent message; other items are tool
-        // calls and reasoning, which belong to CLA-103's streaming, not here.
+        if (msg.method === 'item/started' && !this.progressItems.has(p.item?.id)) {
+          const progress = progressForItem(p.item, this.cwd)
+          if (progress) {
+            this.progressItems.add(progress.id)
+            this.onProgress?.(progress)
+          }
+        }
+        // The reply is the final_answer agent message; tool starts are exposed
+        // through onProgress, while reasoning and output deltas stay internal.
         if (p.item?.type === 'agentMessage' && p.item?.phase === 'final_answer') {
           this.text = p.item.text ?? this.text
         }
@@ -473,7 +557,7 @@ export const codex = {
     return model
   },
 
-  async run({ roomId, prompt, cwd, model, sessionId, instructions = [], approval, timeoutMs, onSession }) {
+  async run({ roomId, prompt, cwd, model, sessionId, instructions = [], approval, question, onProgress, timeoutMs, onSession }) {
     let turn
     let timer = null
     try {
@@ -506,10 +590,12 @@ export const codex = {
         onSession?.(threadId)
       }
 
-      turn = new Turn(threadId, roomId)
-      // How this turn's approvals reach a human. Absent (standalone use, or a
-      // caller that predates it) means every approval is declined.
+      turn = new Turn(threadId, roomId, cwd)
+      // How this turn's approvals and questions reach a human. Absent
+      // callbacks fail closed rather than inventing consent or an answer.
       turn.ask = approval?.ask ?? null
+      turn.askQuestion = question?.ask ?? null
+      turn.onProgress = onProgress ?? null
       server.turns.set(threadId, turn)
       server.turnsByRoom.set(roomId, turn)
 
@@ -539,6 +625,7 @@ export const codex = {
     } finally {
       if (timer) clearTimeout(timer)
       if (turn) {
+        question?.drop?.('The Codex turn ended before the question was answered.')
         server.turns.delete(turn.threadId)
         server.turnsByRoom.delete(turn.roomId)
       }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import * as sdk from 'matrix-js-sdk'
+import { AGENT_ROOM_TYPE } from '../lib/roomMeta'
 
 /**
  * How much of the Claude plan is used, account-wide.
@@ -24,15 +25,27 @@ export interface PlanUsage {
 }
 
 function toWindow(raw: any): UsageWindow | null {
-  if (!raw || typeof raw.percent !== 'number') return null
-  return { percent: raw.percent, resetsAt: typeof raw.resets_at === 'number' ? raw.resets_at : null }
+  if (!raw || !Number.isFinite(raw.percent)) return null
+  return { percent: Math.max(0, Math.round(raw.percent)),resetsAt: typeof raw.resets_at === 'number' ? raw.resets_at : null }
 }
+
+// Clock skew between the Pi and this device, not a licence to post-date.
+const FUTURE_SLACK_MS = 5 * 60 * 1000
 
 function readNewest(client: sdk.MatrixClient): PlanUsage | null {
   let newest: PlanUsage | null = null
   for (const room of client.getRooms()) {
-    const content = room.currentState.getStateEvents(PLAN_USAGE_EVENT as any, '')?.getContent() as any
+    // Only the bot's own copy counts: it must sit in an agent room and be sent
+    // by whoever created that room, which for agent rooms is the bot. Anyone
+    // else able to send state could otherwise pin a fake reading here.
+    const create = room.currentState.getStateEvents('m.room.create', '')
+    if (create?.getContent()?.type !== AGENT_ROOM_TYPE) continue
+    const ev = room.currentState.getStateEvents(PLAN_USAGE_EVENT as any, '')
+    if (!ev || ev.getSender() !== create.getSender()) continue
+    const content = ev.getContent() as any
     if (typeof content?.fetched_at !== 'number') continue
+    // A reading "from the future" would outrank every honest one forever.
+    if (content.fetched_at > Date.now() + FUTURE_SLACK_MS) continue
     if (newest && newest.fetchedAt >= content.fetched_at) continue
     newest = { session: toWindow(content.session), weekly: toWindow(content.weekly), fetchedAt: content.fetched_at }
   }

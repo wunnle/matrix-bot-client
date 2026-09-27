@@ -793,6 +793,28 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [roomId, userId, client])
 
+  // Mark the room read whenever it's actually in front of you: on becoming the
+  // active room and on the app coming back to the foreground. The receipt in
+  // the effect above only runs on first mount, but ChatViews stay mounted once
+  // visited, so reopening a room — or unlocking the phone onto it — sent
+  // nothing. The room list showed 0 locally while the server kept the old
+  // receipt: the badge came back on the next message, and never cleared on the
+  // other device.
+  useEffect(() => {
+    if (!isActive) return
+    const markRead = () => {
+      if (document.visibilityState !== 'visible') return
+      const room = client.getRoom(roomId)
+      // Skip local echoes: a receipt needs a server event id.
+      const last = room?.getLiveTimeline().getEvents().findLast((e) => e.getId()?.startsWith('$'))
+      if (!last || room?.hasUserReadEvent(userId, last.getId()!)) return
+      client.sendReadReceipt(last).catch(() => {})
+    }
+    markRead()
+    document.addEventListener('visibilitychange', markRead)
+    return () => document.removeEventListener('visibilitychange', markRead)
+  }, [isActive, roomId, userId, client])
+
   // Last resort for the model tag. In an encrypted room, history is often
   // decrypted during sync before this component mounts, so the Decrypted
   // listener never fires for it and the open-time scan sees only ciphertext.

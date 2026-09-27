@@ -412,6 +412,16 @@ export default function RoomList({
     })
   }, [activeRoomId])
 
+  // Home-screen / dock icon count, kept current while the app is open; the
+  // service worker sets it on each push. Rooms with unread, not messages — the
+  // homeserver's `unread` it gets on a push counts rooms, so the two agree.
+  // Feature-detected: absent in the native app's WebView, where APNs owns it.
+  useEffect(() => {
+    if (loading || !('setAppBadge' in navigator)) return
+    const n = rooms.filter((r) => r.unreadCount > 0).length
+    void (n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {})
+  }, [rooms, loading])
+
   // Keep the list in step with invites arriving, being accepted, or being
   // revoked while the app is open.
   useEffect(() => {

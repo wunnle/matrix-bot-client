@@ -115,6 +115,17 @@ self.addEventListener("push", (event) => {
         badge: "/icon-192.png",
         data: { roomId: roomId ?? null },
       });
+
+      // Home-screen / dock icon count. `unread` is the homeserver's count of
+      // rooms with unread messages; the open app keeps it current from then on
+      // (RoomList). A read on another device can't clear it until the next
+      // push or open — updating it silently would be a silent push.
+      if (typeof data.unread === "number" && "setAppBadge" in self.navigator) {
+        await (data.unread > 0
+          ? self.navigator.setAppBadge(data.unread)
+          : self.navigator.clearAppBadge()
+        ).catch(() => {});
+      }
     })()
   );
 });

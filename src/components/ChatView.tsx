@@ -1587,31 +1587,43 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           <span>Drop to send</span>
         </div>
       )}
+      {/* Floats over the messages as liquid-glass controls, matching the tab
+          bar: the list scrolls underneath instead of stopping at a bar. */}
       <div className="chat-header">
         <div className="chat-header-inner">
-          <button className="back" onClick={onBack}>←</button>
-          {roomAvatarUrl
-            ? <img className="chat-avatar" src={roomAvatarUrl} alt="" />
-            : <div className="chat-avatar chat-avatar-fallback">{roomName.slice(0, 1).toUpperCase()}</div>}
-          <div className="chat-header-info" onClick={() => setShowEditor(true)} style={{ cursor: 'pointer' }}>
-            <span className="chat-title">{roomName}</span>
-            {/* The activity row above the composer says this better when it's
-                up; don't repeat it in the header. */}
-            <span className={`chat-subtitle${typingUsers.length > 0 && !agentActivity ? ' chat-subtitle--thinking' : ''}`}>
-              {typingUsers.length > 0 && !agentActivity
-                ? `${bot?.name ?? 'Bot'} is thinking…`
-                : (roomTopic || (bot?.name ?? null))}
-            </span>
+          <button className="back glass" onClick={onBack} aria-label="Back">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+          </button>
+          <div className="chat-header-pill glass" onClick={() => setShowEditor(true)}>
+            {roomAvatarUrl
+              ? <img className="chat-avatar" src={roomAvatarUrl} alt="" />
+              : <div className="chat-avatar chat-avatar-fallback">{roomName.slice(0, 1).toUpperCase()}</div>}
+            <div className="chat-header-info">
+              <span className="chat-title">{roomName}</span>
+              {/* The activity row above the composer says this better when it's
+                  up; don't repeat it in the header. */}
+              {/* The model rides on the subtitle: a phone-width header has
+                  room for the title or a model chip beside it, not both. */}
+              <span
+                className={`chat-subtitle${typingUsers.length > 0 && !agentActivity ? ' chat-subtitle--thinking' : ''}`}
+                title={shownModel ? `Model: ${shownModel}` : undefined}
+              >
+                {typingUsers.length > 0 && !agentActivity
+                  ? `${bot?.name ?? 'Bot'} is thinking…`
+                  : [roomTopic || bot?.name, shownModel && formatModel(shownModel)].filter(Boolean).join(' · ') || null}
+              </span>
+            </div>
+            {isClaudeRoom && planUsage && (
+              <HeaderUsageBar window={planUsage.session} fetchedAt={planUsage.fetchedAt} label="Claude session usage" />
+            )}
+            {isCodexRoom && codexUsage && (
+              <HeaderUsageBar window={codexUsage.windows[0]} fetchedAt={codexUsage.fetchedAt} label="Codex usage" />
+            )}
           </div>
-          {shownModel && (
-            <span className="chat-header-model" title={`Model: ${shownModel}`}>
-              {formatModel(shownModel)}
-            </span>
-          )}
           {pinnedEventIds.length > 0 && (
             <button
               type="button"
-              className="header-pinned"
+              className="header-pinned glass"
               id="pinned-messages-button"
               aria-expanded={pinnedExpanded}
               aria-controls={pinnedExpanded ? 'pinned-messages-content' : undefined}
@@ -1620,18 +1632,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               onClick={() => setPinnedExpanded((v) => !v)}
             >
               <span className="material-icons header-pinned-icon" aria-hidden>push_pin</span>
-              <span className="material-icons header-pinned-chevron" aria-hidden>
-                {pinnedExpanded ? 'expand_less' : 'expand_more'}
-              </span>
             </button>
           )}
         </div>
-        {isClaudeRoom && planUsage && (
-          <HeaderUsageBar window={planUsage.session} fetchedAt={planUsage.fetchedAt} label="Claude session usage" />
-        )}
-        {isCodexRoom && codexUsage && (
-          <HeaderUsageBar window={codexUsage.windows[0]} fetchedAt={codexUsage.fetchedAt} label="Codex usage" />
-        )}
       </div>
 
       {showEditor &&<RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} onLeave={() => { setShowEditor(false); onBack() }} />}
@@ -1690,7 +1693,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       )}
 
       {pinnedEventIds.length > 0 && pinnedExpanded && (
-        <div className="pinned-strip" role="region" aria-label="Pinned messages">
+        <div className="pinned-strip glass" role="region" aria-label="Pinned messages">
           <div className="pinned-strip-inner" id="pinned-messages-content" role="group" aria-labelledby="pinned-messages-button">
             {pinnedDisplay.length === 0 && (
               <p className="pinned-placeholder">This pinned message could not be loaded.</p>

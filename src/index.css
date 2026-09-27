@@ -168,7 +168,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 /* A banner above takes over the inset, so the chrome below drops back to its
    plain padding instead of leaving a status-bar-sized gap. */
 .layout:has(> .connection-banner) .sidebar { padding-top: 10px; }
-.layout:has(> .connection-banner) .chat-header { padding-top: 11px; }
+.layout:has(> .connection-banner) .chat-view { --chat-safe-top: 0px; }
 
 .main {
   flex: 1;
@@ -495,6 +495,37 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 .tab-pane[hidden] { display: none; }
 
+/* Liquid glass, shared by the tab bar and the room header's controls: a thin
+   tint over blurred, saturated content, lit from the top edge with a darker
+   rim underneath. Users must be positioned (for the sheen) and set their own
+   border-radius. */
+.glass {
+  isolation: isolate;
+  background: rgba(30, 30, 42, 0.45);
+  -webkit-backdrop-filter: blur(22px) saturate(190%);
+  backdrop-filter: blur(22px) saturate(190%);
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+    0 10px 30px rgba(0, 0, 0, 0.45),
+    0 1px 3px rgba(0, 0, 0, 0.3);
+}
+/* Specular sheen across the upper half. */
+.glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 45%, transparent 55%);
+  pointer-events: none;
+}
+/* Fallback where backdrop-filter isn't available: opaque enough to read. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: rgba(30, 30, 42, 0.94); }
+}
+
 .tab-bar {
   position: absolute;
   left: 50%;
@@ -506,28 +537,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   width: min(calc(100% - 40px), 360px);
   padding: 4px;
   border-radius: 999px;
-  isolation: isolate;
-  /* The glass: a thin tint over blurred, saturated content, lit from the top
-     edge with a darker rim underneath. */
-  background: rgba(30, 30, 42, 0.45);
-  -webkit-backdrop-filter: blur(22px) saturate(190%);
-  backdrop-filter: blur(22px) saturate(190%);
-  border: 0.5px solid rgba(255, 255, 255, 0.14);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.25),
-    0 10px 30px rgba(0, 0, 0, 0.45),
-    0 1px 3px rgba(0, 0, 0, 0.3);
-}
-/* Specular sheen across the upper half of the capsule. */
-.tab-bar::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 45%, transparent 55%);
-  pointer-events: none;
 }
 
 .tab-bar-item {
@@ -569,28 +578,26 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 .tab-bar-item--active svg { stroke-width: 2; }
 
-/* Fallback where backdrop-filter isn't available: opaque enough to read. */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .tab-bar { background: rgba(30, 30, 42, 0.94); }
-}
-
 /* Non-chat tabs use the page background, not the sidebar surface. */
 .sidebar:has(> .settings-screen) { background: var(--bg); }
 
-/* The 5-hour window, drawn over the header's bottom border in Claude rooms.
-   Sits on the border rather than adding a row: it is ambient, not content. */
-.chat-header { position: relative; }
+/* The 5-hour window, a hairline along the bottom of the header's title pill in
+   agent rooms. Inset from the capsule's rounded ends: it is ambient, not
+   content. */
 .header-usage {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
+  left: 22px;
+  right: 22px;
+  bottom: 3px;
   height: 2px;
+  border-radius: 1px;
+  overflow: hidden;
   pointer-events: none;
 }
 .header-usage-fill {
   display: block;
   height: 100%;
+  border-radius: inherit;
   background: var(--accent);
   opacity: 0.55;
   transition: width 0.4s;
@@ -625,6 +632,11 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   flex-direction: column;
   height: 100%;
   position: relative;
+  /* The header floats over the messages; this is how much of the top it
+     covers, so the list can start below it and the pinned card can hang
+     from it. */
+  --chat-safe-top: env(safe-area-inset-top);
+  --chat-header-space: calc(var(--chat-safe-top) + 64px);
 }
 
 .drop-overlay {
@@ -651,29 +663,57 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 .chat-header {
-  padding: 11px 20px;
-  padding-top: calc(11px + env(safe-area-inset-top));
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-  flex-shrink: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  padding: calc(var(--chat-safe-top) + 8px) 10px 0;
+  /* Only the glass controls take taps; the gaps between them scroll the list. */
+  pointer-events: none;
+}
+/* Scroll-edge scrim: dims what scrolls past the gaps between the pills, so
+   the controls read as floating over the chat rather than tangled in it. */
+.chat-header::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 -20px;
+  z-index: -1;
+  background: linear-gradient(to bottom, rgba(15, 15, 19, 0.92) 0%, rgba(15, 15, 19, 0.6) 65%, rgba(15, 15, 19, 0) 100%);
+  pointer-events: none;
 }
 
 .chat-header-inner {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
   max-width: 760px;
   margin: 0 auto;
 }
+.chat-header-inner > * { pointer-events: auto; }
 
 @media (min-width: 641px) {
   .chat-header-inner { max-width: 560px; }
 }
 
+.chat-header-pill {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 48px;
+  padding: 0 14px 0 6px;
+  border-radius: 999px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .chat-avatar {
   width: 36px;
   height: 36px;
-  border-radius: 11px;
+  border-radius: 50%;
   object-fit: cover;
   background: var(--bg-surface);
   flex-shrink: 0;
@@ -698,20 +738,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   overflow: hidden;
 }
 
-.chat-header-model {
-  flex-shrink: 0;
-  max-width: 45%;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: var(--bg-active);
-}
-
 .chat-subtitle {
   font-size: 12px;
   color: var(--text-muted);
@@ -724,20 +750,36 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .chat-subtitle--thinking { color: var(--accent); }
 
 .back {
-  color: var(--text-muted);
-  font-size: 18px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  line-height: 1;
-  transition: color 0.15s;
+  position: relative;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text);
   display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s ease;
 }
+.back svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.back:active,
+.chat-header-pill:active { transform: scale(0.96); }
+.chat-header-pill { transition: transform 0.15s ease; }
 
 @media (max-width: 640px) {
-  .back { display: block; }
+  .back { display: flex; }
 }
-
-.back:hover { color: var(--text); }
 
 .chat-title {
   font-weight: 600;
@@ -753,71 +795,66 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   color: var(--text-muted);
 }
 
+/* Pinned messages drop down from the header as a glass card over the list. */
 .pinned-strip {
-  flex-shrink: 0;
+  position: absolute;
+  top: calc(var(--chat-header-space) + 4px);
+  left: 12px;
+  right: 12px;
+  z-index: 29;
   max-width: 760px;
-  width: 100%;
+  max-height: 50%;
   margin: 0 auto;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-surface, var(--bg));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 22px;
   display: flex;
   flex-direction: column;
   gap: 0;
   box-sizing: border-box;
 }
 
+/* Round glass button, the back button's twin on the other side. Background and
+   border come from .glass; the accent tint says the card is open. */
 .header-pinned {
-  display: inline-flex;
+  position: relative;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border-radius: 50%;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0;
-  margin: 0;
-  padding: 2px 2px 2px 4px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
+  color: var(--text);
   line-height: 1;
   cursor: pointer;
-  flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
-  transition: color 0.15s, background 0.12s;
+  transition: color 0.15s, transform 0.15s ease;
 }
-
-.header-pinned:hover {
-  color: var(--text);
-  background: var(--bg-active, rgba(0, 0, 0, 0.04));
-}
+.header-pinned:active { transform: scale(0.96); }
+.header-pinned[aria-expanded="true"] { color: var(--accent-hover); }
 
 .header-pinned:focus-visible {
   outline: 2px solid var(--accent, currentColor);
   outline-offset: 1px;
-  z-index: 1;
 }
 
 .header-pinned-icon {
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1;
-}
-
-.header-pinned-chevron {
-  font-size: 16px;
-  line-height: 1;
-  margin-left: -3px;
-  opacity: 0.75;
 }
 
 .pinned-strip-inner {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 0 16px 12px;
+  padding: 14px 16px;
 }
 
 @media (min-width: 641px) {
   .pinned-strip { max-width: 560px; }
   .pinned-toggle { padding: 1px 0; }
-  .pinned-strip-inner { padding: 0 0 12px; }
 }
 
 .pinned-placeholder {
@@ -917,15 +954,17 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   overflow-anchor: none;
-  mask-image: linear-gradient(to bottom, transparent 0%, black 30%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%);
+  /* Scroll-edge fade under the floating header: messages stay faintly
+     visible through the glass, then come to full strength just below it. */
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.35) 0, black calc(var(--chat-header-space) + 56px));
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.35) 0, black calc(var(--chat-header-space) + 56px));
 }
 
-/* Centered content column */
+/* Centered content column. The top padding clears the floating header. */
 .messages-inner {
   max-width: 760px;
   margin: 0 auto;
-  padding: 16px 16px 8px;
+  padding: calc(var(--chat-header-space) + 12px) 16px 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;

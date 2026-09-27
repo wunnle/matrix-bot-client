@@ -44,6 +44,8 @@ import { Marked } from 'marked'
 import type { Message, RoomConfig, ConstructThread, ConstructApproval, ToolProgressLine } from '../types'
 import { useAgentRun } from '../hooks/useAgentActivity'
 import { AgentActivityBar } from './AgentActivityBar'
+import MessageActionSheet from './MessageActionSheet'
+import { hapticPress, hapticSend, hapticSuccess, hapticTick, hapticWarning } from '../lib/haptics'
 import { useAgentBlocked, formatResetsAt, blockedHeadline } from '../hooks/useAgentBlocked'
 
 interface Props {
@@ -414,19 +416,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [sendError, setSendError] = useState('')
   const [pinError, setPinError] = useState('')
   const [pinInFlight, setPinInFlight] = useState(false)
-  // Touch only: which message has its meta row opened from the kebab. Hover
-  // devices ignore this and keep revealing the row on hover.
-  const [metaOpenId, setMetaOpenId] = useState<string | null>(null)
+  // Touch only: the message whose action sheet a long-press opened. Hover
+  // devices use the inline meta row instead.
+  const [actionSheetId, setActionSheetId] = useState<string | null>(null)
+  const closeActionSheet = useCallback(() => setActionSheetId(null), [])
   const [showScrollDown, setShowScrollDown] = useState(false)
-  // Tapping anywhere outside an open meta row closes it.
-  useEffect(() => {
-    if (!metaOpenId) return
-    const onDown = (e: PointerEvent) => {
-      if (!(e.target as HTMLElement | null)?.closest('.message-meta')) setMetaOpenId(null)
-    }
-    document.addEventListener('pointerdown', onDown)
-    return () => document.removeEventListener('pointerdown', onDown)
-  }, [metaOpenId])
   const footerRef = useRef<HTMLDivElement>(null)
   // The footer floats over the end of the list (the composer is glass), so the
   // list pads its end by the footer's height — which pills, the activity row
@@ -583,6 +577,30 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // where the room is alive but nothing the user types will run.
   const agentBlocked = useAgentBlocked(client, roomId)
 
+  // Feel it when the agent you're watching finishes or gets stuck. Only for the
+  // room on screen, and not in the first moments after it comes on screen:
+  // opening a room settles its run and blocked state from history, and that
+  // settling is not news.
+  const hapticsArmedAtRef = useRef(0)
+  useEffect(() => { if (isActive) hapticsArmedAtRef.current = Date.now() + 1500 }, [isActive])
+  const watching = useCallback(() =>
+    isActiveRef.current &&
+    document.visibilityState === 'visible' &&
+    Date.now() > hapticsArmedAtRef.current, [])
+  const hadRunRef = useRef(false)
+  useEffect(() => {
+    const hadRun = hadRunRef.current
+    hadRunRef.current = agentRun !== null
+    // A run ends only when the bot's reply lands (see useAgentRun).
+    if (hadRun && !agentRun && watching()) hapticSuccess()
+  }, [agentRun, watching])
+  const wasBlockedRef = useRef(false)
+  useEffect(() => {
+    const wasBlocked = wasBlockedRef.current
+    wasBlockedRef.current = agentBlocked !== null
+    if (!wasBlocked && agentBlocked && watching()) hapticWarning()
+  }, [agentBlocked, watching])
+
   useEffect(() => {
     isFirstLoad.current = true
     stickToBottomRef.current = true
@@ -656,7 +674,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           if (room.oldState.paginationToken === null) setHasMore(false)
           const container = messagesRef.current
           if (container && !stickToBottomRef.current) {
-            // eslint-disable-next-line react-hooks/immutability -- same anchor handoff loadMore uses; read by the layout effect below
+             
             scrollAnchorRef.current = container.scrollHeight - container.scrollTop
           }
           setMessages(eventsToMessages(room.getLiveTimeline().getEvents(), userId, room))
@@ -1375,6 +1393,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || sending) return
+    hapticSend()
     // Keep the keyboard up only if the composer was already focused (i.e. the
     // user was typing and hit Enter/Send). Tapping a pill on a blurred input
     // should send silently without popping the keyboard.
@@ -1520,6 +1539,91 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     void copyTextToClipboard(body).then(() => showToast('Copied'))
   }, [showToast])
 
+  // Long-press → action sheet, touch only. Delegated from the list rather than
+  // wired per row, so MessageRow's memoised props stay as they are.
+  const longPressRef = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null)
+  // Set when a press fired, so the click the lifting finger produces is eaten
+  // instead of reaching whatever is under it (a code block copies on tap).
+  const longPressFiredRef = useRef(false)
+  const cancelLongPress = useCallback(() => {
+    if (longPressRef.current) clearTimeout(longPressRef.current.timer)
+    longPressRef.current = null
+  }, [])
+  const handleMessagesPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    longPressFiredRef.current = false
+    cancelLongPress()
+    if (e.pointerType !== 'touch') return
+    const target = e.target instanceof Element ? e.target : null
+    if (!target?.closest('.message-pin-surface')) return
+    // These keep the OS's own long-press: the link / image sheet, and selecting
+    // inside a code block. Controls just get tapped.
+    if (target.closest('a, img, video, pre, button, input, textarea, .msg-card')) return
+    // Adjusting a live selection is not a new press.
+    const sel = window.getSelection()
+    if (sel && !sel.isCollapsed) return
+    const row = target.closest<HTMLElement>('[data-event-id]')
+    // A row without the meta bar (decryption failure) has no actions to offer.
+    if (!row?.querySelector('.message-meta')) return
+    const eventId = row.dataset.eventId
+    if (!eventId) return
+    longPressRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      timer: setTimeout(() => {
+        longPressRef.current = null
+        longPressFiredRef.current = true
+        hapticPress()
+        setActionSheetId(eventId)
+      }, 450),
+    }
+  }, [cancelLongPress])
+  const handleMessagesPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const start = longPressRef.current
+    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancelLongPress()
+  }, [cancelLongPress])
+  const handleMessagesClickCapture = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!longPressFiredRef.current) return
+    longPressFiredRef.current = false
+    e.preventDefault()
+    e.stopPropagation()
+  }, [])
+  // Android turns a long-press into contextmenu; the sheet already answered it.
+  const handleMessagesContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (longPressFiredRef.current || longPressRef.current) e.preventDefault()
+  }, [])
+  useEffect(() => cancelLongPress, [cancelLongPress])
+
+  // Message text isn't selectable on touch (that is what frees long-press for
+  // the sheet), so "Select text" switches one message back on and selects it
+  // all, leaving the native handles to narrow it down. It switches off again
+  // once the selection is dismissed.
+  const [selectingId, setSelectingId] = useState<string | null>(null)
+  const selectMessageText = useCallback((eventId: string) => {
+    setSelectingId(eventId)
+    // After the class lands — selecting inside user-select:none is a no-op.
+    requestAnimationFrame(() => {
+      const surface = messagesRef.current?.querySelector(
+        `[data-event-id="${window.CSS.escape(eventId)}"] .message-pin-surface`,
+      )
+      const text = surface?.querySelector('.bubble, .bot-text') ?? surface
+      if (text) window.getSelection()?.selectAllChildren(text)
+    })
+  }, [])
+  useEffect(() => {
+    if (!selectingId) return
+    const onChange = () => {
+      const sel = window.getSelection()
+      if (!sel || sel.isCollapsed) setSelectingId(null)
+    }
+    // Registered a frame late so the selection made above isn't judged
+    // before it exists.
+    const raf = requestAnimationFrame(() => document.addEventListener('selectionchange', onChange))
+    return () => {
+      cancelAnimationFrame(raf)
+      document.removeEventListener('selectionchange', onChange)
+    }
+  }, [selectingId])
+
   // MessageRow is memoised, so everything handed to it has to be referentially
   // stable — these wrappers exist so a row never re-renders just because an
   // inline arrow function was recreated.
@@ -1539,10 +1643,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setToolDialog({ lines })
   }, [])
   const openLightbox = useCallback((url: string, alt: string) => setLightbox({ url, alt }), [])
-  const toggleMeta = useCallback(
-    (eventId: string) => setMetaOpenId((id) => (id === eventId ? null : eventId)),
-    [],
-  )
   // togglePin is defined further down and changes identity; the ref keeps the
   // callback handed to rows constant.
   const togglePinRef = useRef<(id: string) => Promise<void>>(async () => {})
@@ -1589,6 +1689,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   useEffect(() => {
     togglePinRef.current = togglePin
   }, [togglePin])
+
+  const sheetMsg = actionSheetId ? visibleMessages.find((m) => m.eventId === actionSheetId) : undefined
 
   return (
     <div
@@ -1669,6 +1771,23 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           </div>
         </div>
       )}
+      {sheetMsg && (
+        <MessageActionSheet
+          msg={sheetMsg}
+          subtitle={`${sheetMsg.isOwnMessage || !sheetMsg.authorName ? '' : `${sheetMsg.authorName} · `}${formatSentAt(sheetMsg.timestamp)}`}
+          preview={sheetMsg.isOwnMessage ? sheetMsg.body : parseActions(sheetMsg.body).text}
+          userId={userId}
+          isPinned={pinnedEventIds.includes(sheetMsg.eventId)}
+          pinInFlight={pinInFlight}
+          onClose={closeActionSheet}
+          onReact={sendReaction}
+          onCopy={copyMessage}
+          onSelectText={selectMessageText}
+          onTogglePin={togglePinById}
+          onInspect={inspectMessage}
+        />
+      )}
+
       {lightbox && (
         <div className="lightbox-overlay" onClick={() => setLightbox(null)}>
           <button className="lightbox-close" aria-label="Close image" onClick={() => setLightbox(null)}>✕</button>
@@ -1764,7 +1883,18 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           )}
         </div>
       )}
-      <div className="messages" ref={messagesRef} onScroll={handleScroll} style={initializing ? { visibility: 'hidden' } : undefined}>
+      <div
+        className="messages"
+        ref={messagesRef}
+        onScroll={handleScroll}
+        onPointerDown={handleMessagesPointerDown}
+        onPointerMove={handleMessagesPointerMove}
+        onPointerUp={cancelLongPress}
+        onPointerCancel={cancelLongPress}
+        onClickCapture={handleMessagesClickCapture}
+        onContextMenu={handleMessagesContextMenu}
+        style={initializing ? { visibility: 'hidden' } : undefined}
+      >
         <div className="messages-inner">
           {loadingMore && (
             <div className="load-more">
@@ -1818,9 +1948,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 toolLive={toolLive}
                 imageUrl={imageUrl}
                 fileUrl={fileUrl}
-                metaOpen={metaOpenId === msg.eventId}
                 isPinned={pinnedEventIds.includes(msg.eventId)}
                 pinInFlight={pinInFlight}
+                selecting={selectingId === msg.eventId}
                 onOpenToolDialog={openToolDialog}
                 onOpenLightbox={openLightbox}
                 onOpenApproval={setApprovalDialog}
@@ -1830,7 +1960,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 onCopy={copyMessage}
                 onTogglePin={togglePinById}
                 onInspect={inspectMessage}
-                onToggleMeta={toggleMeta}
               />
             )
             })}</>
@@ -2045,6 +2174,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               }
               onClick={() => {
                 clearDictationError()
+                hapticTick()
                 if (dictating) {
                   stopDictation()
                 } else {
@@ -2422,9 +2552,10 @@ export interface MessageRowProps {
   toolLive: boolean
   imageUrl?: string
   fileUrl?: string
-  metaOpen: boolean
   isPinned: boolean
   pinInFlight: boolean
+  /** "Select text" from the action sheet re-enabled selection on this row. */
+  selecting: boolean
   onOpenToolDialog: (eventId: string) => void
   onOpenLightbox: (url: string, alt: string) => void
   onOpenApproval: (approval: ConstructApproval) => void
@@ -2434,7 +2565,6 @@ export interface MessageRowProps {
   onCopy: (body: string) => void
   onTogglePin: (eventId: string) => void
   onInspect: (eventId: string) => void
-  onToggleMeta: (eventId: string) => void
 }
 
 /**
@@ -2461,9 +2591,9 @@ function MessageRowInner({
   toolLive,
   imageUrl,
   fileUrl,
-  metaOpen,
   isPinned,
   pinInFlight,
+  selecting,
   onOpenToolDialog,
   onOpenLightbox,
   onOpenApproval,
@@ -2473,7 +2603,6 @@ function MessageRowInner({
   onCopy,
   onTogglePin,
   onInspect,
-  onToggleMeta,
 }: MessageRowProps) {
   return (
               <div
@@ -2485,7 +2614,7 @@ function MessageRowInner({
                     <span>{formatDate(msg.timestamp)}</span>
                   </div>
                 )}
-                <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}${msg.isPeerMessage ? ' peer' : ''}${senderSwitch ? ' sender-switch' : ''}`}>
+                <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}${msg.isPeerMessage ? ' peer' : ''}${senderSwitch ? ' sender-switch' : ''}${selecting ? ' message--selecting' : ''}`}>
                   <div className="message-body">
                     {/* Another member's request, not the bot's own voice — say whose. */}
                     {msg.isPeerMessage && showPeerSender && (
@@ -2662,19 +2791,9 @@ function MessageRowInner({
                       // Always rendered, only hidden: reserving the row's height
                       // keeps messages from jumping on hover, and the reserved
                       // space doubles as the gap between messages.
-                      <div className={`message-meta${metaOpen ? ' message-meta--open' : ''}`}>
-                        {/* Touch only (hidden on hover devices by CSS): the row
-                            is too crowded to sit there permanently, so it hides
-                            behind this. */}
-                        <button
-                          type="button"
-                          className="message-meta-kebab"
-                          aria-label="Message actions"
-                          aria-expanded={metaOpen}
-                          onClick={() => onToggleMeta(msg.eventId)}
-                        >
-                          <span className="material-symbols-outlined">more_horiz</span>
-                        </button>
+                      // On touch it never shows: a long-press opens the same
+                      // actions in a sheet (see handleMessagesPointerDown).
+                      <div className="message-meta">
                         <span className="message-meta-actions">
                           <button
                             type="button"

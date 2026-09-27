@@ -3,6 +3,7 @@ import type { RoomNotification } from '../hooks/useRoomNotifications'
 import { actionLabel } from '../lib/actions'
 import { getClient } from '../lib/matrix'
 import { resolveMediaUrl } from '../lib/mediaUrl'
+import { hapticSend } from '../lib/haptics'
 
 function roomInitial(name: string) {
   return name.trim()[0]?.toUpperCase() ?? '?'
@@ -63,6 +64,7 @@ function ToastCard({ notification, onDismiss, onNavigate, onHold, onRespond }: T
 
   const respond = async (label: string, at: number) => {
     if (sending || at - shownAtRef.current < ARM_DELAY_MS) return
+    hapticSend()
     const eventId = notification.eventId
     setAttempt({ eventId, label, failed: false, sent: false })
     try {

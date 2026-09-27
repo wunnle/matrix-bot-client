@@ -1443,46 +1443,32 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .message-meta-btn--on { color: var(--accent); }
 .message-meta-btn:disabled { opacity: 0.5; cursor: default; }
 
-/* Hover devices reveal the row on hover only; the space it occupies is
-   reserved either way, so nothing shifts. Touch has no hover and no longer has
-   a long-press menu, so there the row is simply always visible. */
+/* The row is always in the layout and only visibility-hidden, so revealing it
+   never shifts the timeline and the space it holds is the gap between
+   messages. Hover devices reveal it on hover. Touch never does: a long-press
+   opens the same actions in a sheet, which has room for them. */
+.message-meta { visibility: hidden; }
 @media (hover: hover) and (pointer: fine) {
-  .message-meta { visibility: hidden; }
   .message:hover .message-meta { visibility: visible; }
-  .message-meta-kebab { display: none; }
 }
 
-/* Touch: no hover to reveal on, and a permanently visible author/time line plus
-   three action buttons under every bubble reads as clutter. Collapse it all
-   behind a kebab that expands the same row in place. */
+/* Touch: message text isn't selectable, which is what lets a long-press open
+   the sheet instead of starting a selection. Links and images keep the OS
+   sheet, code blocks keep selection, and "Select text" in the sheet switches
+   one message back on. */
 @media not all and (hover: hover) and (pointer: fine) {
-  .message-meta:not(.message-meta--open) > .message-meta-actions,
-  .message-meta:not(.message-meta--open) > .message-meta-info { display: none; }
-  .message-meta--open > .message-meta-kebab { color: var(--text); }
-}
-
-.message-meta-kebab {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  margin-left: -4px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-faint);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.message-meta-kebab .material-symbols-outlined {
-  font-size: 16px;
-  width: 16px;
-  height: 16px;
-  line-height: 16px;
-  text-align: center;
-  font-variation-settings: 'opsz' 20, 'wght' 400, 'FILL' 0, 'GRAD' 0;
+  .message-pin-surface {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .message-pin-surface pre,
+  .message--selecting .message-pin-surface {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .message-pin-surface a,
+  .message-pin-surface img { -webkit-touch-callout: default; }
 }
 
 /* Collapse vertical gap between consecutive tool-progress messages so
@@ -3436,3 +3422,131 @@ a.msg-card-link:hover {
    composer (its position is computed from JS visual-viewport measurements that
    aren't zoom-aware), so scaling the whole UI up needs a proper responsive pass
    rather than a blunt zoom. The .mac-app class is kept for the keyboard tweak. */
+
+/* ─────────────────────────────
+   Touch hit areas
+───────────────────────────── */
+
+/* Apple's floor for a tap target is 44pt, and these controls draw at 18–38px.
+   Growing them would change the design, so on touch only an invisible box of at
+   least 44×44 is centred over each one instead: the glyph stays the size it is,
+   the finger gets the room it needs. */
+@media (pointer: coarse) {
+  .back,
+  .header-pinned,
+  .room-editor-close,
+  .reaction-btn,
+  .agent-blocked-btn,
+  .approval-full-btn,
+  .pill-add,
+  .room-toast-close,
+  .room-toast-action,
+  .notif-card-close,
+  .editor-pill button,
+  .input-row button {
+    position: relative;
+  }
+
+  .back::after,
+  .header-pinned::after,
+  .room-editor-close::after,
+  .lightbox-close::after,
+  .reaction-btn::after,
+  .agent-blocked-btn::after,
+  .approval-full-btn::after,
+  .pill-add::after,
+  .room-toast-close::after,
+  .room-toast-action::after,
+  .notif-card-close::after,
+  .editor-pill button::after,
+  .input-row button::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+
+  /* The one control here that is a decision, not a convenience — worth being
+     visibly bigger rather than only easier to hit. */
+  .agent-blocked-btn {
+    padding: 9px 14px;
+    font-size: 13px;
+  }
+
+  /* Matches the height of the pills it sits beside. */
+  .pill-add { padding: 8px 13px; }
+}
+
+/* ─────────────────────────────
+   Message action sheet (touch long-press)
+───────────────────────────── */
+
+.message-sheet-head {
+  padding: 8px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.message-sheet-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.message-sheet-preview {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.message-sheet-reactions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 20px 4px;
+}
+.message-sheet-reaction {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  font-size: 24px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.message-sheet-reaction--on {
+  background: var(--accent-dim);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.message-sheet-reaction:active { transform: scale(0.92); }
+
+.message-sheet-actions {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 8px 12px;
+}
+.message-sheet-action {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 48px;
+  padding: 0 12px;
+  border-radius: 12px;
+  font-size: 16px;
+  color: var(--text);
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.message-sheet-action:active:not(:disabled) { background: var(--bg-hover); }
+.message-sheet-action:disabled { opacity: 0.5; }
+.message-sheet-action .material-symbols-outlined {
+  font-size: 22px;
+  color: var(--text-muted);
+  font-variation-settings: 'opsz' 24, 'wght' 400, 'FILL' 0, 'GRAD' 0;
+}

@@ -12,6 +12,7 @@ import { resolveMediaUrl } from '../lib/mediaUrl'
 import { donateShareTargets, cacheRoomAvatars } from '../lib/liveActivity'
 import { getDisabledShareRooms, isShareableRoom } from '../lib/shareRooms'
 import NotificationCenter from './NotificationCenter'
+import { hapticPress } from '../lib/haptics'
 import type { RoomNotification } from '../hooks/useRoomNotifications'
 
 interface Props {
@@ -493,7 +494,7 @@ export default function RoomList({
 
         {inviteError && <p className="error">{inviteError}</p>}
 
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={hapticPress} onDragEnd={handleDragEnd}>
           <SortableContext items={joinedRooms.map(r => r.roomId)} strategy={rectSortingStrategy}>
             <div className="room-grid">
               {joinedRooms.map((room) => (

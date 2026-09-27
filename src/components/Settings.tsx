@@ -4,6 +4,7 @@ import type { AuthState } from '../types'
 import { getCachedRooms, isInvite } from '../lib/matrix'
 import { getDisabledShareRooms, setDisabledShareRooms, isShareableRoom } from '../lib/shareRooms'
 import { donateShareTargets } from '../lib/liveActivity'
+import { useSwipeBack } from '../hooks/useSwipeBack'
 
 /**
  * Settings screen. Currently just the Share-sheet section: pick which rooms
@@ -33,8 +34,10 @@ export default function Settings({ auth }: { auth: AuthState }) {
     )
   }
 
+  const swipeBack = useSwipeBack(() => navigate(-1))
+
   return (
-    <div className="settings-screen">
+    <div className="settings-screen" {...swipeBack}>
       <header className="settings-header">
         <button className="settings-back" onClick={() => navigate(-1)} aria-label="Back">←</button>
         <h1 className="settings-title">Settings</h1>

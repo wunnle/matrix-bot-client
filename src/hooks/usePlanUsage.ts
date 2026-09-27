@@ -19,22 +19,11 @@ export interface UsageWindow {
   resetsAt: number | null
 }
 
-export interface ExtraUsage {
-  enabled: boolean
-  /** Minor units — divide by 10^exponent for the amount. */
-  used: number | null
-  limit: number | null
-  currency: string | null
-  exponent: number
-  disabledReason: string | null
-}
-
 export interface PlanUsage {
   session: UsageWindow | null
   weekly: UsageWindow | null
   /** Per-model weekly caps, only on plans that have them. */
   models: Record<string, UsageWindow>
-  extra: ExtraUsage | null
   fetchedAt: number
 }
 
@@ -50,21 +39,10 @@ function toUsage(content: any): PlanUsage {
     const w = toWindow(raw)
     if (w) models[name] = w
   }
-  const x = content.extra
-  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
-  const extra = x ? {
-    enabled: !!x.enabled,
-    used: num(x.used),
-    limit: num(x.limit),
-    currency: typeof x.currency === 'string' ? x.currency : null,
-    exponent: num(x.exponent) ?? 2,
-    disabledReason: typeof x.disabled_reason === 'string' ? x.disabled_reason : null,
-  } : null
   return {
     session: toWindow(content.session),
     weekly: toWindow(content.weekly),
     models,
-    extra,
     fetchedAt: content.fetched_at,
   }
 }

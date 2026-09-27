@@ -46,18 +46,8 @@ export async function fetchPlanUsage() {
       .map(([name, w]) => [name, window(w)])
       .filter(([, w]) => w),
   )
-  const x = body.extra_usage
-  const extra = x ? {
-    enabled: !!x.is_enabled,
-    used: typeof x.used_credits === 'number' ? x.used_credits : null,
-    limit: typeof x.monthly_limit === 'number' ? x.monthly_limit : null,
-    currency: typeof x.currency === 'string' ? x.currency : null,
-    // used/limit are minor units (2000 with 2 decimal places is $20.00).
-    exponent: typeof x.decimal_places === 'number' ? x.decimal_places : 2,
-    disabledReason: typeof x.disabled_reason === 'string' ? x.disabled_reason : null,
-  } : null
 
-  return { session, weekly, models, extra, fetchedAt: Date.now() }
+  return { session, weekly, models, fetchedAt: Date.now() }
 }
 
 /**

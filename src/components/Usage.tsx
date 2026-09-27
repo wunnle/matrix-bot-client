@@ -3,8 +3,9 @@ import * as sdk from 'matrix-js-sdk'
 import { getClient } from '../lib/matrix'
 import {
   STALE_MS, currentPercent, resetLabel, usageLevel, useMinuteClock, usePlanUsage, useCodexUsage,
-  type ExtraUsage, type UsageWindow,
+  type UsageWindow,
 } from '../hooks/usePlanUsage'
+import { useSwipeBack } from '../hooks/useSwipeBack'
 
 /**
  * Claude and Codex plan usage, account-wide. The numbers come from the bot, which
@@ -70,37 +71,6 @@ function WindowCard({ title, window, lengthMs, now }: {
   )
 }
 
-function money(minor: number, exponent: number, currency: string | null): string {
-  const amount = minor / 10 ** exponent
-  try {
-    return new Intl.NumberFormat([], { style: 'currency', currency: currency ?? 'USD' }).format(amount)
-  } catch {
-    return amount.toFixed(exponent)
-  }
-}
-
-function ExtraCard({ extra }: { extra: ExtraUsage }) {
-  const reason = extra.disabledReason?.replace(/_/g, ' ')
-  return (
-    <section className="settings-section usage-card">
-      <h2 className="settings-section-title">Extra usage</h2>
-      <p className="settings-section-hint">Credits that keep you working past the plan limits.</p>
-      <div className="usage-row">
-        <span>Status</span>
-        <span className={extra.enabled ? 'usage-on' : 'usage-off'}>
-          {extra.enabled ? 'On' : `Off${reason ? ` · ${reason}` : ''}`}
-        </span>
-      </div>
-      {extra.used !== null && extra.limit !== null && (
-        <div className="usage-row">
-          <span>This month</span>
-          <span>{money(extra.used, extra.exponent, extra.currency)} of {money(extra.limit, extra.exponent, extra.currency)}</span>
-        </div>
-      )}
-    </section>
-  )
-}
-
 function windowTitle(minutes: number | null): string {
   if (minutes === 10080) return 'Week'
   if (minutes === 1440) return 'Day'
@@ -128,9 +98,10 @@ export default function Usage() {
   const usage = usePlanUsage(client)
   const codex = useCodexUsage(client)
   const now = useMinuteClock()
+  const swipeBack = useSwipeBack(() => navigate(-1))
 
   return (
-    <div className="settings-screen usage-screen">
+    <div className="settings-screen usage-screen" {...swipeBack}>
       <header className="settings-header">
         <button className="settings-back" onClick={() => navigate(-1)} aria-label="Back">←</button>
         <h1 className="settings-title">Usage</h1>
@@ -160,8 +131,6 @@ export default function Usage() {
               now={now}
             />
           ))}
-
-          {usage.extra && <ExtraCard extra={usage.extra} />}
           <Freshness fetchedAt={usage.fetchedAt} now={now} provider="Claude" />
         </>
       )}

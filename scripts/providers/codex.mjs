@@ -3,7 +3,7 @@
 // Unlike the Claude adapter, which shells out per turn, this speaks to one
 // long-lived process shared by every room: a room is a *thread* inside it, and
 // the resumable id in sessions.json is a threadId. See CLA-119 for the wire
-// shapes this was built against and re-verified against codex-cli 0.147.0; see scripts/
+// shapes this was built against and re-verified against codex-cli 0.157.1; see scripts/
 // codex-app-server-spike.mjs for a standalone reference client.
 //
 // Supervision and reconnection are deliberately minimal here — CLA-123 owns

@@ -48,8 +48,18 @@ export function useAgentBlocked(client: sdk.MatrixClient, roomId: string): Agent
     const onState = (ev: sdk.MatrixEvent) => {
       if (ev.getRoomId() === roomId && ev.getType() === AGENT_BLOCKED_EVENT) read()
     }
-    room.currentState.on(sdk.RoomStateEvent.Events, onState)
-    return () => { room.currentState.off(sdk.RoomStateEvent.Events, onState) }
+    // Listen on the room, never on room.currentState: a limited sync — what the
+    // app gets resuming after hours in the background, i.e. exactly across a
+    // quota window — resets the timeline and swaps currentState for a new
+    // object. A listener on the old one never hears the bot clear the flag, and
+    // the bar stayed up for good. The room re-emits whichever state is current,
+    // and the swap itself is a cue to read again.
+    room.on(sdk.RoomStateEvent.Events, onState)
+    room.on(sdk.RoomEvent.CurrentStateUpdated, read)
+    return () => {
+      room.off(sdk.RoomStateEvent.Events, onState)
+      room.off(sdk.RoomEvent.CurrentStateUpdated, read)
+    }
   }, [client, roomId])
 
   // One timer that fires at the reset itself, rather than a ticking interval:

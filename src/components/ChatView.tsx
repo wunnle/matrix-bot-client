@@ -953,10 +953,13 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const onMembers = (_e: sdk.MatrixEvent, _s: sdk.RoomState, member: sdk.RoomMember) => {
       if (member.userId !== userId) update()
     }
-    room.currentState.on(sdk.RoomStateEvent.Members, onMembers)
+    // On the room, not room.currentState — see useAgentBlocked for why.
+    room.on(sdk.RoomStateEvent.Members, onMembers)
+    room.on(sdk.RoomEvent.CurrentStateUpdated, update)
     return () => {
       cancelled = true
-      room.currentState.off(sdk.RoomStateEvent.Members, onMembers)
+      room.off(sdk.RoomStateEvent.Members, onMembers)
+      room.off(sdk.RoomEvent.CurrentStateUpdated, update)
     }
   }, [roomId, userId, client])
 
@@ -978,8 +981,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       if (ev.getRoomId() !== roomId) return
       if (ev.getType() === sdk.EventType.RoomTopic) readTopic()
     }
-    room.currentState.on(sdk.RoomStateEvent.Events, onState)
-    return () => { room.currentState.off(sdk.RoomStateEvent.Events, onState) }
+    room.on(sdk.RoomStateEvent.Events, onState)
+    room.on(sdk.RoomEvent.CurrentStateUpdated, readTopic)
+    return () => {
+      room.off(sdk.RoomStateEvent.Events, onState)
+      room.off(sdk.RoomEvent.CurrentStateUpdated, readTopic)
+    }
   }, [roomId, client])
 
   // Resolve room's own avatar URL
@@ -1053,8 +1060,13 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const onState = (ev: sdk.MatrixEvent) => {
       if (ev.getType() === sdk.EventType.RoomPinnedEvents) refreshPinned()
     }
-    room.currentState.on(sdk.RoomStateEvent.Events, onState)
-    return () => { room.currentState.off(sdk.RoomStateEvent.Events, onState) }
+    const onSwap = () => refreshPinned()
+    room.on(sdk.RoomStateEvent.Events, onState)
+    room.on(sdk.RoomEvent.CurrentStateUpdated, onSwap)
+    return () => {
+      room.off(sdk.RoomStateEvent.Events, onState)
+      room.off(sdk.RoomEvent.CurrentStateUpdated, onSwap)
+    }
   }, [roomId, client, refreshPinned])
 
   useEffect(() => {

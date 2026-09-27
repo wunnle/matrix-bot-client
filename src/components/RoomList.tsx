@@ -12,6 +12,8 @@ import { resolveMediaUrl } from '../lib/mediaUrl'
 import { donateShareTargets, cacheRoomAvatars } from '../lib/liveActivity'
 import { getDisabledShareRooms, isShareableRoom } from '../lib/shareRooms'
 import NotificationCenter from './NotificationCenter'
+import PlanUsageMeter from './PlanUsageMeter'
+import { usePlanUsage } from '../hooks/usePlanUsage'
 import { toggleDebug } from '../lib/debug'
 import type { RoomNotification } from '../hooks/useRoomNotifications'
 
@@ -154,6 +156,12 @@ export default function RoomList({
   if (clientReady) {
     try { canSpawn = findSpawnHostRoom(getClient()) !== null } catch { /* no client yet */ }
   }
+
+  let usageClient: sdk.MatrixClient | null = null
+  if (clientReady) {
+    try { usageClient = getClient() } catch { /* no client yet */ }
+  }
+  const planUsage = usePlanUsage(usageClient)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -711,6 +719,7 @@ export default function RoomList({
             <div className="user-id">{shortUserId(auth.userId)}</div>
           </button>
         </div>
+        <PlanUsageMeter usage={planUsage} />
         <div className="sidebar-version" onClick={toggleDebug}>v{__CONSTRUCT_VERSION__}</div>
       </div>
     </div>

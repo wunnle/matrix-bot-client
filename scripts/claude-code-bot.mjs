@@ -13,6 +13,7 @@ import { providerFor, resolveModel, allModelAliases, DEFAULT_PROVIDER, PROVIDERS
 import { createApprovalQueue } from './approval-queue.mjs'
 import { requiresHuman } from './approval-rules.mjs'
 import { detectLimitBlock } from './limit-block.mjs'
+import { fetchPlanUsage, sameUsage } from './plan-usage.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
@@ -932,6 +933,55 @@ async function setBlocked(roomId, block) {
   }, '').catch((e) => log(`Could not set blocked state on ${roomId}: ${e.message}`))
 }
 
+// The plan quota, published for Construct's footer meter. It is account-wide,
+// so one copy in one room is enough: it goes to the most recently active agent
+// room, and Construct reads the newest copy across every room it can see. Sent
+// only when the meter would change, plus a heartbeat so a quiet stretch does
+// not look like a dead poller.
+const USAGE_EVENT = 'com.construct.plan_usage'
+const USAGE_POLL_MS = 5 * 60 * 1000
+const USAGE_HEARTBEAT_MS = 30 * 60 * 1000
+// A turn just spent quota, but a burst of turns should not mean a burst of polls.
+const USAGE_MIN_GAP_MS = 60 * 1000
+let lastUsage = null
+let lastUsagePublishedAt = 0
+let lastUsagePollAt = 0
+
+function usageRoom() {
+  return client.getRooms()
+    // Members are lazy-loaded, so an unknown owner is not a missing one; only
+    // a room the owner has visibly left is useless to them.
+    .filter((r) => r.getMyMembership() === 'join' && isAgentRoom(r.roomId) &&
+      !['leave', 'ban'].includes(r.getMember(OWNER_ID)?.membership))
+    .sort((a, b) => b.getLastActiveTimestamp() - a.getLastActiveTimestamp())[0] ?? null
+}
+
+async function refreshUsage({ force = false } = {}) {
+  if (!force && Date.now() - lastUsagePollAt < USAGE_MIN_GAP_MS) return
+  lastUsagePollAt = Date.now()
+  let usage
+  try {
+    usage = await fetchPlanUsage()
+  } catch (e) {
+    log(`Plan usage: ${e.message}`)
+    return
+  }
+  if (sameUsage(usage, lastUsage) && Date.now() - lastUsagePublishedAt < USAGE_HEARTBEAT_MS) return
+  const room = usageRoom()
+  if (!room) return
+  await client.sendStateEvent(room.roomId, USAGE_EVENT, {
+    session: usage.session && { percent: usage.session.percent, resets_at: usage.session.resetsAt },
+    weekly: usage.weekly && { percent: usage.weekly.percent, resets_at: usage.weekly.resetsAt },
+    fetched_at: usage.fetchedAt,
+  }, '').then(() => {
+    lastUsage = usage
+    lastUsagePublishedAt = Date.now()
+  }).catch((e) => log(`Could not publish plan usage to ${room.roomId}: ${e.message}`))
+}
+
+refreshUsage({ force: true })
+setInterval(() => refreshUsage({ force: true }), USAGE_POLL_MS)
+
 // Runs `first`, then whatever piled up while it ran, until the room is idle.
 // Queued messages are coalesced into one prompt instead of one turn each: two
 // messages ten seconds apart are almost always one instruction and its
@@ -970,6 +1020,7 @@ async function drainRoom(roomId, first, firstPrompt = null) {
         override = null
         const prompt = parts.join('\n\n')
         const res = await runTurn(roomId, prompt)
+        refreshUsage()
         if (!stopped.has(roomId)) {
           // A quota block is not a failure of this prompt, so the prompt is kept
           // and the room is marked stuck instead of just printing the provider's

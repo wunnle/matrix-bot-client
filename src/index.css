@@ -1983,7 +1983,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 .pills::-webkit-scrollbar { display: none; }
 
-/* Small glass capsules to match the composer below them: the same top-lit rim,
+/* Small glass tiles to match the composer below them: the same top-lit rim,
    without the heavy drop shadow a whole row of them would pile up. */
 .pill {
   background: rgba(30, 30, 42, 0.5);
@@ -1992,7 +1992,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   border: 0.5px solid rgba(255, 255, 255, 0.14);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   color: var(--text-muted);
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 7px 14px;
   font-size: 13px;
   transition: all 0.15s;
@@ -2115,14 +2115,14 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   }
 }
 
-/* Input Row — a glass capsule (see .glass) with round controls inside. */
+/* Input Row — a glass panel (see .glass) with rounded-square controls inside. */
 .input-row {
   position: relative;
   display: flex;
   align-items: flex-end;
-  gap: 8px;
-  border-radius: 25px;
-  padding: 5px;
+  gap: 10px;
+  border-radius: 14px;
+  padding: 6px;
   transition: border-color 0.15s;
 }
 
@@ -2176,7 +2176,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   padding: 0;
   width: 38px;
   font-size: 18px;
-  border-radius: 50%;
 }
 
 .file-input-hidden {

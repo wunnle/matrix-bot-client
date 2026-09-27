@@ -490,61 +490,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   flex-shrink: 0;
 }
 
-/* Claude plan quota — two small gauges between the user badge and the version.
-   Colour only changes near the limit; most of the time it should be ignorable. */
-.plan-usage {
-  display: flex;
-  gap: 14px;
-  margin: 0 12px;
-  font-variant-numeric: tabular-nums;
-}
-.plan-usage--stale { opacity: 0.4; }
-.plan-usage-gauge {
-  width: 76px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  line-height: 1;
-  --usage-color: var(--accent);
-}
-.plan-usage-gauge--warn { --usage-color: #e0a84e; }
-.plan-usage-gauge--critical { --usage-color: var(--danger); }
-.plan-usage-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 6px;
-}
-.plan-usage-label {
-  font-size: 10px;
-  color: var(--text-muted);
-}
-.plan-usage-percent {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text);
-}
-.plan-usage-gauge--warn .plan-usage-percent,
-.plan-usage-gauge--critical .plan-usage-percent { color: var(--usage-color); }
-.plan-usage-track {
-  display: block;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--bg-active);
-  overflow: hidden;
-}
-.plan-usage-fill {
-  display: block;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--usage-color);
-  transition: width 0.4s;
-}
-.plan-usage-reset {
-  font-size: 9px;
-  color: var(--text-faint);
-}
-
 /* The 5-hour window, drawn over the header's bottom border in Claude rooms.
    Sits on the border rather than adding a row: it is ambient, not content. */
 .chat-header { position: relative; }
@@ -3325,6 +3270,91 @@ a.msg-card-link:hover {
   border-top: 1px solid var(--border);
   cursor: pointer;
 }
+/* Usage screen — Claude plan quota. Built from settings sections; colour only
+   changes near the limit, so a normal week reads calm. */
+.usage-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.usage-screen .settings-header { padding-bottom: 4px; }
+.usage-card { --usage-color: var(--accent); }
+.usage-card--warn { --usage-color: #e0a84e; }
+.usage-card--critical { --usage-color: var(--danger); }
+.usage-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+.usage-card-head .settings-section-title { margin: 0; }
+.usage-card-percent {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-strong);
+}
+.usage-card--warn .usage-card-percent,
+.usage-card--critical .usage-card-percent { color: var(--usage-color); }
+.usage-track {
+  position: relative;
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-active);
+}
+.usage-track--thin { height: 4px; }
+.usage-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--usage-color, var(--accent));
+  transition: width 0.4s;
+}
+.usage-time-mark {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-muted);
+}
+.usage-card-line { font-size: 13px; color: var(--text); margin: 12px 0 0; }
+.usage-card-hint { font-size: 13px; color: var(--text-muted); margin: 4px 0 0; }
+.usage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+.usage-card > .settings-section-title + .usage-row { margin-top: 8px; }
+.usage-row--zero { color: var(--text-muted); }
+.usage-row-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 50%;
+}
+.usage-row-bar .usage-track { flex: 1; }
+.usage-row-percent { width: 44px; flex-shrink: 0; text-align: right; }
+.usage-on { color: #34c759; }
+.usage-off { color: var(--text-muted); }
+.usage-stale {
+  font-size: 13px;
+  color: #e0a84e;
+  margin: 0;
+}
+.usage-footnote {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin: 4px 4px 0;
+}
+
 .settings-row-label {
   font-size: 15px;
   overflow: hidden;

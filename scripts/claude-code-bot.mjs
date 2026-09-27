@@ -969,9 +969,20 @@ async function refreshUsage({ force = false } = {}) {
   if (sameUsage(usage, lastUsage) && Date.now() - lastUsagePublishedAt < USAGE_HEARTBEAT_MS) return
   const room = usageRoom()
   if (!room) return
+  const win = (w) => w && { percent: w.percent, resets_at: w.resetsAt }
   await client.sendStateEvent(room.roomId, USAGE_EVENT, {
-    session: usage.session && { percent: usage.session.percent, resets_at: usage.session.resetsAt },
-    weekly: usage.weekly && { percent: usage.weekly.percent, resets_at: usage.weekly.resetsAt },
+    session: win(usage.session),
+    weekly: win(usage.weekly),
+    models: Object.fromEntries(Object.entries(usage.models).map(([name, w]) => [name, win(w)])),
+    breakdown: usage.breakdown,
+    extra: usage.extra && {
+      enabled: usage.extra.enabled,
+      used: usage.extra.used,
+      limit: usage.extra.limit,
+      currency: usage.extra.currency,
+      exponent: usage.extra.exponent,
+      disabled_reason: usage.extra.disabledReason,
+    },
     fetched_at: usage.fetchedAt,
   }, '').then(() => {
     lastUsage = usage

@@ -490,30 +490,45 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   flex-shrink: 0;
 }
 
-/* Claude plan quota — two thin bars between the user badge and the version.
+/* Claude plan quota — two small gauges between the user badge and the version.
    Colour only changes near the limit; most of the time it should be ignorable. */
 .plan-usage {
-  flex: 1;
-  max-width: 140px;
+  display: flex;
+  gap: 14px;
   margin: 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+.plan-usage--stale { opacity: 0.4; }
+.plan-usage-gauge {
+  width: 76px;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 10px;
   line-height: 1;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
+  --usage-color: var(--accent);
 }
-.plan-usage--stale { opacity: 0.45; }
-.plan-usage-row {
+.plan-usage-gauge--warn { --usage-color: #e0a84e; }
+.plan-usage-gauge--critical { --usage-color: var(--danger); }
+.plan-usage-head {
   display: flex;
-  align-items: center;
+  justify-content: space-between;
+  align-items: baseline;
   gap: 6px;
 }
-.plan-usage-label { width: 16px; flex-shrink: 0; }
+.plan-usage-label {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.plan-usage-percent {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+.plan-usage-gauge--warn .plan-usage-percent,
+.plan-usage-gauge--critical .plan-usage-percent { color: var(--usage-color); }
 .plan-usage-track {
-  flex: 1;
-  height: 4px;
+  display: block;
+  height: 3px;
   border-radius: 2px;
   background: var(--bg-active);
   overflow: hidden;
@@ -522,14 +537,35 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   display: block;
   height: 100%;
   border-radius: 2px;
-  background: var(--accent);
+  background: var(--usage-color);
   transition: width 0.4s;
 }
-.plan-usage-percent { width: 28px; text-align: right; flex-shrink: 0; }
-.plan-usage-row--warn .plan-usage-fill { background: #e0a84e; }
-.plan-usage-row--warn .plan-usage-percent { color: #e0a84e; }
-.plan-usage-row--critical .plan-usage-fill { background: var(--danger); }
-.plan-usage-row--critical .plan-usage-percent { color: var(--danger); }
+.plan-usage-reset {
+  font-size: 9px;
+  color: var(--text-faint);
+}
+
+/* The 5-hour window, drawn over the header's bottom border in Claude rooms.
+   Sits on the border rather than adding a row: it is ambient, not content. */
+.chat-header { position: relative; }
+.header-usage {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  pointer-events: none;
+}
+.header-usage-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  opacity: 0.55;
+  transition: width 0.4s;
+}
+.header-usage--warn .header-usage-fill { background: #e0a84e; opacity: 0.8; }
+.header-usage--critical .header-usage-fill { background: var(--danger); opacity: 0.9; }
+.header-usage--stale .header-usage-fill { opacity: 0.2; }
 
 .user-badge-wrap {
   position: relative;

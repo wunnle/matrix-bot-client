@@ -36,6 +36,8 @@ import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
 import { useVisualViewportResize } from '../hooks/useVisualViewport'
 import RoomEditor from './RoomEditor'
+import { HeaderUsageBar } from './PlanUsageMeter'
+import { usePlanUsage } from '../hooks/usePlanUsage'
 import { Marked } from 'marked'
 import type { Message, RoomConfig, ConstructThread, ConstructApproval, ToolProgressLine } from '../types'
 import { useAgentRun } from '../hooks/useAgentActivity'
@@ -834,6 +836,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [messages, roomId, userId])
 
   const shownModel = currentModel ?? scannedModel
+  // The plan quota only means something where Claude is the one spending it.
+  const isClaudeRoom = !!shownModel && /claude|opus|sonnet|haiku|fable/i.test(shownModel)
+  const planUsage = usePlanUsage(isClaudeRoom ? client : null)
 
   useEffect(() => {
     if (scannedModel) setRoomModel(roomId, scannedModel)
@@ -1582,9 +1587,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             </button>
           )}
         </div>
+        {isClaudeRoom && <HeaderUsageBar usage={planUsage} />}
       </div>
 
-      {showEditor && <RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} onLeave={() => { setShowEditor(false); onBack() }} />}
+      {showEditor &&<RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} onLeave={() => { setShowEditor(false); onBack() }} />}
       {approvalDialog && (
         <div className="room-editor-overlay" onClick={() => setApprovalDialog(null)}>
           <div className="room-editor" onClick={e => e.stopPropagation()}>

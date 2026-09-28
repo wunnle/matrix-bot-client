@@ -9,6 +9,10 @@ import { parseActions } from '../lib/actions'
 // all: one that scrolls away unseen times out as a denial.
 const TOAST_TTL_MS = 4000
 const TOAST_TTL_ACTIONS_MS = 30_000
+// Only a message that just arrived pops a toast. The catch-up /sync after a
+// reload or a foreground delivers everything missed as "live" events too, and
+// toasting those buries the screen; they go to the notification center only.
+const TOAST_MAX_AGE_MS = 60_000
 
 const FENCE = /```([^\n`]*)\n?([\s\S]*?)(?:```|$)/g
 
@@ -250,13 +254,15 @@ export function useRoomNotifications(activeRoomId: string | null, clientReady: b
         return
       }
 
-      const notification = toNotification(room, event, Date.now())
+      const stale = Date.now() - event.getTs() > TOAST_MAX_AGE_MS
+      const notification = toNotification(room, event, stale ? event.getTs() : Date.now())
       if (!notification) return
 
       setNotifications(prev => {
         const filtered = prev.filter(n => n.roomId !== room.roomId)
         return [...filtered, notification]
       })
+      if (stale) return
       setToastRoomIds(prev => new Set([...prev, room.roomId]))
       armTimer(notification)
     }

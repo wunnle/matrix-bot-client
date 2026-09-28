@@ -8,9 +8,10 @@ import type { Message } from '../types'
  *
  * This is inference, not a protocol — the gateway never says "I am working".
  * So it is bounded on both ends: a run is only considered live between the
- * user's last message and the bot's next real reply, and it expires after
- * STALE_MS regardless, so a run that dies mid-flight can't pin a spinner to the
- * screen forever. (Same reasoning, and same duration, as the adapter's mute TTL.)
+ * user's last message and the bot's next real reply. While the bot is typing
+ * that is the whole story; once it isn't, the run expires after STALE_MS with
+ * no new tool line or narration, so a run that dies mid-flight can't pin a
+ * spinner to the screen forever.
  */
 export interface AgentActivity {
   /** 'thinking' = no tool yet; 'working' = a tool line has come in. */
@@ -25,7 +26,8 @@ export interface AgentActivity {
   elapsedSec: number
 }
 
-// A run nobody ever ended stops being believable after this long.
+// A run with no typing flag and no new tool line or narration for this long
+// stops being believable.
 const STALE_MS = 5 * 60 * 1000
 
 // No tool progress and no typing flag for this long means the run most likely
@@ -149,6 +151,8 @@ export function agentRunFrom(messages: RunMessage[]): AgentRun | null {
   if (anchor === -1) return null
 
   let lastTool: RunMessage | null = null
+  const startedAt = messages[anchor].timestamp
+  let lastSignalAt = startedAt
   for (let i = anchor + 1; i < messages.length; i++) {
     const m = messages[i]
     if (!isBotMessage(m)) continue
@@ -156,9 +160,9 @@ export function agentRunFrom(messages: RunMessage[]): AgentRun | null {
     // so does narration the bot marked as mid-turn.
     if (m.toolProgress?.length) lastTool = m
     else if (!m.interim) return null
+    lastSignalAt = m.timestamp
   }
 
-  const startedAt = messages[anchor].timestamp
   const line = lastTool?.toolProgress?.[lastTool.toolProgress.length - 1]
   return {
     phase: (line ? 'working' : 'thinking') as AgentActivity['phase'],
@@ -166,7 +170,7 @@ export function agentRunFrom(messages: RunMessage[]): AgentRun | null {
     detail: line?.content,
     startedAt,
     // The freshest evidence the run is alive, for the silence check below.
-    lastSignalAt: lastTool?.timestamp ?? startedAt,
+    lastSignalAt,
   }
 }
 
@@ -188,8 +192,14 @@ export function agentActivityAt(
 ): AgentActivity | null {
   if (!base) return null
   const now = nowSec * 1000
-  if (now - base.startedAt > STALE_MS) return null
-  if (!botTyping && base.phase === 'thinking' && now - base.lastSignalAt > SILENT_GRACE_MS) return null
+  // The bot's typing flag is the one signal it sends on purpose for the whole
+  // turn (and the server expires it if the bot dies), so while it is up the run
+  // is live however long it takes. Without it, fall back to inference.
+  if (!botTyping) {
+    const silentFor = now - base.lastSignalAt
+    if (silentFor > STALE_MS) return null
+    if (base.phase === 'thinking' && silentFor > SILENT_GRACE_MS) return null
+  }
 
   return {
     phase: base.phase,

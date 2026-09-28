@@ -3227,11 +3227,10 @@ a.msg-card-link:hover {
 }
 .room-toast-close:hover { color: #444460; }
 /* Approval requests: stay until answered, and look like it. */
+/* Same surface as any toast; the accent ring is what says "waiting on you". */
 .room-toast-approval {
-  background: #fff6e5;
-  box-shadow: 0 0 0 1.5px #e0a83a, 0 4px 32px rgba(0,0,0,0.5);
+  box-shadow: 0 0 0 1.5px #5c4fd6, 0 4px 32px rgba(0,0,0,0.5);
 }
-.room-toast-approval:hover { background: #ffefd2; }
 .room-toast-code {
   margin: 6px 0 0;
   padding: 6px 8px;
@@ -3263,7 +3262,7 @@ a.msg-card-link:hover {
 }
 .room-toast-action {
   border: none;
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 5px 10px;
   font-size: 12.5px;
   font-weight: 600;

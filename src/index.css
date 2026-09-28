@@ -1952,6 +1952,12 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   min-width: 0;
 }
 
+/* A sentence, not a path: the row's own type, since it now leads the row. */
+.agent-activity-detail--prose {
+  font-family: inherit;
+  font-size: inherit;
+}
+
 .agent-activity-elapsed {
   margin-left: auto;
   flex-shrink: 0;

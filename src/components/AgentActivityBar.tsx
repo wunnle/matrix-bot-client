@@ -33,12 +33,17 @@ export function AgentActivityBar({ run, botTyping, onLiveChange, fallback = null
 
   if (!activity) return <>{fallback}</>
 
+  // A detail with spaces is the agent saying what it's doing ("Read the logs"),
+  // which already has its verb — "Running Read the logs" says it twice. A bare
+  // path or name ("app.ts") still needs one, and reads as code, not prose.
+  const prose = !!activity.detail && /\s/.test(activity.detail.trim())
+
   return (
     <div className={`agent-activity agent-activity--${activity.phase}`} aria-live="polite">
       <span className="agent-activity-dot" />
-      <span className="agent-activity-label">{activity.label}</span>
+      {!prose && <span className="agent-activity-label">{activity.label}</span>}
       {activity.detail && (
-        <span className="agent-activity-detail">{activity.detail}</span>
+        <span className={`agent-activity-detail${prose ? ' agent-activity-detail--prose' : ''}`}>{activity.detail}</span>
       )}
       <span className="agent-activity-elapsed">{formatElapsed(activity.elapsedSec)}</span>
     </div>

@@ -50,6 +50,8 @@ export interface Message {
   fileMxc?: string
   fileName?: string
   fileMime?: string
+  // Text sent with an image or file, in the same event.
+  caption?: string
   cards?: ConstructCard[]
   threads?: ConstructThread[]
   approval?: ConstructApproval

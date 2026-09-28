@@ -480,6 +480,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  // A pasted, dropped or picked file waits here until Send, so it can go out
+  // with whatever is typed as its caption. previewUrl is set for images only.
+  const [pending, setPending] = useState<{ file: File, previewUrl?: string } | null>(null)
   const autoSendToMessage = useRef<((t: string) => void) | null>(null)
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
@@ -1488,18 +1491,53 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [client, roomId])
 
-  const sendFile = useCallback(async (file: File) => {
+  const attachFile = useCallback((file: File) => {
+    setPending((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl)
+      return {
+        file,
+        previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+      }
+    })
+    textareaRef.current?.focus()
+  }, [])
+
+  const clearPending = useCallback(() => {
+    setPending((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl)
+      return null
+    })
+  }, [])
+
+  // An attachment belongs to the room it was picked in.
+  useEffect(() => clearPending, [roomId, clearPending])
+
+  // One event for file and text: Matrix puts the caption in body and the
+  // original name in filename, which is also how the bot tells them apart.
+  const sendFile = useCallback(async (file: File, caption: string, previewUrl?: string) => {
     if (sending) return
+    hapticSend()
+    stopDictation()
+    const text = caption.trim()
+    setPending(null)
+    setInput('')
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
+    setSuggestions([])
     setSending(true)
+    requestAnimationFrame(scrollToBottom)
     try {
       const upload = await client.uploadContent(file, { name: file.name, type: file.type })
       const mxc = upload.content_uri
       const isImage = file.type.startsWith('image/')
       const msgContent: Record<string, unknown> = {
         msgtype: isImage ? 'm.image' : 'm.file',
-        body: file.name,
+        body: text || file.name,
+        ...(text ? { filename: file.name } : {}),
         url: mxc,
         info: { mimetype: file.type, size: file.size },
+        'com.construct.capabilities': ['actionable'],
+        'com.construct.client': 'construct-web',
+        'com.construct.version': __CONSTRUCT_VERSION__,
       }
       if (isImage) {
         await new Promise<void>((resolve) => {
@@ -1509,18 +1547,29 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             resolve()
           }
           img.onerror = () => resolve()
-          img.src = URL.createObjectURL(file)
+          img.src = previewUrl ?? URL.createObjectURL(file)
         })
       }
       await client.sendMessage(roomId, msgContent as any)
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
     } catch (err: any) {
+      // Put both back so nothing typed or picked is lost.
+      setPending({ file, previewUrl })
+      setInput(caption)
       setSendError(err?.message ?? 'Failed to send file')
       setTimeout(() => setSendError(''), 4000)
     } finally {
       setSending(false)
       textareaRef.current?.focus()
     }
-  }, [client, roomId, sending])
+  }, [client, roomId, sending, scrollToBottom, stopDictation])
+
+  // What Send, Enter and dictation auto-send do: the composer's text, plus the
+  // pending attachment if there is one.
+  const sendComposer = useCallback((text: string) => {
+    if (pending) void sendFile(pending.file, text, pending.previewUrl)
+    else void sendMessage(text)
+  }, [pending, sendFile, sendMessage])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -1543,8 +1592,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     dragCounterRef.current = 0
     setDragOver(false)
     const file = e.dataTransfer.files[0]
-    if (file) void sendFile(file)
-  }, [sendFile])
+    if (file) attachFile(file)
+  }, [attachFile])
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = Array.from(e.clipboardData?.items ?? [])
@@ -1553,17 +1602,17 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const file = fileItem.getAsFile()
     if (!file) return
     e.preventDefault()
-    void sendFile(file)
-  }, [sendFile])
+    attachFile(file)
+  }, [attachFile])
 
   useLayoutEffect(() => {
-    autoSendToMessage.current = (t) => { void sendMessage(t) }
-  }, [sendMessage])
+    autoSendToMessage.current = sendComposer
+  }, [sendComposer])
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      sendMessage(input)
+      sendComposer(input)
     }
   }
 
@@ -2225,6 +2274,27 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           </div>
         )}
 
+        {pending && (
+          <div className="composer-attachment">
+            {pending.previewUrl
+              ? <img className="composer-attachment-thumb" src={pending.previewUrl} alt={pending.file.name} />
+              : <span className="composer-attachment-thumb composer-attachment-file">
+                  <span className="material-icons" aria-hidden>insert_drive_file</span>
+                </span>}
+            <span className="composer-attachment-name">{pending.file.name}</span>
+            <button
+              type="button"
+              className="composer-attachment-remove"
+              aria-label="Remove attachment"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={clearPending}
+              disabled={sending}
+            >
+              <span className="material-symbols-outlined" aria-hidden>close</span>
+            </button>
+          </div>
+        )}
+
         <div className="input-row glass">
           <input
             ref={cameraInputRef}
@@ -2234,7 +2304,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             className="file-input-hidden"
             onChange={(e) => {
               const file = e.target.files?.[0]
-              if (file) void sendFile(file)
+              if (file) attachFile(file)
               e.target.value = ''
             }}
           />
@@ -2245,7 +2315,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             className="file-input-hidden"
             onChange={(e) => {
               const file = e.target.files?.[0]
-              if (file) void sendFile(file)
+              if (file) attachFile(file)
               e.target.value = ''
             }}
           />
@@ -2318,8 +2388,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               </span>
             </button>
           )}
-          {(input.trim() || !showDictation) && (
-            <button className="send-btn" onClick={() => sendMessage(input)} disabled={sending || !input.trim()}>
+          {(input.trim() || pending || !showDictation) && (
+            <button className="send-btn" onClick={() => sendComposer(input)} disabled={sending || (!input.trim() && !pending)}>
               {sending ? '…' : <><span className="send-btn-label">Send</span><span className="send-btn-icon">↑</span></>}
             </button>
           )}
@@ -2398,7 +2468,11 @@ function eventToMessage(
 
   const imageMxc = content?.msgtype === 'm.image' && content?.url ? content.url : undefined
   const fileMxc = content?.msgtype === 'm.file' && content?.url ? content.url : undefined
-  const fileName = fileMxc ? (content?.body ?? 'file') : undefined
+  // With a caption, body is the caption and filename the original name;
+  // without one, body is the name.
+  const mediaFilename = typeof content?.filename === 'string' ? content.filename : undefined
+  const caption = (imageMxc || fileMxc) && mediaFilename && body && body !== mediaFilename ? body : undefined
+  const fileName = fileMxc ? (mediaFilename ?? content?.body ?? 'file') : undefined
   const fileMime = fileMxc ? (content?.info?.mimetype ?? 'application/octet-stream') : undefined
 
   const rawCards = content?.['com.construct.cards']
@@ -2479,6 +2553,7 @@ function eventToMessage(
     fileMxc,
     fileName,
     fileMime,
+    caption,
     cards: cards && cards.length > 0 ? cards : undefined,
     threads: threads && threads.length > 0 ? threads : undefined,
     approval,
@@ -2717,7 +2792,7 @@ function MessageRowInner({
                     {msg.isOwnMessage ? (
                       <>
                         <div className="message-pin-surface message-pin-surface--own">
-                          <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${imageUrl ? 'bubble-image' : ''} ${msg.source === 'voice' ? 'bubble-voice' : ''}`}>
+                          <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${imageUrl ? (msg.caption ? 'bubble-image-captioned' : 'bubble-image') : ''} ${msg.source === 'voice' ? 'bubble-voice' : ''}`}>
                             {msg.source === 'voice' && (
                               <span className="material-icons bubble-voice-icon" title="Voice input">mic</span>
                             )}
@@ -2728,6 +2803,8 @@ function MessageRowInner({
                                 : msg.fileMxc && !fileUrl
                                   ? <span className="msg-file msg-file-loading"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</span>
                                   : msg.body}
+                            {/* Until the image loads, the body fallback above is already the caption. */}
+                            {msg.caption && (imageUrl || msg.fileMxc) && <div className="msg-caption">{msg.caption}</div>}
                           </div>
                         </div>
                         <div className={`msg-status ${msg.isRead ? 'msg-status-read' : ''}`}>
@@ -2862,6 +2939,7 @@ function MessageRowInner({
                                         : cleanHtml
                                           ? <div className="rich-html" dangerouslySetInnerHTML={{ __html: cleanHtml }} />
                                           : text}
+                                  {msg.caption && !msg.cards && !msg.threads && (imageUrl || msg.fileMxc) && <div className="msg-caption">{msg.caption}</div>}
                                 </div>
                                 {msg.approval && (
                                   <button

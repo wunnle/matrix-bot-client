@@ -1694,6 +1694,21 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   border: none !important;
 }
 
+/* An image with a caption keeps the bubble, so the text reads as part of it. */
+.bubble-image-captioned {
+  padding: 4px;
+}
+
+.msg-caption {
+  padding: 6px 8px 2px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bubble-image-captioned .msg-caption {
+  max-width: 260px;
+}
+
 .bubble-voice {
   position: relative;
   padding-left: 30px;
@@ -2335,6 +2350,57 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .file-input-hidden {
   display: none;
 }
+
+/* The attachment waiting to go out with the next Send. */
+.composer-attachment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--other-bubble);
+  border: 1px solid var(--border);
+}
+.composer-attachment-thumb {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.composer-attachment-file {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-muted);
+}
+.composer-attachment-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.composer-attachment-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-muted);
+}
+.composer-attachment-remove:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+.composer-attachment-remove .material-symbols-outlined { font-size: 18px; }
 /* Secondary controls are drops of lighter glass inside the capsule; only Send
    keeps the solid accent. */
 .input-row button.attach-btn {

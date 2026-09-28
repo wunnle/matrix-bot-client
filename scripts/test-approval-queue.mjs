@@ -128,5 +128,32 @@ await check('settle reports whether there was anything to settle', async () => {
   await a
 })
 
-console.log(failed ? `\n${failed} failed` : '\n9/9 approval queue assertions passed')
+await check('calls queued behind a card are auto-answered once auto mode is on', async () => {
+  // Auto mode flips on mid-queue (Approve + auto); B is one it would answer,
+  // C one it would leave to a human.
+  let auto = false
+  const shown = []
+  const aq = createApprovalQueue({
+    timeoutMs: TIMEOUT_MS,
+    present: (roomId, request) => shown.push(request.toolName),
+    autoAnswer: (roomId, request) =>
+      auto && request.toolName !== 'C' ? { decision: 'allow', reason: 'auto' } : null,
+  })
+  const a = aq.ask(R, { toolName: 'A' })
+  const b = aq.ask(R, { toolName: 'B' })
+  const c = aq.ask(R, { toolName: 'C' })
+  const d = aq.ask(R, { toolName: 'D' })
+  auto = true
+  aq.settle(R, 'allow', 'yes')
+  assert.equal((await a).reason, 'yes')
+  assert.equal((await b).reason, 'auto', 'B never reaches the screen')
+  assert.deepEqual(shown, ['A', 'C'], 'C still asks, and it is next up')
+  aq.settle(R, 'deny', 'no')
+  assert.equal((await c).decision, 'deny')
+  assert.equal((await d).reason, 'auto', 'the queue keeps draining past a human answer')
+  assert.deepEqual(shown, ['A', 'C'])
+  assert.equal(aq.settle(R, 'allow', 'x'), false, 'nothing is left on screen')
+})
+
+console.log(failed ? `\n${failed} failed` : '\n10/10 approval queue assertions passed')
 process.exit(failed ? 1 : 0)

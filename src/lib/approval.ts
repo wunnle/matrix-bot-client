@@ -9,7 +9,9 @@
  *   …
  *   ```
  *
- *   [[Deny]] [[Approve]] [[Always allow]]
+ *   [[Deny]] [[Approve]] [[Always allow]] [[Approve + auto]]
+ *
+ * Always allow is Codex-only; Approve + auto is offered while auto mode is off.
  */
 export interface ApprovalCard {
   /** The tool asking, e.g. "Edit" or "Bash". */
@@ -48,5 +50,7 @@ export function approvalChoices(actions: string[]) {
     approve: find(/^approve$/i),
     deny: find(/^deny$/i),
     always: find(/^always allow$/i),
+    // Approve this call and turn the room's auto mode on; one answer to the bot.
+    auto: find(/^approve \+ auto$/i),
   }
 }

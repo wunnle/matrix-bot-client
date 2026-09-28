@@ -220,11 +220,19 @@ const approvals = createApprovalQueue({
   timeoutMs: APPROVAL_TIMEOUT_MS,
   onTimeout: (roomId, toolName) =>
     sendRoomText(roomId, `⏱️ No answer — denied \`${toolName}\`.`).catch(() => {}),
+  // Waiting calls go through the same auto-mode rules as new ones, so turning it
+  // on from a card covers what queued up behind that card too.
+  autoAnswer: (roomId, request) => autoApprove(roomId, request),
   present: (roomId, request, abandon) => {
     const { toolName, summary, full, lang, allowSession = false, vetoReason } = request
-    const buttons = allowSession
-      ? '[[Deny]] [[Approve]] [[Always allow]]'
-      : '[[Deny]] [[Approve]]'
+    // "Approve + auto" only while auto mode is off: when it is on, this card is
+    // here because auto mode refused the call, and switching it on again would
+    // not change that.
+    const buttons = [
+      '[[Deny]] [[Approve]]',
+      allowSession && '[[Always allow]]',
+      !autoMode(roomId) && `[[${APPROVE_AND_AUTO}]]`,
+    ].filter(Boolean).join(' ')
     // Anything that isn't a diff is a command or a bare argument dump; both read
     // better wrapped than scrolled.
     const head = vetoReason
@@ -274,6 +282,12 @@ const questions = createQuestionQueue({
 // than a timer so a bot restart cannot resurrect a lapsed one.
 const AUTO_DEFAULT_MS = Number(process.env.AGENT_AUTO_TTL_MS ?? 2 * 60 * 60 * 1000)
 
+// What turning auto mode on means, said the same way however it was turned on.
+const AUTO_ON_TERMS =
+  "I'll approve my own tool calls and report each one.\n\n" +
+  'Still asking: credentials, writes outside this worktree, `sudo`, `systemctl`, pushes, and anything that ' +
+  'leaves this machine.\n\n[[!auto off]]'
+
 // The live auto-mode state for a room, or null. Lapsed entries are cleared as
 // they are read, so nothing has to sweep them.
 function autoMode(roomId) {
@@ -309,25 +323,33 @@ function formatRemaining(ms) {
   return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`
 }
 
+// The answer an approval card's extra button sends: approve this call and turn
+// auto mode on for the rest. One message does both, so a tap is one answer.
+const APPROVE_AND_AUTO = 'Approve + auto'
+
+// Auto mode's answer to a call, or null when a human has to give it — auto mode
+// is off, or the veto list in approval-rules.mjs keeps this one for a person.
+function autoApprove(roomId, request) {
+  if (!autoMode(roomId) || requiresHuman(request)) return null
+  // Reported, not silent: auto mode moves the decision, not the record. One
+  // line per call is what makes a room worth scrolling back through.
+  // Machine-flagged: nothing is being asked, so it must not toast, push to
+  // the phone or count as unread — it's a record, not a question.
+  const first = String(request.summary ?? '').split('\n')[0]
+  sendRoomText(roomId, `⚡ Auto-approved \`${request.toolName}\`: ${fencedBlock(first, 'cmd')}`, {
+    'com.construct.machine': { kind: 'notification', source: 'auto-approve' },
+  }).catch(() => {})
+  log(`[${roomId}] auto-approved ${request.toolName}`)
+  return { decision: 'allow', reason: 'Auto-approved (auto mode is on for this room).' }
+}
+
 // Approvals still go through the queue unless the room is in auto mode and the
-// call is one auto mode is allowed to answer. The veto list lives in
-// approval-rules.mjs next to the rules that decided to ask in the first place.
+// call is one auto mode is allowed to answer.
 const askForApproval = (roomId, request) => {
-  const auto = autoMode(roomId)
-  if (auto) {
-    const veto = requiresHuman(request)
-    if (!veto) {
-      // Reported, not silent: auto mode moves the decision, not the record. One
-      // line per call is what makes a room worth scrolling back through.
-      // Machine-flagged: nothing is being asked, so it must not toast, push to
-      // the phone or count as unread — it's a record, not a question.
-      const first = String(request.summary ?? '').split('\n')[0]
-      sendRoomText(roomId, `⚡ Auto-approved \`${request.toolName}\`: ${fencedBlock(first, 'cmd')}`, {
-        'com.construct.machine': { kind: 'notification', source: 'auto-approve' },
-      }).catch(() => {})
-      log(`[${roomId}] auto-approved ${request.toolName}`)
-      return Promise.resolve({ decision: 'allow', reason: 'Auto-approved (auto mode is on for this room).' })
-    }
+  const answer = autoApprove(roomId, request)
+  if (answer) return Promise.resolve(answer)
+  const veto = autoMode(roomId) && requiresHuman(request)
+  if (veto) {
     // Auto mode is on and this one still asks — say which, or the card looks
     // like auto mode silently stopped working.
     log(`[${roomId}] auto mode declined to answer ${request.toolName}: ${veto}`)
@@ -1327,10 +1349,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       await sendRoomText(roomId, 'No session in this room yet — send me something first.')
       return
     }
-    await sendRoomText(roomId,
-      `⚡ Auto mode **on** for ${formatRemaining(ms)}. I'll approve my own tool calls and report each one.\n\n` +
-      'Still asking: credentials, writes outside this worktree, `sudo`, `systemctl`, pushes, and anything that ' +
-      'leaves this machine.\n\n[[!auto off]]')
+    await sendRoomText(roomId, `⚡ Auto mode **on** for ${formatRemaining(ms)}. ${AUTO_ON_TERMS}`)
     return
   }
 
@@ -1500,6 +1519,29 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       await sendRoomText(roomId, '✅ Approved — and I won\'t ask again this session.', ack)
       return
     }
+  }
+  // Auto mode goes on before the approval settles: settling brings up the next
+  // queued call, and that one should already find auto mode answering.
+  // Owner-only, like !auto itself — it carries the same power, just without
+  // the `!` that would have put it behind the command guard above.
+  const fromOwner = !OWNER_ID || event.getSender() === OWNER_ID
+  // Already on, the card never offered this (auto mode refused the call), so a
+  // typed one is just an approval — not a reason to restart the clock.
+  if (answer === APPROVE_AND_AUTO.toLowerCase() && autoMode(roomId)) {
+    if (settleApproval(roomId, 'allow', 'Approved in chat.')) {
+      await sendRoomText(roomId, '✅ Approved — continuing. (Auto mode was already on.)', ack)
+      return
+    }
+  }
+  if (answer === APPROVE_AND_AUTO.toLowerCase() && fromOwner && approvals.has(roomId)) {
+    const started = setAutoMode(roomId, true)
+    settleApproval(roomId, 'allow', 'Approved in chat; auto mode turned on.')
+    // Not machine-flagged like the other acks: this changes how the room
+    // behaves from here on, which is worth a line you actually see.
+    await sendRoomText(roomId, started
+      ? `✅ Approved. ⚡ Auto mode **on** for ${formatRemaining(started.expiresAt - Date.now())}. ${AUTO_ON_TERMS}`
+      : '✅ Approved — but there is no session here to turn auto mode on for.')
+    return
   }
   if (answer === 'deny' || answer === 'no' || answer === 'n') {
     if (settleApproval(roomId, 'deny', 'Denied in chat.')) {

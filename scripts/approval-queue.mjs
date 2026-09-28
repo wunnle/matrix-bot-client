@@ -12,7 +12,11 @@
 // look broken until the deadline passed. Waiting costs a pause; denying costs
 // the work.
 
-export function createApprovalQueue({ timeoutMs, maxQueued = 5, present, onTimeout }) {
+// `autoAnswer(roomId, request)` may resolve a waiting request without asking,
+// by returning a { decision, reason }. It is consulted as each one comes up:
+// auto mode switched on while a card was showing must also cover the calls
+// queued behind it, not only the ones that arrive later.
+export function createApprovalQueue({ timeoutMs, maxQueued = 5, present, onTimeout, autoAnswer }) {
   // roomId -> { id, resolve, timer, toolName }. One question on screen at a
   // time: two cards in a room are ambiguous, because [[Approve]] names no card.
   const pending = new Map()
@@ -37,10 +41,17 @@ export function createApprovalQueue({ timeoutMs, maxQueued = 5, present, onTimeo
 
   function next(roomId) {
     const queue = queued.get(roomId)
-    if (!queue?.length) return
-    const entry = queue.shift()
-    if (!queue.length) queued.delete(roomId)
-    show(roomId, entry)
+    while (queue?.length) {
+      const entry = queue.shift()
+      if (!queue.length) queued.delete(roomId)
+      const answer = autoAnswer?.(roomId, entry.request)
+      if (answer) {
+        entry.resolve(answer)
+        continue
+      }
+      show(roomId, entry)
+      return
+    }
   }
 
   function ask(roomId, request) {
@@ -103,5 +114,8 @@ export function createApprovalQueue({ timeoutMs, maxQueued = 5, present, onTimeo
     return queue.length
   }
 
-  return { ask, settle, release, dropQueued }
+  // Whether a card is on screen, i.e. whether an answer would settle anything.
+  const has = (roomId) => pending.has(roomId)
+
+  return { ask, settle, release, dropQueued, has }
 }

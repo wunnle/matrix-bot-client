@@ -7,6 +7,8 @@ interface Props {
   approve: string
   deny?: string
   always?: string
+  /** Approves and turns on the room's auto mode, in one answer. */
+  auto?: string
   onAnswer: (label: string) => void
   onView: () => void
 }
@@ -18,7 +20,7 @@ interface Props {
  *
  * Keyed by the card's event id by its parent, so a new card starts un-answered.
  */
-export default function ApprovalBar({ card, approve, deny, always, onAnswer, onView }: Props) {
+export default function ApprovalBar({ card, approve, deny, always, auto, onAnswer, onView }: Props) {
   // One answer per card: the bar goes away when the reply lands, and a second
   // tap in between would read to the bot as an answer to whatever comes next.
   const [answered, setAnswered] = useState<string | null>(null)
@@ -77,6 +79,17 @@ export default function ApprovalBar({ card, approve, deny, always, onAnswer, onV
           onClick={() => answer(always)}
         >
           {answered === always ? 'Allowing…' : `${always} ${card.tool} in this room`}
+        </button>
+      )}
+      {auto && (
+        <button
+          type="button"
+          className="approval-bar-always"
+          disabled={answered !== null}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => answer(auto)}
+        >
+          {answered === auto ? 'Turning on auto mode…' : 'Approve and turn on auto mode'}
         </button>
       )}
     </div>

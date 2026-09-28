@@ -416,10 +416,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // place of the pill row.
   const pendingApproval = useMemo(() => {
     if (!lastActionMessage) return null
-    const { approve, deny, always } = approvalChoices(lastActions)
+    const { approve, deny, always, auto } = approvalChoices(lastActions)
     const card = approve ? parseApprovalCard(lastActionMessage.body) : null
     if (!approve || !card) return null
-    return { msg: lastActionMessage, card, approve, deny, always }
+    return { msg: lastActionMessage, card, approve, deny, always, auto }
   }, [lastActionMessage, lastActions])
   const [addingPill, setAddingPill] = useState(false)
   const [newPillInput, setNewPillInput] = useState('')
@@ -2112,6 +2112,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             approve={pendingApproval.approve}
             deny={pendingApproval.deny}
             always={pendingApproval.always}
+            auto={pendingApproval.auto}
             onAnswer={(label) => { void sendMessage(label) }}
             onView={() => viewApprovalCard(pendingApproval.msg)}
           />

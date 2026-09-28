@@ -138,7 +138,7 @@ export function useAgentRun(messages: Message[]): AgentRun | null {
 }
 
 /** The fields a run is derived from — all a caller without full Messages needs. */
-export type RunMessage = Pick<Message, 'isOwnMessage' | 'isPeerMessage' | 'toolProgress' | 'interim' | 'timestamp'>
+export type RunMessage = Pick<Message, 'isOwnMessage' | 'isPeerMessage' | 'toolProgress' | 'interim' | 'machine' | 'timestamp'>
 
 /** useAgentRun without the hook, for callers outside a room (the room grid). */
 export function agentRunFrom(messages: RunMessage[]): AgentRun | null {
@@ -157,8 +157,11 @@ export function agentRunFrom(messages: RunMessage[]): AgentRun | null {
     const m = messages[i]
     if (!isBotMessage(m)) continue
     // A plain reply from the bot ends the run; tool lines keep it alive, and
-    // so does narration the bot marked as mid-turn.
+    // so does narration the bot marked as mid-turn. Other machine-flagged lines
+    // ("✅ Approved — continuing", "⚡ Auto-approved …") are records posted
+    // mid-turn, not answers, so they neither end the run nor count as progress.
     if (m.toolProgress?.length) lastTool = m
+    else if (m.machine) continue
     else if (!m.interim) return null
     lastSignalAt = m.timestamp
   }

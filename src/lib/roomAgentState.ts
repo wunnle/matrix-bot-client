@@ -60,6 +60,8 @@ function timelineMessages(room: sdk.Room, userId: string): TimelineMessage[] {
       isPeerMessage: !isOwnMessage && owners.size > 0 && !owners.has(sender),
       toolProgress: toolProgress?.length ? toolProgress : undefined,
       interim: content['com.construct.interim'] === true ? true : undefined,
+      // Only its presence matters here; ChatView parses the kind and source.
+      machine: content['com.construct.machine'] ? {} : undefined,
       timestamp: event.getTs(),
       body: typeof content.body === 'string' ? content.body : '',
     })
@@ -91,6 +93,10 @@ export function roomAgentState(room: sdk.Room, userId: string, now: number): Roo
   const botTyping = room.getMembers().some((m) => m.userId !== userId && m.typing)
   const activity = agentActivityAt(agentRunFrom(messages), botTyping, Math.floor(now / 1000))
   if (activity) return { kind: 'working', label: activity.label }
+  // Some turns aren't started by a message of yours — a background task
+  // finishing wakes the agent up after its last reply — so there is no run to
+  // find. The typing flag still says it is working, and that is enough.
+  if (botTyping) return { kind: 'working', label: 'Working' }
 
   return { kind: 'idle' }
 }

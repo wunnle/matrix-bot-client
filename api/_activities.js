@@ -10,8 +10,16 @@
  *   { activities: { "<activityId>": {
  *       roomId, token|null, startedAt, updatedAt, endsAt (ms),
  *       lastTs (s, last aps timestamp), content (last content-state),
- *       pending (content-state that arrived before the token did, or null) } },
- *     lastStart: { … } }
+ *       pending (content-state that arrived before the token did, or null),
+ *       pendingEnd ({ content, dismissIn } for an end that arrived before the
+ *         token did, or absent), lastSyncAt (ms, last la-sync wake) } },
+ *     lastStart, lastRegister, lastReconcile, lastSync: { … } }
+ *
+ * A push-started card only gets an update token once the app runs, and a
+ * terminated app isn't woken by the start itself. So every start, and every
+ * update or end that finds no token, also sends the phone a silent "la-sync"
+ * push, which wakes the app to report its tokens (contract in
+ * docs/handoff/mac-live-activity.md).
  *
  * The content-state shape is a contract with ConstructActivityAttributes in
  * the app (AppDelegate.swift) and the widget; ActivityKit drops a push that
@@ -22,7 +30,7 @@
  * which rarely coincide; a lost write costs one stale entry, which reconcile
  * and expiry clean up.
  */
-import { apnsSendWithFallback, apnsConfigured, LIVE_ACTIVITY_TOPIC } from "./_apns.js";
+import { apnsSendWithFallback, apnsConfigured, LIVE_ACTIVITY_TOPIC, APNS_BUNDLE_ID } from "./_apns.js";
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN;
@@ -337,6 +345,54 @@ async function pushEnd(entry, content, dismissInS) {
   return { r, ts };
 }
 
+/* ── Waking the app (la-sync) ─────────────────────────────────────────── */
+
+/** The native app's pusher, as registered with the homeserver. */
+const NATIVE_APP_ID = "com.wunnle.construct.ios";
+/** iOS rations background pushes; one wake per card every 2 minutes is plenty. */
+const SYNC_INTERVAL_MS = 2 * 60 * 1000;
+
+let deviceTokenCache = { at: 0, tokens: [] };
+
+/** The phone's APNs device tokens: the pushkeys of the native app's pushers. */
+async function phoneDeviceTokens() {
+  if (Date.now() - deviceTokenCache.at < 10 * 60 * 1000 && deviceTokenCache.tokens.length) {
+    return deviceTokenCache.tokens;
+  }
+  try {
+    const r = await fetch(`${HOMESERVER}/_matrix/client/v3/pushers`, {
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+    });
+    if (!r.ok) return deviceTokenCache.tokens;
+    const { pushers = [] } = await r.json();
+    const tokens = [...new Set(pushers.filter((p) => p.app_id === NATIVE_APP_ID && p.pushkey).map((p) => p.pushkey))];
+    deviceTokenCache = { at: Date.now(), tokens };
+    return tokens;
+  } catch {
+    return deviceTokenCache.tokens;
+  }
+}
+
+/** Wake the app with the silent "la-sync" push so it reports its activities'
+    tokens. Best-effort: iOS rations these and never delivers them to an app
+    Sinan swiped away. Mutates `entry.lastSyncAt` and `reg.lastSync`. */
+async function wakeApp(reg, entry, reason) {
+  if (entry && Date.now() - (entry.lastSyncAt ?? 0) < SYNC_INTERVAL_MS) return null;
+  const tokens = await phoneDeviceTokens();
+  const results = [];
+  for (const token of tokens) {
+    const r = await apnsSendWithFallback(token, { aps: { "content-available": 1 }, construct: "la-sync" }, {
+      topic: APNS_BUNDLE_ID,
+      pushType: "background",
+      priority: 5,
+    });
+    results.push(summarize(r));
+  }
+  if (entry) entry.lastSyncAt = Date.now();
+  reg.lastSync = { at: Date.now(), reason, devices: tokens.length, results };
+  return results;
+}
+
 /** Push-to-start tokens, newest first. The app rotates them and each device
     keeps a trail of older ones; the newest is the one it's listening on. */
 async function pushToStartTokens() {
@@ -446,11 +502,20 @@ export async function upsertActivity(input) {
       entry.content ?? EMPTY_CONTENT,
       { roomId: entry.roomId, roomName: entry.content?.roomName ?? entry.roomId, nowMs: now },
     );
-    let apns = null;
-    if (entry.token) apns = summarize((await pushEnd(entry, content, dismiss)).r);
+    if (!entry.token) {
+      // No token yet, so no end can reach the card. Dropping the entry here
+      // is what stranded cards on the lock screen for hours. Keep it with the
+      // end pending and wake the app: when it reports the token,
+      // registerToken() delivers the end straight away.
+      reg.activities[id] = { ...entry, pendingEnd: { content, dismissIn: dismiss }, updatedAt: now };
+      const sync = await wakeApp(reg, reg.activities[id], "end without token");
+      await writeRegistry(reg);
+      return { ok: true, id, action: "end-queued", reason: "waiting for the activity's push token", sync };
+    }
+    const apns = summarize((await pushEnd(entry, content, dismiss)).r);
     delete reg.activities[id];
     await writeRegistry(reg);
-    return { ok: true, id, action: "ended", apns, ...(entry.token ? {} : { note: "token never registered; removed without a push" }) };
+    return { ok: true, id, action: "ended", apns };
   }
 
   if (entry) {
@@ -470,8 +535,9 @@ export async function upsertActivity(input) {
       // Started, but the app hasn't reported the activity's token yet. Keep
       // the update; registerToken() pushes it the moment the token arrives.
       reg.activities[id] = { ...entry, content, pending: content, endsAt: endsAtMs, updatedAt: now };
+      const sync = await wakeApp(reg, reg.activities[id], "update without token");
       await writeRegistry(reg);
-      return { ok: true, id, action: "queued", reason: "waiting for the activity's push token" };
+      return { ok: true, id, action: "queued", reason: "waiting for the activity's push token", sync };
     }
 
     const { r, ts } = await pushUpdate(entry, content, alert, endsAtMs);
@@ -526,6 +592,9 @@ export async function upsertActivity(input) {
       content,
       pending: null,
     };
+    // The start creates the card, not a running app; wake the app so it
+    // reports the card's update token.
+    await wakeApp(reg, reg.activities[id], "start");
   }
   await writeRegistry(reg);
   return {
@@ -554,6 +623,15 @@ export async function registerToken(activityId, token) {
   };
   let next = { ...entry, token };
   let delivered = null;
+  if (entry.pendingEnd && apnsConfigured()) {
+    // An end arrived before the token did (see upsertActivity): deliver it
+    // now and forget the card, instead of first catching up on updates.
+    const { r } = await pushEnd(next, entry.pendingEnd.content, entry.pendingEnd.dismissIn);
+    delete reg.activities[activityId];
+    reg.lastRegister = { activityId, at: now };
+    await writeRegistry(reg);
+    return { ok: true, pendingEndDelivered: summarize(r) };
+  }
   if (entry.pending && apnsConfigured()) {
     const { r, ts } = await pushUpdate(next, entry.pending, undefined);
     delivered = summarize(r);
@@ -604,11 +682,13 @@ export async function listActivities() {
       title: e.content?.title ?? null,
       registered: !!e.token,
       pending: !!e.pending,
+      endPending: !!e.pendingEnd,
       ageS: Math.round((now - (e.startedAt ?? now)) / 1000),
       endsInS: Math.round(((e.endsAt ?? now) - now) / 1000),
     })),
     lastStart: reg.lastStart ?? null,
     lastRegister: reg.lastRegister ?? null,
     lastReconcile: reg.lastReconcile ?? null,
+    lastSync: reg.lastSync ?? null,
   };
 }

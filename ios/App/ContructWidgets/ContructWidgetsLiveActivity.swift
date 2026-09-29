@@ -232,15 +232,17 @@ private struct RoomAvatar: View {
 
 /// The step label and the endsAt countdown, in the tone's accent. Empty when
 /// neither is set. The countdown is a timer-driven Text, which keeps ticking in
-/// a Live Activity without any pushes.
+/// a Live Activity without any pushes. `showsTimer: false` where BigCountdown
+/// already shows it.
 private struct MetaLabel: View {
     let state: ConstructActivityAttributes.ContentState
+    var showsTimer = true
     var body: some View {
         HStack(spacing: 6) {
             if let step = state.step, !step.isEmpty {
                 Text(step)
             }
-            if let end = state.endDate {
+            if showsTimer, let end = state.endDate {
                 // A timer Text lays out at its widest possible value and
                 // left-aligns inside that, which parked it at the far left.
                 // Right-align it and cap the width so it hugs the edge.
@@ -256,24 +258,60 @@ private struct MetaLabel: View {
     }
 }
 
+/// The endsAt countdown as the card's hero, while it is still ahead.
+///
+/// A timer Text lays out at its widest possible value, so it gets a fixed
+/// frame sized for the longest form it can show ("59:59" under an hour,
+/// "9:59:59" beyond) and is aligned inside that: leading on the lock screen,
+/// trailing in the island.
+private struct BigCountdown: View {
+    let state: ConstructActivityAttributes.ContentState
+    let end: Date
+    var trailing = false
+    var body: some View {
+        Text(timerInterval: Date()...end, countsDown: true)
+            .font(.system(size: 34, weight: .semibold).monospacedDigit())
+            .foregroundStyle(state.accent)
+            .multilineTextAlignment(trailing ? .trailing : .leading)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .frame(width: end.timeIntervalSinceNow >= 3600 ? 128 : 96,
+                   alignment: trailing ? .trailing : .leading)
+    }
+}
+
+/// Card title. One step above the 13pt body: no text style sits there.
+private struct TitleText: View {
+    let state: ConstructActivityAttributes.ContentState
+    let lines: Int
+    var body: some View {
+        if !state.title.isEmpty {
+            Text(state.title)
+                .font(.system(size: 14, weight: .semibold))
+                .lineLimit(lines)
+        }
+    }
+}
+
 /// Title over body. Fewer lines when buttons need the room: the lock screen
-/// banner hard-caps its height, and overflow clips the buttons first.
+/// banner hard-caps its height, and overflow clips the buttons first. With a
+/// countdown the title sits beside BigCountdown instead (`showsTitle: false`)
+/// and the body takes at most three lines.
 private struct MessageText: View {
     let state: ConstructActivityAttributes.ContentState
+    var showsTitle = true
+    var maxBodyLines = Int.max
     var body: some View {
         let hasActions = !state.actions.isEmpty
         VStack(alignment: .leading, spacing: 2) {
-            if !state.title.isEmpty {
-                Text(state.title)
-                    // One step above the 13pt body: no text style sits there.
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(hasActions ? 1 : 2)
+            if showsTitle {
+                TitleText(state: state, lines: hasActions ? 1 : 2)
             }
             if !state.body.isEmpty {
                 Text(state.body)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .lineLimit(hasActions ? 2 : 4)
+                    .lineLimit(min(hasActions ? 2 : 4, maxBodyLines))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -299,16 +337,20 @@ struct LockScreenView: View {
         HStack(alignment: .top, spacing: 12) {
             RoomAvatar(size: 40, roomId: state.roomId)
             VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 8) {
-                        Text(state.roomName)
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .layoutPriority(1)
-                        MetaLabel(state: state)
+                if let end = state.endDate {
+                    // Countdown as the hero, between the room and the title;
+                    // the body below at its usual size.
+                    VStack(alignment: .leading, spacing: 2) {
+                        roomRow(showsTimer: false)
+                        BigCountdown(state: state, end: end)
+                        TitleText(state: state, lines: 1)
+                        MessageText(state: state, showsTitle: false, maxBodyLines: 3)
                     }
-                    MessageText(state: state)
+                } else {
+                    VStack(alignment: .leading, spacing: 2) {
+                        roomRow(showsTimer: true)
+                        MessageText(state: state)
+                    }
                 }
                 ProgressBar(state: state)
                 if #available(iOS 17.0, *) {
@@ -322,16 +364,32 @@ struct LockScreenView: View {
         .padding(.vertical, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    private func roomRow(showsTimer: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(state.roomName)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .layoutPriority(1)
+            MetaLabel(state: state, showsTimer: showsTimer)
+        }
+    }
 }
 
 /// Dynamic Island expanded bottom region. Shared by the real region and the
 /// preview mock.
+/// With a countdown the title has moved up to the leading region.
 struct IslandBottomView: View {
     let state: ConstructActivityAttributes.ContentState
     let activityId: String
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            MessageText(state: state)
+            if state.endDate != nil {
+                MessageText(state: state, showsTitle: false, maxBodyLines: 3)
+            } else {
+                MessageText(state: state)
+            }
             ProgressBar(state: state)
             if #available(iOS 17.0, *) {
                 if !state.actions.isEmpty {
@@ -352,6 +410,38 @@ private struct IslandRoomLabel: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+        }
+    }
+}
+
+/// Dynamic Island expanded leading region: the room label, plus the title when
+/// a countdown takes the trailing region.
+private struct IslandLeading: View {
+    let state: ConstructActivityAttributes.ContentState
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            IslandRoomLabel(state: state)
+            if state.endDate != nil {
+                TitleText(state: state, lines: 2)
+            }
+        }
+    }
+}
+
+/// Dynamic Island expanded trailing region: the countdown large when there is
+/// one (step, if any, small above it), else the usual meta label.
+private struct IslandTrailing: View {
+    let state: ConstructActivityAttributes.ContentState
+    var body: some View {
+        if let end = state.endDate {
+            VStack(alignment: .trailing, spacing: 0) {
+                if let step = state.step, !step.isEmpty {
+                    MetaLabel(state: state, showsTimer: false)
+                }
+                BigCountdown(state: state, end: end, trailing: true)
+            }
+        } else {
+            MetaLabel(state: state)
         }
     }
 }
@@ -401,14 +491,14 @@ struct ContructWidgetsLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    IslandRoomLabel(state: context.state)
+                    IslandLeading(state: context.state)
                         // Inset from the island's rounded top-left corner, which
                         // was clipping the name.
                         .padding(.leading, 10)
                         .padding(.top, 6)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    MetaLabel(state: context.state)
+                    IslandTrailing(state: context.state)
                         .padding(.trailing, 4)
                         .padding(.top, 6)
                 }
@@ -468,6 +558,15 @@ private extension ConstructActivityAttributes.ContentState {
         roomName: "agent: clean rebuild",
         endsAt: Date().addingTimeInterval(299).timeIntervalSince1970
     )
+    // Pre-meeting card: big countdown (hours, so the widest timer) + a body
+    // past three lines. The tallest countdown case without buttons.
+    static let countdown = ConstructActivityAttributes.ContentState(
+        title: "Design review starts",
+        body: "Sinan, Bender and the agent. Agenda: Live Activity layout, the countdown hero, and whether the island should show the step. Bring screenshots of the lock screen on a small phone.",
+        step: "Next",
+        roomName: "calendar",
+        endsAt: Date().addingTimeInterval(2 * 3600 + 17 * 60).timeIntervalSince1970
+    )
     // Error, long body, no buttons: should truncate, not clip.
     static let failed = ConstructActivityAttributes.ContentState(
         title: "Build failed",
@@ -498,8 +597,9 @@ private struct IslandExpandedMock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
-                IslandRoomLabel(state: state)
-                MetaLabel(state: state)
+                IslandLeading(state: state)
+                Spacer(minLength: 8)
+                IslandTrailing(state: state)
             }
             IslandBottomView(state: state, activityId: "preview")
         }
@@ -516,6 +616,7 @@ private struct IslandExpandedMock: View {
         PreviewBanner(state: .running)
         PreviewBanner(state: .done)
         PreviewBanner(state: .approval)
+        PreviewBanner(state: .countdown)
         PreviewBanner(state: .failed)
     }
     .padding()
@@ -527,6 +628,7 @@ private struct IslandExpandedMock: View {
         IslandExpandedMock(state: .running)
         IslandExpandedMock(state: .done)
         IslandExpandedMock(state: .approval)
+        IslandExpandedMock(state: .countdown)
         IslandExpandedMock(state: .failed)
     }
     .padding()

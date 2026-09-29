@@ -32,6 +32,23 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
     }
+
+    /// Silent `content-available` pushes, which iOS delivers here even under the
+    /// scene lifecycle, launching a terminated app in the background to do so.
+    /// Only the server's "la-sync" push uses this: it lets a Live Activity the
+    /// server push-started register its update token without the user opening
+    /// the app. Capacitor's push plugin never implements this method (message
+    /// notifications reach it through the UNUserNotificationCenter delegate,
+    /// and they carry no content-available), so anything else is just finished.
+    func application(_ application: UIApplication,
+                     didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+                     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        guard userInfo["construct"] as? String == "la-sync", #available(iOS 16.2, *) else {
+            completionHandler(.noData)
+            return
+        }
+        Task { completionHandler(await backgroundSyncLiveActivities()) }
+    }
 }
 
 /// Scene lifecycle. Apps built against the iOS 27 SDK trap at launch without
@@ -346,6 +363,10 @@ private final class LiveActivityRegistry {
     private let lock = NSLock()
     private var observed = Set<String>()
     private var registered: [String: String] = [:]
+    /// Per activityId, the token whose most recent post has finished, accepted
+    /// or not. What the silent-push sync waits for.
+    private var posted: [String: String] = [:]
+    private var inFlight = Set<String>()
     private var pushToStart: String?
 
     /// True only for the first caller to observe this activity (by Activity.id).
@@ -359,19 +380,35 @@ private final class LiveActivityRegistry {
         observed.remove(id)
     }
 
-    func isRegistered(_ activityId: String, token: String) -> Bool {
+    /// True when the caller should post this token: the server hasn't accepted
+    /// it and no post of it is under way. A token can be offered twice at once
+    /// (the stream's first yield and a direct post of `activity.pushToken`).
+    func beginPosting(_ activityId: String, token: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        return registered[activityId] == token
+        guard registered[activityId] != token,
+              inFlight.insert("\(activityId) \(token)").inserted else { return false }
+        posted.removeValue(forKey: activityId)
+        return true
     }
 
-    func markRegistered(_ activityId: String, token: String) {
+    /// Only an accepted post marks the token registered.
+    func finishPosting(_ activityId: String, token: String, accepted: Bool) {
         lock.lock(); defer { lock.unlock() }
-        registered[activityId] = token
+        inFlight.remove("\(activityId) \(token)")
+        posted[activityId] = token
+        if accepted { registered[activityId] = token }
+    }
+
+    /// The token's post has finished, or the server already had it.
+    func hasPosted(_ activityId: String, token: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return posted[activityId] == token || registered[activityId] == token
     }
 
     func forget(_ activityId: String) {
         lock.lock(); defer { lock.unlock() }
         registered.removeValue(forKey: activityId)
+        posted.removeValue(forKey: activityId)
     }
 
     /// After a credential change nothing the server accepted under the old one
@@ -379,6 +416,7 @@ private final class LiveActivityRegistry {
     func forgetRegistrations() {
         lock.lock(); defer { lock.unlock() }
         registered.removeAll()
+        posted.removeAll()
     }
 
     /// Last push-to-start token seen, so every activation can re-post it.
@@ -396,14 +434,13 @@ private extension Activity {
 }
 
 /// Posts an activity's update token unless the server already accepted this
-/// exact one. Marked registered only on success.
+/// exact one or it is being posted right now. Marked registered only on success.
 @available(iOS 16.2, *)
 private func registerUpdateToken(_ token: String, activityId: String) async {
     let registry = LiveActivityRegistry.shared
-    guard !registry.isRegistered(activityId, token: token) else { return }
-    if await postLiveActivity(["activityId": activityId, "token": token]) {
-        registry.markRegistered(activityId, token: token)
-    }
+    guard registry.beginPosting(activityId, token: token) else { return }
+    let accepted = await postLiveActivity(["activityId": activityId, "token": token])
+    registry.finishPosting(activityId, token: token, accepted: accepted)
 }
 
 /// Observes an activity's token rotations and end, once. Returns true when this
@@ -441,16 +478,34 @@ private func trackLiveActivityToken(_ activity: Activity<ConstructActivityAttrib
 /// the server hasn't accepted. `activityUpdates` only delivers activities as
 /// they are *created*, and a push-started one is created while this process is
 /// suspended, so without sweeping the current list its token would never be
-/// registered. For activities already observed, the current token
-/// (`activity.pushToken`) is re-posted if it isn't registered yet — the
-/// stream won't offer it again until it rotates.
+/// registered. The current token (`activity.pushToken`) is posted straight
+/// away if it isn't registered yet: for an activity already observed the
+/// stream won't offer it again until it rotates, and for one just adopted the
+/// stream's first yield can come late (in a background launch every second
+/// counts).
 @available(iOS 16.2, *)
-private func adoptRunningLiveActivities() {
-    for activity in Activity<ConstructActivityAttributes>.activities {
-        let justObserved = trackLiveActivityToken(activity)
-        if !justObserved, activity.isLive, let token = activity.pushToken {
-            let activityId = activity.attributes.activityId
-            Task { await registerUpdateToken(hexString(token), activityId: activityId) }
+private func adoptRunningLiveActivities() async {
+    await withTaskGroup(of: Void.self) { group in
+        for activity in Activity<ConstructActivityAttributes>.activities {
+            trackLiveActivityToken(activity)
+            if activity.isLive, let token = activity.pushToken {
+                let activityId = activity.attributes.activityId
+                group.addTask { await registerUpdateToken(hexString(token), activityId: activityId) }
+            }
+        }
+    }
+}
+
+/// Backstop for cards whose server entry is long gone: the server sets
+/// `staleDate` to the card's lifetime, so anything more than ten minutes past
+/// it is ended here. Runs before reconcile, so the server drops its token in
+/// the same sync.
+@available(iOS 16.2, *)
+private func endExpiredLiveActivities() async {
+    let cutoff = Date().addingTimeInterval(-10 * 60)
+    for activity in Activity<ConstructActivityAttributes>.activities where activity.isLive {
+        if let stale = activity.content.staleDate, stale < cutoff {
+            await activity.end(nil, dismissalPolicy: .immediate)
         }
     }
 }
@@ -490,24 +545,56 @@ private func observeLiveActivityStartsOnce() -> Bool {
 /// Re-posts the current push-to-start token. The stream only yields on
 /// rotation, so a refused post would otherwise stand until the next one.
 @available(iOS 17.2, *)
-private func repostPushToStartToken() {
+private func repostPushToStartToken() async {
     guard let token = LiveActivityRegistry.shared.lastPushToStartToken
             ?? Activity<ConstructActivityAttributes>.pushToStartToken.map(hexString) else { return }
-    Task { await postLiveActivity(["action": "push-to-start", "token": token]) }
+    await postLiveActivity(["action": "push-to-start", "token": token])
 }
 
 /// Everything that registers Live Activity tokens with the server. Runs on
-/// every activation, and again when saveIntentConfig stores a different
-/// credential: on a cold launch activation happens before the web layer has
-/// stored the signed-in token, so the first round can be refused.
+/// every activation, on the server's silent "la-sync" push, and again when
+/// saveIntentConfig stores a different credential: on a cold launch
+/// activation happens before the web layer has stored the signed-in token, so
+/// the first round can be refused. The returned task finishes when every post
+/// it made directly has answered.
 @available(iOS 16.2, *)
-private func syncLiveActivityRegistrations() {
-    Task { await reconcileLiveActivityTokens() }
-    adoptRunningLiveActivities()
-    if #available(iOS 17.2, *) {
-        // On the first call the new stream's own first yield posts the token.
-        if !observeLiveActivityStartsOnce() { repostPushToStartToken() }
+@discardableResult
+private func syncLiveActivityRegistrations() -> Task<Void, Never> {
+    Task { @MainActor in
+        await endExpiredLiveActivities()
+        async let reconciled: Void = reconcileLiveActivityTokens()
+        async let adopted: Void = adoptRunningLiveActivities()
+        if #available(iOS 17.2, *) {
+            // On the first call the new stream's own first yield posts the token.
+            if !observeLiveActivityStartsOnce() { await repostPushToStartToken() }
+        }
+        _ = await (reconciled, adopted)
     }
+}
+
+/// The silent "la-sync" push: sync, then hold the background launch until
+/// every live activity has posted an update token (a push-started one may not
+/// have one yet; its stream posts it when it arrives), or 20 seconds pass.
+/// iOS allows about 30. `.noData` when there was no activity to handle.
+@available(iOS 16.2, *)
+@MainActor
+private func backgroundSyncLiveActivities() async -> UIBackgroundFetchResult {
+    let deadline = Date().addingTimeInterval(20)
+    let hadWork = Activity<ConstructActivityAttributes>.activities.contains(where: \.isLive)
+    await syncLiveActivityRegistrations().value
+    func allPosted() -> Bool {
+        Activity<ConstructActivityAttributes>.activities.filter(\.isLive).allSatisfy { activity in
+            guard let token = activity.pushToken else { return false }
+            return LiveActivityRegistry.shared.hasPosted(activity.attributes.activityId, token: hexString(token))
+        }
+    }
+    while !allPosted(), Date() < deadline {
+        try? await Task.sleep(for: .milliseconds(250))
+    }
+    #if DEBUG
+    print("live-activity la-sync done: \(allPosted() ? "all posted" : "timed out"), \(hadWork ? "newData" : "noData")")
+    #endif
+    return hadWork ? .newData : .noData
 }
 
 #if DEBUG
@@ -535,6 +622,11 @@ private func startLiveActivityDemoOnce() {
               tone: "warning", progress: 0.3,
               actions: [.init(label: "Approve", send: "approve"), .init(label: "Deny", send: "deny")],
               roomName: "agent: clean rebuild", endsAt: Date().addingTimeInterval(300).timeIntervalSince1970),
+        // Pre-meeting card: hours-long timer, body past three lines.
+        State(title: "Design review starts",
+              body: "Sinan, Bender and the agent. Agenda: Live Activity layout, the countdown hero, and whether the island should show the step. Bring screenshots.",
+              step: "Next",
+              roomName: "calendar", endsAt: Date().addingTimeInterval(8220).timeIntervalSince1970),
     ]
     Task {
         for activity in Activity<ConstructActivityAttributes>.activities

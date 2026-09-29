@@ -141,3 +141,94 @@ only replaces earlier `demo-*` activities. Simulator:
 - Expanded island: the room name is truncated in the narrow top-left region
   ("agent: cle…"). Proposed: move it into the bottom region beside the timer.
   Waiting on Sinan.
+
+## Background sync for push-started activities
+
+Branch: `mac/la-background-sync`. Not merged.
+
+Problem: a push-started activity registers its update token only when the app
+runs. With the app terminated (overnight), nothing ran, the server could never
+update or end the card, and it sat on the lock screen for hours. Info.plist only
+declared `audio`, so iOS had no reason to wake the app.
+
+### What changed
+
+- **Info.plist:** `UIBackgroundModes` is now `audio` + `remote-notification`.
+  Construct now appears under Settings → General → Background App Refresh,
+  which must be on.
+- **Silent "la-sync" push** (`AppDelegate.application(_:didReceiveRemoteNotification:fetchCompletionHandler:)`):
+  when `userInfo["construct"] == "la-sync"` it runs the full sync (below), posts
+  every live activity's `pushToken` straight away instead of waiting for
+  `pushTokenUpdates`, then waits until every live activity has *posted* a token
+  (answered, accepted or not) or 20 s pass. Then `.newData`, or `.noData` if
+  there was no live activity. Anything else gets `.noData` and nothing more.
+  Capacitor's push plugin never implemented this method: it sees message
+  notifications through the `UNUserNotificationCenter` delegate, which is
+  untouched, and message pushes carry `mutable-content`, not
+  `content-available`, so they never reach this method. The service/content
+  extensions and Reply are unaffected.
+- **Sync** (`syncLiveActivityRegistrations`, on activation, la-sync, and a
+  credential change) now runs in order: end expired cards → reconcile, adopt
+  running activities, post current tokens, re-post push-to-start
+  (concurrently). It returns a Task the la-sync path awaits.
+- **Backstop:** every sync ends (`.end(nil, dismissalPolicy: .immediate)`) any
+  live activity whose `content.staleDate` is more than 10 minutes past. It runs
+  before reconcile, so the same sync also drops its server token.
+- **Registry:** in-flight posts are deduplicated (the stream's first yield and
+  the direct post of `activity.pushToken` can race), and the registry records
+  the last posted token per activity so the la-sync wait knows when to stop.
+- **Countdown hero (widget):** when `endsAt` is in the future, the lock screen
+  shows room → big countdown (34pt semibold, monospaced digits, tone accent) →
+  title (1 line) → body (at most 3 lines; still 2 with buttons). The expanded
+  island puts the countdown large in the trailing region (step small above it)
+  and the room + title leading. Compact island unchanged. Without `endsAt` the
+  layout is exactly as before. New `countdown` preview state and debug demo
+  card (pre-meeting: hours-long timer, long body, no buttons).
+
+### Contract deviations
+
+None. The silent push is used exactly as specified
+(`apns-push-type: background`, `apns-priority: 5`,
+`{"aps":{"content-available":1},"construct":"la-sync"}` to the normal device
+token, topic = bundle id).
+
+Note for the server: the widget draws buttons whenever `actions` is non-empty,
+including on countdown cards. Sinan wants pre-meeting cards without buttons, so
+leave `actions` out for those.
+
+### Tested
+
+- Release archive of all five targets builds cleanly; all signed Apple
+  Development with the App Group; the built Info.plist carries both modes.
+- Countdown layout checked on the iOS 27 simulator lock screen with the debug
+  demo: the pre-meeting card (2:16:xx, title, 2 body lines) and the warning
+  card (countdown + progress + 2 buttons) fit the height cap with nothing
+  clipped. Layout approved by Sinan.
+- **Silent push not verified locally.** `xcrun simctl push` with the la-sync
+  payload is refused by the simulator's SpringBoard ("Unable to launch
+  com.wunnle.construct because this app doesn't declare the proper
+  UIBackgroundMode", reason Disabled), both suspended and terminated, even
+  after a clean reinstall whose installed Info.plist lists
+  `remote-notification`. Looks like a simulator limitation; needs the device
+  test below.
+- Needs the phone: Bender's terminated-app test (reboot, don't open
+  Construct, push-start, check `lastRegister` / `lastReconcile`); normal
+  message notifications, Reply from a notification, and Shortcuts still working.
+  Debug builds log `live-activity la-sync done: …` when the handler finishes.
+
+### Finding: can a push-started activity end itself without the app?
+
+Not with a per-activity token alone. `staleDate` only marks the card stale
+(`context.isStale`); it doesn't remove it. iOS ends a Live Activity on its own
+after 8 hours and leaves it on the lock screen for up to 4 more, which matches
+the "stays for hours" reports. An `end` push needs the update token, which is
+exactly what's missing.
+
+The better option is **broadcast push (iOS 18+)**: enable Broadcast
+capability for the App ID, create a channel via APNs channel management, and
+put `"input-push-channel": "<channelId>"` in the push-to-start payload. The
+activity then subscribes to the channel, and the server can update or `end`
+it (including a `dismissal-date`) by pushing to the channel
+(`apns-channel-id`, `/4/broadcasts/apps/<bundleId>`), with no update token and
+no app wake at all. The la-sync path and the stale-date backstop would stay as
+fallbacks. Not implemented; it's a server + App ID change.

@@ -126,6 +126,22 @@ check('lifetime stretches to cover a countdown, unless ttl was explicit', () => 
   rejects(() => lifetimeFor(long, lifetime, { explicitTtl: true, nowMs: NOW }), 400, /after the activity's ttl/)
 })
 
+check('tiles: at most 2, icon and value required, sub/tone optional, null clears', () => {
+  const c = buildContentState({ title: 'Morning', tiles: [
+    { icon: 'cloud.rain.fill', value: '14° / 17°', sub: 'Rain from 10:00' },
+    { icon: 'moon.zzz.fill', value: '5h 04', sub: 'Short night', tone: 'warning' },
+  ] }, null, ctx)
+  assert.deepStrictEqual(c.tiles, [
+    { icon: 'cloud.rain.fill', value: '14° / 17°', sub: 'Rain from 10:00' },
+    { icon: 'moon.zzz.fill', value: '5h 04', sub: 'Short night', tone: 'warning' },
+  ])
+  assert.deepStrictEqual(buildContentState({ body: 'x' }, c, ctx).tiles, c.tiles)
+  assert.ok(!('tiles' in buildContentState({ tiles: null }, c, ctx)))
+  rejects(() => buildContentState({ title: 'T', tiles: [{}, {}, {}] }, null, ctx), 400, /at most 2/)
+  rejects(() => buildContentState({ title: 'T', tiles: [{ icon: 'x' }] }, null, ctx), 400, /value/)
+  rejects(() => buildContentState({ title: 'T', tiles: [{ icon: 'x', value: 'y', tone: 'pink' }] }, null, ctx), 400, /tone/)
+})
+
 check('agent rooms: a button may not hide a different payload behind its label', () => {
   assertVisibleSends([{ label: 'Ship it', send: 'Ship it' }, { label: 'Hold', send: 'Hold' }])
   assertVisibleSends([])

@@ -130,6 +130,31 @@ function parseActions(actions) {
   });
 }
 
+/** `tiles`: the morning-card layout (mac/morning-card). At most 2; `icon` is an
+    SF Symbol name (an emoji still renders), `value` is the big text (≈9
+    characters fit the compact island), `sub` and `tone` are optional. With
+    tiles the widget drops title, avatar and buttons and shows the tiles, then
+    up to 2 body lines. `null` clears them. Pure. */
+export function parseTiles(tiles) {
+  if (tiles === undefined) return undefined;
+  if (tiles === null) return null;
+  if (!Array.isArray(tiles)) throw new ActivityError(400, "tiles must be an array");
+  if (tiles.length > 2) throw new ActivityError(400, "at most 2 tiles");
+  return tiles.map((t, i) => {
+    const out = {
+      icon: str(t?.icon, `tiles[${i}].icon`, 40, { required: true }),
+      value: str(t?.value, `tiles[${i}].value`, 24, { required: true }),
+    };
+    const sub = str(t?.sub, `tiles[${i}].sub`, 48);
+    if (sub) out.sub = sub;
+    if (t?.tone !== undefined) {
+      if (!TONES.has(t.tone)) throw new ActivityError(400, `tiles[${i}].tone must be one of ${[...TONES].join(", ")}`);
+      out.tone = t.tone;
+    }
+    return out;
+  });
+}
+
 /** What an update merges over when the entry has no content yet: an activity
     the app started itself only registers a token, never its content. */
 const EMPTY_CONTENT = { title: "", body: "", tone: "neutral", actions: [] };
@@ -172,6 +197,7 @@ export function buildContentState(input, prev = null, { roomId, roomName, nowMs 
     progress = p;
   }
   const actions = parseActions(input.actions);
+  const tiles = parseTiles(input.tiles);
 
   const base = prev ?? EMPTY_CONTENT;
   const next = {
@@ -190,6 +216,7 @@ export function buildContentState(input, prev = null, { roomId, roomName, nowMs 
     ["progress", progress, input.progress],
     ["step", step, input.step],
     ["endsAt", endsAt, input.until],
+    ["tiles", tiles, input.tiles],
   ]) {
     if (raw === null) delete next[key];
     else if (value !== undefined) next[key] = value;

@@ -12,6 +12,11 @@
 //   --progress 0..1 | none        --step "3/5" | none
 //   --action "Label" | "Label=text to send"   (repeat, up to 3)
 //   --no-actions                  remove the buttons
+//   --tile "icon|value|sub|tone"  a tile (repeat, up to 2): icon is an SF Symbol
+//                                 name (sun.max.fill, moon.zzz.fill…); sub and
+//                                 tone optional. Tiles switch the card to the
+//                                 tile layout: tiles, then 2 body lines.
+//   --no-tiles                    back to the normal layout
 //   --countdown 10m | 90s | 1h30m show a countdown ending that far from now
 //   --until 18:30 | ISO | none    show a countdown to a time (next 18:30, local)
 //   --alert none|quiet|loud       (start: quiet by default; updates: none)
@@ -97,6 +102,8 @@ try {
       step: { type: 'string' },
       action: { type: 'string', multiple: true },
       'no-actions': { type: 'boolean' },
+      tile: { type: 'string', multiple: true },
+      'no-tiles': { type: 'boolean' },
       alert: { type: 'string' },
       countdown: { type: 'string' },
       until: { type: 'string' },
@@ -135,6 +142,14 @@ else if (values.action) {
   body.actions = values.action.map((a) => {
     const i = a.indexOf('=')
     return i === -1 ? { label: a } : { label: a.slice(0, i), send: a.slice(i + 1) }
+  })
+}
+
+if (values['no-tiles']) body.tiles = null
+else if (values.tile) {
+  body.tiles = values.tile.map((t) => {
+    const [icon, value, sub, tone] = t.split('|').map((s) => s.trim())
+    return { icon, value, ...(sub ? { sub } : {}), ...(tone ? { tone } : {}) }
   })
 }
 

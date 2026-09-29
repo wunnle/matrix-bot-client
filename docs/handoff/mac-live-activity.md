@@ -232,3 +232,40 @@ it (including a `dismissal-date`) by pushing to the channel
 (`apns-channel-id`, `/4/broadcasts/apps/<bundleId>`), with no update token and
 no app wake at all. The la-sync path and the stale-date backstop would stay as
 fallbacks. Not implemented; it's a server + App ID change.
+
+## Morning card (tiles)
+
+Branch: `mac/morning-card`. Not merged.
+
+### Contract addition
+
+ContentState gains an optional `tiles` (lenient decode, identical in the app
+and widget copies):
+
+```
+tiles: [Tile]?          // at most 2 are drawn
+Tile { icon: String, value: String, sub: String?, tone: String? }
+```
+
+**Deviation, at Sinan's request: `icon` is an SF Symbol name**, e.g.
+`sun.max.fill`, `cloud.sun.fill`, `cloud.rain.fill`, `moon.zzz.fill`, drawn as
+a white glyph. A string that isn't a symbol name is drawn as text, so an emoji
+still renders, but send symbol names. `tone` uses the card's values and tints
+`sub` (success green, warning amber, error red; missing/neutral → secondary).
+
+### Layout
+
+With `tiles`, the lock screen draws two equal rounded tiles side by side
+(icon + large value, `sub` beneath), then the body (max 2 lines). Also at
+Sinan's request: no avatar, no room name, no title; and no countdown, progress
+or buttons (the card ignores `endsAt`, `progress` and `actions`). Without
+`tiles` nothing changes. Expanded island: room label and step on top, tiles and
+body below. Compact island: the first tile's icon + value.
+
+### Tested
+
+Debug build on the iOS 27 simulator: both #Preview states are also run as the
+debug demo, and `-LiveActivityDemo morning` starts just those two. "Normal"
+(sun, 7h 12 "Slept well" green) and "short night + rain" (rain, 5h 04 "Short
+night" amber, body truncated at two lines) both fit the lock-screen height.
+Not yet on the phone.

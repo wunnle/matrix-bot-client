@@ -30,10 +30,24 @@ struct ConstructActivityAttributes: ActivityAttributes {
         // Unix seconds (since 1970). Deliberately not Date: a Codable Date in
         // content-state decodes as seconds since 2001.
         var endsAt: Double? = nil
+        // Morning card: at most 2 tiles. When present the card draws them in
+        // place of the title, and shows no countdown or buttons.
+        var tiles: [Tile]? = nil
 
         struct Action: Codable, Hashable {
             var label: String = ""
             var send: String = ""
+        }
+
+        struct Tile: Codable, Hashable {
+            // An SF Symbol name, e.g. "sun.max.fill". Anything that isn't one
+            // is drawn as text, so an emoji still works.
+            var icon: String = ""
+            // Drawn large, e.g. "21° / 24°".
+            var value: String = ""
+            var sub: String? = nil
+            // Same values as the card's tone; tints `sub`.
+            var tone: String? = nil
         }
     }
 
@@ -45,7 +59,7 @@ struct ConstructActivityAttributes: ActivityAttributes {
 // word. Decode every field leniently so a partial push still lands.
 extension ConstructActivityAttributes.ContentState {
     private enum Keys: String, CodingKey {
-        case title, body, tone, progress, step, actions, roomId, roomName, endsAt
+        case title, body, tone, progress, step, actions, roomId, roomName, endsAt, tiles
     }
 
     init(from decoder: Decoder) throws {
@@ -59,6 +73,7 @@ extension ConstructActivityAttributes.ContentState {
         roomId = try c.decodeIfPresent(String.self, forKey: .roomId) ?? ""
         roomName = try c.decodeIfPresent(String.self, forKey: .roomName) ?? ""
         endsAt = try c.decodeIfPresent(Double.self, forKey: .endsAt)
+        tiles = try c.decodeIfPresent([Tile].self, forKey: .tiles)
     }
 }
 
@@ -69,6 +84,18 @@ extension ConstructActivityAttributes.ContentState.Action {
         let c = try decoder.container(keyedBy: Keys.self)
         label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
         send = try c.decodeIfPresent(String.self, forKey: .send) ?? ""
+    }
+}
+
+extension ConstructActivityAttributes.ContentState.Tile {
+    private enum Keys: String, CodingKey { case icon, value, sub, tone }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        icon = try c.decodeIfPresent(String.self, forKey: .icon) ?? ""
+        value = try c.decodeIfPresent(String.self, forKey: .value) ?? ""
+        sub = try c.decodeIfPresent(String.self, forKey: .sub)
+        tone = try c.decodeIfPresent(String.self, forKey: .tone)
     }
 }
 
@@ -85,21 +112,29 @@ private func roomDeepLink(_ roomId: String) -> URL? {
 
 private extension ConstructActivityAttributes.ContentState {
     /// The tone's accent. Unknown tones fall back to neutral.
-    var accent: Color {
-        switch tone {
-        case "success": return .green
-        case "warning": return Color(red: 1.0, green: 0.72, blue: 0.2)
-        case "error": return .red
-        default: return .purple
-        }
-    }
+    var accent: Color { toneColor(tone) ?? .purple }
+
+    /// The morning card's tiles (at most 2); empty on every other card.
+    var shownTiles: [Tile] { Array((tiles ?? []).prefix(2)) }
 
     /// endsAt as a Date, only while it's still ahead — a timer view needs a
-    /// non-empty range, and a finished countdown has nothing to show.
+    /// non-empty range, and a finished countdown has nothing to show. Never on
+    /// the morning card, which has no countdown.
     var endDate: Date? {
-        guard let endsAt else { return nil }
+        guard let endsAt, shownTiles.isEmpty else { return nil }
         let date = Date(timeIntervalSince1970: endsAt)
         return date > Date() ? date : nil
+    }
+}
+
+/// A tone's colour; nil for "neutral" and anything unknown, so each caller
+/// picks its own neutral (the card's purple, a tile's secondary text).
+private func toneColor(_ tone: String?) -> Color? {
+    switch tone {
+    case "success": return .green
+    case "warning": return Color(red: 1.0, green: 0.72, blue: 0.2)
+    case "error": return .red
+    default: return nil
     }
 }
 
@@ -318,6 +353,61 @@ private struct MessageText: View {
     }
 }
 
+/// A tile's icon: the SF Symbol when `name` is one (white, hierarchical),
+/// otherwise the string itself as text (an emoji).
+private struct TileIcon: View {
+    let name: String
+    var body: some View {
+        if UIImage(systemName: name) != nil {
+            Image(systemName: name)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.white)
+        } else {
+            Text(name)
+        }
+    }
+}
+
+/// One morning-card tile: icon and value large, `sub` small beneath it,
+/// tinted by the tile's tone.
+private struct TileView: View {
+    let tile: ConstructActivityAttributes.ContentState.Tile
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                TileIcon(name: tile.icon)
+                Text(tile.value)
+            }
+            .font(.system(size: 20, weight: .semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            if let sub = tile.sub, !sub.isEmpty {
+                Text(sub)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(toneColor(tile.tone) ?? .secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// The morning card's tiles side by side, equal width and height.
+private struct TilesRow: View {
+    let state: ConstructActivityAttributes.ContentState
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(Array(state.shownTiles.enumerated()), id: \.offset) { _, tile in
+                TileView(tile: tile)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 /// Progress bar in the tone's accent, when the state carries progress.
 private struct ProgressBar: View {
     let state: ConstructActivityAttributes.ContentState
@@ -335,9 +425,19 @@ struct LockScreenView: View {
     let activityId: String
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            RoomAvatar(size: 40, roomId: state.roomId)
+            // The morning card spends the whole width on its tiles.
+            if state.shownTiles.isEmpty {
+                RoomAvatar(size: 40, roomId: state.roomId)
+            }
             VStack(alignment: .leading, spacing: 10) {
-                if let end = state.endDate {
+                if !state.shownTiles.isEmpty {
+                    // Morning card: tiles, then the body. No avatar, room
+                    // name, title, countdown, progress or buttons.
+                    VStack(alignment: .leading, spacing: 8) {
+                        TilesRow(state: state)
+                        MessageText(state: state, showsTitle: false, maxBodyLines: 2)
+                    }
+                } else if let end = state.endDate {
                     // Countdown as the hero, between the room and the title;
                     // the body below at its usual size.
                     VStack(alignment: .leading, spacing: 2) {
@@ -352,10 +452,12 @@ struct LockScreenView: View {
                         MessageText(state: state)
                     }
                 }
-                ProgressBar(state: state)
-                if #available(iOS 17.0, *) {
-                    if !state.actions.isEmpty {
-                        ActionButtons(state: state, activityId: activityId)
+                if state.shownTiles.isEmpty {
+                    ProgressBar(state: state)
+                    if #available(iOS 17.0, *) {
+                        if !state.actions.isEmpty {
+                            ActionButtons(state: state, activityId: activityId)
+                        }
                     }
                 }
             }
@@ -385,15 +487,21 @@ struct IslandBottomView: View {
     let activityId: String
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if state.endDate != nil {
+            if !state.shownTiles.isEmpty {
+                // Morning card: tiles and body only.
+                TilesRow(state: state)
+                MessageText(state: state, showsTitle: false, maxBodyLines: 2)
+            } else if state.endDate != nil {
                 MessageText(state: state, showsTitle: false, maxBodyLines: 3)
             } else {
                 MessageText(state: state)
             }
-            ProgressBar(state: state)
-            if #available(iOS 17.0, *) {
-                if !state.actions.isEmpty {
-                    ActionButtons(state: state, activityId: activityId)
+            if state.shownTiles.isEmpty {
+                ProgressBar(state: state)
+                if #available(iOS 17.0, *) {
+                    if !state.actions.isEmpty {
+                        ActionButtons(state: state, activityId: activityId)
+                    }
                 }
             }
         }
@@ -446,12 +554,22 @@ private struct IslandTrailing: View {
     }
 }
 
-/// Compact island, right of the notch: the most time-sensitive thing the state
-/// has — countdown, then step, then progress, else a plain tone-tinted glyph.
+/// Compact island, right of the notch: the morning card's first tile, else the
+/// most time-sensitive thing the state has — countdown, then step, then
+/// progress, else a plain tone-tinted glyph.
 private struct CompactTrailing: View {
     let state: ConstructActivityAttributes.ContentState
     var body: some View {
-        if let end = state.endDate {
+        if let tile = state.shownTiles.first {
+            HStack(spacing: 3) {
+                TileIcon(name: tile.icon)
+                Text(tile.value)
+            }
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: 72, alignment: .trailing)
+        } else if let end = state.endDate {
             // Timer Text reserves its widest layout; cap it to the compact slot.
             Text(timerInterval: Date()...end, countsDown: true)
                 .font(.caption.weight(.semibold).monospacedDigit())
@@ -567,6 +685,21 @@ private extension ConstructActivityAttributes.ContentState {
         roomName: "calendar",
         endsAt: Date().addingTimeInterval(2 * 3600 + 17 * 60).timeIntervalSince1970
     )
+    // Morning card, a normal day.
+    static let morning = ConstructActivityAttributes.ContentState(
+        body: "Standup at 10:00, design review at 16:30. Nothing urgent overnight.",
+        roomName: "Morning",
+        tiles: [.init(icon: "sun.max.fill", value: "21° / 24°", sub: "Clear all day"),
+                .init(icon: "moon.zzz.fill", value: "7h 12", sub: "Slept well", tone: "success")]
+    )
+    // Morning card, short night + rain: warning tone on the sleep tile, and a
+    // body long enough to hit the two-line cap.
+    static let morningRough = ConstructActivityAttributes.ContentState(
+        body: "Rain until the afternoon, take an umbrella. Standup at 10:00, design review at 16:30, and two PRs are waiting for review.",
+        roomName: "Morning",
+        tiles: [.init(icon: "cloud.rain.fill", value: "14° / 17°", sub: "Rain from 10:00"),
+                .init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning")]
+    )
     // Error, long body, no buttons: should truncate, not clip.
     static let failed = ConstructActivityAttributes.ContentState(
         title: "Build failed",
@@ -617,6 +750,8 @@ private struct IslandExpandedMock: View {
         PreviewBanner(state: .done)
         PreviewBanner(state: .approval)
         PreviewBanner(state: .countdown)
+        PreviewBanner(state: .morning)
+        PreviewBanner(state: .morningRough)
         PreviewBanner(state: .failed)
     }
     .padding()
@@ -629,6 +764,8 @@ private struct IslandExpandedMock: View {
         IslandExpandedMock(state: .done)
         IslandExpandedMock(state: .approval)
         IslandExpandedMock(state: .countdown)
+        IslandExpandedMock(state: .morning)
+        IslandExpandedMock(state: .morningRough)
         IslandExpandedMock(state: .failed)
     }
     .padding()

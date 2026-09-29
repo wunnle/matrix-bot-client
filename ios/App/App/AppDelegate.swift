@@ -610,7 +610,18 @@ private func startLiveActivityDemoOnce() {
           ProcessInfo.processInfo.arguments.contains("-LiveActivityDemo") else { return }
     didStartLiveActivityDemo = true
     typealias State = ConstructActivityAttributes.ContentState
-    let samples: [State] = [
+    let sunnyMorning = State(
+        body: "Standup at 10:00, design review at 16:30. Nothing urgent overnight.",
+        roomName: "Morning",
+        tiles: [.init(icon: "sun.max.fill", value: "21° / 24°", sub: "Clear all day"),
+                .init(icon: "moon.zzz.fill", value: "7h 12", sub: "Slept well", tone: "success")])
+    // The taller morning case: short night, rain, a body past two lines.
+    let rainyMorning = State(
+        body: "Rain until the afternoon, take an umbrella. Standup at 10:00, design review at 16:30, and two PRs are waiting for review.",
+        roomName: "Morning",
+        tiles: [.init(icon: "cloud.rain.fill", value: "14° / 17°", sub: "Rain from 10:00"),
+                .init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning")])
+    let all: [State] = [
         State(title: "Deploying construct", body: "Building the web bundle and uploading to Vercel.",
               progress: 0.6, step: "3/5", roomName: "Bender"),
         State(title: "Deploy is live", body: "All checks passed. Promote to production?", tone: "success",
@@ -627,7 +638,12 @@ private func startLiveActivityDemoOnce() {
               body: "Sinan, Bender and the agent. Agenda: Live Activity layout, the countdown hero, and whether the island should show the step. Bring screenshots.",
               step: "Next",
               roomName: "calendar", endsAt: Date().addingTimeInterval(8220).timeIntervalSince1970),
+        // (iOS shows at most five activities per app, so the demo stops here.)
+        rainyMorning,
     ]
+    // `-LiveActivityDemo morning`: just the morning cards.
+    let samples = UserDefaults.standard.string(forKey: "LiveActivityDemo") == "morning"
+        ? [sunnyMorning, rainyMorning] : all
     Task {
         for activity in Activity<ConstructActivityAttributes>.activities
         where activity.attributes.activityId.hasPrefix("demo-") {
@@ -996,10 +1012,24 @@ struct ConstructActivityAttributes: ActivityAttributes {
         // Unix seconds (since 1970). Deliberately not Date: a Codable Date in
         // content-state decodes as seconds since 2001.
         var endsAt: Double? = nil
+        // Morning card: at most 2 tiles. When present the card draws them in
+        // place of the title, and shows no countdown or buttons.
+        var tiles: [Tile]? = nil
 
         struct Action: Codable, Hashable {
             var label: String = ""
             var send: String = ""
+        }
+
+        struct Tile: Codable, Hashable {
+            // An SF Symbol name, e.g. "sun.max.fill". Anything that isn't one
+            // is drawn as text, so an emoji still works.
+            var icon: String = ""
+            // Drawn large, e.g. "21° / 24°".
+            var value: String = ""
+            var sub: String? = nil
+            // Same values as the card's tone; tints `sub`.
+            var tone: String? = nil
         }
     }
 
@@ -1011,7 +1041,7 @@ struct ConstructActivityAttributes: ActivityAttributes {
 // word. Decode every field leniently so a partial push still lands.
 extension ConstructActivityAttributes.ContentState {
     private enum Keys: String, CodingKey {
-        case title, body, tone, progress, step, actions, roomId, roomName, endsAt
+        case title, body, tone, progress, step, actions, roomId, roomName, endsAt, tiles
     }
 
     init(from decoder: Decoder) throws {
@@ -1025,6 +1055,7 @@ extension ConstructActivityAttributes.ContentState {
         roomId = try c.decodeIfPresent(String.self, forKey: .roomId) ?? ""
         roomName = try c.decodeIfPresent(String.self, forKey: .roomName) ?? ""
         endsAt = try c.decodeIfPresent(Double.self, forKey: .endsAt)
+        tiles = try c.decodeIfPresent([Tile].self, forKey: .tiles)
     }
 }
 
@@ -1035,6 +1066,18 @@ extension ConstructActivityAttributes.ContentState.Action {
         let c = try decoder.container(keyedBy: Keys.self)
         label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
         send = try c.decodeIfPresent(String.self, forKey: .send) ?? ""
+    }
+}
+
+extension ConstructActivityAttributes.ContentState.Tile {
+    private enum Keys: String, CodingKey { case icon, value, sub, tone }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        icon = try c.decodeIfPresent(String.self, forKey: .icon) ?? ""
+        value = try c.decodeIfPresent(String.self, forKey: .value) ?? ""
+        sub = try c.decodeIfPresent(String.self, forKey: .sub)
+        tone = try c.decodeIfPresent(String.self, forKey: .tone)
     }
 }
 
@@ -1244,6 +1287,12 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         if let v = call.getString("roomId") { s.roomId = v }
         if let v = call.getString("roomName") { s.roomName = v }
         if let v = call.getDouble("endsAt") { s.endsAt = v }
+        if let v = call.getArray("tiles", JSObject.self) {
+            s.tiles = v.prefix(2).map {
+                .init(icon: $0["icon"] as? String ?? "", value: $0["value"] as? String ?? "",
+                      sub: $0["sub"] as? String, tone: $0["tone"] as? String)
+            }
+        }
         return s
     }
 }

@@ -12,10 +12,11 @@
 //   --progress 0..1 | none        --step "3/5" | none
 //   --action "Label" | "Label=text to send"   (repeat, up to 3)
 //   --no-actions                  remove the buttons
-//   --tile "icon|value|sub|tone"  a tile (repeat, up to 2): icon is an SF Symbol
-//                                 name (sun.max.fill, moon.zzz.fill…); sub and
-//                                 tone optional. Tiles switch the card to the
-//                                 tile layout: tiles, then 2 body lines.
+//   --tile "icon|value|sub|tone"  a tile (repeat, up to 3, drawn in order): icon
+//                                 is an SF Symbol name (sun.max.fill…) or a
+//                                 bundled logo ("linear"); sub and tone
+//                                 optional. Tiles switch the card to the tile
+//                                 layout: tiles, then 2 body lines.
 //   --no-tiles                    back to the normal layout
 //   --countdown 10m | 90s | 1h30m show a countdown ending that far from now
 //   --until 18:30 | ISO | none    show a countdown to a time (next 18:30, local)

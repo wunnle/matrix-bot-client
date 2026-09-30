@@ -126,7 +126,17 @@ check('lifetime stretches to cover a countdown, unless ttl was explicit', () => 
   rejects(() => lifetimeFor(long, lifetime, { explicitTtl: true, nowMs: NOW }), 400, /after the activity's ttl/)
 })
 
-check('tiles: at most 2, icon and value required, sub/tone optional, null clears', () => {
+check('tiles: at most 3, in order; a bundled logo name is fine as an icon', () => {
+  const c = buildContentState({ title: 'Morning', tiles: [
+    { icon: 'moon.zzz.fill', value: '5h 04', sub: 'Short night', tone: 'warning' },
+    { icon: 'cloud.rain.fill', value: '14°', sub: 'Rain at 10' },
+    { icon: 'linear', value: '12', sub: '2 urgent', tone: 'warning' },
+  ] }, null, ctx)
+  assert.deepStrictEqual(c.tiles.map((t) => t.icon), ['moon.zzz.fill', 'cloud.rain.fill', 'linear'])
+  rejects(() => buildContentState({ title: 'T', tiles: [1, 2, 3, 4].map(() => ({ icon: 'x', value: 'y' })) }, null, ctx), 400, /at most 3/)
+})
+
+check('tiles: icon and value required, sub/tone optional, null clears', () => {
   const c = buildContentState({ title: 'Morning', tiles: [
     { icon: 'cloud.rain.fill', value: '14° / 17°', sub: 'Rain from 10:00' },
     { icon: 'moon.zzz.fill', value: '5h 04', sub: 'Short night', tone: 'warning' },
@@ -137,7 +147,6 @@ check('tiles: at most 2, icon and value required, sub/tone optional, null clears
   ])
   assert.deepStrictEqual(buildContentState({ body: 'x' }, c, ctx).tiles, c.tiles)
   assert.ok(!('tiles' in buildContentState({ tiles: null }, c, ctx)))
-  rejects(() => buildContentState({ title: 'T', tiles: [{}, {}, {}] }, null, ctx), 400, /at most 2/)
   rejects(() => buildContentState({ title: 'T', tiles: [{ icon: 'x' }] }, null, ctx), 400, /value/)
   rejects(() => buildContentState({ title: 'T', tiles: [{ icon: 'x', value: 'y', tone: 'pink' }] }, null, ctx), 400, /tone/)
 })

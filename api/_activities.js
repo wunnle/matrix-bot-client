@@ -130,16 +130,19 @@ function parseActions(actions) {
   });
 }
 
-/** `tiles`: the morning-card layout (mac/morning-card). At most 2; `icon` is an
-    SF Symbol name (an emoji still renders), `value` is the big text (≈9
-    characters fit the compact island), `sub` and `tone` are optional. With
-    tiles the widget drops title, avatar and buttons and shows the tiles, then
-    up to 2 body lines. `null` clears them. Pure. */
+/** `tiles`: the morning-card layout (mac/morning-3col). At most 3, drawn as
+    equal columns in the order sent; `icon` is an SF Symbol name or a logo
+    bundled in the app ("linear"); `value` is the big text; `sub` and `tone`
+    are optional (tone tints sub). With tiles the widget drops title, avatar
+    and buttons and shows the tiles, then up to 2 body lines; the compact
+    island shows the first tile. Builds before mac/morning-3col draw only the
+    first 2. `null` clears them. Pure. */
+export const MAX_TILES = 3;
 export function parseTiles(tiles) {
   if (tiles === undefined) return undefined;
   if (tiles === null) return null;
   if (!Array.isArray(tiles)) throw new ActivityError(400, "tiles must be an array");
-  if (tiles.length > 2) throw new ActivityError(400, "at most 2 tiles");
+  if (tiles.length > MAX_TILES) throw new ActivityError(400, `at most ${MAX_TILES} tiles`);
   return tiles.map((t, i) => {
     const out = {
       icon: str(t?.icon, `tiles[${i}].icon`, 40, { required: true }),

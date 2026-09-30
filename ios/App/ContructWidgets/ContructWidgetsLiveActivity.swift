@@ -708,20 +708,20 @@ private extension ConstructActivityAttributes.ContentState {
         tiles: [.init(icon: "cloud.rain.fill", value: "14° / 17°", sub: "Rain from 10:00"),
                 .init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning")]
     )
-    // Three columns: weather, sleep, first event.
+    // Three columns: weather, sleep, open Linear issues.
     static let morning3 = ConstructActivityAttributes.ContentState(
-        body: "Design review at 16:30. Nothing urgent overnight.",
+        body: "Standup at 10:00, design review at 16:30. Nothing urgent overnight.",
         roomName: "Morning",
         tiles: [.init(icon: "sun.max.fill", value: "21°", sub: "Clear"),
                 .init(icon: "moon.zzz.fill", value: "7h 12", sub: "Slept well", tone: "success"),
-                .init(icon: "calendar", value: "10:00", sub: "Standup")]
+                .init(icon: "checklist", value: "7", sub: "3 in progress")]
     )
     static let morning3Rough = ConstructActivityAttributes.ContentState(
         body: "Rain until the afternoon, take an umbrella. Design review at 16:30, and two PRs are waiting for review.",
         roomName: "Morning",
         tiles: [.init(icon: "cloud.rain.fill", value: "14°", sub: "Rain at 10"),
                 .init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning"),
-                .init(icon: "calendar", value: "09:30", sub: "Dentist", tone: "warning")]
+                .init(icon: "checklist", value: "12", sub: "2 urgent", tone: "warning")]
     )
     // Error, long body, no buttons: should truncate, not clip.
     static let failed = ConstructActivityAttributes.ContentState(

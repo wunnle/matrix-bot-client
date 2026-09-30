@@ -354,17 +354,23 @@ private struct MessageText: View {
 }
 
 /// A tile's icon: the SF Symbol when `name` is one (white, hierarchical),
-/// otherwise the string itself as text (an emoji).
+/// otherwise the string itself as text (an emoji). `size` gives every icon
+/// the same box: glyphs differ in height (moon.zzz is taller than calendar),
+/// and an unboxed one shifts its tile's lines out of step with the others.
 private struct TileIcon: View {
     let name: String
+    var size: CGFloat? = nil
     var body: some View {
-        if UIImage(systemName: name) != nil {
-            Image(systemName: name)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.white)
-        } else {
-            Text(name)
+        Group {
+            if UIImage(systemName: name) != nil {
+                Image(systemName: name)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.white)
+            } else {
+                Text(name)
+            }
         }
+        .frame(width: size, height: size)
     }
 }
 
@@ -375,12 +381,14 @@ private struct TileView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                TileIcon(name: tile.icon)
+                TileIcon(name: tile.icon, size: 24)
                 Text(tile.value)
             }
             .font(.system(size: 20, weight: .semibold))
             .lineLimit(1)
             .minimumScaleFactor(0.6)
+            // A fixed row height, so each tile's sub line starts at the same y.
+            .frame(height: 26)
             if let sub = tile.sub, !sub.isEmpty {
                 Text(sub)
                     .font(.caption2.weight(.medium))

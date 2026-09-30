@@ -641,9 +641,22 @@ private func startLiveActivityDemoOnce() {
         // (iOS shows at most five activities per app, so the demo stops here.)
         rainyMorning,
     ]
-    // `-LiveActivityDemo morning`: just the morning cards.
+    // Three columns: weather, sleep, first event.
+    let sunnyMorning3 = State(
+        body: "Design review at 16:30. Nothing urgent overnight.",
+        roomName: "Morning",
+        tiles: [.init(icon: "sun.max.fill", value: "21°", sub: "Clear"),
+                .init(icon: "moon.zzz.fill", value: "7h 12", sub: "Slept well", tone: "success"),
+                .init(icon: "calendar", value: "10:00", sub: "Standup")])
+    let rainyMorning3 = State(
+        body: "Rain until the afternoon, take an umbrella. Design review at 16:30, and two PRs are waiting for review.",
+        roomName: "Morning",
+        tiles: [.init(icon: "cloud.rain.fill", value: "14°", sub: "Rain at 10"),
+                .init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning"),
+                .init(icon: "calendar", value: "09:30", sub: "Dentist", tone: "warning")])
+    // `-LiveActivityDemo morning`: just the morning cards, two and three columns.
     let samples = UserDefaults.standard.string(forKey: "LiveActivityDemo") == "morning"
-        ? [sunnyMorning, rainyMorning] : all
+        ? [sunnyMorning, rainyMorning, sunnyMorning3, rainyMorning3] : all
     Task {
         for activity in Activity<ConstructActivityAttributes>.activities
         where activity.attributes.activityId.hasPrefix("demo-") {

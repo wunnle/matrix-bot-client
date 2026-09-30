@@ -114,8 +114,8 @@ private extension ConstructActivityAttributes.ContentState {
     /// The tone's accent. Unknown tones fall back to neutral.
     var accent: Color { toneColor(tone) ?? .purple }
 
-    /// The morning card's tiles (at most 2); empty on every other card.
-    var shownTiles: [Tile] { Array((tiles ?? []).prefix(2)) }
+    /// The morning card's tiles (at most 3); empty on every other card.
+    var shownTiles: [Tile] { Array((tiles ?? []).prefix(3)) }
 
     /// endsAt as a Date, only while it's still ahead — a timer view needs a
     /// non-empty range, and a finished countdown has nothing to show. Never on
@@ -700,6 +700,21 @@ private extension ConstructActivityAttributes.ContentState {
         tiles: [.init(icon: "cloud.rain.fill", value: "14° / 17°", sub: "Rain from 10:00"),
                 .init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning")]
     )
+    // Three columns: weather, sleep, first event.
+    static let morning3 = ConstructActivityAttributes.ContentState(
+        body: "Design review at 16:30. Nothing urgent overnight.",
+        roomName: "Morning",
+        tiles: [.init(icon: "sun.max.fill", value: "21°", sub: "Clear"),
+                .init(icon: "moon.zzz.fill", value: "7h 12", sub: "Slept well", tone: "success"),
+                .init(icon: "calendar", value: "10:00", sub: "Standup")]
+    )
+    static let morning3Rough = ConstructActivityAttributes.ContentState(
+        body: "Rain until the afternoon, take an umbrella. Design review at 16:30, and two PRs are waiting for review.",
+        roomName: "Morning",
+        tiles: [.init(icon: "cloud.rain.fill", value: "14°", sub: "Rain at 10"),
+                .init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning"),
+                .init(icon: "calendar", value: "09:30", sub: "Dentist", tone: "warning")]
+    )
     // Error, long body, no buttons: should truncate, not clip.
     static let failed = ConstructActivityAttributes.ContentState(
         title: "Build failed",
@@ -752,6 +767,8 @@ private struct IslandExpandedMock: View {
         PreviewBanner(state: .countdown)
         PreviewBanner(state: .morning)
         PreviewBanner(state: .morningRough)
+        PreviewBanner(state: .morning3)
+        PreviewBanner(state: .morning3Rough)
         PreviewBanner(state: .failed)
     }
     .padding()
@@ -766,6 +783,8 @@ private struct IslandExpandedMock: View {
         IslandExpandedMock(state: .countdown)
         IslandExpandedMock(state: .morning)
         IslandExpandedMock(state: .morningRough)
+        IslandExpandedMock(state: .morning3)
+        IslandExpandedMock(state: .morning3Rough)
         IslandExpandedMock(state: .failed)
     }
     .padding()

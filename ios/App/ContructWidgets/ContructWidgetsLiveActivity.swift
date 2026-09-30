@@ -40,8 +40,8 @@ struct ConstructActivityAttributes: ActivityAttributes {
         }
 
         struct Tile: Codable, Hashable {
-            // An SF Symbol name, e.g. "sun.max.fill". Anything that isn't one
-            // is drawn as text, so an emoji still works.
+            // An SF Symbol name, e.g. "sun.max.fill", or a glyph bundled in
+            // the widget ("linear"). Anything else is drawn as text (an emoji).
             var icon: String = ""
             // Drawn large, e.g. "21° / 24°".
             var value: String = ""
@@ -114,8 +114,8 @@ private extension ConstructActivityAttributes.ContentState {
     /// The tone's accent. Unknown tones fall back to neutral.
     var accent: Color { toneColor(tone) ?? .purple }
 
-    /// The morning card's tiles (at most 2); empty on every other card.
-    var shownTiles: [Tile] { Array((tiles ?? []).prefix(2)) }
+    /// The morning card's tiles (at most 3); empty on every other card.
+    var shownTiles: [Tile] { Array((tiles ?? []).prefix(3)) }
 
     /// endsAt as a Date, only while it's still ahead — a timer view needs a
     /// non-empty range, and a finished countdown has nothing to show. Never on
@@ -353,18 +353,34 @@ private struct MessageText: View {
     }
 }
 
-/// A tile's icon: the SF Symbol when `name` is one (white, hierarchical),
-/// otherwise the string itself as text (an emoji).
+/// A tile's icon: a glyph bundled in the widget's assets (brand marks SF
+/// Symbols don't have, e.g. "linear"), else the SF Symbol when `name` is one
+/// (white, hierarchical), else the string itself as text (an emoji). `size`
+/// gives every icon the same box: glyphs differ in height (moon.zzz is taller
+/// than calendar), and an unboxed one shifts its tile's lines out of step.
+/// `glyph` sizes a bundled image, which has no font to take its size from.
 private struct TileIcon: View {
     let name: String
+    var size: CGFloat? = nil
+    var glyph: CGFloat = 19
     var body: some View {
-        if UIImage(systemName: name) != nil {
-            Image(systemName: name)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.white)
-        } else {
-            Text(name)
+        Group {
+            if UIImage(named: name) != nil {
+                Image(name)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: glyph, height: glyph)
+                    .foregroundStyle(.white)
+            } else if UIImage(systemName: name) != nil {
+                Image(systemName: name)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.white)
+            } else {
+                Text(name)
+            }
         }
+        .frame(width: size, height: size)
     }
 }
 
@@ -375,12 +391,14 @@ private struct TileView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                TileIcon(name: tile.icon)
+                TileIcon(name: tile.icon, size: 24)
                 Text(tile.value)
             }
             .font(.system(size: 20, weight: .semibold))
             .lineLimit(1)
             .minimumScaleFactor(0.6)
+            // A fixed row height, so each tile's sub line starts at the same y.
+            .frame(height: 26)
             if let sub = tile.sub, !sub.isEmpty {
                 Text(sub)
                     .font(.caption2.weight(.medium))
@@ -562,7 +580,7 @@ private struct CompactTrailing: View {
     var body: some View {
         if let tile = state.shownTiles.first {
             HStack(spacing: 3) {
-                TileIcon(name: tile.icon)
+                TileIcon(name: tile.icon, glyph: 12)
                 Text(tile.value)
             }
                 .font(.caption.weight(.semibold))
@@ -700,6 +718,21 @@ private extension ConstructActivityAttributes.ContentState {
         tiles: [.init(icon: "cloud.rain.fill", value: "14° / 17°", sub: "Rain from 10:00"),
                 .init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning")]
     )
+    // Three columns: sleep, weather, open Linear issues.
+    static let morning3 = ConstructActivityAttributes.ContentState(
+        body: "Standup at 10:00, design review at 16:30. Nothing urgent overnight.",
+        roomName: "Morning",
+        tiles: [.init(icon: "moon.zzz.fill", value: "7h 12", sub: "Slept well", tone: "success"),
+                .init(icon: "sun.max.fill", value: "21°", sub: "Clear"),
+                .init(icon: "linear", value: "7", sub: "3 in progress")]
+    )
+    static let morning3Rough = ConstructActivityAttributes.ContentState(
+        body: "Rain until the afternoon, take an umbrella. Design review at 16:30, and two PRs are waiting for review.",
+        roomName: "Morning",
+        tiles: [.init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning"),
+                .init(icon: "cloud.rain.fill", value: "14°", sub: "Rain at 10"),
+                .init(icon: "linear", value: "12", sub: "2 urgent", tone: "warning")]
+    )
     // Error, long body, no buttons: should truncate, not clip.
     static let failed = ConstructActivityAttributes.ContentState(
         title: "Build failed",
@@ -752,6 +785,8 @@ private struct IslandExpandedMock: View {
         PreviewBanner(state: .countdown)
         PreviewBanner(state: .morning)
         PreviewBanner(state: .morningRough)
+        PreviewBanner(state: .morning3)
+        PreviewBanner(state: .morning3Rough)
         PreviewBanner(state: .failed)
     }
     .padding()
@@ -766,6 +801,8 @@ private struct IslandExpandedMock: View {
         IslandExpandedMock(state: .countdown)
         IslandExpandedMock(state: .morning)
         IslandExpandedMock(state: .morningRough)
+        IslandExpandedMock(state: .morning3)
+        IslandExpandedMock(state: .morning3Rough)
         IslandExpandedMock(state: .failed)
     }
     .padding()

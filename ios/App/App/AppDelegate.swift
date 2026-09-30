@@ -641,18 +641,18 @@ private func startLiveActivityDemoOnce() {
         // (iOS shows at most five activities per app, so the demo stops here.)
         rainyMorning,
     ]
-    // Three columns: weather, sleep, open Linear issues.
+    // Three columns: sleep, weather, open Linear issues.
     let sunnyMorning3 = State(
         body: "Standup at 10:00, design review at 16:30. Nothing urgent overnight.",
         roomName: "Morning",
-        tiles: [.init(icon: "sun.max.fill", value: "21°", sub: "Clear"),
-                .init(icon: "moon.zzz.fill", value: "7h 12", sub: "Slept well", tone: "success"),
+        tiles: [.init(icon: "moon.zzz.fill", value: "7h 12", sub: "Slept well", tone: "success"),
+                .init(icon: "sun.max.fill", value: "21°", sub: "Clear"),
                 .init(icon: "linear", value: "7", sub: "3 in progress")])
     let rainyMorning3 = State(
         body: "Rain until the afternoon, take an umbrella. Design review at 16:30, and two PRs are waiting for review.",
         roomName: "Morning",
-        tiles: [.init(icon: "cloud.rain.fill", value: "14°", sub: "Rain at 10"),
-                .init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning"),
+        tiles: [.init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning"),
+                .init(icon: "cloud.rain.fill", value: "14°", sub: "Rain at 10"),
                 .init(icon: "linear", value: "12", sub: "2 urgent", tone: "warning")])
     // `-LiveActivityDemo morning`: just the morning cards, two and three columns.
     let samples = UserDefaults.standard.string(forKey: "LiveActivityDemo") == "morning"

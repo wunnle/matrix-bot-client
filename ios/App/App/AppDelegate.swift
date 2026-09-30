@@ -647,13 +647,13 @@ private func startLiveActivityDemoOnce() {
         roomName: "Morning",
         tiles: [.init(icon: "sun.max.fill", value: "21°", sub: "Clear"),
                 .init(icon: "moon.zzz.fill", value: "7h 12", sub: "Slept well", tone: "success"),
-                .init(icon: "checklist", value: "7", sub: "3 in progress")])
+                .init(icon: "linear", value: "7", sub: "3 in progress")])
     let rainyMorning3 = State(
         body: "Rain until the afternoon, take an umbrella. Design review at 16:30, and two PRs are waiting for review.",
         roomName: "Morning",
         tiles: [.init(icon: "cloud.rain.fill", value: "14°", sub: "Rain at 10"),
                 .init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning"),
-                .init(icon: "checklist", value: "12", sub: "2 urgent", tone: "warning")])
+                .init(icon: "linear", value: "12", sub: "2 urgent", tone: "warning")])
     // `-LiveActivityDemo morning`: just the morning cards, two and three columns.
     let samples = UserDefaults.standard.string(forKey: "LiveActivityDemo") == "morning"
         ? [sunnyMorning, rainyMorning, sunnyMorning3, rainyMorning3] : all
@@ -1035,8 +1035,8 @@ struct ConstructActivityAttributes: ActivityAttributes {
         }
 
         struct Tile: Codable, Hashable {
-            // An SF Symbol name, e.g. "sun.max.fill". Anything that isn't one
-            // is drawn as text, so an emoji still works.
+            // An SF Symbol name, e.g. "sun.max.fill", or a glyph bundled in
+            // the widget ("linear"). Anything else is drawn as text (an emoji).
             var icon: String = ""
             // Drawn large, e.g. "21° / 24°".
             var value: String = ""

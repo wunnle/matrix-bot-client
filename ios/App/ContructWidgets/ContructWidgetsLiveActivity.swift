@@ -40,8 +40,8 @@ struct ConstructActivityAttributes: ActivityAttributes {
         }
 
         struct Tile: Codable, Hashable {
-            // An SF Symbol name, e.g. "sun.max.fill". Anything that isn't one
-            // is drawn as text, so an emoji still works.
+            // An SF Symbol name, e.g. "sun.max.fill", or a glyph bundled in
+            // the widget ("linear"). Anything else is drawn as text (an emoji).
             var icon: String = ""
             // Drawn large, e.g. "21° / 24°".
             var value: String = ""
@@ -353,16 +353,26 @@ private struct MessageText: View {
     }
 }
 
-/// A tile's icon: the SF Symbol when `name` is one (white, hierarchical),
-/// otherwise the string itself as text (an emoji). `size` gives every icon
-/// the same box: glyphs differ in height (moon.zzz is taller than calendar),
-/// and an unboxed one shifts its tile's lines out of step with the others.
+/// A tile's icon: a glyph bundled in the widget's assets (brand marks SF
+/// Symbols don't have, e.g. "linear"), else the SF Symbol when `name` is one
+/// (white, hierarchical), else the string itself as text (an emoji). `size`
+/// gives every icon the same box: glyphs differ in height (moon.zzz is taller
+/// than calendar), and an unboxed one shifts its tile's lines out of step.
+/// `glyph` sizes a bundled image, which has no font to take its size from.
 private struct TileIcon: View {
     let name: String
     var size: CGFloat? = nil
+    var glyph: CGFloat = 19
     var body: some View {
         Group {
-            if UIImage(systemName: name) != nil {
+            if UIImage(named: name) != nil {
+                Image(name)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: glyph, height: glyph)
+                    .foregroundStyle(.white)
+            } else if UIImage(systemName: name) != nil {
                 Image(systemName: name)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.white)
@@ -570,7 +580,7 @@ private struct CompactTrailing: View {
     var body: some View {
         if let tile = state.shownTiles.first {
             HStack(spacing: 3) {
-                TileIcon(name: tile.icon)
+                TileIcon(name: tile.icon, glyph: 12)
                 Text(tile.value)
             }
                 .font(.caption.weight(.semibold))
@@ -714,14 +724,14 @@ private extension ConstructActivityAttributes.ContentState {
         roomName: "Morning",
         tiles: [.init(icon: "sun.max.fill", value: "21°", sub: "Clear"),
                 .init(icon: "moon.zzz.fill", value: "7h 12", sub: "Slept well", tone: "success"),
-                .init(icon: "checklist", value: "7", sub: "3 in progress")]
+                .init(icon: "linear", value: "7", sub: "3 in progress")]
     )
     static let morning3Rough = ConstructActivityAttributes.ContentState(
         body: "Rain until the afternoon, take an umbrella. Design review at 16:30, and two PRs are waiting for review.",
         roomName: "Morning",
         tiles: [.init(icon: "cloud.rain.fill", value: "14°", sub: "Rain at 10"),
                 .init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning"),
-                .init(icon: "checklist", value: "12", sub: "2 urgent", tone: "warning")]
+                .init(icon: "linear", value: "12", sub: "2 urgent", tone: "warning")]
     )
     // Error, long body, no buttons: should truncate, not clip.
     static let failed = ConstructActivityAttributes.ContentState(

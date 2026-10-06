@@ -27,6 +27,16 @@ const APPROVAL_SETTINGS = JSON.stringify({
       { matcher: '*', hooks: [{ type: 'command', command: `node ${HOOK_PATH}` }] },
     ],
   },
+  // Every listed skill's description rides along in each room session. These
+  // are office-document and interactive-CLI skills no room has ever invoked;
+  // update-config edits ~/.claude/settings.json, which the approval hook never
+  // lets an agent touch anyway. "off" hides the skill entirely.
+  skillOverrides: Object.fromEntries([
+    'anthropic-skills:docx', 'anthropic-skills:pptx', 'anthropic-skills:xlsx',
+    'anthropic-skills:pdf', 'anthropic-skills:docs', 'anthropic-skills:google-workspace',
+    'anthropic-skills:morning', 'anthropic-skills:import-memory',
+    'anthropic-skills:skill-creator', 'keybindings-help', 'update-config',
+  ].map((name) => [name, 'off'])),
 })
 
 // Turns in flight, so a turn can be stopped without waiting it out. Keyed by
@@ -176,6 +186,11 @@ export const claude = {
           // Which room to ask. Cannot be derived from the session id during a
           // room's first turn, because that id is only known once it ends.
           AGENT_ROOM_ID: roomId,
+          // The account's claude.ai connectors (Figma, Claude Docs, Gmail,
+          // Calendar, Drive) were never called from a room, but their
+          // instructions and tool names were re-sent on every reconnect —
+          // ~10K tokens over one long session.
+          ENABLE_CLAUDEAI_MCP_SERVERS: 'false',
         },
       })
       running.set(roomId, child)

@@ -424,6 +424,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [addingPill, setAddingPill] = useState(false)
   const [newPillInput, setNewPillInput] = useState('')
   const newPillRef = useRef<HTMLInputElement>(null)
+  // The pill row. A tapped pill sends it back to its start, so the action
+  // pills and the first saved ones are in reach for the next tap.
+  const pillsRowRef = useRef<HTMLDivElement>(null)
+  const resetPillsScroll = () => pillsRowRef.current?.scrollTo({ left: 0, behavior: 'smooth' })
   const [sending, setSending] = useState(false)
   const [initializing, setInitializing] = useState(true)
   const [loadError, setLoadError] = useState(false)
@@ -2198,7 +2202,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             stands in for it: the row would otherwise sit between you and the
             autocomplete, which offers the matching pills anyway. Kept in the
             DOM so a pill mid-drag or the add field keep their state. */}
-        <div className={`pills${composing || pendingApproval ? ' pills--hidden' : ''}`} onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>
+        <div ref={pillsRowRef} className={`pills${composing || pendingApproval ? ' pills--hidden' : ''}`} onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>
           {lastActions.map((action) => (
             <button
               key={`action-${action}`}
@@ -2206,7 +2210,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               // Don't let the tap move focus: a focused composer stays focused
               // (keyboard up), a blurred one stays blurred.
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => sendMessage(action, { follow: false })}
+              onClick={() => { resetPillsScroll(); sendMessage(action, { follow: false }) }}
             >
               {actionLabel(action)}
             </button>
@@ -2217,6 +2221,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 const paramIdx = pill.indexOf('<>')
                 const hasParam = paramIdx !== -1
                 const onActivate = () => {
+                  resetPillsScroll()
                   if (hasParam) {
                     textareaRef.current?.focus()
                     setInput(pill.slice(0, paramIdx))

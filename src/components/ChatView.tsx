@@ -1137,6 +1137,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // the anchor synchronously after the DOM update, before any paint.
   const scrollAnchorRef = useRef<number | null>(null)
   const suppressRenderStartRef = useRef(false)
+  // Last scrollTop seen while the room was visible. A display:none list can
+  // report (or clamp to) 0, so read the position from here when it is shown again.
+  const lastScrollTopRef = useRef(0)
 
   // Content that grows without a new message — the run's live step appearing
   // under its tool history, an image finishing its load — would otherwise
@@ -1154,8 +1157,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [])
 
   // When this room is shown again, its ChatView was only hidden (display)
-  // but kept state — scroll position and renderStart are preserved, so
-  // we never auto-scroll. Reset to the tail and pin to bottom.
+  // but kept state. If you had scrolled up into the history, put you back
+  // where you were. If you were at the end, reset to the tail and pin to
+  // bottom, so whatever arrived while you were away is on screen.
   useLayoutEffect(() => {
     /* eslint-disable react-hooks/immutability, react-hooks/set-state-in-effect -- must sync refs + renderStart before the visible-messages useLayoutEffect in the same commit */
     if (!isActive) {
@@ -1165,6 +1169,16 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const justBecameActive = !wasActiveRef.current
     wasActiveRef.current = true
     if (!justBecameActive) return
+    // First activation mounts pinned, so this only fires on a return visit.
+    if (!stickToBottomRef.current) {
+      const container = messagesRef.current
+      if (container) {
+        programmaticScrollUntilRef.current = performance.now() + 200
+        container.scrollTop = lastScrollTopRef.current
+      }
+      setShowScrollDown(true)
+      return
+    }
     const n = messages.length
     stickToBottomRef.current = true
     isFirstLoad.current = true
@@ -1350,10 +1364,14 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     // re-render the whole timeline (and, near the top, kick off scrollback),
     // which rebuilds the <pre> and throws away its horizontal position.
     if (e.target !== e.currentTarget) return
+    const el = e.currentTarget
+    // A hidden room measures 0 and reads as "at the bottom"; letting that
+    // through would re-pin it and lose its place for when it is shown again.
+    if (el.clientHeight === 0) return
+    lastScrollTopRef.current = el.scrollTop
     // A held scrollbar thumb outranks this: autoscrolling the timeline here
     // would rebuild the <pre> and kill the drag. See scrollbarDragRef.
     if (scrollbarDragRef.current) return
-    const el = e.currentTarget
     const scrollTop = el.scrollTop
     const isNearBottom = el.scrollHeight - scrollTop - el.clientHeight < 150
     // Ignore scroll events fired by our own programmatic scrollIntoView

@@ -12,6 +12,10 @@
  *   [[Deny]] [[Approve]] [[Always allow]] [[Approve + auto]]
  *
  * Always allow is Codex-only; Approve + auto is offered while auto mode is off.
+ *
+ * Hermes rooms post the same card (the construct-matrix plugin rewrites
+ * Hermes' exec approval into it), with `_(flagged — <reason>)_` as the reason
+ * and [[Approve session]] in place of Always allow.
  */
 export interface ApprovalCard {
   /** The tool asking, e.g. "Edit" or "Bash". */
@@ -25,7 +29,7 @@ export interface ApprovalCard {
 export function parseApprovalCard(body: string): ApprovalCard | null {
   const head = /^\s*🔐\s*Approve\s+`([^`]+)`/.exec(body)
   if (!head) return null
-  const reason = /auto mode won't answer this one\s*[—-]\s*([^)]+)\)/.exec(body)?.[1]?.trim()
+  const reason = /(?:auto mode won't answer this one|flagged)\s*[—-]\s*([^)]+)\)/.exec(body)?.[1]?.trim()
   return { tool: head[1], target: cardTarget(body), reason }
 }
 
@@ -50,6 +54,8 @@ export function approvalChoices(actions: string[]) {
     approve: find(/^approve$/i),
     deny: find(/^deny$/i),
     always: find(/^always allow$/i),
+    // Hermes: approve this kind of command for the rest of the session.
+    session: find(/^approve session$/i),
     // Approve this call and turn the room's auto mode on; one answer to the bot.
     auto: find(/^approve \+ auto$/i),
   }

@@ -7,6 +7,8 @@ interface Props {
   approve: string
   deny?: string
   always?: string
+  /** Hermes: approves this kind of command for the rest of the session. */
+  session?: string
   /** Approves and turns on the room's auto mode, in one answer. */
   auto?: string
   onAnswer: (label: string) => void
@@ -20,7 +22,7 @@ interface Props {
  *
  * Keyed by the card's event id by its parent, so a new card starts un-answered.
  */
-export default function ApprovalBar({ card, approve, deny, always, auto, onAnswer, onView }: Props) {
+export default function ApprovalBar({ card, approve, deny, always, session, auto, onAnswer, onView }: Props) {
   // One answer per card: the bar goes away when the reply lands, and a second
   // tap in between would read to the bot as an answer to whatever comes next.
   const [answered, setAnswered] = useState<string | null>(null)
@@ -79,6 +81,17 @@ export default function ApprovalBar({ card, approve, deny, always, auto, onAnswe
           onClick={() => answer(always)}
         >
           {answered === always ? 'Allowing…' : `${always} ${card.tool} in this room`}
+        </button>
+      )}
+      {session && (
+        <button
+          type="button"
+          className="approval-bar-always"
+          disabled={answered !== null}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => answer(session)}
+        >
+          {answered === session ? 'Allowing…' : 'Approve, and allow commands like this for the session'}
         </button>
       )}
       {auto && (

@@ -82,6 +82,17 @@ export async function backfillAgentPills(client: MatrixClient): Promise<void> {
   await client.setAccountData(ACCOUNT_DATA_TYPE, next as any)
 }
 
+// Room state the Claude Code bot keeps listing the model ids `!model` can
+// switch the room to. Keep in sync with MODELS_EVENT in scripts/claude-code-bot.mjs.
+export const AGENT_MODELS_EVENT = 'com.construct.models'
+
+export function agentRoomModels(client: MatrixClient, roomId: string): string[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const content = client.getRoom(roomId)?.currentState.getStateEvents(AGENT_MODELS_EVENT as any, '')?.getContent()
+  const models: unknown = content?.models
+  return Array.isArray(models) ? models.filter((m): m is string => typeof m === 'string' && !!m) : []
+}
+
 export function isAgentRoom(client: MatrixClient, roomId: string): boolean {
   const room = client.getRoom(roomId)
   const create = room?.currentState.getStateEvents('m.room.create', '')

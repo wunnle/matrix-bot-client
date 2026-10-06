@@ -46,6 +46,25 @@ const DEFAULT_MODEL = DEFAULT.model
 // action pills off this; keep it in sync with AGENT_ROOM_TYPE in src/lib/roomMeta.ts.
 const AGENT_ROOM_TYPE = 'com.construct.agent'
 
+// Room state listing the model ids !model can switch this room to, so
+// Construct's header menu opens without asking. A room cannot change provider,
+// so the list is its provider's; written at spawn, refreshed on startup and on
+// every bare !model (Codex learns its list from the app server at runtime).
+// Keep in sync with AGENT_MODELS_EVENT in src/lib/roomMeta.ts.
+const MODELS_EVENT = 'com.construct.models'
+
+function modelsContent(provider) {
+  return { models: [...new Set(Object.values(providerFor({ provider }).models))] }
+}
+
+async function publishModels(roomId, provider) {
+  const content = modelsContent(provider)
+  const current = client.getRoom(roomId)?.currentState?.getStateEvents(MODELS_EVENT, '')?.getContent()
+  if (JSON.stringify(current?.models) === JSON.stringify(content.models)) return false
+  await client.sendStateEvent(roomId, MODELS_EVENT, content, '')
+  return true
+}
+
 // Survives a lost sessions.json, unlike the session map: the marker is in room
 // state on the server. Mirrors isAgentRoom in src/lib/roomMeta.ts.
 function isAgentRoom(roomId) {
@@ -875,6 +894,7 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null) {
         state_key: '',
         content: { url: avatarMxc[provider] },
       }] : []),
+      { type: MODELS_EVENT, state_key: '', content: modelsContent(provider) },
     ],
   })
   // `worktree` marks the cwd as ours to clean up on !end. A room bound to a
@@ -1285,6 +1305,8 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
         .map((id) => `[[!model ${id}]]`)
         .join(' ')
       await sendRoomText(roomId, `Model: ${modelLabel(current)}\n\n${options}`)
+      // Whoever had to ask may be looking at a stale list in room state.
+      publishModels(roomId, provider.name).catch((e) => log(`Could not publish models to ${roomId}: ${e.message}`))
       return
     }
     const resolved = resolveModel(arg)
@@ -1614,6 +1636,21 @@ async function backfillNames() {
   }
 }
 await backfillNames()
+
+// Rooms spawned before the models list existed, or whose provider's list has
+// changed since: publishModels only writes when the list differs.
+async function backfillModels() {
+  for (const [roomId, entry] of Object.entries(sessions)) {
+    try {
+      const room = client.getRoom(roomId)
+      if (!room || room.getMyMembership() !== 'join') continue
+      if (await publishModels(roomId, entry.provider)) log(`Published models to ${roomId}`)
+    } catch (e) {
+      log(`Could not publish models to ${roomId}: ${e.message}`)
+    }
+  }
+}
+await backfillModels()
 
 // Rooms spawned before the override left the owner at PL0, so renaming them
 // from Construct failed with user_level(0) < send_level(50). Server-side, so

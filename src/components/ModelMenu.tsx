@@ -4,7 +4,7 @@ import { formatModel } from '../lib/modelLabel'
 interface Props {
   /** The room's model as the header shows it. */
   current: string | null
-  /** The picker's [[options]], sent back verbatim. */
+  /** Commands to offer, sent back verbatim: from the room's models state, or the bot's picker [[options]]. */
   options: string[]
   /** Still waiting on the bot's picker. */
   loading: boolean
@@ -27,9 +27,14 @@ function modelOptionLabel(option: string): string {
 export default function ModelMenu({ current, options, loading, onPick, onClose }: Props) {
   const currentLabel = current ? formatModel(current).toLowerCase() : null
   // Hermes lists every model, current one included; the agent bot leaves it
-  // out. The chip already says which one you're on, so drop it here too.
-  const shown = options.filter((option) =>
-    !currentLabel || !currentLabel.includes(modelOptionLabel(option).toLowerCase()))
+  // out, but its list in room state does not. The chip already says which one
+  // you're on, so drop it. Agent options carry the exact id; Hermes' carry only
+  // a family name ("/sol" for "Sol 5.6").
+  const shown = options.filter((option) => {
+    const id = /^!model\s+(\S+)$/.exec(option)?.[1]
+    if (id) return id !== current
+    return !currentLabel || !currentLabel.includes(modelOptionLabel(option).toLowerCase())
+  })
 
   return (
     <>

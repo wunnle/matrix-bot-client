@@ -29,7 +29,7 @@ import { useSearchParams } from 'react-router-dom'
 import { getClient } from '../lib/matrix'
 import { getRoomOwners } from '../lib/roomOwners'
 import { pinRoomEvent, unpinRoomEvent } from '../lib/pinRoomMessage'
-import { loadPills, savePills, isAgentRoom } from '../lib/roomMeta'
+import { loadPills, savePills, isAgentRoom, agentRoomModels } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { Capacitor } from '@capacitor/core'
 import { isMobileSafari } from '../lib/isMobileSafari'
@@ -451,14 +451,18 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [modelMenuRequest, setModelMenuRequest] = useState<string | null>(null)
   const modelMenuLoading = !!modelMenuRequest && !lastActionMessage &&
     messages.findLast((m) => m.isOwnMessage)?.body === modelMenuRequest
+  // Agent rooms list their models in room state, so their menu opens with
+  // them straight away and nothing is sent until you pick.
+  const [modelMenuOptions, setModelMenuOptions] = useState<string[] | null>(null)
   // A picker asked for some other way — the !model pill, typing it — opens
   // the menu too, since the timeline no longer shows it. Only one that lands
   // while the room is open, so an old one doesn't pop up on entering.
   const [openedAt] = useState(() => Date.now())
   const [dismissedPickerId, setDismissedPickerId] = useState<string | null>(null)
-  const showModelMenu = !!modelMenuRequest ||
+  const showModelMenu = !!modelMenuOptions || !!modelMenuRequest ||
     (!!modelPicker && modelPicker.msg.timestamp >= openedAt && modelPicker.msg.eventId !== dismissedPickerId)
   const closeModelMenu = () => {
+    setModelMenuOptions(null)
     setModelMenuRequest(null)
     if (modelPicker) setDismissedPickerId(modelPicker.msg.eventId)
   }
@@ -1940,7 +1944,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 aria-expanded={showModelMenu}
                 onClick={() => {
                   if (showModelMenu) { closeModelMenu(); return }
-                  const command = isAgentRoom(client, roomId) ? '!model' : '!switch'
+                  const agent = isAgentRoom(client, roomId)
+                  const listed = agent ? agentRoomModels(client, roomId) : []
+                  if (listed.length) { setModelMenuOptions(listed.map((id) => `!model ${id}`)); return }
+                  // No list in state (Hermes, or a room the bot has not
+                  // backfilled yet): ask the bot for its picker.
+                  const command = agent ? '!model' : '!switch'
                   setModelMenuRequest(command)
                   void sendMessage(command, { follow: false })
                 }}
@@ -1950,9 +1959,19 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               {showModelMenu && (
                 <ModelMenu
                   current={shownModel}
-                  options={modelPicker?.options ?? []}
-                  loading={modelMenuLoading}
-                  onPick={(option) => { closeModelMenu(); void sendMessage(option, { follow: false }) }}
+                  options={modelMenuOptions ?? modelPicker?.options ?? []}
+                  loading={!modelMenuOptions && modelMenuLoading}
+                  onPick={(option) => {
+                    closeModelMenu()
+                    // The agent bot switches as soon as it reads the command,
+                    // so the chip need not wait for its confirmation.
+                    const picked = /^!model\s+(\S+)$/.exec(option)?.[1]
+                    if (picked && modelMenuOptions) {
+                      setCurrentModel(picked)
+                      setRoomModel(roomId, picked)
+                    }
+                    void sendMessage(option, { follow: false })
+                  }}
                   onClose={closeModelMenu}
                 />
               )}

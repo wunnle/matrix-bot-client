@@ -1881,10 +1881,18 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 : (roomTopic || (bot?.name ?? null))}
             </span>
           </div>
+          {/* Tapping the chip asks the room's bot for its model picker. Agent
+              rooms answer !model; Hermes rooms use !switch, since v0.21 rewrites
+              !model there into upstream's reaction picker. */}
           {shownModel && (
-            <span className="chat-header-model" title={`Model: ${shownModel}`}>
+            <button
+              type="button"
+              className="chat-header-model"
+              title={`Model: ${shownModel} — tap to switch`}
+              onClick={() => sendMessage(isAgentRoom(client, roomId) ? '!model' : '!switch')}
+            >
               {formatModel(shownModel)}
-            </span>
+            </button>
           )}
           {pinnedEventIds.length > 0 && (
             <button

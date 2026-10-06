@@ -749,8 +749,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 .chat-header-model {
-  flex-shrink: 0;
-  max-width: 45%;
+  display: block;
+  max-width: 100%;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-muted);
@@ -762,6 +762,74 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   background: var(--bg-active);
 }
 .chat-header-model--open { background: var(--accent); color: #fff; }
+
+/* The chip's model dropdown. */
+.model-menu-anchor {
+  position: relative;
+  flex-shrink: 0;
+  max-width: 45%;
+}
+.model-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+/* Liquid glass (.glass) over the timeline. It grows out of the chip with a
+   little overshoot, and the items follow it in, one after another. */
+.model-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 41;
+  min-width: 168px;
+  padding: 6px;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transform-origin: calc(100% - 24px) -8px;
+  animation: model-menu-in 0.42s cubic-bezier(0.34, 1.45, 0.5, 1) both;
+}
+@keyframes model-menu-in {
+  from { opacity: 0; transform: scale(0.35, 0.2); filter: blur(6px); }
+  55% { opacity: 1; filter: blur(0); }
+}
+.model-menu-item {
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-strong);
+  text-align: left;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+  animation: model-menu-item-in 0.32s ease-out both;
+  animation-delay: calc(0.06s + var(--i, 0) * 0.04s);
+}
+@keyframes model-menu-item-in {
+  from { opacity: 0; transform: translateY(-6px); }
+}
+/* The touched item lifts into its own brighter drop, like the active tab. */
+.model-menu-item:hover,
+.model-menu-item:active {
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.18);
+}
+.model-menu-item:active { transform: scale(0.96); }
+@media (prefers-reduced-motion: reduce) {
+  .model-menu, .model-menu-item { animation: none; }
+}
+.model-menu-status {
+  height: 44px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
 
 .chat-subtitle {
   font-size: 12px;
@@ -2253,40 +2321,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   text-align: center;
 }
 .approval-bar-always:disabled { opacity: 0.6; }
-
-/* The approval bar's frame, holding the header chip's model picker. */
-.model-bar-icon { background: var(--accent); }
-.model-bar-close {
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-}
-.model-bar-close .material-symbols-outlined { font-size: 20px; }
-.model-bar-options {
-  display: flex;
-  gap: 8px;
-}
-.model-bar-btn {
-  flex: 1 1 0;
-  min-width: 0;
-  padding: 0 6px;
-  background: var(--bg-active);
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.model-bar-loading {
-  height: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-}
 
 .dictation-voice-row {
   display: flex;

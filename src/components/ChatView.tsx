@@ -47,7 +47,7 @@ import { useAgentRun, type AgentRun } from '../hooks/useAgentActivity'
 import { AgentActivityBar } from './AgentActivityBar'
 import MessageActionSheet from './MessageActionSheet'
 import ApprovalBar from './ApprovalBar'
-import ModelBar from './ModelBar'
+import ModelMenu from './ModelMenu'
 import { approvalChoices, parseApprovalCard } from '../lib/approval'
 import { hapticPress, hapticSend, hapticSuccess, hapticTick, hapticWarning } from '../lib/haptics'
 import { useAgentBlocked, formatResetsAt, blockedHeadline } from '../hooks/useAgentBlocked'
@@ -274,6 +274,23 @@ function setRoomModel(roomId: string, model: string) {
   localStorage.setItem(`room-model:${roomId}`, model)
 }
 
+// A bot's model picker: the agent bot's answer to !model ("Model: …" +
+// [[!model <id>]]) or Hermes' to !switch ("Pick model:" + [[/luna]]).
+function isModelPicker(m: Message): boolean {
+  if (m.isOwnMessage) return false
+  const { actions } = parseActions(m.body)
+  if (!actions.length) return false
+  if (/^\s*Model:/.test(m.body)) return actions.every((a) => /^!model\s+\S+$/.test(a))
+  if (/^\s*Pick model:/i.test(m.body)) return actions.every((a) => /^\/\w+$/.test(a))
+  return false
+}
+
+// The ask and the answer of a model picker, which the header's model menu
+// stands in for. The pick and the bot's confirmation stay, as the record.
+function isModelPickerTraffic(m: Message): boolean {
+  return (m.isOwnMessage && /^!(model|switch)$/.test(m.body.trim())) || isModelPicker(m)
+}
+
 // Agent room topics are ` · `-separated, and their first field is where the
 // room works: an absolute path for a plain room, a branch name for one running
 // in its own worktree. A full path never fits the subtitle line, so keep only
@@ -424,25 +441,25 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [lastActionMessage, lastActions])
   // That message, when it is a model picker — the agent bot's answer to !model
   // ("Model: …" + [[!model <id>]]) or Hermes' to !switch ("Pick model:" +
-  // [[/luna]]): it gets the model bar in place of the pill row.
-  const modelPicker = useMemo(() => {
-    if (!lastActionMessage || !lastActions.length) return null
-    const agent = lastActions.every((a) => /^!model\s+\S+$/.test(a))
-    const hermes = /^\s*Pick model:/i.test(lastActionMessage.body) && lastActions.every((a) => /^\/\w+$/.test(a))
-    return agent || hermes ? { msg: lastActionMessage, options: lastActions } : null
-  }, [lastActionMessage, lastActions])
-  // Opened from the header chip, which records the command it sent: the bar
-  // shows straight away, loading, for as long as that command is still the
-  // last word — the bot's answer (picker or not), or anything else you send,
-  // ends the wait.
-  const [modelBarRequest, setModelBarRequest] = useState<string | null>(null)
+  // [[/luna]]): the model menu lists its options, and the timeline hides it.
+  const modelPicker = useMemo(
+    () => (lastActionMessage && isModelPicker(lastActionMessage) ? { msg: lastActionMessage, options: lastActions } : null),
+    [lastActionMessage, lastActions],
+  )
+  // The header chip's dropdown, holding the command it sent. It opens at once
+  // and loads for as long as that command is still the last word.
+  const [modelMenuRequest, setModelMenuRequest] = useState<string | null>(null)
+  const modelMenuLoading = !!modelMenuRequest && !lastActionMessage &&
+    messages.findLast((m) => m.isOwnMessage)?.body === modelMenuRequest
+  // A picker asked for some other way — the !model pill, typing it — opens
+  // the menu too, since the timeline no longer shows it. Only one that lands
+  // while the room is open, so an old one doesn't pop up on entering.
+  const [openedAt] = useState(() => Date.now())
   const [dismissedPickerId, setDismissedPickerId] = useState<string | null>(null)
-  const modelBarLoading = !!modelBarRequest && !lastActionMessage &&
-    messages.findLast((m) => m.isOwnMessage)?.body === modelBarRequest
-  const showModelBar = !pendingApproval &&
-    (modelBarLoading || (!!modelPicker && modelPicker.msg.eventId !== dismissedPickerId))
-  const closeModelBar = () => {
-    setModelBarRequest(null)
+  const showModelMenu = !!modelMenuRequest ||
+    (!!modelPicker && modelPicker.msg.timestamp >= openedAt && modelPicker.msg.eventId !== dismissedPickerId)
+  const closeModelMenu = () => {
+    setModelMenuRequest(null)
     if (modelPicker) setDismissedPickerId(modelPicker.msg.eventId)
   }
   const [addingPill, setAddingPill] = useState(false)
@@ -589,7 +606,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [refreshPinned])
 
-  const visibleMessages = renderStart > 0 ? messages.slice(renderStart) : messages
+  // Model-picker traffic is the header menu's business, not the timeline's.
+  const visibleMessages = useMemo(
+    () => (renderStart > 0 ? messages.slice(renderStart) : messages).filter((m) => !isModelPickerTraffic(m)),
+    [messages, renderStart],
+  )
 
   // Tool group IDs: each tool message maps to the eventId its group starts at,
   // and a group is "collapsible" once something non-tool follows it (i.e. the
@@ -1906,24 +1927,36 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             </span>
           </div>
           {/* Tapping the chip asks the room's bot for its model picker, which
-              opens in the model bar. Agent rooms answer !model; Hermes rooms use
-              !switch, since v0.21 rewrites !model there into upstream's
+              drops down from the chip. Agent rooms answer !model; Hermes rooms
+              use !switch, since v0.21 rewrites !model there into upstream's
               reaction picker. */}
           {shownModel && (
-            <button
-              type="button"
-              className={`chat-header-model${showModelBar ? ' chat-header-model--open' : ''}`}
-              title={`Model: ${shownModel} — tap to switch`}
-              aria-expanded={showModelBar}
-              onClick={() => {
-                if (showModelBar) { closeModelBar(); return }
-                const command = isAgentRoom(client, roomId) ? '!model' : '!switch'
-                setModelBarRequest(command)
-                void sendMessage(command, { follow: false })
-              }}
-            >
-              {formatModel(shownModel)}
-            </button>
+            <div className="model-menu-anchor">
+              <button
+                type="button"
+                className={`chat-header-model${showModelMenu ? ' chat-header-model--open' : ''}`}
+                title={`Model: ${shownModel} — tap to switch`}
+                aria-haspopup="menu"
+                aria-expanded={showModelMenu}
+                onClick={() => {
+                  if (showModelMenu) { closeModelMenu(); return }
+                  const command = isAgentRoom(client, roomId) ? '!model' : '!switch'
+                  setModelMenuRequest(command)
+                  void sendMessage(command, { follow: false })
+                }}
+              >
+                {formatModel(shownModel)}
+              </button>
+              {showModelMenu && (
+                <ModelMenu
+                  current={shownModel}
+                  options={modelPicker?.options ?? []}
+                  loading={modelMenuLoading}
+                  onPick={(option) => { closeModelMenu(); void sendMessage(option, { follow: false }) }}
+                  onClose={closeModelMenu}
+                />
+              )}
+            </div>
           )}
           {pinnedEventIds.length > 0 && (
             <button
@@ -2237,23 +2270,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             onView={() => viewApprovalCard(pendingApproval.msg)}
           />
         )}
-
-        {showModelBar && (
-          <ModelBar
-            key={modelPicker?.msg.eventId ?? 'requested'}
-            current={shownModel}
-            options={modelPicker?.options ?? []}
-            onPick={(option) => { void sendMessage(option, { follow: false }) }}
-            onClose={closeModelBar}
-          />
-        )}
-
         {/* Hidden, not unmounted, while you type or while the approval bar
             stands in for it: the row would otherwise sit between you and the
             autocomplete, which offers the matching pills anyway. Kept in the
             DOM so a pill mid-drag or the add field keep their state. */}
-        <div ref={pillsRowRef} className={`pills${composing || pendingApproval || showModelBar ? ' pills--hidden' : ''}`} onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>
-          {lastActions.map((action) => (
+        <div ref={pillsRowRef} className={`pills${composing || pendingApproval ?' pills--hidden' : ''}`} onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>
+          {(modelPicker ? [] : lastActions).map((action) => (
             <button
               key={`action-${action}`}
               className="pill pill-action"

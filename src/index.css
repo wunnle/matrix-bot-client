@@ -761,6 +761,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   border-radius: 6px;
   background: var(--bg-active);
 }
+.chat-header-model--open { background: var(--accent); color: #fff; }
 
 .chat-subtitle {
   font-size: 12px;
@@ -2252,6 +2253,38 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   text-align: center;
 }
 .approval-bar-always:disabled { opacity: 0.6; }
+
+/* The approval bar's frame, holding the header chip's model picker. */
+.model-bar-icon { background: var(--accent); }
+.model-bar-close {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.model-bar-close .material-symbols-outlined { font-size: 20px; }
+.model-bar-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.model-bar-btn { background: var(--bg-active); color: var(--text); }
+.model-bar-btn--current {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--accent-hover);
+}
+.model-bar-btn--current:disabled { opacity: 1; }
+.model-bar-loading {
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
 
 .dictation-voice-row {
   display: flex;

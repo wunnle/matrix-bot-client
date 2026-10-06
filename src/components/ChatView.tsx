@@ -1140,6 +1140,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // Last scrollTop seen while the room was visible. A display:none list can
   // report (or clamp to) 0, so read the position from here when it is shown again.
   const lastScrollTopRef = useRef(0)
+  // Until then, your own new message doesn't pull the list to the end. Set by
+  // quick-command sends; see sendMessage.
+  const quietSendUntilRef = useRef(0)
 
   // Content that grows without a new message — the run's live step appearing
   // under its tool history, an image finishing its load — would otherwise
@@ -1233,7 +1236,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const tail = visibleMessages[visibleMessages.length - 1]
     const tailChanged = tail.eventId !== lastTailEventIdRef.current
     lastTailEventIdRef.current = tail.eventId
-    const shouldScroll = (stickToBottomRef.current || (tailChanged && tail.isOwnMessage)) && !loadingMoreRef.current
+    const ownSend = tailChanged && tail.isOwnMessage && performance.now() >= quietSendUntilRef.current
+    const shouldScroll = (stickToBottomRef.current || ownSend) && !loadingMoreRef.current
     if (!shouldScroll) return
     const behavior: ScrollBehavior = (!isFirstLoad.current && tailChanged && tail.isOwnMessage) ? 'smooth' : 'instant'
     isFirstLoad.current = false
@@ -1461,7 +1465,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   ])
 
 
-  const sendMessage = useCallback(async (text: string) => {
+  // follow: false is for the quick-command pills, which you tap from wherever
+  // you are reading. The sent message lands at the end without taking you there.
+  const sendMessage = useCallback(async (text: string, { follow = true }: { follow?: boolean } = {}) => {
     if (!text.trim() || sending) return
     hapticSend()
     // Keep the keyboard up only if the composer was already focused (i.e. the
@@ -1479,7 +1485,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       setSuggestions([])
     }
     setSending(true)
-    requestAnimationFrame(scrollToBottom)
+    // The local echo and then the server's copy each become a new own-message
+    // tail; the window has to outlast both.
+    if (follow) requestAnimationFrame(scrollToBottom)
+    else quietSendUntilRef.current = performance.now() + 10_000
     try {
       await client.sendMessage(roomId, {
         msgtype: 'm.text',
@@ -2197,7 +2206,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               // Don't let the tap move focus: a focused composer stays focused
               // (keyboard up), a blurred one stays blurred.
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => sendMessage(action)}
+              onClick={() => sendMessage(action, { follow: false })}
             >
               {actionLabel(action)}
             </button>
@@ -2212,7 +2221,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                     textareaRef.current?.focus()
                     setInput(pill.slice(0, paramIdx))
                   } else {
-                    sendMessage(pill)
+                    sendMessage(pill, { follow: false })
                   }
                 }
                 return <SortablePill key={pill} pill={pill} onActivate={onActivate} />

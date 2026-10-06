@@ -130,6 +130,9 @@ self.addEventListener("push", (event) => {
   );
 });
 
+/* An open window is routed in-app (usePushNotifications) rather than with
+   client.navigate(): that is a full reload, which threw away the running Matrix
+   client and made the room wait on a cold start — IndexedDB, crypto, sync. */
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const roomId = event.notification.data && event.notification.data.roomId;
@@ -138,7 +141,7 @@ self.addEventListener("notificationclick", (event) => {
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
       for (const client of windowClients) {
         if (client.url.includes(self.location.origin)) {
-          client.navigate(url);
+          if (roomId) client.postMessage({ type: "OPEN_ROOM", roomId });
           return client.focus();
         }
       }

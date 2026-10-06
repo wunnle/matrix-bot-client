@@ -15,22 +15,25 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
 
 export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: string) => void) {
   // The SW announces each push so the room list can refresh that room's unread
-  // count without waiting for sync.
+  // count without waiting for sync, and hands notification taps to an open
+  // window to route in-app instead of reloading it.
   useEffect(() => {
     if (!enabled) return;
     if (!("serviceWorker" in navigator)) return;
 
     const onServiceWorkerMessage = (event: MessageEvent) => {
-      if (event.data?.type !== "PUSH_RECEIVED") return;
-      const { roomId } = event.data as { roomId: string | null };
-      if (roomId) {
+      const { type, roomId } = (event.data ?? {}) as { type?: string; roomId?: string | null };
+      if (!roomId) return;
+      if (type === "PUSH_RECEIVED") {
         window.dispatchEvent(new CustomEvent("matrix-push", { detail: { roomId } }));
+      } else if (type === "OPEN_ROOM") {
+        onOpenRoom?.(roomId);
       }
     };
 
     navigator.serviceWorker.addEventListener("message", onServiceWorkerMessage);
     return () => navigator.serviceWorker.removeEventListener("message", onServiceWorkerMessage);
-  }, [enabled]);
+  }, [enabled, onOpenRoom]);
 
   // Native (Capacitor): APNs token → Matrix pusher. The push gateway
   // (api/matrix-push.js) detects non-JSON pushkeys and delivers via APNs.

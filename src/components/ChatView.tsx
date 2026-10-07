@@ -34,7 +34,7 @@ import { loadPills, savePills, isAgentRoom, agentRoomModels } from '../lib/roomM
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { Capacitor } from '@capacitor/core'
 import { isMobileSafari } from '../lib/isMobileSafari'
-import { actionLabel, isActionPlaceholder, parseActions } from '../lib/actions'
+import { actionLabel, parseActions, stripActionMarkersInRichHtml } from '../lib/actions'
 import { formatModel } from '../lib/modelLabel'
 import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
@@ -133,32 +133,6 @@ function summarizeToolLines(lines: ToolProgressLine[]): string {
   return parts.join(', ') || 'Used tools'
 }
 
-const CODE_BLOCK = /<code(\s[^>]*)?>[\s\S]*?<\/code>/gi
-
-/** Remove [[CTA]] from non-code HTML only; keep all [[...]] inside <code> (docs). */
-function stripActionMarkersInRichHtml(html: string): string {
-  const out: string[] = []
-  let i = 0
-  CODE_BLOCK.lastIndex = 0
-  for (;;) {
-    const m = CODE_BLOCK.exec(html)
-    if (!m) {
-      out.push(stripActionMarkersInPlainTextSegment(html.slice(i)))
-      break
-    }
-    out.push(stripActionMarkersInPlainTextSegment(html.slice(i, m.index)))
-    out.push(m[0])
-    i = m.index + m[0].length
-  }
-  return out.join('')
-}
-
-function stripActionMarkersInPlainTextSegment(s: string): string {
-  return s.replace(/\[\[([^\]]{1,40})\]\]/g, (match, inner) => {
-    if (isActionPlaceholder(inner)) return match
-    return ''
-  })
-}
 
 async function copyTextToClipboard(text: string): Promise<void> {
   try {

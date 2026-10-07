@@ -43,8 +43,25 @@ export function splitMarkdownCode(body: string): { text: string; isCode: boolean
   return out
 }
 
+const TOKEN = /\[\[([^\]\n]{1,40})\]\]/g
+// The run of [[CTA]] tokens a message ends with, across lines.
+const TRAILING_TOKENS = /(?:\s*\[\[[^\]\n]{1,40}\]\])+\s*$/
+
+/**
+ * What an inline [[…]] reads as: agents that write notes (Lore) put Obsidian
+ * wikilinks in chat — "[[Note]]", "[[Note|shown text]]" — and those are names
+ * in a sentence, not buttons.
+ */
+export function wikilinkText(inner: string): string {
+  const bar = inner.indexOf('|')
+  return (bar >= 0 ? inner.slice(bar + 1) : inner).trim()
+}
+
 /**
  * Pull trailing [[CTA]] tokens out of a message body into tappable pills.
+ * Only the ones the message ends with: a [[…]] mid-sentence is a wikilink and
+ * keeps its place as plain text. Taking every token turned "The [[Colonist]]
+ * retreat is at…" into "The  retreat is at…" plus a "Colonist" button.
  *
  * Code is exempt: a message *documenting* the syntax — a fenced example, an
  * inline `[[label]]` — must not sprout buttons from its own sample text. The
@@ -54,16 +71,63 @@ export function splitMarkdownCode(body: string): { text: string; isCode: boolean
  */
 export function parseActions(body: string): { text: string; actions: string[] } {
   const actions: string[] = []
-  const text = splitMarkdownCode(body)
-    .map(({ text: seg, isCode }) => {
-      if (isCode) return seg
-      return seg.replace(/\[\[([^\]]{1,40})\]\]/g, (match, label) => {
+  const segs = splitMarkdownCode(body)
+  const last = segs[segs.length - 1]
+  if (last && !last.isCode) {
+    last.text = last.text.replace(TRAILING_TOKENS, (run) => {
+      const kept = run.replace(TOKEN, (match, label: string) => {
         if (isActionPlaceholder(label)) return match
         actions.push(label.trim())
         return ''
       })
+      return kept.trim() ? kept : ''
     })
+  }
+  const text = segs
+    .map(({ text: seg, isCode }) => isCode
+      ? seg
+      : seg.replace(TOKEN, (match, inner: string) => isActionPlaceholder(inner) ? match : wikilinkText(inner)))
     .join('')
     .trim()
   return { text, actions }
+}
+
+const CODE_BLOCK = /<code(\s[^>]*)?>[\s\S]*?<\/code>/gi
+const HTML_TOKEN = /\[\[([^\]<\n]{1,40})\]\]/g
+// The [[CTA]] run the HTML ends with (line breaks between tokens allowed),
+// then the closing tags after it, which stay.
+const TRAILING_HTML_TOKENS = /(?:(?:\s|<br\s*\/?>)*\[\[[^\]<\n]{1,40}\]\])+((?:\s|<\/[a-z0-9]+>)*)$/i
+
+/**
+ * The HTML side of parseActions: the trailing [[CTA]] run goes (it's the pill
+ * row), any other [[…]] outside <code> reads as plain text. [[...]] inside
+ * <code> are docs and stay as written.
+ */
+export function stripActionMarkersInRichHtml(html: string): string {
+  const out: string[] = []
+  let i = 0
+  CODE_BLOCK.lastIndex = 0
+  for (;;) {
+    const m = CODE_BLOCK.exec(html)
+    if (!m) {
+      out.push(inlineWikilinksAsText(stripTrailingActionMarkers(html.slice(i))))
+      break
+    }
+    out.push(inlineWikilinksAsText(html.slice(i, m.index)))
+    out.push(m[0])
+    i = m.index + m[0].length
+  }
+  return out.join('')
+}
+
+function stripTrailingActionMarkers(s: string): string {
+  return s.replace(TRAILING_HTML_TOKENS, (run, closing: string) => {
+    const tokens = run.slice(0, run.length - closing.length).match(HTML_TOKEN) ?? []
+    // Placeholders are docs; leave the run alone rather than half-strip it.
+    return tokens.some((t) => isActionPlaceholder(t.slice(2, -2))) ? run : closing
+  })
+}
+
+function inlineWikilinksAsText(s: string): string {
+  return s.replace(HTML_TOKEN, (match, inner: string) => isActionPlaceholder(inner) ? match : wikilinkText(inner))
 }

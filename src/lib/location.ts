@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core'
+import { Geolocation } from '@capacitor/geolocation'
 import type { SharedLocation } from '../types'
 
 // geo:41.0123,28.9876;u=12 (RFC 5870). Altitude, if present, is ignored.
@@ -37,7 +39,34 @@ export function mapsUrl({ lat, lon }: SharedLocation): string {
 
 // One fresh fix. High accuracy because "where am I" a block off is the wrong
 // answer, and a cached fix up to a minute old is fine for a one-off share.
+const FIX_OPTIONS = { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 }
+
 export function currentLocation(): Promise<SharedLocation> {
+  return Capacitor.isNativePlatform() ? nativeLocation() : webLocation()
+}
+
+// In the app, the WebView's own geolocation asks again ("localhost would like
+// to use your location") every launch on top of the iOS prompt. The native
+// plugin goes through iOS permission alone, which is asked once and remembered.
+async function nativeLocation(): Promise<SharedLocation> {
+  let { location } = await Geolocation.checkPermissions()
+  if (location === 'prompt' || location === 'prompt-with-rationale') {
+    ({ location } = await Geolocation.requestPermissions({ permissions: ['location'] }))
+  }
+  if (location === 'denied') throw new Error('Location permission was denied. Allow it in Settings › Construct.')
+  try {
+    const pos = await Geolocation.getCurrentPosition(FIX_OPTIONS)
+    return {
+      lat: pos.coords.latitude,
+      lon: pos.coords.longitude,
+      accuracy: Math.round(pos.coords.accuracy),
+    }
+  } catch {
+    throw new Error('Could not find your location.')
+  }
+}
+
+function webLocation(): Promise<SharedLocation> {
   return new Promise((resolve, reject) => {
     if (!('geolocation' in navigator)) {
       reject(new Error('Location is not available on this device.'))
@@ -54,7 +83,7 @@ export function currentLocation(): Promise<SharedLocation> {
           : err.code === err.TIMEOUT ? 'Timed out finding your location.'
           : 'Could not find your location.',
       )),
-      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
+      FIX_OPTIONS,
     )
   })
 }

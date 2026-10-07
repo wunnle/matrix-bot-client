@@ -2483,18 +2483,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-size: 22px;
   line-height: 1;
 }
-.attach-btn-spinner {
-  display: block;
-  width: 18px;
-  height: 18px;
-  border: 2px solid currentColor;
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: room-card-badge-spin 0.9s linear infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .attach-btn-spinner { animation: none; }
-}
 .input-row button.attach-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.12);
   color: var(--text);
@@ -3921,3 +3909,183 @@ a.msg-card-link:hover {
   color: var(--text-muted);
   font-variation-settings: 'opsz' 24, 'wght' 400, 'FILL' 0, 'GRAD' 0;
 }
+
+/* Location picker: full-screen map, glass search on top, glass card below. */
+.loc-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: var(--bg);
+}
+.loc-picker-map {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.loc-picker-map--ready { opacity: 1; }
+.loc-picker-map-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.loc-picker-top {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 8px);
+  left: 12px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+}
+.loc-picker-round {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  cursor: pointer;
+}
+.loc-picker-round .material-icons { font-size: 22px; }
+.loc-picker-search {
+  position: relative;
+  flex: 1;
+  height: 44px;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  color: var(--text-muted);
+}
+.loc-picker-search .material-icons { font-size: 20px; }
+.loc-picker-search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 16px;
+}
+.loc-picker-search input::-webkit-search-cancel-button { display: none; }
+.loc-picker-results {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 60px);
+  left: 12px;
+  right: 12px;
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  border-radius: 18px;
+  overflow: hidden;
+}
+/* Nearly solid: suggestions have to read over any part of the map. */
+.loc-picker-results.glass { background: rgba(22, 22, 30, 0.92); }
+.loc-picker-results button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.loc-picker-results button:active { background: rgba(255, 255, 255, 0.08); }
+.loc-picker-result-title { font-size: 15px; font-weight: 500; }
+.loc-picker-result-sub { font-size: 13px; color: var(--text-muted); }
+
+/* The pin's tip marks the map centre; it lifts while the map is dragged. */
+.loc-picker-pin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  font-size: 44px;
+  color: var(--danger);
+  transform: translate(-50%, -100%);
+  transition: transform 0.15s ease, opacity 0.15s ease;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.5));
+  pointer-events: none;
+}
+.loc-picker-pin--lifted { transform: translate(-50%, calc(-100% - 10px)); }
+.loc-picker-pin--hidden { opacity: 0; }
+.loc-picker-me {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--agent-working);
+  border: 2.5px solid #fff;
+  box-shadow: 0 0 0 6px rgba(10, 132, 255, 0.2), 0 1px 4px rgba(0, 0, 0, 0.4);
+  box-sizing: border-box;
+}
+
+.loc-picker-bottom {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(env(safe-area-inset-bottom) + 12px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+.loc-picker-card {
+  position: relative;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 12px 12px 14px;
+  border-radius: 22px;
+  transition: opacity 0.15s ease;
+}
+.loc-picker-card--moving { opacity: 0.6; }
+.loc-picker-card-icon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: #fff;
+  background: var(--agent-working);
+}
+.loc-picker-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.loc-picker-card-title,
+.loc-picker-card-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.loc-picker-card-title { font-size: 15px; font-weight: 600; color: var(--text-strong); }
+.loc-picker-card-sub { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.loc-picker-send {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+.loc-picker-send:disabled { opacity: 0.4; cursor: default; }
+.loc-picker-send .material-icons { font-size: 22px; }

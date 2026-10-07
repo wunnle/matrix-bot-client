@@ -36,3 +36,5 @@ dist/
 
 # APNs signing key — never commit
 *.p8
+.vercel
+.env*

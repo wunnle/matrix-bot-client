@@ -122,16 +122,18 @@ function webLocation(): Promise<SharedLocation> {
 }
 
 // The body is what bots and plain clients read, so it carries everything:
-// coordinates, accuracy and a link a human can open.
-export function locationContent(loc: SharedLocation): Record<string, unknown> {
+// the place name if one was picked, coordinates, accuracy and a link a human
+// can open. A picked place is a pin (m.pin); otherwise it's the sender (m.self).
+export function locationContent(loc: SharedLocation, kind: 'self' | 'pin' = 'self'): Record<string, unknown> {
   const geoUri = `geo:${loc.lat},${loc.lon}${loc.accuracy != null ? `;u=${loc.accuracy}` : ''}`
   const accuracy = loc.accuracy != null ? ` (±${loc.accuracy} m)` : ''
+  const label = loc.description ?? (kind === 'pin' ? 'Pinned location' : 'Shared location')
   return {
     msgtype: 'm.location',
-    body: `📍 Shared location: ${formatCoords(loc)}${accuracy} ${mapsUrl(loc)}`,
+    body: `📍 ${label}: ${formatCoords(loc)}${accuracy} ${mapsUrl(loc)}`,
     geo_uri: geoUri,
-    'org.matrix.msc3488.location': { uri: geoUri },
-    'org.matrix.msc3488.asset': { type: 'm.self' },
+    'org.matrix.msc3488.location': loc.description ? { uri: geoUri, description: loc.description } : { uri: geoUri },
+    'org.matrix.msc3488.asset': { type: kind === 'pin' ? 'm.pin' : 'm.self' },
     'org.matrix.msc3488.ts': Date.now(),
   }
 }

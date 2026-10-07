@@ -2483,6 +2483,18 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-size: 22px;
   line-height: 1;
 }
+.attach-btn-spinner {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: room-card-badge-spin 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .attach-btn-spinner { animation: none; }
+}
 .input-row button.attach-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.12);
   color: var(--text);

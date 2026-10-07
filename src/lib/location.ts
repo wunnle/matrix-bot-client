@@ -29,12 +29,10 @@ export function formatCoords({ lat, lon }: SharedLocation): string {
   return `${lat.toFixed(5)}, ${lon.toFixed(5)}`
 }
 
-// Apple Maps on Apple devices, Google Maps elsewhere; both open the native app
-// when it's installed.
+// Google Maps everywhere: a universal link, so it opens the app when it's
+// installed and the website otherwise.
 export function mapsUrl({ lat, lon }: SharedLocation): string {
-  return /iPhone|iPad|Macintosh/.test(navigator.userAgent)
-    ? `https://maps.apple.com/?ll=${lat},${lon}&q=${lat},${lon}`
-    : `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`
 }
 
 // One fresh fix. High accuracy because "where am I" a block off is the wrong
@@ -68,7 +66,7 @@ export function locationContent(loc: SharedLocation): Record<string, unknown> {
   const accuracy = loc.accuracy != null ? ` (±${loc.accuracy} m)` : ''
   return {
     msgtype: 'm.location',
-    body: `📍 Shared location: ${formatCoords(loc)}${accuracy} https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lon}`,
+    body: `📍 Shared location: ${formatCoords(loc)}${accuracy} ${mapsUrl(loc)}`,
     geo_uri: geoUri,
     'org.matrix.msc3488.location': { uri: geoUri },
     'org.matrix.msc3488.asset': { type: 'm.self' },

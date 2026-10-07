@@ -1,4 +1,5 @@
 import UIKit
+import WebKit
 import Capacitor
 import ActivityKit
 import Speech
@@ -883,6 +884,37 @@ class MainViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(LiveActivityPlugin())
         bridge?.registerPluginInstance(SpeechRecognitionPlugin())
+        // On a Mac, macOS draws iPhone/iPad apps at 77%, so the UI comes out
+        // tiny. WebKit's own page zoom undoes that: layout reflows at the larger
+        // size and visualViewport stays in step, unlike CSS zoom, which broke the
+        // composer's keyboard positioning. Text only follows the zoom with
+        // text-size-adjust: none, which index.css sets for .mac-app.
+        if ProcessInfo.processInfo.isiOSAppOnMac {
+            webView?.pageZoom = MacZoom.current
+        }
+    }
+}
+
+/// The Mac's page zoom, remembered across launches. ⌘+ / ⌘− / ⌘0 come in from
+/// the web layer (App.tsx) through LiveActivityPlugin.macZoom: a Designed-for-
+/// iPad app gets neither its menu-bar additions nor key commands that the web
+/// view would otherwise swallow.
+enum MacZoom {
+    private static let key = "macPageZoom"
+    static let standard = 1.3
+
+    static var current: Double {
+        let saved = UserDefaults.standard.double(forKey: key)
+        return saved > 0 ? saved : standard
+    }
+
+    /// step +1 / -1 changes by 10%; 0 goes back to the standard size.
+    static func apply(step: Int, to webView: WKWebView?) -> Double {
+        let next = step == 0 ? standard : current + Double(step) * 0.1
+        let z = min(max((next * 10).rounded() / 10, 1.0), 2.5)
+        UserDefaults.standard.set(z, forKey: key)
+        webView?.pageZoom = z
+        return z
     }
 }
 
@@ -1109,12 +1141,23 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "saveIntentConfig", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "donateShareTargets", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cacheRoomAvatars", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "isMacApp", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "isMacApp", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "macZoom", returnType: CAPPluginReturnPromise)
     ]
 
     /// True when this iPad app is running on a Mac (Designed for iPad). The web
     /// layer uses it to scale the mobile-first UI up and hide the phantom
     /// software keyboard.
+    /// ⌘+ / ⌘− / ⌘0 from the web layer: { step: 1 | -1 | 0 } → { zoom }.
+    /// Without a step it only reports the current zoom.
+    @objc func macZoom(_ call: CAPPluginCall) {
+        guard ProcessInfo.processInfo.isiOSAppOnMac else { return call.resolve(["zoom": 1]) }
+        guard let step = call.getInt("step") else { return call.resolve(["zoom": MacZoom.current]) }
+        DispatchQueue.main.async {
+            call.resolve(["zoom": MacZoom.apply(step: step, to: self.bridge?.webView)])
+        }
+    }
+
     @objc func isMacApp(_ call: CAPPluginCall) {
         call.resolve(["value": ProcessInfo.processInfo.isiOSAppOnMac])
     }

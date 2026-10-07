@@ -50,6 +50,7 @@ interface LiveActivityPlugin {
   // for *every* room, not just the ones enabled for sharing.
   cacheRoomAvatars(options: { rooms: { roomId: string; avatar: string }[] }): Promise<void>
   isMacApp(): Promise<{ value: boolean }>
+  macZoom(options: { step?: number }): Promise<{ zoom: number }>
 }
 
 const plugin = registerPlugin<LiveActivityPlugin>('LiveActivity')
@@ -126,6 +127,16 @@ export async function isMacApp(): Promise<boolean> {
     return (await plugin.isMacApp()).value
   } catch {
     return false
+  }
+}
+
+/** On the Mac: zoom the page one step in (1), out (-1) or back to standard
+ *  (0); with no step, just read it. Resolves to the zoom now in effect. */
+export async function macZoom(step?: 1 | -1 | 0): Promise<number | null> {
+  try {
+    return (await plugin.macZoom(step === undefined ? {} : { step })).zoom
+  } catch {
+    return null
   }
 }
 

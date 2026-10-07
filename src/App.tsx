@@ -9,7 +9,7 @@ import RoomsLayout from './components/RoomsLayout'
 import DebugOverlay from './components/DebugOverlay'
 import { Keyboard } from '@capacitor/keyboard'
 import { usePushNotifications } from './hooks/usePushNotifications'
-import { saveIntentConfig, isMacApp } from './lib/liveActivity'
+import { saveIntentConfig, isMacApp, macZoom } from './lib/liveActivity'
 import './App.css'
 
 // Default room the "Ask Construct" Shortcut targets (Bender).
@@ -36,6 +36,27 @@ export default function App() {
     void isMacApp().then(mac => {
       if (!mac) return
       document.documentElement.classList.add('mac-app')
+      // The WebView's pageZoom (set natively on Mac) leaves dvh and the box
+      // fixed elements size against at their unzoomed size, so the layout ran
+      // 1.3× past the window both ways. innerWidth/innerHeight are zoom-aware;
+      // index.css sizes from these instead (see .mac-app there).
+      const setAppSize = () => {
+        document.documentElement.style.setProperty('--app-width', `${window.innerWidth}px`)
+        document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`)
+      }
+      setAppSize()
+      window.addEventListener('resize', setAppSize)
+      // ⌘+ / ⌘− / ⌘0 zoom like any Mac app. Handled here because the native
+      // side never sees them: a Designed-for-iPad app gets no menu-bar items
+      // or key commands past the web view. e.key is the character typed, so
+      // this follows the keyboard layout.
+      window.addEventListener('keydown', (e) => {
+        if (!e.metaKey || e.ctrlKey || e.altKey) return
+        const step = e.key === '+' || e.key === '=' ? 1 : e.key === '-' ? -1 : e.key === '0' ? 0 : null
+        if (step === null) return
+        e.preventDefault()
+        void macZoom(step).then(setAppSize)
+      })
       Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => {})
     })
   }, [])

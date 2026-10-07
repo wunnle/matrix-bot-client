@@ -85,7 +85,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   width: 100%;
   /* --vv-* are only set while an editable element is focused (keyboard
      open); the rest of the time this dvh fallback is the live value. */
-  height: var(--vv-height, 100dvh);
+  height: var(--vv-height, var(--app-height, 100dvh));
   overflow: hidden;
 }
 
@@ -217,7 +217,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100dvh;
+  height: var(--app-height, 100dvh);
   padding: 24px;
   gap: 28px;
   background: var(--bg);
@@ -2864,7 +2864,7 @@ a.msg-card-link:hover {
   border-radius: 20px 20px 0 0;
   width: 100%;
   max-width: 560px;
-  max-height: 80vh;
+  max-height: calc(var(--app-height, 100vh) * 0.8);
   display: flex;
   flex-direction: column;
   padding-bottom: env(safe-area-inset-bottom);
@@ -3804,10 +3804,30 @@ a.msg-card-link:hover {
 .settings-row-toggle:checked::after { transform: translateX(20px); }
 .settings-row-toggle:disabled { opacity: 0.5; }
 
-/* iPad app running on a Mac (Designed for iPad). `zoom` here breaks the
-   composer (its position is computed from JS visual-viewport measurements that
-   aren't zoom-aware), so scaling the whole UI up needs a proper responsive pass
-   rather than a blunt zoom. The .mac-app class is kept for the keyboard tweak. */
+/* iPad app running on a Mac (Designed for iPad). The native side zooms the
+   WebView 1.3× (MainViewController) to undo macOS drawing it at 77%; CSS
+   `zoom` was tried first and broke the composer, whose position comes from
+   visual-viewport measurements that aren't zoom-aware. That page zoom leaves
+   dvh/vh, and the box fixed elements size against, at their unzoomed size, so
+   size body from innerWidth/innerHeight (App.tsx sets --app-*) and make #root
+   the containing block for every fixed element inside it. The .mac-app class
+   also drives the keyboard tweak. */
+.mac-app body {
+  width: var(--app-width);
+  height: var(--app-height);
+}
+.mac-app #root { contain: layout; }
+/* Page zoom leaves text at its unzoomed size unless text-size-adjust is none:
+   measured on the Mac, 100%, 130%, 200% and auto all held 20px text at 1/1.3
+   of its zoomed width, and only none let it scale with everything else. */
+html.mac-app {
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+}
+/* The composer grows with its text by setting its height to scrollHeight,
+   which is rounded; at the Mac's page zoom that's a fraction off and the text
+   jitters as you type. Let WebKit size it instead (ChatView skips the JS). */
+.mac-app .input-row textarea { field-sizing: content; }
 
 /* ─────────────────────────────
    Touch hit areas

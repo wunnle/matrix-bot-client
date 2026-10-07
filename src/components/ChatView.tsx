@@ -2496,7 +2496,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             onChange={(e) => {
               setInput(e.target.value)
               e.target.style.height = 'auto'
-              e.target.style.height = `${e.target.scrollHeight}px`
+              // Where CSS sizes the field itself (field-sizing, on the Mac),
+              // leave it: scrollHeight is rounded, and under the Mac's page
+              // zoom that left the box a fraction off and the text jittering.
+              if (!composerSizesItself()) e.target.style.height = `${e.target.scrollHeight}px`
             }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
@@ -2867,6 +2870,11 @@ function formatDate(ts: number): string {
 // lists synchronously. That reconciliation was causing a ~1s main-thread
 // stall on mobile when returning to the rooms screen.
 export default memo(ChatView)
+
+// See the .mac-app composer rule in index.css.
+function composerSizesItself(): boolean {
+  return document.documentElement.classList.contains('mac-app') && window.CSS.supports('field-sizing', 'content')
+}
 
 // Fixed so the tiles can be laid out without measuring; CSS caps the width.
 const MAP_W = 264

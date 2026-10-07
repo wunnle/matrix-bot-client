@@ -476,6 +476,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const pillsRowRef = useRef<HTMLDivElement>(null)
   const resetPillsScroll = () => pillsRowRef.current?.scrollTo({ left: 0, behavior: 'smooth' })
   const [sending, setSending] = useState(false)
+  // Waiting on a location fix, which can take seconds; the paperclip spins meanwhile.
+  const [locating, setLocating] = useState(false)
   const [initializing, setInitializing] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const retryInitialLoadRef = useRef<() => void>(() => {})
@@ -1654,8 +1656,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const shareLocation = useCallback(async () => {
     if (sending) return
     setSending(true)
+    setLocating(true)
     try {
       const loc = await currentLocation()
+      setLocating(false)
       hapticSend()
       requestAnimationFrame(scrollToBottom)
       await client.sendMessage(roomId, {
@@ -1667,6 +1671,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       setSendError(err?.message ?? 'Failed to share location')
       setTimeout(() => setSendError(''), 4000)
     } finally {
+      setLocating(false)
       setSending(false)
     }
   }, [client, roomId, sending, scrollToBottom])
@@ -2506,12 +2511,14 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => { hapticTick(); setAttachMenuRoom(attachMenuOpen ? null : roomId) }}
             disabled={sending}
-            title="Attach"
-            aria-label="Attach"
+            title={locating ? 'Finding your location' : 'Attach'}
+            aria-label={locating ? 'Finding your location' : 'Attach'}
             aria-haspopup="menu"
             aria-expanded={attachMenuOpen}
           >
-            <span className="material-icons" aria-hidden>attach_file</span>
+            {locating
+              ? <span className="attach-btn-spinner" aria-hidden />
+              : <span className="material-icons" aria-hidden>attach_file</span>}
           </button>
           <textarea
             ref={textareaRef}

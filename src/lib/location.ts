@@ -54,16 +54,49 @@ async function nativeLocation(): Promise<SharedLocation> {
     ({ location } = await Geolocation.requestPermissions({ permissions: ['location'] }))
   }
   if (location === 'denied') throw new Error('Location permission was denied. Allow it in Settings › Construct.')
-  try {
-    const pos = await Geolocation.getCurrentPosition(FIX_OPTIONS)
-    return {
-      lat: pos.coords.latitude,
-      lon: pos.coords.longitude,
-      accuracy: Math.round(pos.coords.accuracy),
+  return watchForFix()
+}
+
+// The plugin's getCurrentPosition is iOS requestLocation() at best accuracy,
+// which ignores maximumAge and holds out several seconds for its finest fix.
+// Watching instead hands back the last known fix almost at once and refines
+// from there: send the first one inside GOOD_ENOUGH_M, or the best by SETTLE_MS.
+const GOOD_ENOUGH_M = 50
+const SETTLE_MS = 4_000
+
+function watchForFix(): Promise<SharedLocation> {
+  return new Promise((resolve, reject) => {
+    let best: SharedLocation | undefined
+    let done = false
+    const finish = (err?: Error) => {
+      if (done) return
+      done = true
+      clearTimeout(settle)
+      clearTimeout(giveUp)
+      void watchId.then((id) => Geolocation.clearWatch({ id }))
+      if (best) resolve(best)
+      else reject(err ?? new Error('Could not find your location.'))
     }
-  } catch {
-    throw new Error('Could not find your location.')
-  }
+    const settle = setTimeout(() => { if (best) finish() }, SETTLE_MS)
+    const giveUp = setTimeout(() => finish(new Error('Timed out finding your location.')), FIX_OPTIONS.timeout)
+    const watchId = Geolocation.watchPosition({ enableHighAccuracy: true }, (pos, err) => {
+      if (done) return
+      if (!pos) {
+        if (err) finish(new Error('Could not find your location.'))
+        return
+      }
+      // The last known fix can be from hours ago, somewhere else.
+      if (Date.now() - pos.timestamp > FIX_OPTIONS.maximumAge) return
+      const fix = {
+        lat: pos.coords.latitude,
+        lon: pos.coords.longitude,
+        accuracy: Math.round(pos.coords.accuracy),
+      }
+      if (!best || fix.accuracy < (best.accuracy ?? Infinity)) best = fix
+      if (fix.accuracy <= GOOD_ENOUGH_M) finish()
+    })
+    watchId.catch(() => finish(new Error('Could not find your location.')))
+  })
 }
 
 function webLocation(): Promise<SharedLocation> {

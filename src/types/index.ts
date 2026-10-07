@@ -61,6 +61,8 @@ export interface Message {
   // Text sent with an image or file, in the same event.
   caption?: string
   location?: SharedLocation
+  // Places an agent put in ```location blocks, shown as cards under its text.
+  places?: SharedLocation[]
   cards?: ConstructCard[]
   threads?: ConstructThread[]
   approval?: ConstructApproval

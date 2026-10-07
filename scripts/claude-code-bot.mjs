@@ -579,6 +579,17 @@ const liveActivityInstruction = (roomId) =>
   'ones, and end it once it has served its purpose. Do not use it for ' +
   'ordinary replies; those already notify.'
 
+// Construct turns a ```location block into a map card (src/lib/location.ts,
+// extractLocationBlocks); Hermes agents learn the same thing from their
+// construct-location skill. Fixed text, for the same reason as above.
+const LOCATION_INSTRUCTION =
+  'To show the user a place, put a fenced block with the language `location` ' +
+  'at the end of your reply, holding JSON like {"lat": 41.08012, "lon": 29.01145, ' +
+  '"name": "Kronotrop Levent"} (or an array of them); Construct renders it as a ' +
+  'map card that opens Google Maps. Never invent coordinates: look them up with ' +
+  '`~/.hermes/scripts/places.py search "<place, city>" [--near LAT LON]`, and ' +
+  'get the user\'s current position, if needed, from `~/.hermes/scripts/local_time.py`.'
+
 // Runs one turn through the room's provider, resuming its session if it has one.
 // Everything provider-specific — how a turn is invoked, how instructions are
 // injected, how the resumable id comes back — lives behind the adapter.
@@ -596,7 +607,7 @@ function runTurn(roomId, prompt) {
 
   // Room policy, not provider policy: what the agent should be told about this
   // room. The adapter decides where these end up.
-  const instructions = [QUICK_ANSWER_INSTRUCTION, liveActivityInstruction(roomId)]
+  const instructions = [QUICK_ANSWER_INSTRUCTION, liveActivityInstruction(roomId), LOCATION_INSTRUCTION]
   // The rename nudge rides on the prompt, not the instructions: it drops out
   // after turn two, and changing the system prompt of a resumed session
   // throws away its cached prefix (and, on Opus 5.5 / Fable 5.1, its earlier

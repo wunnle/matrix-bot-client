@@ -50,7 +50,7 @@ import MessageActionSheet from './MessageActionSheet'
 import ApprovalBar from './ApprovalBar'
 import ModelMenu from './ModelMenu'
 import { approvalChoices, parseApprovalCard } from '../lib/approval'
-import { currentLocation, formatCoords, locationContent, locationFromContent, mapsUrl, mapTiles, MAP_ATTRIBUTION } from '../lib/location'
+import { currentLocation, extractLocationBlocks, formatCoords, locationContent, locationFromContent, mapsUrl, mapTiles, MAP_ATTRIBUTION } from '../lib/location'
 import { hapticPress, hapticSend, hapticSuccess, hapticTick, hapticWarning } from '../lib/haptics'
 import { useAgentBlocked, formatResetsAt, blockedHeadline } from '../hooks/useAgentBlocked'
 
@@ -2640,10 +2640,16 @@ function eventToMessage(
     body = content.body ?? ''
   }
 
+  // An agent's ```location blocks become map cards; the text around them stays.
+  const rawHtml = !isFailure && content?.format === 'org.matrix.custom.html' && typeof content?.formatted_body === 'string'
+    ? content.formatted_body as string
+    : undefined
+  const placed = isFailure ? undefined : extractLocationBlocks(String(body), rawHtml)
+  if (placed?.locations.length) body = placed.body
+
   let formattedBody: string | undefined
-  if (!isFailure && content?.format === 'org.matrix.custom.html' && content?.formatted_body) {
-    formattedBody = sanitizeHtml(content.formatted_body)
-  }
+  const html = placed?.locations.length ? placed.html : rawHtml
+  if (html) formattedBody = sanitizeHtml(html)
 
   const sender = event.getSender() ?? ''
   const isOwnMessage = sender === userId
@@ -2748,6 +2754,7 @@ function eventToMessage(
     fileMime,
     caption,
     location,
+    places: placed?.locations.length ? placed.locations : undefined,
     cards: cards && cards.length > 0 ? cards : undefined,
     threads: threads && threads.length > 0 ? threads : undefined,
     approval,
@@ -3173,6 +3180,11 @@ function MessageRowInner({
                                           ? <div className="rich-html" dangerouslySetInnerHTML={{ __html: cleanHtml }} />
                                           : text}
                                   {msg.caption && !msg.cards && !msg.threads && (imageUrl || msg.fileMxc) && <div className="msg-caption">{msg.caption}</div>}
+                                  {msg.places && (
+                                    <div className="msg-places">
+                                      {msg.places.map((place, pi) => <LocationLink key={pi} location={place} />)}
+                                    </div>
+                                  )}
                                 </div>
                                 {msg.approval && (
                                   <button

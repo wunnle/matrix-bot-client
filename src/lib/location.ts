@@ -27,6 +27,50 @@ export function locationFromContent(content: Record<string, unknown> | undefined
   return typeof description === 'string' && description ? { ...loc, description } : loc
 }
 
+// How an agent shares a place: a fenced block in its reply, rendered as the
+// same card as a shared location. One object or an array of them:
+//   ```location
+//   {"lat": 41.08012, "lon": 29.01145, "name": "Kronotrop Levent"}
+//   ```
+// Text, not an m.location event, so any agent can do it from a plain reply
+// with no Matrix credentials; other clients just show the JSON.
+const LOCATION_FENCE = /```location[ \t]*\r?\n([\s\S]*?)```[ \t]*\r?\n?/g
+const LOCATION_HTML = /<pre><code class="language-location">[\s\S]*?<\/code><\/pre>\s*/g
+
+function blockLocation(item: unknown): SharedLocation | undefined {
+  if (!item || typeof item !== 'object') return undefined
+  const o = item as Record<string, unknown>
+  const lat = Number(o.lat ?? o.latitude)
+  const lon = Number(o.lon ?? o.lng ?? o.longitude)
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return undefined
+  const name = typeof o.name === 'string' && o.name.trim() ? o.name.trim() : undefined
+  return name ? { lat, lon, description: name } : { lat, lon }
+}
+
+// The places in a message's ```location blocks, and its body and HTML with
+// those blocks taken out. A block that doesn't parse is left in place, so a
+// mistake shows up as text rather than vanishing.
+export function extractLocationBlocks(body: string, html?: string) {
+  if (!body.includes('```location')) return { locations: [] as SharedLocation[], body, html }
+  const locations: SharedLocation[] = []
+  let failed = false
+  const stripped = body.replace(LOCATION_FENCE, (block, json: string) => {
+    try {
+      const parsed: unknown = JSON.parse(json)
+      const found = (Array.isArray(parsed) ? parsed : [parsed]).map(blockLocation)
+      if (found.length && found.every(Boolean)) {
+        locations.push(...(found as SharedLocation[]))
+        return ''
+      }
+    } catch { /* fall through: keep the block visible */ }
+    failed = true
+    return block
+  })
+  if (!locations.length) return { locations, body, html }
+  // The HTML can only be trusted to line up when every block was consumed.
+  return { locations, body: stripped.trim(), html: failed ? html : html?.replace(LOCATION_HTML, '') }
+}
+
 export function formatCoords({ lat, lon }: SharedLocation): string {
   return `${lat.toFixed(5)}, ${lon.toFixed(5)}`
 }

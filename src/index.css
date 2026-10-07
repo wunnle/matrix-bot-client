@@ -2580,6 +2580,13 @@ a.msg-file:hover { text-decoration: underline; }
   background: rgba(255, 255, 255, 0.7);
 }
 .msg-location-text { display: flex; flex-direction: column; min-width: 0; padding: 0 2px; }
+/* An agent's ```location places, under its text. */
+.msg-places {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 10px;
+}
 .msg-location-title { font-size: 15px; font-weight: 600; }
 .msg-location-coords {
   font-size: 12px;

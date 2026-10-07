@@ -121,6 +121,36 @@ function webLocation(): Promise<SharedLocation> {
   })
 }
 
+// OpenStreetMap's own tiles: no key, fine for this volume under their tile
+// policy as long as they're attributed. (CARTO's basemaps now answer with
+// "API key required" tiles.)
+export const MAP_ATTRIBUTION = '© OpenStreetMap'
+const TILE = 256
+
+// The tiles that cover a width × height window centred on the location, each
+// with its offset inside that window.
+export function mapTiles(loc: SharedLocation, zoom: number, width: number, height: number) {
+  const n = 2 ** zoom
+  const lat = (loc.lat * Math.PI) / 180
+  const px = ((loc.lon + 180) / 360) * n * TILE
+  const py = ((1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2) * n * TILE
+  const left = px - width / 2
+  const top = py - height / 2
+  const tiles: { url: string, x: number, y: number }[] = []
+  for (let ty = Math.floor(top / TILE); ty <= Math.floor((top + height) / TILE); ty++) {
+    if (ty < 0 || ty >= n) continue
+    for (let tx = Math.floor(left / TILE); tx <= Math.floor((left + width) / TILE); tx++) {
+      const wrapped = ((tx % n) + n) % n
+      tiles.push({
+        url: `https://tile.openstreetmap.org/${zoom}/${wrapped}/${ty}.png`,
+        x: Math.round(tx * TILE - left),
+        y: Math.round(ty * TILE - top),
+      })
+    }
+  }
+  return tiles
+}
+
 // The body is what bots and plain clients read, so it carries everything:
 // coordinates, accuracy and a link a human can open.
 export function locationContent(loc: SharedLocation): Record<string, unknown> {

@@ -50,7 +50,7 @@ import MessageActionSheet from './MessageActionSheet'
 import ApprovalBar from './ApprovalBar'
 import ModelMenu from './ModelMenu'
 import { approvalChoices, parseApprovalCard } from '../lib/approval'
-import { currentLocation, formatCoords, locationContent, locationFromContent, mapsUrl } from '../lib/location'
+import { currentLocation, formatCoords, locationContent, locationFromContent, mapsUrl, mapTiles, MAP_ATTRIBUTION } from '../lib/location'
 import { hapticPress, hapticSend, hapticSuccess, hapticTick, hapticWarning } from '../lib/haptics'
 import { useAgentBlocked, formatResetsAt, blockedHeadline } from '../hooks/useAgentBlocked'
 
@@ -2892,8 +2892,15 @@ function formatDate(ts: number): string {
 // stall on mobile when returning to the rooms screen.
 export default memo(ChatView)
 
-// A shared location: tap opens it in the platform's maps app.
+// Fixed so the tiles can be laid out without measuring; CSS caps the width.
+const MAP_W = 264
+const MAP_H = 140
+const MAP_ZOOM = 16
+
+// A shared location: a map tile preview with a pin, and the coordinates under
+// it. Tap opens it in Google Maps.
 function LocationLink({ location }: { location: NonNullable<Message['location']> }) {
+  const tiles = useMemo(() => mapTiles(location, MAP_ZOOM, MAP_W, MAP_H), [location])
   return (
     <a
       href={mapsUrl(location)}
@@ -2902,7 +2909,13 @@ function LocationLink({ location }: { location: NonNullable<Message['location']>
       rel="noreferrer"
       onClick={(e) => e.stopPropagation()}
     >
-      <span className="material-icons msg-location-icon" aria-hidden>location_on</span>
+      <span className="msg-location-map" style={{ width: MAP_W, height: MAP_H }} aria-hidden>
+        {tiles.map((t) => (
+          <img key={t.url} src={t.url} alt="" draggable={false} loading="lazy" style={{ left: t.x, top: t.y }} />
+        ))}
+        <span className="material-icons msg-location-pin">location_on</span>
+        <span className="msg-location-attribution">{MAP_ATTRIBUTION}</span>
+      </span>
       <span className="msg-location-text">
         <span className="msg-location-title">{location.description ?? 'Location'}</span>
         <span className="msg-location-coords">

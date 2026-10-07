@@ -7,6 +7,7 @@ import {
   useState,
   useCallback,
   useMemo,
+  type CSSProperties,
 } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import {
@@ -49,6 +50,7 @@ import MessageActionSheet from './MessageActionSheet'
 import ApprovalBar from './ApprovalBar'
 import ModelMenu from './ModelMenu'
 import { approvalChoices, parseApprovalCard } from '../lib/approval'
+import { currentLocation, formatCoords, locationContent, locationFromContent, mapsUrl } from '../lib/location'
 import { hapticPress, hapticSend, hapticSuccess, hapticTick, hapticWarning } from '../lib/haptics'
 import { useAgentBlocked, formatResetsAt, blockedHeadline } from '../hooks/useAgentBlocked'
 
@@ -532,6 +534,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // A pasted, dropped or picked file waits here until Send, so it can go out
   // with whatever is typed as its caption. previewUrl is set for images only.
   const [pending, setPending] = useState<{ file: File, previewUrl?: string } | null>(null)
+  // Which room the paperclip menu was opened in, so switching rooms closes it.
+  const [attachMenuRoom, setAttachMenuRoom] = useState<string | null>(null)
+  const attachMenuOpen = attachMenuRoom === roomId
   const autoSendToMessage = useRef<((t: string) => void) | null>(null)
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
@@ -1644,6 +1649,28 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [client, roomId, sending, scrollToBottom, stopDictation])
 
+  // Sent straight away, like a photo from the camera prompt: the fix is the
+  // whole message, and anything typed stays in the composer for after.
+  const shareLocation = useCallback(async () => {
+    if (sending) return
+    setSending(true)
+    try {
+      const loc = await currentLocation()
+      hapticSend()
+      requestAnimationFrame(scrollToBottom)
+      await client.sendMessage(roomId, {
+        ...locationContent(loc),
+        'com.construct.client': 'construct-web',
+        'com.construct.version': __CONSTRUCT_VERSION__,
+      } as any)
+    } catch (err: any) {
+      setSendError(err?.message ?? 'Failed to share location')
+      setTimeout(() => setSendError(''), 4000)
+    } finally {
+      setSending(false)
+    }
+  }, [client, roomId, sending, scrollToBottom])
+
   // What Send, Enter and dictation auto-send do: the composer's text, plus the
   // pending attachment if there is one.
   const sendComposer = useCallback((text: string) => {
@@ -2418,6 +2445,37 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           </div>
         )}
 
+        <div className="input-row-anchor">
+        {/* Outside .input-row: a glass inside glass would blur only its parent. */}
+        {attachMenuOpen && (
+          <>
+            <div className="model-menu-backdrop" onClick={() => setAttachMenuRoom(null)} />
+            <div className="model-menu attach-menu glass" role="menu" aria-label="Attach">
+              <button
+                type="button"
+                role="menuitem"
+                className="model-menu-item attach-menu-item"
+                style={{ '--i': 0 } as CSSProperties}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { setAttachMenuRoom(null); fileInputRef.current?.click() }}
+              >
+                <span className="material-icons" aria-hidden>attach_file</span>
+                Photo or file
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="model-menu-item attach-menu-item"
+                style={{ '--i': 1 } as CSSProperties}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { setAttachMenuRoom(null); void shareLocation() }}
+              >
+                <span className="material-icons" aria-hidden>location_on</span>
+                Location
+              </button>
+            </div>
+          </>
+        )}
         <div className="input-row glass">
           <input
             ref={cameraInputRef}
@@ -2445,10 +2503,13 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           <button
             type="button"
             className="attach-btn"
-            onClick={() => fileInputRef.current?.click()}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { hapticTick(); setAttachMenuRoom(attachMenuOpen ? null : roomId) }}
             disabled={sending}
-            title="Attach file or image"
-            aria-label="Attach file or image"
+            title="Attach"
+            aria-label="Attach"
+            aria-haspopup="menu"
+            aria-expanded={attachMenuOpen}
           >
             <span className="material-icons" aria-hidden>attach_file</span>
           </button>
@@ -2516,6 +2577,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               {sending ? '…' : <><span className="send-btn-label">Send</span><span className="send-btn-icon">↑</span></>}
             </button>
           )}
+        </div>
         </div>
       </div>
     </div>
@@ -2597,6 +2659,7 @@ function eventToMessage(
   const caption = (imageMxc || fileMxc) && mediaFilename && body && body !== mediaFilename ? body : undefined
   const fileName = fileMxc ? (mediaFilename ?? content?.body ?? 'file') : undefined
   const fileMime = fileMxc ? (content?.info?.mimetype ?? 'application/octet-stream') : undefined
+  const location = isFailure ? undefined : locationFromContent(content)
 
   const rawCards = content?.['com.construct.cards']
   const cards = Array.isArray(rawCards)
@@ -2677,6 +2740,7 @@ function eventToMessage(
     fileName,
     fileMime,
     caption,
+    location,
     cards: cards && cards.length > 0 ? cards : undefined,
     threads: threads && threads.length > 0 ? threads : undefined,
     approval,
@@ -2820,6 +2884,28 @@ function formatDate(ts: number): string {
 // lists synchronously. That reconciliation was causing a ~1s main-thread
 // stall on mobile when returning to the rooms screen.
 export default memo(ChatView)
+
+// A shared location: tap opens it in the platform's maps app.
+function LocationLink({ location }: { location: NonNullable<Message['location']> }) {
+  return (
+    <a
+      href={mapsUrl(location)}
+      className="msg-location"
+      target="_blank"
+      rel="noreferrer"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span className="material-icons msg-location-icon" aria-hidden>location_on</span>
+      <span className="msg-location-text">
+        <span className="msg-location-title">{location.description ?? 'Location'}</span>
+        <span className="msg-location-coords">
+          {formatCoords(location)}{location.accuracy != null && ` · ±${location.accuracy} m`}
+        </span>
+      </span>
+    </a>
+  )
+}
+
 export interface MessageRowProps {
   msg: Message
   userId: string
@@ -2921,6 +3007,8 @@ function MessageRowInner({
                             )}
                             {imageUrl
                               ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" onClick={e => { e.stopPropagation(); onOpenLightbox(imageUrl, msg.body || 'image') }} />
+                              : msg.location
+                              ? <LocationLink location={msg.location} />
                               : fileUrl
                                 ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
                                 : msg.fileMxc && !fileUrl
@@ -3055,6 +3143,8 @@ function MessageRowInner({
                                       </div>
                                     : imageUrl
                                     ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" onClick={e => { e.stopPropagation(); onOpenLightbox(imageUrl, msg.body || 'image') }} />
+                                    : msg.location
+                                    ? <LocationLink location={msg.location} />
                                     : fileUrl
                                       ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
                                       : msg.fileMxc && !fileUrl

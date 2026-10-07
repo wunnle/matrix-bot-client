@@ -33,6 +33,14 @@ export interface ToolProgressLine {
   raw?: string
 }
 
+// An m.location message. Accuracy is the radius in metres, when the sender gave one.
+export interface SharedLocation {
+  lat: number
+  lon: number
+  accuracy?: number
+  description?: string
+}
+
 // The untrimmed version of a change an approval card only shows part of.
 export interface ConstructApproval {
   title: string
@@ -52,6 +60,7 @@ export interface Message {
   fileMime?: string
   // Text sent with an image or file, in the same event.
   caption?: string
+  location?: SharedLocation
   cards?: ConstructCard[]
   threads?: ConstructThread[]
   approval?: ConstructApproval

@@ -58,6 +58,8 @@
 	<string>Construct uses the microphone to dictate messages.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Construct converts your speech to text to compose messages.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Construct sends your current location when you choose to share it in a chat.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

@@ -50,14 +50,13 @@ export default function LocationPicker({ onClose, onSend }: Props) {
   }, [])
 
   useEffect(() => {
-    let created: mapkit.Map | null = null
     let cancelled = false
     loadMapkit().then((mk) => {
       if (cancelled || !mapEl.current) return
       // Inset the logo and Legal link above the bottom card. Top and bottom
       // match so the padded centre is still the screen centre, where the pin is.
       const inset = bottomEl.current ? Math.ceil(window.innerHeight - bottomEl.current.getBoundingClientRect().top) : 0
-      created = new mk.Map(mapEl.current, {
+      setMap(new mk.Map(mapEl.current, {
         padding: new mk.Padding(inset, 0, inset, 0),
         colorScheme: mk.Map.ColorSchemes.Dark,
         showsCompass: mk.FeatureVisibility.Hidden,
@@ -66,13 +65,9 @@ export default function LocationPicker({ onClose, onSend }: Props) {
         showsZoomControl: false,
         showsUserLocationControl: false,
         isRotationEnabled: false,
-      })
-      setMap(created)
+      }))
     }, (err: Error) => setMapError(err.message))
-    return () => {
-      cancelled = true
-      created?.destroy()
-    }
+    return () => { cancelled = true }
   }, [])
 
   const moveTo = (lat: number, lon: number, animate = true) => {
@@ -140,6 +135,11 @@ export default function LocationPicker({ onClose, onSend }: Props) {
       map.removeEventListener('region-change-end', onEnd)
     }
   }, [map])
+
+  // Declared after every other effect that touches the map, because React runs
+  // unmount cleanups in declaration order: a destroyed map throws on
+  // removeAnnotation, and that blanked the whole app when the picker closed.
+  useEffect(() => () => map?.destroy(), [map])
 
   // Suggestions as you type, biased to what's on screen.
   useEffect(() => {

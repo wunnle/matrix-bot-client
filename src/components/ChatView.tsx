@@ -43,14 +43,15 @@ import RoomEditor from './RoomEditor'
 import { HeaderUsageBar } from './PlanUsageMeter'
 import { usePlanUsage, useCodexUsage } from '../hooks/usePlanUsage'
 import { Marked } from 'marked'
-import type { Message, RoomConfig, ConstructThread, ConstructApproval, ToolProgressLine } from '../types'
+import type { Message, RoomConfig, ConstructThread, ConstructApproval, ToolProgressLine, SharedLocation } from '../types'
 import { useAgentRun, type AgentRun } from '../hooks/useAgentActivity'
 import { AgentActivityBar } from './AgentActivityBar'
 import MessageActionSheet from './MessageActionSheet'
 import ApprovalBar from './ApprovalBar'
 import ModelMenu from './ModelMenu'
 import { approvalChoices, parseApprovalCard } from '../lib/approval'
-import { currentLocation, extractLocationBlocks, formatCoords, locationContent, locationFromContent, mapsUrl, mapTiles, MAP_ATTRIBUTION } from '../lib/location'
+import { extractLocationBlocks, formatCoords, locationContent, locationFromContent, mapsUrl, mapTiles, MAP_ATTRIBUTION } from '../lib/location'
+import LocationPicker from './LocationPicker'
 import { hapticPress, hapticSend, hapticSuccess, hapticTick, hapticWarning } from '../lib/haptics'
 import { useAgentBlocked, formatResetsAt, blockedHeadline } from '../hooks/useAgentBlocked'
 
@@ -476,8 +477,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const pillsRowRef = useRef<HTMLDivElement>(null)
   const resetPillsScroll = () => pillsRowRef.current?.scrollTo({ left: 0, behavior: 'smooth' })
   const [sending, setSending] = useState(false)
-  // Waiting on a location fix, which can take seconds; the paperclip spins meanwhile.
-  const [locating, setLocating] = useState(false)
+  // Which room the location picker was opened in, like the attach menu.
+  const [locationPickerRoom, setLocationPickerRoom] = useState<string | null>(null)
   const [initializing, setInitializing] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const retryInitialLoadRef = useRef<() => void>(() => {})
@@ -1651,30 +1652,23 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [client, roomId, sending, scrollToBottom, stopDictation])
 
-  // Sent straight away, like a photo from the camera prompt: the fix is the
-  // whole message, and anything typed stays in the composer for after.
-  const shareLocation = useCallback(async () => {
-    if (sending) return
-    setSending(true)
-    setLocating(true)
+  // What the location picker's Send does. Anything typed stays in the
+  // composer for after, like a photo from the camera prompt.
+  const sendLocation = useCallback(async (loc: SharedLocation, kind: 'self' | 'pin') => {
+    setLocationPickerRoom(null)
+    hapticSend()
+    requestAnimationFrame(scrollToBottom)
     try {
-      const loc = await currentLocation()
-      setLocating(false)
-      hapticSend()
-      requestAnimationFrame(scrollToBottom)
       await client.sendMessage(roomId, {
-        ...locationContent(loc),
+        ...locationContent(loc, kind),
         'com.construct.client': 'construct-web',
         'com.construct.version': __CONSTRUCT_VERSION__,
       } as any)
     } catch (err: any) {
       setSendError(err?.message ?? 'Failed to share location')
       setTimeout(() => setSendError(''), 4000)
-    } finally {
-      setLocating(false)
-      setSending(false)
     }
-  }, [client, roomId, sending, scrollToBottom])
+  }, [client, roomId, scrollToBottom])
 
   // What Send, Enter and dictation auto-send do: the composer's text, plus the
   // pending attachment if there is one.
@@ -2067,6 +2061,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         />
       )}
 
+      {locationPickerRoom === roomId && (
+        <LocationPicker onClose={() => setLocationPickerRoom(null)} onSend={sendLocation} />
+      )}
       {lightbox && (
         <div className="lightbox-overlay" onClick={() => setLightbox(null)}>
           <button className="lightbox-close" aria-label="Close image" onClick={() => setLightbox(null)}>✕</button>
@@ -2473,7 +2470,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 className="model-menu-item attach-menu-item"
                 style={{ '--i': 1 } as CSSProperties}
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => { setAttachMenuRoom(null); void shareLocation() }}
+                onClick={() => { setAttachMenuRoom(null); setLocationPickerRoom(roomId) }}
               >
                 <span className="material-icons" aria-hidden>location_on</span>
                 Location
@@ -2511,14 +2508,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => { hapticTick(); setAttachMenuRoom(attachMenuOpen ? null : roomId) }}
             disabled={sending}
-            title={locating ? 'Finding your location' : 'Attach'}
-            aria-label={locating ? 'Finding your location' : 'Attach'}
+            title="Attach"
+            aria-label="Attach"
             aria-haspopup="menu"
             aria-expanded={attachMenuOpen}
           >
-            {locating
-              ? <span className="attach-btn-spinner" aria-hidden />
-              : <span className="material-icons" aria-hidden>attach_file</span>}
+            <span className="material-icons" aria-hidden>attach_file</span>
           </button>
           <textarea
             ref={textareaRef}

@@ -20,10 +20,15 @@ if ('serviceWorker' in navigator) {
   })
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
-  </StrictMode>,
-)
+const root = createRoot(document.getElementById('root')!)
+if (import.meta.env.DEV && new URLSearchParams(location.search).has('location-picker')) {
+  import('./dev/LocationPickerHarness').then(({ default: Harness }) => root.render(<Harness />))
+} else {
+  root.render(
+    <StrictMode>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </StrictMode>,
+  )
+}

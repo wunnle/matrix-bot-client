@@ -1,6 +1,9 @@
-// POST /api/send-file?room=!room:server&filename=photo.jpg
+// POST /api/send-file?room=!room:server&filename=photo.jpg[&caption=…]
 // Raw body = file bytes; the secret travels in the x-intent-secret header,
 // never the URL. Sends native Matrix media event via Matrix media upload API.
+// With a caption, image and text go out as one event, shaped like the app's
+// own captioned uploads (sendFile in ChatView): body is the caption, filename
+// the file name. Without one, body is the file name, as before.
 import crypto from 'crypto'
 import { authorized } from './_auth.js'
 import { cors } from './_cors.js'
@@ -47,6 +50,7 @@ export default async function handler(req, res) {
   if (cors(req, res)) return
 
   const { room, filename, source } = req.query
+  const caption = typeof req.query.caption === 'string' ? req.query.caption.trim() : ''
   const constructSource = source || 'file-endpoint'
   if (!(await authorized(req))) return res.status(403).json({ error: 'forbidden' })
 
@@ -87,7 +91,8 @@ export default async function handler(req, res) {
 
   const event = {
     msgtype,
-    body: name,
+    body: caption || name,
+    ...(caption ? { filename: name } : {}),
     url: uploaded.content_uri,
     info: {
       mimetype: contentType,

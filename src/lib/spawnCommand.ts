@@ -1,6 +1,6 @@
 export type AgentProvider = 'claude' | 'codex'
 
-const CODEX_DEFAULT_MODEL = 'gpt-5.6-sol'
+const CODEX_DEFAULT_MODEL = 'gpt-6.1-sol'
 
 export function spawnCommand(provider: AgentProvider): string {
   if (provider === 'claude') return '!spawn'

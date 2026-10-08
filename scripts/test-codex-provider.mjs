@@ -57,7 +57,7 @@ function fakeChild() {
       const request = JSON.parse(line)
       if (!request.id) return true
       let result = {}
-      if (request.method === 'model/list') result = { data: [{ id: 'gpt-5.6-sol' }] }
+      if (request.method === 'model/list') result = { data: [{ id: 'gpt-6.1-sol' }] }
       if (request.method === 'mcpServerStatus/list') result = { data: [] }
       queueMicrotask(() => child.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) + '\n'))
       return true
@@ -78,7 +78,7 @@ children[0].emit('exit', 1, null)
 await appServer.connect()
 children[0].stdout.write('{stale garbage\n')
 children[0].emit('exit', 1, null) // delayed duplicate from the dead process
-assert.deepEqual(await appServer.request('model/list', {}), { data: [{ id: 'gpt-5.6-sol' }] })
+assert.deepEqual(await appServer.request('model/list', {}), { data: [{ id: 'gpt-6.1-sol' }] })
 assert.equal(children.length, 2)
 children[1].emit('exit', 0, null)
 

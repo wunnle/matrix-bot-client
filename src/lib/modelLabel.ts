@@ -1,6 +1,6 @@
 /**
  * Human-readable model name from a raw id, for the chat header and !model
- * pills: claude-opus-5-5 → "Opus 5.5", gpt-5.6-sol → "Sol 5.6",
+ * pills: claude-opus-5-5 → "Opus 5.5", gpt-6.1-sol → "Sol 6.1",
  * gpt-5.4-mini → "GPT 5.4 Mini". Anything unrecognised comes back as-is.
  */
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)

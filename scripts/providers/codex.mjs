@@ -19,13 +19,15 @@ import { bashIsSafe } from '../approval-rules.mjs'
 // This is only a seed: it answers `!spawn <path> <model>` before any
 // app-server exists, and is replaced by `model/list` on the first connection.
 // Expect it to go stale — the list changed under us mid-session once already.
+// gpt-6.1-sol is only listed to codex-cli >= 0.159; older builds never see it.
 const MODELS = {
+  'gpt-6.1-sol': 'gpt-6.1-sol',
+  'gpt-6-astra': 'gpt-6-astra',
+  'gpt-6-sol': 'gpt-6-sol',
+  'gpt-6-luna': 'gpt-6-luna',
   'gpt-5.6-sol': 'gpt-5.6-sol',
   'gpt-5.6-terra': 'gpt-5.6-terra',
   'gpt-5.6-luna': 'gpt-5.6-luna',
-  'gpt-5.5': 'gpt-5.5',
-  'gpt-5.4': 'gpt-5.4',
-  'gpt-5.4-mini': 'gpt-5.4-mini',
 }
 
 // Approvals we can put to the room as a yes/no. Both answer with the same
@@ -545,7 +547,7 @@ class Turn {
 export const codex = {
   name: 'codex',
   models: MODELS,
-  defaultModel: 'gpt-5.5',
+  defaultModel: 'gpt-6.1-sol',
 
   resolveModel(name) {
     const key = String(name).toLowerCase()

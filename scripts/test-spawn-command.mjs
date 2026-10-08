@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createSpawnGate, spawnCommand } from '../src/lib/spawnCommand.ts'
 
 assert.equal(spawnCommand('claude'), '!spawn')
-assert.equal(spawnCommand('codex'), '!spawn gpt-5.6-sol')
+assert.equal(spawnCommand('codex'), '!spawn gpt-6.1-sol')
 assert.throws(() => spawnCommand('other'), /provider/i)
 
 const gate = createSpawnGate()

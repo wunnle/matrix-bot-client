@@ -744,11 +744,19 @@ private func intentPostResponse(_ urlString: String, secret: String,
 /// Upload raw file bytes to send-file (room + filename in the query, secret in
 /// the header, body is the bytes). Used by the screenshot intent.
 private func intentUpload(_ urlString: String, secret: String, room: String,
-                          filename: String, contentType: String, body: Data) async {
+                          filename: String, caption: String? = nil,
+                          contentType: String, body: Data) async {
     let q = CharacterSet.alphanumerics
     let encRoom = room.addingPercentEncoding(withAllowedCharacters: q) ?? room
     let encName = filename.addingPercentEncoding(withAllowedCharacters: q) ?? filename
-    guard let url = URL(string: "\(urlString)?room=\(encRoom)&filename=\(encName)&source=shortcut") else { return }
+    var query = "room=\(encRoom)&filename=\(encName)&source=shortcut"
+    // An empty caption is left out entirely, so the event is exactly the
+    // uncaptioned one older Shortcuts send.
+    if let text = caption?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty,
+       let encCaption = text.addingPercentEncoding(withAllowedCharacters: q) {
+        query += "&caption=\(encCaption)"
+    }
+    guard let url = URL(string: "\(urlString)?\(query)") else { return }
     var req = URLRequest(url: url)
     req.httpMethod = "POST"
     req.setValue(contentType, forHTTPHeaderField: "Content-Type")
@@ -841,6 +849,10 @@ struct SendScreenshotIntent: AppIntent {
     @Parameter(title: "Image")
     var image: IntentFile
 
+    /// Sent with the image as one message, like a captioned photo from the app.
+    @Parameter(title: "Caption")
+    var caption: String?
+
     init() {}
 
     func perform() async throws -> some IntentResult {
@@ -855,7 +867,8 @@ struct SendScreenshotIntent: AppIntent {
         let mime = image.type?.preferredMIMEType ?? "image/jpeg"
         let ext = image.type?.preferredFilenameExtension ?? "jpg"
         await intentUpload("\(apiBase)/api/send-file", secret: secret, room: room,
-                           filename: "screenshot.\(ext)", contentType: mime, body: bytes)
+                           filename: "screenshot.\(ext)", caption: caption,
+                           contentType: mime, body: bytes)
         return .result()
     }
 }

@@ -51,6 +51,8 @@ interface LiveActivityPlugin {
   cacheRoomAvatars(options: { rooms: { roomId: string; avatar: string }[] }): Promise<void>
   isMacApp(): Promise<{ value: boolean }>
   macZoom(options: { step?: number }): Promise<{ zoom: number }>
+  appIcon(): Promise<{ supported: boolean; name: string | null }>
+  setAppIcon(options: { name: string | null }): Promise<void>
 }
 
 const plugin = registerPlugin<LiveActivityPlugin>('LiveActivity')
@@ -138,6 +140,25 @@ export async function macZoom(step?: 1 | -1 | 0): Promise<number | null> {
   } catch {
     return null
   }
+}
+
+/** The home-screen icon: null when it can't be changed here (web, or a
+ *  device without alternate icons); otherwise the alternate's name, or null
+ *  for the default. */
+export async function getAppIcon(): Promise<{ name: string | null } | null> {
+  if (!Capacitor.isNativePlatform()) return null
+  try {
+    const { supported, name } = await plugin.appIcon()
+    return supported ? { name: name ?? null } : null
+  } catch {
+    return null
+  }
+}
+
+/** Switch the home-screen icon; null goes back to the default. iOS confirms
+ *  with its own alert. */
+export async function setAppIcon(name: string | null): Promise<void> {
+  await plugin.setAppIcon({ name })
 }
 
 /** Raw plugin access — errors propagate. For diagnostics/tests. */

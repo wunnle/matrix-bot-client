@@ -1171,7 +1171,9 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "donateShareTargets", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cacheRoomAvatars", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isMacApp", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "macZoom", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "macZoom", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "appIcon", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setAppIcon", returnType: CAPPluginReturnPromise)
     ]
 
     /// True when this iPad app is running on a Mac (Designed for iPad). The web
@@ -1184,6 +1186,27 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let step = call.getInt("step") else { return call.resolve(["zoom": MacZoom.current]) }
         DispatchQueue.main.async {
             call.resolve(["zoom": MacZoom.apply(step: step, to: self.bridge?.webView)])
+        }
+    }
+
+    /// The home-screen icon: { supported, name }, name null for the default.
+    /// Alternates are the AppIcon-* sets in Assets.xcassets, listed in the
+    /// target's ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES.
+    @objc func appIcon(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let app = UIApplication.shared
+            call.resolve(["supported": app.supportsAlternateIcons,
+                          "name": app.alternateIconName as Any])
+        }
+    }
+
+    /// { name }: an alternate icon's set name, or null/absent for the default.
+    @objc func setAppIcon(_ call: CAPPluginCall) {
+        let name = call.getString("name")
+        DispatchQueue.main.async {
+            UIApplication.shared.setAlternateIconName(name) { error in
+                if let error { call.reject(error.localizedDescription) } else { call.resolve() }
+            }
         }
     }
 

@@ -3,7 +3,7 @@ import * as sdk from 'matrix-js-sdk'
 import type { AuthState } from '../types'
 import { getCachedRooms, getClient, intentCredential, isInvite } from '../lib/matrix'
 import { getDisabledShareRooms, setDisabledShareRooms, isShareableRoom } from '../lib/shareRooms'
-import { donateShareTargets } from '../lib/liveActivity'
+import { donateShareTargets, getAppIcon, setAppIcon } from '../lib/liveActivity'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { toggleDebug } from '../lib/debug'
 import { apiUrl } from '../lib/apiUrl'
@@ -88,6 +88,13 @@ async function reloadApp() {
  * selection is stored per-device; toggling re-donates the enabled set
  * immediately.
  */
+// Alternate icons are built into the app (AppIcon-* in Assets.xcassets and
+// ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES), so adding one needs a build.
+const APP_ICONS: { name: string | null; label: string; preview: string }[] = [
+  { name: null, label: 'Default', preview: '/app-icons/default.png' },
+  { name: 'AppIcon-Bender', label: 'Bender', preview: '/app-icons/bender.png' },
+]
+
 export default function Settings({ auth, clientReady, dictationAutoSend, onDictationAutoSendChange, onSignOut }: Props) {
   // Pending invites can't be share targets — you haven't joined them yet.
   // Agent rooms are left out entirely rather than listed and switched off:
@@ -99,6 +106,22 @@ export default function Settings({ auth, clientReady, dictationAutoSend, onDicta
   const [disabled, setDisabled] = useState<Set<string>>(() => getDisabledShareRooms(auth.userId))
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null)
+  // Null until known, and stays null where the icon can't be changed.
+  const [appIcon, setAppIconState] = useState<{ name: string | null } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void getAppIcon().then((icon) => { if (!cancelled) setAppIconState(icon) })
+    return () => { cancelled = true }
+  }, [])
+
+  async function chooseAppIcon(name: string | null) {
+    if (appIcon?.name === name) return
+    try {
+      await setAppIcon(name)
+      setAppIconState({ name })
+    } catch { /* iOS refused; the tick stays where it was */ }
+  }
 
   // Own profile picture and the master push rule, once the client exists.
   useEffect(() => {
@@ -181,6 +204,26 @@ export default function Settings({ auth, clientReady, dictationAutoSend, onDicta
           />
         </label>
       </section>
+
+      {appIcon && (
+        <section className="settings-section">
+          <h2 className="settings-section-title">App icon</h2>
+          <div className="app-icon-picker">
+            {APP_ICONS.map((icon) => (
+              <button
+                key={icon.label}
+                type="button"
+                className={`app-icon-option${appIcon.name === icon.name ? ' app-icon-option--selected' : ''}`}
+                onClick={() => void chooseAppIcon(icon.name)}
+                aria-pressed={appIcon.name === icon.name}
+              >
+                <img src={icon.preview} alt="" />
+                <span>{icon.label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="settings-section">
         <h2 className="settings-section-title">Share sheet</h2>

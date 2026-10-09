@@ -3641,6 +3641,26 @@ a.msg-card-link:hover {
 .settings-section > .settings-row:last-child,
 .settings-section > .settings-action:last-child { padding-bottom: 0; }
 
+.app-icon-picker { display: flex; gap: 16px; }
+.app-icon-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.app-icon-option img {
+  width: 60px;
+  height: 60px;
+  border-radius: 14px;
+  outline: 2px solid transparent;
+  outline-offset: 3px;
+  transition: outline-color 0.15s;
+}
+.app-icon-option--selected { color: var(--text); }
+.app-icon-option--selected img { outline-color: var(--accent); }
+
 .settings-account { display: flex; align-items: center; gap: 14px; }
 .settings-account-avatar {
   width: 52px;

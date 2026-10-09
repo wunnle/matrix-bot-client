@@ -10,6 +10,7 @@
 import { Capacitor } from '@capacitor/core'
 import { intentCredential } from './matrix'
 import { apiUrl } from './apiUrl'
+import { isMacApp } from './liveActivity'
 
 const BEAT_MS = 45_000
 
@@ -43,11 +44,22 @@ export function clientId(): string {
   }
 }
 
+/** The Mac app (Designed for iPad). Minimising it or switching apps never hides
+    the page, so there "visible" also needs the app frontmost and recent input:
+    otherwise a Construct window left open on a room muted that room on the Mac
+    indefinitely. The idle limit is the backstop if the active signals don't
+    arrive. */
+let macApp = false
+let macAppActive = true
+const MAC_IDLE_MS = 2 * 60 * 1000
+const macAway = () => macApp && (!macAppActive || Date.now() - lastInputAt > MAC_IDLE_MS)
+
 /** `leaving`: the app is going to the background. Reports it hidden, so this
     device stops being muted now rather than when the 75s server window runs
     out — otherwise locking the phone right after asking something swallowed
     the reply. keepalive lets the request outlive the page freezing. */
 async function beat(leaving = false) {
+  leaving ||= macAway()
   const secret = intentCredential()
   // Not signed in yet: nothing to report, and the gateway simply notifies.
   if (!secret || (!leaving && document.visibilityState !== 'visible')) return
@@ -103,6 +115,7 @@ export function setActiveRoom(roomId: string | null) {
 /** Start reporting foreground presence. Safe to call more than once. */
 export function startPresenceHeartbeat(): () => void {
   if (timer) return () => {}
+  void isMacApp().then((mac) => { macApp = mac })
   void beat()
   timer = setInterval(() => void beat(), BEAT_MS)
   // Beat on every visibility change: becoming visible goes quiet straight away,
@@ -118,9 +131,27 @@ export function startPresenceHeartbeat(): () => void {
   }
   const INPUT_EVENTS = ['keydown', 'pointerdown', 'wheel', 'touchstart'] as const
   for (const e of INPUT_EVENTS) window.addEventListener(e, onInput, { passive: true, capture: true })
+  // Mac: the native side reports the app becoming frontmost or not, and the
+  // page's own focus/blur back that up. Each beats at once, like a visibility
+  // change. Ignored off the Mac, where visibility already says it all.
+  const setActive = (active: boolean) => {
+    if (!macApp || active === macAppActive) return
+    macAppActive = active
+    if (active) lastInputAt = Date.now()
+    void beat()
+  }
+  const onAppActive = (e: Event) => setActive((e as CustomEvent<boolean>).detail)
+  const onFocus = () => setActive(true)
+  const onBlur = () => setActive(false)
+  window.addEventListener('construct:app-active', onAppActive)
+  window.addEventListener('focus', onFocus)
+  window.addEventListener('blur', onBlur)
   return () => {
     if (timer) { clearInterval(timer); timer = null }
     document.removeEventListener('visibilitychange', onVisibility)
     for (const e of INPUT_EVENTS) window.removeEventListener(e, onInput, { capture: true })
+    window.removeEventListener('construct:app-active', onAppActive)
+    window.removeEventListener('focus', onFocus)
+    window.removeEventListener('blur', onBlur)
   }
 }

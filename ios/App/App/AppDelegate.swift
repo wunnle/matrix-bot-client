@@ -96,6 +96,22 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Hide the assistant/"language" bar on iPad + Mac (and the blank software
         // keyboard on Mac). No-op on iPhone.
         if #available(iOS 14.0, *) { configureWebKeyboardOnce() }
+        reportMacAppActive(true, in: scene)
+    }
+
+    func sceneWillResignActive(_ scene: UIScene) {
+        reportMacAppActive(false, in: scene)
+    }
+
+    /// On a Mac, minimising the window or switching apps doesn't hide the page,
+    /// so presence kept reporting the room as being read and the gateway kept
+    /// it quiet. Tell the page directly (src/lib/presence.ts listens).
+    private func reportMacAppActive(_ active: Bool, in scene: UIScene) {
+        guard ProcessInfo.processInfo.isiOSAppOnMac,
+              let vc = (scene as? UIWindowScene)?.windows.first?.rootViewController as? CAPBridgeViewController
+        else { return }
+        vc.webView?.evaluateJavaScript(
+            "window.dispatchEvent(new CustomEvent('construct:app-active', { detail: \(active) }))")
     }
 }
 

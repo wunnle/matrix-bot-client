@@ -64,6 +64,10 @@ export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: str
         const { loadAuth } = await import("../lib/auth");
         const auth = loadAuth();
         if (!auth) return;
+        // The Mac app and the phone are both this app_id, so the device name is
+        // what keeps their pushers apart in the pruning below.
+        const { isMacApp } = await import("../lib/liveActivity");
+        const deviceName = (await isMacApp()) ? "Mac (native)" : "iPhone (native)";
 
         await fetch(`${auth.homeserver}/_matrix/client/v3/pushers/set`, {
           method: "POST",
@@ -75,7 +79,7 @@ export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: str
             kind: "http",
             app_id: "com.wunnle.construct.ios",
             app_display_name: "Construct",
-            device_display_name: "iPhone (native)",
+            device_display_name: deviceName,
             pushkey: token,
             lang: "en",
             data: {
@@ -97,6 +101,9 @@ export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: str
         // account data with no compare-and-swap, so they all read "unseen"
         // before any of them writes.
         //
+        // Only this device's own rows: the Mac app shares the app_id, and pruning
+        // every other pushkey had each device unsubscribe the other on launch.
+        //
         // Only tokens APNs still rejects get cleaned up on their own, via the
         // `rejected` list in api/matrix-push.js. One that a reinstall left
         // valid never goes away by itself, which is why this is explicit.
@@ -111,8 +118,9 @@ export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: str
           if (listRes.ok) {
             const { pushers = [] } = await listRes.json();
             const stale = pushers.filter(
-              (p: { app_id?: string; pushkey?: string }) =>
-                p.app_id === "com.wunnle.construct.ios" && p.pushkey && p.pushkey !== token,
+              (p: { app_id?: string; pushkey?: string; device_display_name?: string }) =>
+                p.app_id === "com.wunnle.construct.ios" && p.pushkey && p.pushkey !== token &&
+                p.device_display_name === deviceName,
             );
             for (const p of stale) {
               // `kind: null` is the spec's delete. app_id + pushkey identify

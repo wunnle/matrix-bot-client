@@ -920,6 +920,12 @@ class MainViewController: CAPBridgeViewController {
         // text-size-adjust: none, which index.css sets for .mac-app.
         if ProcessInfo.processInfo.isiOSAppOnMac {
             webView?.pageZoom = MacZoom.current
+            // Under that zoom the WebView's own scroll view still thinks the page
+            // is a little larger than the window, so a trackpad swipe dragged the
+            // whole app past its edges. The layout is fixed and every list scrolls
+            // in its own overflow area, so the outer scroll view has nothing to do.
+            webView?.scrollView.isScrollEnabled = false
+            webView?.scrollView.bounces = false
         }
     }
 }

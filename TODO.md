@@ -92,6 +92,13 @@
   off), personal build keeps it via local `.env`. Never ship the secret in the
   public binary.
 - [ ] Final app name + icon (bundle ID `com.wunnle.construct` stays regardless).
+- [ ] **Replace the Bender app icon before any release.** It's a development-only
+  choice: `AppIcon-Bender` (the alternate offered in Settings → App icon, and the
+  primary icon of the personal Mac build) is Futurama artwork, fine on our own
+  devices but not shippable. A public build needs original artwork for any
+  alternate icon, or the `AppIcon-Bender` set, its
+  `ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES` entry and the `APP_ICONS` row in
+  `src/components/Settings.tsx` removed.
 - [ ] App Review prep: privacy policy URL, App Privacy questionnaire, and UGC
   guideline 1.2 — report-content and block-user affordances.
 

@@ -90,6 +90,8 @@ async function reloadApp() {
  */
 // Alternate icons are built into the app (AppIcon-* in Assets.xcassets and
 // ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES), so adding one needs a build.
+// Bender is development-only (Futurama artwork): replace or remove it before any
+// public release — see TODO.md, Release / App Store.
 const APP_ICONS: { name: string | null; label: string; preview: string }[] = [
   { name: null, label: 'Default', preview: '/app-icons/default.png' },
   { name: 'AppIcon-Bender', label: 'Bender', preview: '/app-icons/bender.png' },

@@ -1087,12 +1087,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       }
     }
     if (toResolve.length === 0) return
-    let cancelled = false
+    // No cancellation: these ids are already marked resolved, so a result
+    // dropped here is never fetched again. A photo the user sends is followed
+    // within seconds by the bot's reply, which re-runs this effect while the
+    // full-size download is still in flight — dropping it left the photo blank.
+    // Merging by eventId is idempotent, so a late result is always safe to keep.
     Promise.all(toResolve.map(async ({ eventId, mxc }) => {
       const url = await resolveMediaUrl(client, mxc)
       return { eventId, url }
     })).then(results => {
-      if (cancelled) return
       setImageUrls(prev => {
         const next = { ...prev }
         let changed = false
@@ -1102,7 +1105,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         return changed ? next : prev
       })
     })
-    return () => { cancelled = true }
   }, [messages, pinnedDisplay, client])
 
   // Pinned events (m.room.pinned_events) — resolve when state changes or the timeline may contain them

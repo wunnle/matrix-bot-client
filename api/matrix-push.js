@@ -14,6 +14,9 @@ import { recordNotify, activeClients, seenEventBefore } from "./live-activity.js
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN;
+// The claudebot/codexbot account (scripts/claude-code-bot.mjs). It speaks in
+// every agent room under one display name, so its pushes are titled by room.
+const AGENT_BOT_IDS = new Set(["@bender-2:matrix.org"]);
 
 function mxcToProxyUrl(mxc) {
   if (!mxc) return null;
@@ -236,14 +239,17 @@ export default async function handler(req, res) {
         }
         // Sender as the title reads better than the room on iOS; the room
         // becomes the subtitle. Falls back to the web-push title when the
-        // notification carries no sender.
+        // notification carries no sender. Agent rooms are the exception: every
+        // one of them posts as the same bot account, so the room name is what
+        // tells them apart.
+        const senderTitle = AGENT_BOT_IDS.has(sender) ? null : sender_display_name;
         const apnsPayload = {
           aps: {
             alert: {
-              title: sender_display_name || title,
+              title: senderTitle || title,
               // Only when it adds something: in a one-bot room the sender and
               // the room are both "Bender", which rendered the name twice.
-              ...(sender_display_name && room_name && room_name !== sender_display_name
+              ...(senderTitle && room_name && room_name !== senderTitle
                 ? { subtitle: room_name }
                 : {}),
               body,

@@ -9,6 +9,7 @@
 import assert from 'node:assert'
 import {
   buildContentState, parseAlert, parseTtl, parseUntil, lifetimeFor, expiredIds, evictionIds, assertVisibleSends,
+  reconcileDrops,
   ActivityError, ID_PATTERN, DEFAULT_TTL_S, MAX_TTL_S, MAX_LIVE,
 } from '../api/_activities.js'
 
@@ -155,6 +156,18 @@ check('agent rooms: a button may not hide a different payload behind its label',
   assertVisibleSends([{ label: 'Ship it', send: 'Ship it' }, { label: 'Hold', send: 'Hold' }])
   assertVisibleSends([])
   rejects(() => assertVisibleSends([{ label: 'OK', send: 'rm -rf ~' }]), 400, /must send its own label \(OK\)/)
+})
+
+check('reconcile only drops cards the phone had registered (and not just now)', () => {
+  const now = Date.now()
+  const entries = {
+    gone: { token: 't', registeredAt: now - 10 * 60_000 },
+    unregistered: { token: null, startedAt: now - 60 * 60_000 },
+    justRegistered: { token: 't', registeredAt: now - 60_000 },
+    listed: { token: 't', registeredAt: now - 60 * 60_000 },
+  }
+  assert.deepStrictEqual(reconcileDrops(entries, ['listed'], now), ['gone'])
+  assert.deepStrictEqual(reconcileDrops(entries, [], now).sort(), ['gone', 'listed'])
 })
 
 check('alert levels', () => {

@@ -486,19 +486,29 @@ export function evictionIds(activities, max = MAX_LIVE) {
 }
 
 /** End and remove the given entries. Mutates `reg`. */
-async function endEntries(reg, ids, dismissInS = 0) {
+/** Diagnostics: the last 30 changes to the registry, newest last, shown by
+    GET /api/activity. Added 2026-10-11 after cards vanished from the
+    registry minutes after starting while still on the phone, and nothing
+    said what had removed them. Mutates `reg`. */
+const EVENT_LOG_SIZE = 30;
+function note(reg, op, id, detail = {}) {
+  reg.events = [...(reg.events ?? []), { at: Date.now(), op, id, ...detail }].slice(-EVENT_LOG_SIZE);
+}
+
+async function endEntries(reg, ids, dismissInS = 0, reason = "removed") {
   for (const id of ids) {
     const entry = reg.activities[id];
     if (entry?.token && entry.content) {
       await pushEnd(entry, entry.content, dismissInS).catch(() => {});
     }
     delete reg.activities[id];
+    note(reg, reason, id, { registered: !!entry?.token });
   }
 }
 
 async function prune(reg) {
   const ids = expiredIds(reg.activities);
-  await endEntries(reg, ids, 0);
+  await endEntries(reg, ids, 0, "expired");
   return ids;
 }
 
@@ -544,6 +554,7 @@ export async function upsertActivity(input) {
     }
     const apns = summarize((await pushEnd(entry, content, dismiss)).r);
     delete reg.activities[id];
+    note(reg, "ended", id, { apns: apns.status });
     await writeRegistry(reg);
     return { ok: true, id, action: "ended", apns };
   }
@@ -573,6 +584,7 @@ export async function upsertActivity(input) {
     const { r, ts } = await pushUpdate(entry, content, alert, endsAtMs);
     if (deadToken(r)) {
       delete reg.activities[id];
+      note(reg, "gone (410)", id);
       await writeRegistry(reg);
       return { ok: false, id, action: "gone", reason: "activity was dismissed on the device", apns: summarize(r) };
     }
@@ -599,7 +611,7 @@ export async function upsertActivity(input) {
   const alert = alertBlock(level === "none" ? "quiet" : level, content);
 
   const evicted = Object.keys(reg.activities).length >= MAX_LIVE ? evictionIds(reg.activities) : [];
-  await endEntries(reg, evicted, 0);
+  await endEntries(reg, evicted, 0, "evicted");
 
   let start;
   try {
@@ -611,6 +623,7 @@ export async function upsertActivity(input) {
     throw err;
   }
   reg.lastStart = { id, at: now, accepted: start.accepted, results: start.results };
+  note(reg, start.accepted ? "started" : "start failed", id);
   if (start.accepted) {
     reg.activities[id] = {
       roomId: room,
@@ -642,6 +655,7 @@ export async function upsertActivity(input) {
 export async function registerToken(activityId, token) {
   const reg = await readRegistry();
   const now = Date.now();
+  const known = !!reg.activities[activityId];
   const entry = reg.activities[activityId] ?? {
     roomId: "",
     startedAt: now,
@@ -651,7 +665,7 @@ export async function registerToken(activityId, token) {
     content: null,
     pending: null,
   };
-  let next = { ...entry, token };
+  let next = { ...entry, token, registeredAt: entry.token === token ? entry.registeredAt ?? now : now };
   let delivered = null;
   if (entry.pendingEnd && apnsConfigured()) {
     // An end arrived before the token did (see upsertActivity): deliver it
@@ -659,9 +673,13 @@ export async function registerToken(activityId, token) {
     const { r } = await pushEnd(next, entry.pendingEnd.content, entry.pendingEnd.dismissIn);
     delete reg.activities[activityId];
     reg.lastRegister = { activityId, at: now };
+    note(reg, "pending end delivered", activityId, { apns: r.status });
     await writeRegistry(reg);
     return { ok: true, pendingEndDelivered: summarize(r) };
   }
+  // A token for a card the registry doesn't know: either the app started it
+  // (debug overlay) or the server lost it. The log tells which.
+  note(reg, known ? "token registered" : "token for unknown card", activityId);
   if (entry.pending && apnsConfigured()) {
     const { r, ts } = await pushUpdate(next, entry.pending, undefined);
     delivered = summarize(r);
@@ -679,21 +697,35 @@ export async function forgetActivity(activityId) {
   const reg = await readRegistry();
   if (!reg.activities[activityId]) return { ok: true, removed: 0 };
   delete reg.activities[activityId];
+  note(reg, "app says ended", activityId);
   await writeRegistry(reg);
   return { ok: true, removed: 1 };
+}
+
+/** Which entries a reconcile removes. Cautious (2026-10-11): only a card the
+    phone had *registered* (more than 5 minutes ago) and now no longer lists,
+    which means it was there and is gone. A card that never registered, or
+    registered moments ago, can simply not be in the app's list yet; dropping
+    it stranded live cards on the lock screen with no way to update or end
+    them. Unregistered entries still expire with their TTL. Pure. */
+export function reconcileDrops(activities, liveIds, now = Date.now()) {
+  const keep = new Set(liveIds);
+  return Object.entries(activities)
+    .filter(([id, e]) => !keep.has(id) && e.token && now - (e.registeredAt ?? e.startedAt ?? 0) > 5 * 60_000)
+    .map(([id]) => id);
 }
 
 /** The app listing every activity still alive on the device; everything else
     goes. Entries started in the last minute are kept even when unlisted: a
     push-to-start can still be on its way to the device. */
 export async function reconcile(liveIds) {
-  const keep = new Set(liveIds);
   const reg = await readRegistry();
   const now = Date.now();
-  const drop = Object.entries(reg.activities)
-    .filter(([id, e]) => !keep.has(id) && now - (e.startedAt ?? 0) > 60_000)
-    .map(([id]) => id);
-  for (const id of drop) delete reg.activities[id];
+  const drop = reconcileDrops(reg.activities, liveIds, now);
+  for (const id of drop) {
+    delete reg.activities[id];
+    note(reg, "reconcile: not on phone", id);
+  }
   // Diagnostics: what the phone says is on it, each time the app opens. The
   // only direct evidence of which cards actually exist on the device.
   reg.lastReconcile = { at: now, activityIds: liveIds.slice(0, 20), removed: drop };
@@ -720,5 +752,6 @@ export async function listActivities() {
     lastRegister: reg.lastRegister ?? null,
     lastReconcile: reg.lastReconcile ?? null,
     lastSync: reg.lastSync ?? null,
+    events: reg.events ?? [],
   };
 }

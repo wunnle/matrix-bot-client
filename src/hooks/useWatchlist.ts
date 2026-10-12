@@ -64,11 +64,5 @@ export function useWatchlist(client: sdk.MatrixClient, roomId: string) {
     }
   }, [client, roomId])
 
-  // Adding goes through the chat on purpose: a title typed on the page and one
-  // typed in the chat are the same message to the service.
-  const add = useCallback((query: string) => {
-    void client.sendTextMessage(roomId, query)
-  }, [client, roomId])
-
-  return { items, status, act, add }
+  return { items, status, act }
 }

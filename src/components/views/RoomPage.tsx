@@ -4,8 +4,8 @@ import { useWatchlist } from '../../hooks/useWatchlist'
 import WatchlistView from './WatchlistView'
 
 function WatchlistPage({ client, roomId }: { client: MatrixClient, roomId: string }) {
-  const { items, status, act, add } = useWatchlist(client, roomId)
-  return <WatchlistView items={items} status={status} onAction={act} onAdd={add} />
+  const { items, status, act } = useWatchlist(client, roomId)
+  return <WatchlistView items={items} status={status} onAction={act} />
 }
 
 /** The page for a room's view kind. One entry per kind in ROOM_VIEW_KINDS. */

@@ -4190,10 +4190,43 @@ html.mac-app {
 .room-view-toggle button .material-symbols-outlined { font-size: 19px; }
 .room-view-toggle .room-view-toggle--on { background: var(--bg-hover); color: var(--text); }
 
-/* The chat is hidden, not unmounted, while the page is up. */
-.chat-view--page > :is(.pinned-strip, .messages-init-loading, .messages, .camera-prompt, .scroll-down-btn, .chat-footer) {
+/* The chat is hidden, not unmounted, while the page is up — all but the
+   composer, which stays as the page's input, with the latest line above it. */
+.chat-view--page > :is(.pinned-strip, .messages-init-loading, .messages, .camera-prompt, .scroll-down-btn) {
   display: none !important;
 }
+.chat-view--page .room-view { padding-bottom: calc(var(--footer-h, 0px) + 20px); }
+
+.room-peek {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  margin-bottom: 8px;
+  padding: 0 6px 0 12px;
+  border-radius: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.room-peek:active { background: var(--bg-hover); }
+.room-peek-who {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.room-peek-body {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.room-peek-open { font-size: 20px; color: var(--text-muted); }
 
 .room-view {
   flex: 1;
@@ -4206,29 +4239,6 @@ html.mac-app {
 }
 
 /* Watchlist page. */
-.wl-add {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 42px;
-  padding: 0 12px;
-  border-radius: 8px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-}
-.wl-add:focus-within { border-color: var(--accent); }
-.wl-add .material-symbols-outlined { font-size: 20px; color: var(--text-muted); }
-.wl-add input {
-  flex: 1;
-  min-width: 0;
-  background: none;
-  border: none;
-  outline: none;
-  color: var(--text);
-  font-size: 16px;
-}
-.wl-add input::placeholder { color: var(--text-muted); }
-
 .wl-section-head {
   display: flex;
   align-items: center;
@@ -4241,6 +4251,7 @@ html.mac-app {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+.wl-section-head--first { margin-top: 6px; }
 .wl-section-toggle { -webkit-tap-highlight-color: transparent; }
 .wl-count {
   font-weight: 500;

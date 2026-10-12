@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import RoomViewToggle from '../components/RoomViewToggle'
 import WatchlistView, { type ItemStatus, type WatchlistItem } from '../components/views/WatchlistView'
+import { ROOM_VIEW_COMPOSER_HINT } from '../lib/roomView'
 import sample from './watchlist-sample.json'
 
 // Dev only (main.tsx mounts it for ?watchlist under `vite`): the Watchlist room
-// page with real titles, no Matrix login. Actions are simulated locally.
+// page with real titles, no Matrix login. Actions are simulated locally, and the
+// footer is a static copy of ChatView's peek + composer markup.
 // ?watchlist=<imdb id> opens that title's sheet; &watched expands the section.
 export default function WatchlistHarness() {
   const params = new URLSearchParams(location.search)
@@ -15,7 +17,7 @@ export default function WatchlistHarness() {
   const [showPage, setShowPage] = useState(true)
 
   return (
-    <div className="chat-view" style={{ height: '100vh' }}>
+    <div className={`chat-view${showPage ? ' chat-view--page' : ''}`} style={{ height: '100vh', ['--footer-h' as string]: '104px' }}>
       <div className="chat-header">
         <div className="chat-header-inner">
           <button className="back">←</button>
@@ -34,7 +36,6 @@ export default function WatchlistHarness() {
             status={status}
             initialSelected={params.get('watchlist') || undefined}
             initialShowWatched={params.has('watched')}
-            onAdd={(q) => alert(`would send: ${q}`)}
             onAction={(action, id) => {
               if (action === 'play') {
                 setStatus((s) => ({ ...s, [id]: { state: 'pending' } }))
@@ -48,6 +49,22 @@ export default function WatchlistHarness() {
           />
         )
         : <p style={{ padding: 20, color: 'var(--text-muted)' }}>(the room's chat)</p>}
+      <div className="chat-footer">
+        {showPage && (
+          <button type="button" className="room-peek" onClick={() => setShowPage(false)}>
+            <span className="room-peek-who">Bender</span>
+            <span className="room-peek-body">✓ Watched: Rick and Morty</span>
+            <span className="material-symbols-outlined room-peek-open" aria-hidden>expand_less</span>
+          </button>
+        )}
+        <div className="input-row-anchor">
+          <div className="input-row glass">
+            <button type="button" className="attach-btn"><span className="material-icons" aria-hidden>attach_file</span></button>
+            <textarea rows={1} placeholder={showPage ? ROOM_VIEW_COMPOSER_HINT.watchlist : 'Message…'} />
+            <button type="button" className="dictation-btn"><span className="material-icons" aria-hidden>mic</span></button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

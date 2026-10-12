@@ -55,6 +55,7 @@ import LocationPicker from './LocationPicker'
 import RoomViewToggle from './RoomViewToggle'
 import RoomPage from './views/RoomPage'
 import { useRoomViewKind } from '../hooks/useRoomViewKind'
+import { ROOM_VIEW_COMPOSER_HINT } from '../lib/roomView'
 import { hapticPress, hapticSend, hapticSuccess, hapticTick, hapticWarning } from '../lib/haptics'
 import { useAgentBlocked, formatResetsAt, blockedHeadline } from '../hooks/useAgentBlocked'
 
@@ -507,7 +508,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const viewKind = useRoomViewKind(client, roomId)
   const [showPage, setShowPage] = useState(true)
   useEffect(() => { setShowPage(true) }, [roomId])
-  const pageShown = viewKind !== null && showPage
+  const pageShown = showPage && viewKind !== null
   const bottomRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
   const codeScrollRef = useRef(new Map<string, number>())
@@ -2261,6 +2262,18 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       )}
 
       <div className="chat-footer" ref={footerRef}>
+        {pageShown && (() => {
+          // The page keeps the chat within reach: the latest line, which
+          // opens the full chat, above the composer you add titles with.
+          const last = [...messages].reverse().find((m) => m.body && !m.toolProgress)
+          return last && (
+            <button type="button" className="room-peek" onClick={() => setShowPage(false)}>
+              <span className="room-peek-who">{last.isOwnMessage ? 'You' : (last.authorName ?? 'Bot')}</span>
+              <span className="room-peek-body">{last.body.split('\n')[0]}</span>
+              <span className="material-symbols-outlined room-peek-open" aria-hidden>expand_less</span>
+            </button>
+          )
+        })()}
 
         {agentBlocked && (
           <div className="agent-blocked" aria-live="polite">
@@ -2517,7 +2530,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder="Message…"
+            placeholder={pageShown ? ROOM_VIEW_COMPOSER_HINT[viewKind] : 'Message…'}
             enterKeyHint="enter"
             readOnly={dictating}
             aria-readonly={dictating || undefined}

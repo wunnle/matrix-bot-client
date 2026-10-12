@@ -49,28 +49,20 @@ interface Props {
   items: WatchlistItem[]
   status: Record<string, ItemStatus>
   onAction: (action: WatchlistAction, id: string) => void
-  onAdd: (query: string) => void
   /** Opens with this title's sheet up — for the dev harness. */
   initialSelected?: string
   initialShowWatched?: boolean
 }
 
-export default function WatchlistView({ items, status, onAction, onAdd, initialSelected, initialShowWatched = false }: Props) {
-  const [query, setQuery] = useState('')
+// Adding has no field here: the room's composer stays under the page, and a
+// title typed there is the same message to the service as one typed in chat.
+export default function WatchlistView({ items, status, onAction, initialSelected, initialShowWatched = false }: Props) {
   const [selected, setSelected] = useState<string | null>(initialSelected ?? null)
   const [showWatched, setShowWatched] = useState(initialShowWatched)
 
   const toWatch = items.filter((i) => !i.watchedAt)
   const watched = items.filter((i) => i.watchedAt).sort((a, b) => b.watchedAt! - a.watchedAt!)
   const current = items.find((i) => i.id === selected) ?? null
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const q = query.trim()
-    if (!q) return
-    onAdd(q)
-    setQuery('')
-  }
 
   const card = (item: WatchlistItem) => {
     const s = status[item.id]
@@ -89,23 +81,13 @@ export default function WatchlistView({ items, status, onAction, onAdd, initialS
 
   return (
     <div className="room-view wl">
-      <form className="wl-add" onSubmit={submit}>
-        <span className="material-symbols-outlined" aria-hidden>add</span>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Add a title or IMDb link"
-          enterKeyHint="send"
-        />
-      </form>
-
-      <div className="wl-section-head">
+      <div className="wl-section-head wl-section-head--first">
         <span>To watch</span>
         <span className="wl-count">{toWatch.length}</span>
       </div>
       {toWatch.length
         ? <div className="wl-grid">{toWatch.map(card)}</div>
-        : <p className="wl-empty">Nothing on the list. Add a title above, or send one in the chat.</p>}
+        : <p className="wl-empty">Nothing on the list. Send a title or an IMDb link below.</p>}
 
       {watched.length > 0 && (
         <>

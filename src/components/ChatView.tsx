@@ -53,6 +53,7 @@ import { approvalChoices, parseApprovalCard } from '../lib/approval'
 import { extractLocationBlocks, formatCoords, locationContent, locationFromContent, mapsUrl, mapTiles, MAP_ATTRIBUTION } from '../lib/location'
 import LocationPicker from './LocationPicker'
 import { hapticPress, hapticSend, hapticSuccess, hapticTick, hapticWarning } from '../lib/haptics'
+import { copyTextToClipboard } from '../lib/clipboard'
 import { useAgentBlocked, formatResetsAt, blockedHeadline } from '../hooks/useAgentBlocked'
 
 interface Props {
@@ -133,29 +134,6 @@ function summarizeToolLines(lines: ToolProgressLine[]): string {
   return parts.join(', ') || 'Used tools'
 }
 
-
-async function copyTextToClipboard(text: string): Promise<void> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      return
-    }
-  } catch {
-    /* try fallback */
-  }
-  try {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    ta.setAttribute('readonly', 'true')
-    ta.style.cssText = 'position:fixed;left:-9999px'
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy')
-    document.body.removeChild(ta)
-  } catch {
-    /* ignore */
-  }
-}
 
 function getRoomBotMeta(roomId: string, userId: string, client: sdk.MatrixClient): { name: string; mxcUrl: string | null } | null {
   const room = client.getRoom(roomId)

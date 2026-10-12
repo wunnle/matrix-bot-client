@@ -53,6 +53,7 @@ interface LiveActivityPlugin {
   macZoom(options: { step?: number }): Promise<{ zoom: number }>
   appIcon(): Promise<{ supported: boolean; name: string | null }>
   setAppIcon(options: { name: string | null }): Promise<void>
+  copyText(options: { text: string }): Promise<void>
 }
 
 const plugin = registerPlugin<LiveActivityPlugin>('LiveActivity')
@@ -159,6 +160,11 @@ export async function getAppIcon(): Promise<{ name: string | null } | null> {
  *  with its own alert. */
 export async function setAppIcon(name: string | null): Promise<void> {
   await plugin.setAppIcon({ name })
+}
+
+/** Write to the system pasteboard natively. See lib/clipboard.ts for why. */
+export async function copyTextNative(text: string): Promise<void> {
+  await plugin.copyText({ text })
 }
 
 /** Raw plugin access — errors propagate. For diagnostics/tests. */

@@ -3,6 +3,7 @@ import { getClient } from '../lib/matrix'
 import { loadPills, savePills } from '../lib/roomMeta'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { useToast } from '../hooks/useToast'
+import { copyTextToClipboard } from '../lib/clipboard'
 
 interface Member {
   userId: string
@@ -226,7 +227,7 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
           <div className="room-editor-header-actions">
             <button
               className="room-editor-copy-id"
-              onClick={() => { navigator.clipboard.writeText(roomId); showToast('Copied') }}
+              onClick={() => { void copyTextToClipboard(roomId).then(() => showToast('Copied')) }}
               title={roomId}
             >
               <span className="material-icons">tag</span>
@@ -310,7 +311,7 @@ export default function RoomEditor({ roomId, onClose, onLeave }: Props) {
                 <div
                   key={m.userId}
                   className="editor-member"
-                  onClick={() => { navigator.clipboard.writeText(m.userId); showToast('Copied') }}
+                  onClick={() => { void copyTextToClipboard(m.userId).then(() => showToast('Copied')) }}
                   title={m.userId}
                 >
                   <div className="editor-member-avatar">

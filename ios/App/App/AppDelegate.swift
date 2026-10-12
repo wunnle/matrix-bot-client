@@ -1179,7 +1179,8 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isMacApp", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "macZoom", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "appIcon", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setAppIcon", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "setAppIcon", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "copyText", returnType: CAPPluginReturnPromise)
     ]
 
     /// True when this iPad app is running on a Mac (Designed for iPad). The web
@@ -1213,6 +1214,16 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             UIApplication.shared.setAlternateIconName(name) { error in
                 if let error { call.reject(error.localizedDescription) } else { call.resolve() }
             }
+        }
+    }
+
+    /// { text } onto the system pasteboard. The web layer uses this on the Mac,
+    /// where navigator.clipboard.writeText never reaches the macOS pasteboard.
+    @objc func copyText(_ call: CAPPluginCall) {
+        let text = call.getString("text") ?? ""
+        DispatchQueue.main.async {
+            UIPasteboard.general.string = text
+            call.resolve()
         }
     }
 

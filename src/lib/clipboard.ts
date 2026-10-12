@@ -11,8 +11,13 @@ export async function copyTextToClipboard(text: string): Promise<void> {
   // Synchronous on purpose: Safari only lets writeText through while the tap
   // that asked for it is still current, so nothing may be awaited before it.
   if (document.documentElement.classList.contains('mac-app')) {
-    await copyTextNative(text)
-    return
+    try {
+      await copyTextNative(text)
+      return
+    } catch {
+      // An installed app older than this web code has no copyText yet (the
+      // app loads the deployed site); the browser path is the best left.
+    }
   }
   try {
     if (navigator.clipboard?.writeText) {

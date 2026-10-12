@@ -56,6 +56,9 @@ interface LiveActivityPlugin {
   copyText(options: { text: string }): Promise<void>
 }
 
+// The installed app loads the deployed site, so this web code can be newer than
+// the native plugin it calls: every wrapper below must cope with a method that
+// doesn't exist yet (see CLAUDE.md).
 const plugin = registerPlugin<LiveActivityPlugin>('LiveActivity')
 
 /**

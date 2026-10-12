@@ -52,6 +52,9 @@ import ModelMenu from './ModelMenu'
 import { approvalChoices, parseApprovalCard } from '../lib/approval'
 import { extractLocationBlocks, formatCoords, locationContent, locationFromContent, mapsUrl, mapTiles, MAP_ATTRIBUTION } from '../lib/location'
 import LocationPicker from './LocationPicker'
+import RoomViewToggle from './RoomViewToggle'
+import RoomPage from './views/RoomPage'
+import { useRoomViewKind } from '../hooks/useRoomViewKind'
 import { hapticPress, hapticSend, hapticSuccess, hapticTick, hapticWarning } from '../lib/haptics'
 import { copyTextToClipboard } from '../lib/clipboard'
 import { useAgentBlocked, formatResetsAt, blockedHeadline } from '../hooks/useAgentBlocked'
@@ -477,6 +480,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [pinnedExpanded, setPinnedExpanded] = useState(true)
 
   const client = getClient()
+  // A room with a page opens on it; the chat stays mounted underneath, so
+  // switching back keeps its scroll position and live timeline.
+  const viewKind = useRoomViewKind(client, roomId)
+  const [showPage, setShowPage] = useState(true)
+  useEffect(() => { setShowPage(true) }, [roomId])
+  const pageShown = viewKind !== null && showPage
   const bottomRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
   const codeScrollRef = useRef(new Map<string, number>())
@@ -1879,7 +1888,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
   return (
     <div
-      className="chat-view"
+      className={`chat-view${pageShown ? ' chat-view--page' : ''}`}
       onTouchStart={enableSwipeBack ? handleTouchStart : undefined}
       onTouchEnd={enableSwipeBack ? handleTouchEnd : undefined}
       onDragEnter={handleDragEnter}
@@ -1974,6 +1983,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               </span>
             </button>
           )}
+          {viewKind && <RoomViewToggle showPage={showPage} onChange={setShowPage} />}
         </div>
         {isClaudeRoom && planUsage && (
           <HeaderUsageBar window={planUsage.session} fetchedAt={planUsage.fetchedAt} label="Claude session usage" />
@@ -1982,6 +1992,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           <HeaderUsageBar window={codexUsage.windows[0]} fetchedAt={codexUsage.fetchedAt} label="Codex usage" />
         )}
       </div>
+
+      {viewKind && showPage && <RoomPage kind={viewKind} client={client} roomId={roomId} />}
 
       {showEditor &&<RoomEditor roomId={roomId} onClose={() => { setShowEditor(false); loadPills(client, roomId).then(setPills) }} onLeave={() => { setShowEditor(false); onBack() }} />}
       {approvalDialog && (

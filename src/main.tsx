@@ -23,6 +23,8 @@ if ('serviceWorker' in navigator) {
 const root = createRoot(document.getElementById('root')!)
 if (import.meta.env.DEV && new URLSearchParams(location.search).has('location-picker')) {
   import('./dev/LocationPickerHarness').then(({ default: Harness }) => root.render(<Harness />))
+} else if (import.meta.env.DEV && new URLSearchParams(location.search).has('watchlist')) {
+  import('./dev/WatchlistHarness').then(({ default: Harness }) => root.render(<Harness />))
 } else {
   root.render(
     <StrictMode>

@@ -4167,3 +4167,222 @@ html.mac-app {
 }
 .loc-picker-send:disabled { opacity: 0.4; cursor: default; }
 .loc-picker-send .material-icons { font-size: 22px; }
+
+/* Room pages: a room whose state names a view kind opens as that page, with
+   the chat one tap away in the header. */
+.room-view-toggle {
+  display: flex;
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bg-active);
+}
+.room-view-toggle button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  -webkit-tap-highlight-color: transparent;
+}
+.room-view-toggle button .material-symbols-outlined { font-size: 19px; }
+.room-view-toggle .room-view-toggle--on { background: var(--bg-hover); color: var(--text); }
+
+/* The chat is hidden, not unmounted, while the page is up. */
+.chat-view--page > :is(.pinned-strip, .messages-init-loading, .messages, .camera-prompt, .scroll-down-btn, .chat-footer) {
+  display: none !important;
+}
+
+.room-view {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 16px calc(24px + env(safe-area-inset-bottom));
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+/* Watchlist page. */
+.wl-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+}
+.wl-add:focus-within { border-color: var(--accent); }
+.wl-add .material-symbols-outlined { font-size: 20px; color: var(--text-muted); }
+.wl-add input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 16px;
+}
+.wl-add input::placeholder { color: var(--text-muted); }
+
+.wl-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 20px 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.wl-section-toggle { -webkit-tap-highlight-color: transparent; }
+.wl-count {
+  font-weight: 500;
+  color: var(--text-faint);
+}
+.wl-chevron { margin-left: auto; font-size: 20px; }
+
+.wl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 16px 10px;
+}
+.wl-grid--watched .wl-poster img { opacity: 0.45; }
+
+.wl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.wl-card:active .wl-poster { transform: scale(0.97); }
+.wl-poster {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  margin-bottom: 4px;
+  transition: transform 0.1s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: var(--text-faint);
+}
+.wl-poster img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wl-badge {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+.wl-poster-status {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 6px;
+  background: rgba(15, 15, 19, 0.85);
+  color: var(--text);
+  font-size: 11px;
+  text-align: center;
+}
+.wl-card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.wl-card-where {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wl-empty {
+  padding: 24px 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.wl-sheet-head {
+  display: flex;
+  gap: 14px;
+  padding: 18px 20px 14px;
+}
+.wl-sheet-poster {
+  width: 72px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.wl-sheet-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.wl-sheet-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: 2px;
+}
+.wl-sheet-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.wl-play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 46px;
+  margin: 0 20px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
+.wl-play:active:not(:disabled) { background: var(--accent-hover); }
+.wl-play:disabled { opacity: 0.6; }
+.wl-play .material-symbols-outlined { font-size: 24px; }
+.wl-sheet-status {
+  margin: 8px 20px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.wl-sheet-status--failed { color: var(--danger); }
+.wl-sheet .message-sheet-actions { margin-top: 6px; }
+.wl-sheet a.message-sheet-action { text-decoration: none; }
+.wl-remove, .wl-remove .material-symbols-outlined { color: var(--danger) !important; }

@@ -1,0 +1,16 @@
+[Unit]
+Description=Watchlist service (Construct Watchlist room)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/wunnle/matrix-pwa
+EnvironmentFile=/home/wunnle/.config/watchlist/env
+Environment=PATH=/home/wunnle/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/node --env-file=/home/wunnle/matrix-pwa/scripts/.env /home/wunnle/matrix-pwa/scripts/watchlist/service.mjs
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

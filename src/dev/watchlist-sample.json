@@ -1,0 +1,135 @@
+[
+  {
+    "id": "tt32603995",
+    "kind": "series",
+    "title": "Adventure Time: Side Quests",
+    "year": 2026,
+    "poster": "https://image.tmdb.org/t/p/w342/9CzcOB5J2ld2mIRMzHIwYGYx1Cn.jpg",
+    "addedAt": 1791636618935,
+    "watchedAt": null,
+    "providers": [
+      "hbomax"
+    ],
+    "next": null
+  },
+  {
+    "id": "tt37692332",
+    "kind": "series",
+    "title": "President Curtis",
+    "year": 2026,
+    "poster": "https://image.tmdb.org/t/p/w342/lc9riW73Oee2pBxi1UrDPgyQjEr.jpg",
+    "addedAt": 1791528618935,
+    "watchedAt": null,
+    "providers": [
+      "hbomax"
+    ],
+    "next": null
+  },
+  {
+    "id": "tt26545992",
+    "kind": "series",
+    "title": "Lanterns",
+    "year": 2026,
+    "poster": "https://image.tmdb.org/t/p/w342/gpC7h43xPMEV3goYMQShfJbTtLq.jpg",
+    "addedAt": 1791420618935,
+    "watchedAt": null,
+    "providers": [
+      "hbomax"
+    ],
+    "next": null
+  },
+  {
+    "id": "tt16026746",
+    "kind": "series",
+    "title": "X-Men '97",
+    "year": 2024,
+    "poster": "https://image.tmdb.org/t/p/w342/2HKBc5UiFw8JrruHq8S1Y7TnlW0.jpg",
+    "addedAt": 1791312618935,
+    "watchedAt": null,
+    "providers": [],
+    "next": null
+  },
+  {
+    "id": "tt2861424",
+    "kind": "series",
+    "title": "Rick and Morty",
+    "year": 2013,
+    "poster": "https://image.tmdb.org/t/p/w342/owhkU6KRqdXoUQpjV8uyZGPtX58.jpg",
+    "addedAt": 1791204618935,
+    "watchedAt": 1791571859158,
+    "providers": [
+      "netflix",
+      "hbomax"
+    ],
+    "next": null
+  },
+  {
+    "id": "tt14681596",
+    "kind": "series",
+    "title": "Batman: Caped Crusader",
+    "year": 2024,
+    "poster": "https://image.tmdb.org/t/p/w342/zCHmmoqtLsIsou866osiWtIWmoA.jpg",
+    "addedAt": 1791096618935,
+    "watchedAt": null,
+    "providers": [
+      "prime"
+    ],
+    "next": null
+  },
+  {
+    "id": "tt3718778",
+    "kind": "series",
+    "title": "Over the Garden Wall",
+    "year": 2014,
+    "poster": "https://image.tmdb.org/t/p/w342/m3lU8n7WxzMecxKZcqhq5y5ESy.jpg",
+    "addedAt": 1790988618935,
+    "watchedAt": 1790967059158,
+    "providers": [
+      "hbomax"
+    ],
+    "next": null
+  },
+  {
+    "id": "tt27497448",
+    "kind": "series",
+    "title": "A Knight of the Seven Kingdoms",
+    "year": 2026,
+    "poster": "https://image.tmdb.org/t/p/w342/k8yARbD9iYn2nRX2HvsopfKDN2r.jpg",
+    "addedAt": 1790880618935,
+    "watchedAt": null,
+    "providers": [
+      "hbomax"
+    ],
+    "next": null
+  },
+  {
+    "id": "tt8550732",
+    "kind": "series",
+    "title": "Kaos",
+    "year": 2024,
+    "poster": "https://image.tmdb.org/t/p/w342/dDBTUSl3tRsOeKC1jZugBSFHy9I.jpg",
+    "addedAt": 1790772618935,
+    "watchedAt": null,
+    "providers": [
+      "netflix"
+    ],
+    "next": null
+  },
+  {
+    "id": "tt32604054",
+    "kind": "series",
+    "title": "Regular Show: Lost Tapes",
+    "year": 2026,
+    "poster": "https://image.tmdb.org/t/p/w342/jqY3dj70ffSqKpM8XVUEToOEeLG.jpg",
+    "addedAt": 1790664618935,
+    "watchedAt": null,
+    "providers": [
+      "hbomax"
+    ],
+    "next": {
+      "season": 1,
+      "episode": 15,
+      "airDate": "2026-10-17"
+    }
+  }
+]

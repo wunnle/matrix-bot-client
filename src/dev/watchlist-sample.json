@@ -1,49 +1,315 @@
 [
   {
     "id": "tt15239678",
-    "addedAt": 1791863379327,
+    "addedAt": 1791877192500,
     "watchedAt": null,
     "tmdbId": 693134,
     "kind": "movie",
     "title": "Dune: Part Two",
     "year": 2024,
     "poster": "https://image.tmdb.org/t/p/w342/6izwz7rsy95ARzTR3poZ8H6c5pp.jpg",
+    "backdrop": "https://image.tmdb.org/t/p/w780/eZ239CUp1d6OryZEBPnO2n87gMG.jpg",
     "providers": [
       "hbomax"
     ],
     "next": null,
     "lastAired": null,
+    "showStatus": null,
     "cinema": {
       "opens": "2024-03-01",
       "now": false
     },
     "imdbRating": "8.4",
-    "refreshedAt": 1791863379695
+    "releaseDate": "2024-02-27",
+    "digital": {
+      "date": "2024-04-16",
+      "region": "US"
+    },
+    "runtime": 167,
+    "genres": [
+      "Science Fiction",
+      "Adventure"
+    ],
+    "overview": "Follow the mythic journey of Paul Atreides as he unites with Chani and the Fremen while on a path of revenge against the conspirators who destroyed his family. Facing a choice between the love of his life and the fate of the known universe, Paul endeavors to prevent a terrible future only he can foresee.",
+    "people": [
+      "Denis Villeneuve"
+    ],
+    "cast": [
+      "Timothée Chalamet",
+      "Zendaya",
+      "Rebecca Ferguson"
+    ],
+    "ageRating": "13+",
+    "trailer": "U2Qp5pL3ovA",
+    "seasons": null,
+    "refreshedAt": 1791877193324,
+    "favoriteAt": 1791877197823
   },
   {
     "id": "tt35538033",
-    "addedAt": 1791863379327,
+    "addedAt": 1791877192500,
     "watchedAt": null,
     "tmdbId": 1423191,
     "kind": "movie",
     "title": "Resident Evil",
     "year": 2026,
     "poster": "https://image.tmdb.org/t/p/w342/i7UyjfPio0VFHB9rBUZSFyhOoM8.jpg",
+    "backdrop": "https://image.tmdb.org/t/p/w780/3icyRAqgakNcQn6aDVz9libFmBA.jpg",
     "providers": [],
     "next": null,
     "lastAired": null,
+    "showStatus": null,
     "cinema": {
       "opens": "2026-09-18",
       "now": true
     },
     "imdbRating": null,
-    "refreshedAt": 1791863379876
+    "releaseDate": "2026-09-16",
+    "digital": null,
+    "runtime": 95,
+    "genres": [
+      "Horror",
+      "Science Fiction",
+      "Adventure"
+    ],
+    "overview": "Medical courier Bryan unwittingly finds himself fighting for survival as one fateful, horrifying night collapses around him in chaos.",
+    "people": [
+      "Zach Cregger"
+    ],
+    "cast": [
+      "Austin Abrams",
+      "Paul Walter Hauser",
+      "Kali Reis"
+    ],
+    "ageRating": "18+",
+    "trailer": "mNd1gb19A-c",
+    "seasons": null,
+    "refreshedAt": 1791877193643
+  },
+  {
+    "tmdbId": 194764,
+    "providers": [
+      "hbomax"
+    ],
+    "next": null,
+    "lastAired": {
+      "season": 1,
+      "episode": 8,
+      "airDate": "2024-11-10"
+    },
+    "showStatus": "ended",
+    "cinema": null,
+    "imdbRating": "8.6",
+    "releaseDate": "2024-09-19",
+    "digital": null,
+    "runtime": 70,
+    "genres": [
+      "Drama",
+      "Crime"
+    ],
+    "overview": "With the city in peril following the seawall's collapse, Oswald \"Oz\" Cobb seeks to fill the power vacuum left by the death of Carmine Falcone and finally give his mother Francis the life he's always promised. But first, Oz must confront his enemies and his own demoralizing reputation as \"the Penguin.\"",
+    "people": [
+      "Lauren LeFranc"
+    ],
+    "cast": [
+      "Colin Farrell",
+      "Cristin Milioti",
+      "Rhenzy Feliz"
+    ],
+    "ageRating": "18+",
+    "trailer": "sfJG6IiA_s8",
+    "seasons": 1,
+    "refreshedAt": 1791877193768,
+    "id": "tt15435876",
+    "kind": "series",
+    "title": "The Penguin",
+    "year": 2024,
+    "poster": "https://image.tmdb.org/t/p/w342/vOWcqC4oDQws1doDWLO7d3dh5qc.jpg",
+    "addedAt": 1791877062132,
+    "watchedAt": 1791877093616,
+    "newEpisode": null,
+    "backdrop": "https://image.tmdb.org/t/p/w780/4TdmuuwiIiKw3JOjIuhdgYxRXnN.jpg"
+  },
+  {
+    "tmdbId": 254953,
+    "providers": [
+      "hbomax"
+    ],
+    "next": null,
+    "lastAired": {
+      "season": 1,
+      "episode": 10,
+      "airDate": "2026-05-10"
+    },
+    "showStatus": "returning",
+    "cinema": null,
+    "imdbRating": "7.6",
+    "releaseDate": "2026-03-08",
+    "digital": null,
+    "runtime": 31,
+    "genres": [
+      "Comedy"
+    ],
+    "overview": "On a college campus, an author navigates a complicated relationship with his daughter.",
+    "people": [
+      "Bill Lawrence",
+      "Matt Tarses"
+    ],
+    "cast": [
+      "Steve Carell",
+      "Charly Clive",
+      "Danielle Deadwyler"
+    ],
+    "ageRating": "TV-MA",
+    "trailer": "L00r5BGgP64",
+    "seasons": 1,
+    "refreshedAt": 1791877193895,
+    "id": "tt32420734",
+    "kind": "series",
+    "title": "Rooster",
+    "year": 2026,
+    "poster": "https://image.tmdb.org/t/p/w342/aikvD4Nu7N6ekbrXNua8vJlO8JU.jpg",
+    "addedAt": 1791876876583,
+    "watchedAt": null,
+    "backdrop": "https://image.tmdb.org/t/p/w780/mhZAT8ktiNi7YwuL50kmumsau69.jpg",
+    "favoriteAt": 1791870000000
+  },
+  {
+    "tmdbId": 225171,
+    "providers": [],
+    "next": null,
+    "lastAired": {
+      "season": 1,
+      "episode": 9,
+      "airDate": "2025-12-23"
+    },
+    "cinema": null,
+    "imdbRating": "8.0",
+    "refreshedAt": 1791877194202,
+    "id": "tt22202452",
+    "kind": "series",
+    "title": "Pluribus",
+    "year": 2025,
+    "poster": "https://image.tmdb.org/t/p/w342/z7Nga7Q9IGFWs5OEduY2gGFxnX3.jpg",
+    "addedAt": 1791865124256,
+    "watchedAt": 1791865128858,
+    "newEpisode": null,
+    "showStatus": "returning",
+    "releaseDate": "2025-11-06",
+    "digital": null,
+    "runtime": 58,
+    "genres": [
+      "Drama",
+      "Sci-Fi & Fantasy"
+    ],
+    "overview": "The most miserable person on Earth must save the world from happiness.",
+    "people": [
+      "Vince Gilligan"
+    ],
+    "cast": [
+      "Rhea Seehorn",
+      "Karolina Wydra",
+      "Carlos-Manuel Vesga"
+    ],
+    "ageRating": "18+",
+    "trailer": "a6lzvWby9UE",
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/ulm1ex4JFYJByyaPyqTr47MFyEQ.jpg"
+  },
+  {
+    "tmdbId": 95396,
+    "providers": [
+      "apple"
+    ],
+    "next": null,
+    "lastAired": {
+      "season": 2,
+      "episode": 10,
+      "airDate": "2025-03-20"
+    },
+    "cinema": null,
+    "imdbRating": "8.6",
+    "refreshedAt": 1791877194387,
+    "id": "tt11280740",
+    "kind": "series",
+    "title": "Severance",
+    "year": 2022,
+    "poster": "https://image.tmdb.org/t/p/w342/pPHpeI2X1qEd1CS1SeyrdhZ4qnT.jpg",
+    "addedAt": 1791865088548,
+    "watchedAt": 1791865116002,
+    "newEpisode": null,
+    "showStatus": "returning",
+    "releaseDate": "2022-02-17",
+    "digital": null,
+    "runtime": 80,
+    "genres": [
+      "Drama",
+      "Mystery",
+      "Sci-Fi & Fantasy"
+    ],
+    "overview": "Mark leads a team of office workers whose memories have been surgically divided between their work and personal lives. When a mysterious colleague appears outside of work, it begins a journey to discover the truth about their jobs.",
+    "people": [
+      "Dan Erickson"
+    ],
+    "cast": [
+      "Adam Scott",
+      "Britt Lower",
+      "Tramell Tillman"
+    ],
+    "ageRating": "18+",
+    "trailer": "xEQP4VVuyrY",
+    "seasons": 3,
+    "backdrop": "https://image.tmdb.org/t/p/w780/ixgFmf1X59PUZam2qbAfskx2gQr.jpg",
+    "favoriteAt": 1791877196823
+  },
+  {
+    "tmdbId": 219080,
+    "providers": [
+      "prime"
+    ],
+    "next": null,
+    "lastAired": {
+      "season": 1,
+      "episode": 8,
+      "airDate": "2025-12-22"
+    },
+    "cinema": null,
+    "imdbRating": "8.5",
+    "refreshedAt": 1791877194654,
+    "id": "tt26453092",
+    "kind": "series",
+    "title": "The Mighty Nein",
+    "year": 2025,
+    "poster": "https://image.tmdb.org/t/p/w342/qJTZanXDiJKABLNGRM9LmSg8YT7.jpg",
+    "addedAt": 1791864864221,
+    "watchedAt": 1791864884950,
+    "newEpisode": null,
+    "showStatus": "returning",
+    "releaseDate": "2025-11-19",
+    "digital": null,
+    "runtime": 44,
+    "genres": [
+      "Animation",
+      "Action & Adventure",
+      "Sci-Fi & Fantasy"
+    ],
+    "overview": "When a powerful arcane relic known as 'The Beacon' falls into nefarious hands, a group of fugitives and outcasts, bound by secrets and scars, must learn to work together to save the realm and stop reality as they know it from unraveling.",
+    "people": [],
+    "cast": [
+      "Laura Bailey",
+      "Taliesin Jaffe",
+      "Liam O'Brien"
+    ],
+    "ageRating": "TV-MA",
+    "trailer": "Ri2wNyvSpiY",
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/7K7wbQIpkzif4fMhDHsCweXFS42.jpg"
   },
   {
     "tmdbId": 1765072,
     "providers": [],
     "next": null,
-    "refreshedAt": 1791863380021,
+    "refreshedAt": 1791877194984,
     "id": "tt45368240",
     "kind": "movie",
     "title": "You Can See Everything",
@@ -53,13 +319,34 @@
     "watchedAt": null,
     "lastAired": null,
     "cinema": null,
-    "imdbRating": "7.8"
+    "imdbRating": "7.8",
+    "showStatus": null,
+    "releaseDate": "2026-10-16",
+    "digital": null,
+    "runtime": 174,
+    "genres": [
+      "Documentary"
+    ],
+    "overview": "Thirty-four days before she's sent to prison, notorious Silicon Valley founder Elizabeth Holmes invites a skeptical film crew to document her every move. What begins as an intimate portrait of an enigmatic felon becomes a mind-bending three-year journey into the abyss.",
+    "people": [
+      "Nathan Fielder",
+      "Lance Oppenheim"
+    ],
+    "cast": [
+      "Elizabeth Holmes",
+      "Nathan Fielder",
+      "Billy Evans"
+    ],
+    "ageRating": "R",
+    "trailer": "IEx8D1Wb__U",
+    "seasons": null,
+    "backdrop": "https://image.tmdb.org/t/p/w780/nhIL3O4W9h5V5JbNQm7yjoDk3So.jpg"
   },
   {
     "tmdbId": 926676,
     "providers": [],
     "next": null,
-    "refreshedAt": 1791863380088,
+    "refreshedAt": 1791877195436,
     "id": "tt17041964",
     "kind": "movie",
     "title": "Navalny",
@@ -69,13 +356,36 @@
     "watchedAt": null,
     "lastAired": null,
     "cinema": null,
-    "imdbRating": "7.8"
+    "imdbRating": "7.8",
+    "showStatus": null,
+    "releaseDate": "2022-04-08",
+    "digital": {
+      "date": "2022-04-24",
+      "region": "US"
+    },
+    "runtime": 98,
+    "genres": [
+      "Documentary"
+    ],
+    "overview": "Follows the man who survived an assassination attempt by poisoning with a lethal nerve agent in August 2020. During his months-long recovery, he makes shocking discoveries about the attempt on his life and decides to return home.",
+    "people": [
+      "Daniel Roher"
+    ],
+    "cast": [
+      "Alexei Navalny",
+      "Yulia Navalnaya",
+      "Daria Navalnaya"
+    ],
+    "ageRating": "R",
+    "trailer": "cPRuvKqZty0",
+    "seasons": null,
+    "backdrop": "https://image.tmdb.org/t/p/w780/aZQR5Np9fZjck0HM3qYs1wUgwYD.jpg"
   },
   {
     "tmdbId": 1281331,
     "providers": [],
     "next": null,
-    "refreshedAt": 1791863380170,
+    "refreshedAt": 1791877195560,
     "id": "tt37510326",
     "kind": "movie",
     "title": "The Social Reckoning",
@@ -85,7 +395,29 @@
     "watchedAt": null,
     "lastAired": null,
     "cinema": null,
-    "imdbRating": null
+    "imdbRating": null,
+    "showStatus": null,
+    "releaseDate": "2026-10-07",
+    "digital": null,
+    "runtime": 112,
+    "genres": [
+      "Drama",
+      "History",
+      "Thriller"
+    ],
+    "overview": "Frances Haugen, a young Facebook engineer, enlists the help of Jeff Horwitz, a Wall Street Journal reporter, to go on a dangerous journey that ends up blowing the whistle on the social network's most guarded secrets.",
+    "people": [
+      "Aaron Sorkin"
+    ],
+    "cast": [
+      "Mikey Madison",
+      "Jeremy Allen White",
+      "Jeremy Strong"
+    ],
+    "ageRating": "R",
+    "trailer": "R8ANzYpaZaY",
+    "seasons": null,
+    "backdrop": "https://image.tmdb.org/t/p/w780/wXTaGcqX3jvdXSKCJAkl5jZyrKp.jpg"
   },
   {
     "id": "tt32603995",
@@ -95,19 +427,36 @@
     "poster": "https://image.tmdb.org/t/p/w342/9CzcOB5J2ld2mIRMzHIwYGYx1Cn.jpg",
     "addedAt": 1791636618935,
     "watchedAt": null,
-    "providers": [
-      "hbomax"
-    ],
+    "providers": [],
     "next": null,
     "tmdbId": 256694,
-    "refreshedAt": 1791863380303,
+    "refreshedAt": 1791877195831,
     "lastAired": {
       "season": 2,
       "episode": 20,
       "airDate": "2026-10-02"
     },
     "cinema": null,
-    "imdbRating": null
+    "imdbRating": null,
+    "showStatus": "returning",
+    "releaseDate": "2026-06-29",
+    "digital": null,
+    "runtime": 12,
+    "genres": [
+      "Animation",
+      "Action & Adventure",
+      "Sci-Fi & Fantasy"
+    ],
+    "overview": "Young hero Finn and his magical dog best friend Jake embark on adventures across the fantastical land of Ooo — partying with cloud people and punching evil in the butt along the way.",
+    "people": [],
+    "cast": [
+      "John DiMaggio",
+      "Sasha Knight"
+    ],
+    "ageRating": "TV-PG",
+    "trailer": "OEznILDuGj4",
+    "seasons": 2,
+    "backdrop": "https://image.tmdb.org/t/p/w780/l75H7ymGd96jPWdIjvOXW0qvEM4.jpg"
   },
   {
     "id": "tt37692332",
@@ -122,14 +471,36 @@
     ],
     "next": null,
     "tmdbId": 296756,
-    "refreshedAt": 1791863380335,
+    "refreshedAt": 1791877195863,
     "lastAired": {
       "season": 1,
       "episode": 10,
       "airDate": "2026-09-27"
     },
     "cinema": null,
-    "imdbRating": null
+    "imdbRating": null,
+    "showStatus": "returning",
+    "releaseDate": "2026-07-26",
+    "digital": null,
+    "runtime": 23,
+    "genres": [
+      "Animation",
+      "Comedy"
+    ],
+    "overview": "Follow the Commander-in-Chief and his eccentric staff as they tackle the kind of crises that Rick Sanchez could never be bothered with - from interdimensional diplomacy to paranormal investigations and unexplained phenomena.",
+    "people": [
+      "Dan Harmon",
+      "James Siciliano"
+    ],
+    "cast": [
+      "Keith David",
+      "Stephanie Beatriz",
+      "Jim Rash"
+    ],
+    "ageRating": "TV-14",
+    "trailer": "KuSbjxrKvUc",
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/yoTP91XZZjSvE2gZgGvwNxVW96w.jpg"
   },
   {
     "id": "tt26545992",
@@ -144,7 +515,7 @@
     ],
     "next": null,
     "tmdbId": 95350,
-    "refreshedAt": 1791863380367,
+    "refreshedAt": 1791877196077,
     "lastAired": {
       "season": 1,
       "episode": 8,
@@ -152,6 +523,29 @@
     },
     "cinema": null,
     "imdbRating": "7.8",
+    "showStatus": "returning",
+    "releaseDate": "2026-08-16",
+    "digital": null,
+    "runtime": 57,
+    "genres": [
+      "Drama",
+      "Mystery",
+      "Sci-Fi & Fantasy"
+    ],
+    "overview": "Two intergalactic cops, new recruit John Stewart and Lantern legend Hal Jordan, are drawn into a dark, Earth-based mystery as they investigate a murder in the American heartland.",
+    "people": [
+      "Damon Lindelof",
+      "Chris Mundy"
+    ],
+    "cast": [
+      "Kyle Chandler",
+      "Aaron Pierre",
+      "Kelly Macdonald"
+    ],
+    "ageRating": "18+",
+    "trailer": "7UIBOsuUwc4",
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/wJjnJbVUwPz0GADAgpFt9nWtzUu.jpg",
     "newEpisode": {
       "season": 1,
       "episode": 4,
@@ -169,14 +563,30 @@
     "providers": [],
     "next": null,
     "tmdbId": 138502,
-    "refreshedAt": 1791863380398,
+    "refreshedAt": 1791877196347,
     "lastAired": {
       "season": 2,
       "episode": 9,
       "airDate": "2026-08-12"
     },
     "cinema": null,
-    "imdbRating": "8.7"
+    "imdbRating": "8.7",
+    "showStatus": "returning",
+    "releaseDate": "2024-03-20",
+    "digital": null,
+    "runtime": 32,
+    "genres": [
+      "Animation",
+      "Action & Adventure",
+      "Sci-Fi & Fantasy"
+    ],
+    "overview": "The X-Men, a band of mutants who use their uncanny gifts to protect a world that hates and fears them, are challenged like never before, forced to face a dangerous and unexpected new future.",
+    "people": [],
+    "cast": [],
+    "ageRating": "13+",
+    "trailer": "pv3Ss8o9gGQ",
+    "seasons": 2,
+    "backdrop": "https://image.tmdb.org/t/p/w780/jIyEmnBrZtl6SEWyBoMO2hZnzMa.jpg"
   },
   {
     "id": "tt2861424",
@@ -192,14 +602,38 @@
     ],
     "next": null,
     "tmdbId": 60625,
-    "refreshedAt": 1791863380436,
+    "refreshedAt": 1791877196621,
     "lastAired": {
       "season": 9,
       "episode": 10,
       "airDate": "2026-07-26"
     },
     "cinema": null,
-    "imdbRating": "9"
+    "imdbRating": "9.0",
+    "showStatus": "returning",
+    "releaseDate": "2013-12-02",
+    "digital": null,
+    "runtime": 24,
+    "genres": [
+      "Animation",
+      "Comedy",
+      "Sci-Fi & Fantasy",
+      "Action & Adventure"
+    ],
+    "overview": "Follows a sociopathic genius scientist who drags his inherently timid grandson on adventures across the universe.",
+    "people": [
+      "Dan Harmon",
+      "Justin Roiland"
+    ],
+    "cast": [
+      "Chris Parnell",
+      "Spencer Grammer",
+      "Sarah Chalke"
+    ],
+    "ageRating": "18+",
+    "trailer": "WNhH00OIPP0",
+    "seasons": 9,
+    "backdrop": "https://image.tmdb.org/t/p/w780/5BDNWWHweQL0q1fmTv7gmRXfnl4.jpg"
   },
   {
     "id": "tt14681596",
@@ -214,14 +648,35 @@
     ],
     "next": null,
     "tmdbId": 125909,
-    "refreshedAt": 1791863380469,
+    "refreshedAt": 1791877196893,
     "lastAired": {
       "season": 2,
       "episode": 10,
       "airDate": "2026-07-31"
     },
     "cinema": null,
-    "imdbRating": "7.2"
+    "imdbRating": "7.2",
+    "showStatus": "returning",
+    "releaseDate": "2024-08-01",
+    "digital": null,
+    "runtime": 28,
+    "genres": [
+      "Animation",
+      "Crime",
+      "Action & Adventure",
+      "Mystery"
+    ],
+    "overview": "Welcome to Gotham City, where the corrupt outnumber the good, criminals run rampant and law-abiding citizens live in a constant state of fear. Forged in the fire of tragedy, wealthy socialite Bruce Wayne becomes something both more and less than human—the Batman. His one-man crusade for justice attracts unexpected…",
+    "people": [
+      "Bruce Timm"
+    ],
+    "cast": [
+      "Hamish Linklater"
+    ],
+    "ageRating": "13+",
+    "trailer": "1TRK90KSkFM",
+    "seasons": 2,
+    "backdrop": "https://image.tmdb.org/t/p/w780/vTqkpDUe1DUUPcHDpcf0RT0gIQ0.jpg"
   },
   {
     "id": "tt3718778",
@@ -236,14 +691,38 @@
     ],
     "next": null,
     "tmdbId": 61617,
-    "refreshedAt": 1791863380502,
+    "refreshedAt": 1791877197064,
     "lastAired": {
       "season": 1,
       "episode": 10,
       "airDate": "2014-11-07"
     },
     "cinema": null,
-    "imdbRating": "8.7"
+    "imdbRating": "8.7",
+    "showStatus": "ended",
+    "releaseDate": "2014-11-03",
+    "digital": null,
+    "runtime": 12,
+    "genres": [
+      "Mystery",
+      "Sci-Fi & Fantasy",
+      "Animation",
+      "Family",
+      "Comedy"
+    ],
+    "overview": "Two brothers, Wirt and Greg, find themselves lost in the Unknown; a strange forest adrift in time. With the help of a wise old Woodsman and a foul-tempered bluebird named Beatrice, Wirt and Greg must travel across this strange land, in hope of finding their way home. Join them as they encounter surprises and obstacles…",
+    "people": [
+      "Patrick McHale"
+    ],
+    "cast": [
+      "Elijah Wood",
+      "Collin Dean",
+      "Melanie Lynskey"
+    ],
+    "ageRating": "7+",
+    "trailer": "36mAsVSH_-s",
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/hozufHEzqIRpqJrlyGDqnsyFrAQ.jpg"
   },
   {
     "id": "tt27497448",
@@ -258,14 +737,36 @@
     ],
     "next": null,
     "tmdbId": 224372,
-    "refreshedAt": 1791863380670,
+    "refreshedAt": 1791877197242,
     "lastAired": {
       "season": 1,
       "episode": 6,
       "airDate": "2026-02-22"
     },
     "cinema": null,
-    "imdbRating": "8.6"
+    "imdbRating": "8.6",
+    "showStatus": "returning",
+    "releaseDate": "2026-01-18",
+    "digital": null,
+    "runtime": 31,
+    "genres": [
+      "Drama",
+      "Sci-Fi & Fantasy",
+      "Action & Adventure"
+    ],
+    "overview": "A century before the events of Game of Thrones, two unlikely heroes wandered Westeros: a young, naive but courageous knight, Ser Duncan the Tall, and his diminutive squire, Egg. Set in an age when the Targaryen line still holds the Iron Throne and the last dragon has not yet passed from living memory, great destinies,…",
+    "people": [
+      "George R.R. Martin",
+      "Ira Parker"
+    ],
+    "cast": [
+      "Peter Claffey",
+      "Dexter Sol Ansell"
+    ],
+    "ageRating": "18+",
+    "trailer": "sItUCKJQLTU",
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/7mkUu1F2hVUNgz24xO8HPx0D6mK.jpg"
   },
   {
     "id": "tt8550732",
@@ -280,14 +781,34 @@
     ],
     "next": null,
     "tmdbId": 102621,
-    "refreshedAt": 1791863380782,
+    "refreshedAt": 1791877197650,
     "lastAired": {
       "season": 1,
       "episode": 8,
       "airDate": "2024-08-29"
     },
     "cinema": null,
-    "imdbRating": "7.4"
+    "imdbRating": "7.4",
+    "showStatus": "canceled",
+    "releaseDate": "2024-08-29",
+    "digital": null,
+    "runtime": 51,
+    "genres": [
+      "Comedy",
+      "Sci-Fi & Fantasy",
+      "Drama"
+    ],
+    "overview": "As discord reigns on Mount Olympus and almighty Zeus spirals into paranoia, three mortals are destined to reshape the future of humankind.",
+    "people": [
+      "Charlie Covell"
+    ],
+    "cast": [
+      "Jeff Goldblum"
+    ],
+    "ageRating": "18+",
+    "trailer": "-max0wOTcuI",
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/oyKYPA1UXwwgrjmnM30sh33IRG5.jpg"
   },
   {
     "id": "tt32604054",
@@ -306,13 +827,36 @@
       "airDate": "2026-10-17"
     },
     "tmdbId": 256695,
-    "refreshedAt": 1791863380881,
+    "refreshedAt": 1791877197823,
     "lastAired": {
       "season": 1,
       "episode": 14,
       "airDate": "2026-10-10"
     },
     "cinema": null,
-    "imdbRating": null
+    "imdbRating": null,
+    "showStatus": "returning",
+    "releaseDate": "2026-05-11",
+    "digital": null,
+    "runtime": 12,
+    "genres": [
+      "Animation",
+      "Comedy",
+      "Action & Adventure",
+      "Sci-Fi & Fantasy"
+    ],
+    "overview": "Familiar duo Mordecai and Rigby navigate mundane park jobs that inevitably spiral into surreal, chaotic disasters.",
+    "people": [
+      "J.G. Quintel"
+    ],
+    "cast": [
+      "J.G. Quintel",
+      "William Salyers",
+      "Sam Marin"
+    ],
+    "ageRating": "7+",
+    "trailer": null,
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/Zk5UmvJ634LhA56R18h8RfipFG.jpg"
   }
 ]

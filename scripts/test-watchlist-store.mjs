@@ -30,6 +30,13 @@ assert.deepEqual(store.setWatched('tt0903747', false, { newEpisode: ep }).newEpi
 assert.equal(store.setWatched('tt0903747', true).newEpisode, null)
 store.setWatched('tt0903747', false)
 
+// Favorites: set once, cleared once, and a refresh can't touch them.
+assert.ok(store.setFavorite('tt11280740', true).favoriteAt)
+assert.ok(store.setFavorite('tt11280740', true).favoriteAt)
+assert.equal(store.update('tt11280740', { favoriteAt: null }).favoriteAt > 0, true)
+assert.equal(store.setFavorite('tt11280740', false).favoriteAt, null)
+assert.throws(() => store.setFavorite('tt0000001', true), /not on the watchlist/)
+
 // A refresh changes details but never the list's own fields, and logs nothing.
 const before = store.get('tt11280740')
 const refreshed = store.update('tt11280740', { providers: ['apple'], next: null, addedAt: 0, watchedAt: 5, id: 'tt1' })
@@ -60,12 +67,14 @@ assert.deepEqual(store.history().map((h) => `${h.action} ${h.id}`), [
   'unwatched tt0903747',
   'watched tt0903747',
   'unwatched tt0903747',
+  'favorited tt11280740',
+  'unfavorited tt11280740',
   'added tt0000002',
   'removed tt0000002',
   'played tt11280740',
   'removed tt11280740',
 ])
-assert.equal(store.history()[10].via, 'stremio')
+assert.equal(store.history()[12].via, 'stremio')
 // The episode that brought a show back is in its history line.
 assert.deepEqual(store.history()[5].newEpisode, ep)
 

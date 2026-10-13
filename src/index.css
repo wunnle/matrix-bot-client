@@ -4244,7 +4244,7 @@ html.mac-app {
   align-items: center;
   gap: 8px;
   width: 100%;
-  margin: 30px 0 12px;
+  margin: 28px 0 12px;
   font-size: 17px;
   font-weight: 600;
   color: var(--text-strong);
@@ -4278,12 +4278,7 @@ html.mac-app {
   color: var(--text-faint);
 }
 
-.wl-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: 10px;
-}
-/* Watched: one sideways row of smaller posters, bleeding to the screen edges. */
+/* Every section is one sideways row, bleeding to the screen edges. */
 .wl-row {
   display: flex;
   gap: 10px;
@@ -4297,14 +4292,15 @@ html.mac-app {
 }
 .wl-row::-webkit-scrollbar { display: none; }
 .wl-row .wl-card {
-  flex: 0 0 92px;
+  flex: 0 0 112px;
   scroll-snap-align: start;
 }
-.wl-row .wl-poster { border-radius: 10px; }
+.wl-row .wl-card--wide { flex-basis: 290px; }
 
 .wl-card {
   display: block;
   min-width: 0;
+  text-align: left;
   -webkit-tap-highlight-color: transparent;
 }
 .wl-card:active .wl-poster { transform: scale(0.97); }
@@ -4320,6 +4316,7 @@ html.mac-app {
   align-items: center;
   justify-content: center;
 }
+.wl-poster--wide { aspect-ratio: 16 / 9; }
 /* No poster: the title stands in for the art. */
 .wl-poster-title {
   padding: 10px;
@@ -4328,26 +4325,6 @@ html.mac-app {
   color: var(--text-muted);
   text-align: center;
 }
-/* Corner flag: a new episode, a dated next one, or a cinema run. */
-/* A dark rim under the white keeps it visible on light posters. */
-.wl-flag {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 32px;
-  height: 32px;
-  background: rgba(15, 15, 19, 0.75);
-  clip-path: polygon(0 0, 100% 0, 0 100%);
-}
-.wl-flag::after {
-  content: '';
-  position: absolute;
-  inset: 0 auto auto 0;
-  width: 27px;
-  height: 27px;
-  background: #fff;
-  clip-path: polygon(0 0, 100% 0, 0 100%);
-}
 .wl-poster img {
   position: absolute;
   inset: 0;
@@ -4355,17 +4332,64 @@ html.mac-app {
   height: 100%;
   object-fit: cover;
 }
-.wl-rating {
+/* Inside the card: one line of metadata in a pill at the bottom, so it stays
+   legible without covering the poster's own title art. White when an episode
+   is out or dated. */
+.wl-card-meta {
   position: absolute;
-  right: 6px;
+  left: 50%;
   bottom: 6px;
-  padding: 2px 6px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 12px);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 7px;
   border-radius: 6px;
-  background: rgba(15, 15, 19, 0.82);
-  color: var(--text-strong);
-  font-size: 11px;
+  background: rgba(15, 15, 19, 0.72);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 10px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.wl-card-meta--soon { background: #fff; color: #0f0f13; padding-left: 4px; }
+.wl-card-meta .material-symbols-outlined { font-size: 14px; font-variation-settings: 'FILL' 1; }
+/* Wide favorite card: title and metadata bottom left. */
+.wl-wide-info {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 36px 12px 10px;
+  background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.8));
+}
+.wl-wide-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wl-wide-info .wl-card-meta {
+  position: static;
+  transform: none;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  font-weight: 500;
+}
+.wl-wide-info .wl-card-meta--soon { color: #fff; font-weight: 700; }
 .wl-poster-status {
   position: absolute;
   inset: auto 0 0;
@@ -4374,6 +4398,30 @@ html.mac-app {
   color: var(--text);
   font-size: 11px;
   text-align: center;
+  z-index: 1;
+}
+/* Where it streams: top right, like the ⓐtv mark on Apple's cards. */
+.wl-card-where {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+}
+/* Not the poster: `.wl-poster img` would stretch these over the whole card. */
+.wl-card-where .wl-logos img {
+  position: static;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.wl-card-where-name {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(15, 15, 19, 0.75);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
 }
 .wl-empty {
   padding: 24px 0;
@@ -4382,9 +4430,6 @@ html.mac-app {
   text-align: center;
 }
 
-/* Portalled to <body>, above the composer, the tab bar and every other layer. */
-.wl-sheet-overlay { z-index: 400; }
-.wl-sheet { touch-action: pan-y; overflow-y: auto; overscroll-behavior: contain; }
 .wl-sheet-head {
   display: flex;
   gap: 14px;
@@ -4415,12 +4460,12 @@ html.mac-app {
   color: var(--text-muted);
 }
 .wl-play {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   height: 46px;
-  margin: 0 20px;
   border-radius: 8px;
   background: #fff;
   color: #0f0f13;
@@ -4439,5 +4484,148 @@ html.mac-app {
 }
 .wl-sheet-status--failed { color: var(--danger); }
 .wl-sheet .message-sheet-actions { margin-top: 6px; }
+/* The sheet outgrew the screen once it carried plot and credits. It is
+   portalled to <body>, above the composer, the tab bar and every other layer,
+   and closes by pulling down. */
+.wl-sheet { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
+.wl-sheet-overlay { z-index: 400; }
+.wl-sheet-meta--where { color: var(--text); }
+
+/* Sheet header: the backdrop as an inset panel, the poster overlapping its
+   lower edge. No scrim — the title sits below the image, not on it. */
+.wl-hero {
+  margin: 12px 12px 0;
+  aspect-ratio: 16 / 9;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--bg-hover);
+  flex-shrink: 0;
+}
+.wl-hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wl-sheet-head--hero { margin-top: -44px; align-items: flex-end; padding-top: 0; }
+.wl-sheet-head--hero .wl-sheet-poster {
+  width: 84px;
+  border: 2px solid var(--bg-surface);
+  box-sizing: content-box;
+  border-radius: 10px;
+}
+.wl-sheet-head--hero .wl-sheet-info { padding-bottom: 2px; }
+.wl-sheet-score { font-size: 13px; color: var(--text-muted); }
+.wl-sheet-score-num { color: var(--text-strong); font-weight: 600; }
+
+.wl-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 14px; }
+.wl-chip {
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* Label/value rows: where, digital, cinemas, what's next. */
+.wl-facts {
+  display: flex;
+  flex-direction: column;
+  margin: 0 20px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.wl-fact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.wl-fact + .wl-fact { border-top: 1px solid var(--border); }
+.wl-fact-label { width: 64px; flex-shrink: 0; color: var(--text-muted); }
+.wl-fact-value { display: flex; align-items: center; gap: 8px; color: var(--text); min-width: 0; }
+.wl-fact--new .wl-fact-value { color: var(--text-strong); font-weight: 600; }
+
+.wl-primary { display: flex; gap: 8px; padding: 0 20px; }
+.wl-fav {
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  -webkit-tap-highlight-color: transparent;
+}
+.wl-fav .material-symbols-outlined { font-size: 24px; font-variation-settings: 'FILL' 0; }
+.wl-fav--on { color: var(--wl-heart); box-shadow: inset 0 0 0 1.5px var(--wl-heart); border-color: transparent; }
+.wl-fav--on .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
+.wl-fav:active { transform: scale(0.94); }
+
+.wl-secondary { display: flex; gap: 8px; padding: 0 20px; }
+.wl-secondary-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.wl-secondary-btn .material-symbols-outlined { font-size: 18px; color: var(--text-muted); }
+
+/* Provider logos: on cards and in the sheet. */
+.wl-logos { display: inline-flex; gap: 3px; flex-shrink: 0; }
+.wl-logos img { width: 16px; height: 16px; border-radius: 4px; display: block; }
+.wl-fact .wl-logos img { width: 20px; height: 20px; border-radius: 5px; }
+
+/* Favorite mark on the poster: a white fold in the top-left corner with a
+   pink-red heart in it. */
+.wl { --wl-heart: #ff4d6d; }
+.wl-sheet { --wl-heart: #ff4d6d; }
+.wl-fav-mark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40px;
+  height: 40px;
+  background: #fff;
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+  color: var(--wl-heart);
+}
+.wl-fav-mark .material-symbols-outlined {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  font-size: 16px;
+  font-variation-settings: 'FILL' 1;
+}
+.wl-sheet-about {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 20px;
+}
+.wl-primary + .wl-secondary, .wl-sheet-status + .wl-secondary { margin-top: 12px; }
+.wl-sheet-overview {
+  margin: 0 0 4px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.wl-sheet-credit {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+.wl-sheet-credit span { color: var(--text-muted); }
 .wl-sheet a.message-sheet-action { text-decoration: none; }
 .wl-remove, .wl-remove .material-symbols-outlined { color: var(--danger) !important; }

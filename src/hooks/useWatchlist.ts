@@ -39,7 +39,7 @@ export function useWatchlist(client: sdk.MatrixClient, roomId: string) {
       if (r?.roomId !== roomId) return
       const result = ev.getContent()?.[RESULT_KEY]
       if (!result?.id) return
-      setStatus((s) => ({ ...s, [result.id]: { state: result.ok ? 'ok' : 'failed', message: result.message } }))
+      setStatus((s) => ({ ...s, [result.id]: { state: result.ok ? 'ok' : 'failed', action: result.action, message: result.message } }))
     }
     room.on(sdk.RoomStateEvent.Events, onState)
     room.on(sdk.RoomEvent.CurrentStateUpdated, read)
@@ -52,15 +52,16 @@ export function useWatchlist(client: sdk.MatrixClient, roomId: string) {
   }, [client, roomId])
 
   const act = useCallback(async (action: WatchlistAction, id: string) => {
-    setStatus((s) => ({ ...s, [id]: { state: 'pending' } }))
+    // The action rides along so a pending heart tap doesn't read as "Starting on the TV…".
+    setStatus((s) => ({ ...s, [id]: { state: 'pending', action } }))
     setTimeout(() => setStatus((s) => (s[id]?.state === 'pending'
-      ? { ...s, [id]: { state: 'failed', message: 'No answer from the watchlist service.' } }
+      ? { ...s, [id]: { state: 'failed', action, message: 'No answer from the watchlist service.' } }
       : s)), PENDING_TIMEOUT_MS)
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await client.sendEvent(roomId, WATCHLIST_ACTION_EVENT as any, { action, id, request_id: crypto.randomUUID() } as any)
     } catch (err) {
-      setStatus((s) => ({ ...s, [id]: { state: 'failed', message: `Couldn't send: ${(err as Error).message}` } }))
+      setStatus((s) => ({ ...s, [id]: { state: 'failed', action, message: `Couldn't send: ${(err as Error).message}` } }))
     }
   }, [client, roomId])
 

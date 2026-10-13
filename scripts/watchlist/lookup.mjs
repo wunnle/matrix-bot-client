@@ -31,8 +31,9 @@ const DOMINANT = 3
 /**
  * Decide between adding at once and asking. One exact title match, or a single
  * result, is added. Several exact matches are settled by TMDB popularity when
- * one clearly dominates (`others` then holds the runners-up, so the reply can
- * offer a swap); otherwise, and for fuzzy matches, it's a choice.
+ * one clearly dominates (`others` then holds the runners-up; the service still
+ * asks, with `pick` as the first button); otherwise, and for fuzzy matches,
+ * it's a choice.
  *
  * @param {{id, kind, title, year, popularity?}[]} candidates in source order
  * @returns {{pick, others?} | {choices} | {none: true}}
@@ -129,17 +130,44 @@ async function nowPlayingIds(region) {
   return ids
 }
 
+/** Cut at a word boundary with an ellipsis, when longer than `max`. */
+export function truncate(text, max) {
+  if (text.length <= max) return text
+  const cut = text.slice(0, max)
+  return `${cut.slice(0, cut.lastIndexOf(' ') > max * 0.6 ? cut.lastIndexOf(' ') : max).trimEnd()}…`
+}
+
+// TMDB release types.
+const LIMITED = 2, THEATRICAL = 3, DIGITAL = 4
+// Where to look when the region has no entry: most films list the US.
+const FALLBACK_REGION = 'US'
+
 /**
- * A film's cinema run in the region: when it opens (theatrical or limited
- * release), and whether it is showing now. Null when it never played there.
+ * What a film's per-country release dates say, from TMDB's `release_dates`
+ * results: when it opens in the region's cinemas, when it is out digitally
+ * (region first, else the US, labelled so the UI can say which), and its age
+ * rating. Pure, so it can be tested without TMDB.
  */
-async function cinemaRun(tmdbId, region) {
-  const [{ results = [] }, playing] = await Promise.all([tmdb(`/movie/${tmdbId}/release_dates`), nowPlayingIds(region)])
-  const dates = results.find((r) => r.iso_3166_1 === region)?.release_dates ?? []
-  // Release types: 2 limited, 3 theatrical. Digital (4) and TV (6) aren't cinemas.
-  const opens = dates.filter((d) => d.type === 2 || d.type === 3).map((d) => d.release_date.slice(0, 10)).sort()[0] ?? null
-  const now = playing.has(tmdbId)
-  return opens || now ? { opens, now } : null
+export function releaseInfo(results = [], region) {
+  const datesIn = (r) => results.find((x) => x.iso_3166_1 === r)?.release_dates ?? []
+  const earliest = (dates, types) =>
+    dates.filter((d) => types.includes(d.type)).map((d) => d.release_date.slice(0, 10)).sort()[0] ?? null
+  const local = datesIn(region)
+  const fallback = datesIn(FALLBACK_REGION)
+  const digitalHere = earliest(local, [DIGITAL])
+  const digitalThere = earliest(fallback, [DIGITAL])
+  const cert = (dates) => dates.map((d) => d.certification).find(Boolean) ?? null
+  return {
+    cinemaOpens: earliest(local, [LIMITED, THEATRICAL]),
+    digital: digitalHere ? { date: digitalHere, region } : digitalThere ? { date: digitalThere, region: FALLBACK_REGION } : null,
+    ageRating: cert(local) ?? cert(fallback),
+  }
+}
+
+/** The YouTube key of a title's trailer: an official one if there is one. */
+export function trailerKey(videos = []) {
+  const yt = videos.filter((v) => v.site === 'YouTube' && v.type === 'Trailer')
+  return (yt.find((v) => v.official) ?? yt[0])?.key ?? null
 }
 
 /**
@@ -154,7 +182,9 @@ export async function enrich(imdbId) {
   if (!hit) return null
   const kind = tv ? 'series' : 'movie'
   const base = `/${tv ? 'tv' : 'movie'}/${hit.id}`
-  const [detail, providers] = await Promise.all([tmdb(base), tmdb(`${base}/watch/providers`)])
+  // One call for the details and everything hung off them.
+  const extra = tv ? 'credits,videos,content_ratings' : 'credits,videos,release_dates'
+  const [detail, providers] = await Promise.all([tmdb(`${base}?append_to_response=${extra}`), tmdb(`${base}/watch/providers`)])
 
   // Flatrate only: rent and buy are listed by the same stores, and "you could
   // pay extra for it" is not "it's on your subscription".
@@ -168,22 +198,46 @@ export async function enrich(imdbId) {
   const date = tv ? detail.first_air_date : detail.release_date
   const ne = detail.next_episode_to_air
   const le = detail.last_episode_to_air
-  const [cinema, imdbRating] = await Promise.all([
-    tv ? null : cinemaRun(hit.id, region).catch(() => null),
+  const [playing, imdbRating] = await Promise.all([
+    tv ? null : nowPlayingIds(region).catch(() => new Set()),
     imdbScore(imdbId, kind),
   ])
+
+  const release = tv ? null : releaseInfo(detail.release_dates?.results, region)
+  const showRating = (r) => detail.content_ratings?.results?.find((x) => x.iso_3166_1 === r)?.rating || null
+  const cinemaNow = !tv && playing.has(hit.id)
+  const runtime = tv ? (detail.episode_run_time?.[0] ?? le?.runtime ?? null) : (detail.runtime || null)
+  const people = tv
+    ? (detail.created_by ?? []).map((p) => p.name)
+    : (detail.credits?.crew ?? []).filter((p) => p.job === 'Director').map((p) => p.name)
+
   return {
     tmdbId: hit.id,
     kind,
     title: tv ? detail.name : detail.title,
     year: parseInt(date, 10) || null,
     poster: detail.poster_path ? `${TMDB_IMAGE}${detail.poster_path}` : null,
+    // The sheet's header image. w780 is plenty for a phone-width sheet.
+    backdrop: detail.backdrop_path ? `https://image.tmdb.org/t/p/w780${detail.backdrop_path}` : null,
     providers: where,
     next: ne ? { season: ne.season_number, episode: ne.episode_number, airDate: ne.air_date } : null,
     lastAired: le?.air_date ? { season: le.season_number, episode: le.episode_number, airDate: le.air_date } : null,
     showStatus: tv ? showStatus(detail.status) : null,
-    cinema,
+    cinema: release?.cinemaOpens || cinemaNow ? { opens: release?.cinemaOpens ?? null, now: cinemaNow } : null,
     imdbRating,
+    releaseDate: date || null,
+    digital: release?.digital ?? null,
+    // Minutes: the film, or one episode.
+    runtime,
+    genres: (detail.genres ?? []).map((g) => g.name),
+    // Trimmed: the whole list rides in one room-state event, capped at 64 KiB.
+    overview: detail.overview ? truncate(detail.overview, 320) : null,
+    // Directors for a film, creators for a show.
+    people: people.slice(0, 2),
+    cast: (detail.credits?.cast ?? []).slice(0, 3).map((p) => p.name),
+    ageRating: tv ? (showRating(region) ?? showRating(FALLBACK_REGION)) : release.ageRating,
+    trailer: trailerKey(detail.videos?.results),
+    seasons: tv ? detail.number_of_seasons ?? null : null,
     refreshedAt: Date.now(),
   }
 }

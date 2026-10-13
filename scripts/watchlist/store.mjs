@@ -49,11 +49,11 @@ export function createStore(dir, { now = Date.now } = {}) {
     get: (id) => { const i = find(id); return i ? { ...i } : null },
 
     /** @returns {{item: Item, added: boolean}} added is false for a duplicate */
-    add({ id, kind, title, year = null, poster = null }) {
+    add({ id, kind, title, year = null, poster = null, ...details }) {
       if (!/^tt\d+$/.test(id)) throw new Error(`not an IMDb id: ${id}`)
       const existing = find(id)
       if (existing) return { item: { ...existing }, added: false }
-      const item = { id, kind, title, year, poster, addedAt: now(), watchedAt: null }
+      const item = { ...details, id, kind, title, year, poster, addedAt: now(), watchedAt: null }
       items.unshift(item)
       save()
       record('added', item)
@@ -67,6 +67,21 @@ export function createStore(dir, { now = Date.now } = {}) {
       item.watchedAt = watched ? now() : null
       save()
       record(watched ? 'watched' : 'unwatched', item)
+      return { ...item }
+    },
+
+    /**
+     * Refreshed details (poster, providers, next episode). Not a history line:
+     * the log is what you did, not what TMDB said overnight. The list's own
+     * fields — id, when it was added, whether it's watched — are not touchable.
+     */
+    update(id, fields) {
+      const item = find(id)
+      if (!item) throw new Error(`not on the watchlist: ${id}`)
+      // eslint-disable-next-line no-unused-vars
+      const { id: _id, addedAt, watchedAt, ...rest } = fields
+      Object.assign(item, rest)
+      save()
       return { ...item }
     },
 

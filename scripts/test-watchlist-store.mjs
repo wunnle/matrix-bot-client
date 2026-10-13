@@ -24,6 +24,17 @@ store.setWatched('tt0903747', true)
 assert.equal(store.setWatched('tt0903747', false).watchedAt, null)
 assert.throws(() => store.setWatched('tt0000001', true), /not on the watchlist/)
 
+// A refresh changes details but never the list's own fields, and logs nothing.
+const before = store.get('tt11280740')
+const refreshed = store.update('tt11280740', { providers: ['apple'], next: null, addedAt: 0, watchedAt: 5, id: 'tt1' })
+assert.deepEqual(refreshed.providers, ['apple'])
+assert.equal(refreshed.addedAt, before.addedAt)
+assert.equal(refreshed.watchedAt, null)
+assert.equal(refreshed.id, 'tt11280740')
+// Extra details given at add time are kept.
+assert.deepEqual(store.add({ id: 'tt0000002', kind: 'movie', title: 'X', providers: ['netflix'] }).item.providers, ['netflix'])
+store.remove('tt0000002')
+
 store.played('tt11280740', { via: 'stremio' })
 store.remove('tt11280740')
 assert.throws(() => store.remove('tt11280740'), /not on the watchlist/)
@@ -39,10 +50,12 @@ assert.deepEqual(store.history().map((h) => `${h.action} ${h.id}`), [
   'added tt11280740',
   'watched tt0903747',
   'unwatched tt0903747',
+  'added tt0000002',
+  'removed tt0000002',
   'played tt11280740',
   'removed tt11280740',
 ])
-assert.equal(store.history()[4].via, 'stremio')
+assert.equal(store.history()[6].via, 'stremio')
 
 fs.rmSync(dir, { recursive: true })
 console.log('watchlist store passed')

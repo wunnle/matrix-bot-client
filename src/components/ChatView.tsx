@@ -2247,7 +2247,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           return last && (
             <button type="button" className="room-peek" onClick={() => setShowPage(false)}>
               <span className="room-peek-who">{last.isOwnMessage ? 'You' : (last.authorName ?? 'Bot')}</span>
-              <span className="room-peek-body">{last.body.split('\n')[0]}</span>
+              {/* Buttons are in the pill row already; the peek is the words. */}
+              <span className="room-peek-body">{parseActions(last.body).text.trim().split('\n')[0]}</span>
               <span className="material-symbols-outlined room-peek-open" aria-hidden>expand_less</span>
             </button>
           )

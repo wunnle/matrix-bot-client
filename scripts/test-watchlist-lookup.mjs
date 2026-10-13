@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { choiceLabel, episodeSinceWatched, needsPopularity, parseInput, pickCandidate, releaseInfo, trailerKey, truncate } from './watchlist/lookup.mjs'
+import { choiceLabel, episodeSinceWatched, needsPopularity, parseInput, pickCandidate, releaseInfo, showStatus, trailerKey, truncate } from './watchlist/lookup.mjs'
 
 // Links in every shape IMDb hands out, and a bare id.
 assert.deepEqual(parseInput('https://www.imdb.com/title/tt11280740/'), { imdbId: 'tt11280740' })
@@ -69,5 +69,12 @@ assert.equal(trailerKey([{ site: 'Vimeo', type: 'Trailer', key: 'v' }]), null)
 
 assert.equal(truncate('short', 10), 'short')
 assert.equal(truncate('one two three four five', 14), 'one two three…')
+
+// TMDB's show status, folded to the four things the sheet says.
+assert.equal(showStatus('Returning Series'), 'returning')
+assert.equal(showStatus('Planned'), 'in-production')
+assert.equal(showStatus('Ended'), 'ended')
+assert.equal(showStatus('Canceled'), 'canceled')
+assert.equal(showStatus(undefined), null)
 
 console.log('watchlist lookup passed')

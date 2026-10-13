@@ -138,6 +138,23 @@ const CASES = [
   ['npx tsc -b --noEmit', 'allow'],
   ['for i in 120 121; do linear get CLA-$i; done', 'allow'],
   ['for i in 1 2; do rm -rf /tmp/$i; done', 'deny'],
+  // A while/until/if header runs its condition; it used to be skipped unchecked.
+  ['until rm -rf /home/wunnle/x; do sleep 1; done', 'deny'],
+  ['while git push; do sleep 1; done', 'deny'],
+  ['if ! systemctl --user restart foo; then echo hi; fi', 'deny'],
+  ['until curl -s -o /dev/null http://127.0.0.1:5199/; do sleep 1; done', 'allow'],
+  ['if [ -f package.json ]; then echo yes; fi', 'allow'],
+  ['until systemctl --user status watchlist.service --no-pager | grep -q refreshed; do sleep 2; done', 'allow'],
+  // The screenshot loop: render headless, post the image into the room.
+  ['chromium --headless --disable-gpu --no-sandbox --window-size=390,844 --screenshot=/tmp/shot.png http://127.0.0.1:5199/', 'allow'],
+  ['chromium --headless --dump-dom http://127.0.0.1:5199/', 'allow'],
+  ['chromium --screenshot=/tmp/shot.png http://x', 'deny'],
+  ['chromium --headless --screenshot=/home/wunnle/.bashrc http://x', 'deny'],
+  ['chromium --headless --remote-debugging-port=9333 about:blank', 'deny'],
+  ['chromium --headless --user-data-dir=/home/wunnle/.config/chromium http://x', 'deny'],
+  [`node ${os.homedir()}/matrix-pwa/scripts/send-image.mjs /tmp/shot.png "caption"`, 'allow'],
+  ['until node ~/matrix-pwa/scripts/send-image.mjs /tmp/shot.png "c"; do sleep 10; done', 'allow'],
+  ['node /tmp/send-image.mjs /tmp/shot.png', 'deny'],
   // 6 — git writes stay in the room's own worktree.
   ["git add -A && git commit -q -m 'x'", 'allow'],
   ['git push', 'deny'],

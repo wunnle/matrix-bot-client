@@ -181,9 +181,25 @@ export async function enrich(imdbId) {
     providers: where,
     next: ne ? { season: ne.season_number, episode: ne.episode_number, airDate: ne.air_date } : null,
     lastAired: le?.air_date ? { season: le.season_number, episode: le.episode_number, airDate: le.air_date } : null,
+    showStatus: tv ? showStatus(detail.status) : null,
     cinema,
     imdbRating,
     refreshedAt: Date.now(),
+  }
+}
+
+/**
+ * Whether a show is coming back, from TMDB's status. `next` only exists once an
+ * episode has a date, so without this "renewed, no date yet" and "over for
+ * good" look the same.
+ */
+export function showStatus(status) {
+  switch (status) {
+    case 'Returning Series': return 'returning'
+    case 'In Production': case 'Planned': case 'Pilot': return 'in-production'
+    case 'Ended': return 'ended'
+    case 'Canceled': return 'canceled'
+    default: return null
   }
 }
 

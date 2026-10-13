@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { choiceLabel, episodeSinceWatched, needsPopularity, parseInput, pickCandidate } from './watchlist/lookup.mjs'
+import { choiceLabel, episodeSinceWatched, needsPopularity, parseInput, pickCandidate, showStatus } from './watchlist/lookup.mjs'
 
 // Links in every shape IMDb hands out, and a bare id.
 assert.deepEqual(parseInput('https://www.imdb.com/title/tt11280740/'), { imdbId: 'tt11280740' })
@@ -50,5 +50,12 @@ assert.equal(episodeSinceWatched(show('2026-10-16T23:30:00Z', '2026-10-17'), tod
 assert.equal(episodeSinceWatched(show('2026-10-10T18:00:00Z', '2026-10-25'), today), null)
 assert.equal(episodeSinceWatched({ ...show('2026-10-10T18:00:00Z', '2026-10-17'), kind: 'movie' }, today), null)
 assert.equal(episodeSinceWatched({ ...show('2026-10-10T18:00:00Z', '2026-10-17'), watchedAt: null }, today), null)
+
+// TMDB's show status, folded to the four things the sheet says.
+assert.equal(showStatus('Returning Series'), 'returning')
+assert.equal(showStatus('Planned'), 'in-production')
+assert.equal(showStatus('Ended'), 'ended')
+assert.equal(showStatus('Canceled'), 'canceled')
+assert.equal(showStatus(undefined), null)
 
 console.log('watchlist lookup passed')

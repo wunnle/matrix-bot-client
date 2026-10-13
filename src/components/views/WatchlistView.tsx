@@ -17,6 +17,8 @@ export interface WatchlistItem {
   /** Subscriptions it is included in. Empty means Stremio. */
   providers?: ProviderKey[]
   next?: { season: number, episode: number, airDate: string } | null
+  /** Shows only, from TMDB. Says whether more is coming when `next` has no date yet. */
+  showStatus?: 'returning' | 'in-production' | 'ended' | 'canceled' | null
   /** Set when a watched show came back because this episode aired. */
   newEpisode?: { season: number, episode: number, airDate: string } | null
   /** IMDb's rating (via Cinemeta); null for titles too new to have one. */
@@ -83,9 +85,24 @@ function savedTab(): Tab {
 
 const episode = (e: { season: number, episode: number }) => `S${e.season} E${e.episode}`
 
+const STATUS_LABELS: Record<NonNullable<WatchlistItem['showStatus']>, string> = {
+  'returning': 'Returning · no date yet',
+  'in-production': 'In production · no date yet',
+  'ended': 'Ended',
+  'canceled': 'Canceled',
+}
+
+/** What's coming for a show: the dated next episode, else whether more is coming at all. */
+function nextLabel(item: WatchlistItem) {
+  if (item.kind !== 'series') return null
+  if (item.next) return `Next: ${episode(item.next)} · ${airLabel(item.next.airDate)}`
+  return item.showStatus ? STATUS_LABELS[item.showStatus] : null
+}
+
 /** The poster's one badge, most urgent first. */
 function badge(item: WatchlistItem) {
-  if (item.watchedAt) return null
+  // A watched show only earns a badge once its next episode has a date.
+  if (item.watchedAt) return item.next ? `${episode(item.next)} · ${airLabel(item.next.airDate)}` : null
   if (item.newEpisode) return `New · ${episode(item.newEpisode)}`
   if (item.cinema?.now) return 'In theaters'
   if (item.next) return `${episode(item.next)} · ${airLabel(item.next.airDate)}`
@@ -184,11 +201,7 @@ export default function WatchlistView({ items, status, onAction, initialSelected
                     New: {episode(current.newEpisode)} · out {airLabel(current.newEpisode.airDate)}
                   </div>
                 )}
-                {current.next && (
-                  <div className="wl-sheet-meta">
-                    Next: {episode(current.next)} · {airLabel(current.next.airDate)}
-                  </div>
-                )}
+                {nextLabel(current) && <div className="wl-sheet-meta">{nextLabel(current)}</div>}
               </div>
             </div>
 

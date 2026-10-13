@@ -98,6 +98,36 @@ function subscriptions() {
 
 const tmdb = (p) => getJson(`${TMDB}${p}`, { Authorization: `Bearer ${tmdbToken()}` })
 
+// What's in cinemas in the region: TMDB's now-playing list, a few pages, shared
+// by a whole refresh run rather than fetched per film.
+const NOW_PLAYING_TTL_MS = 6 * 60 * 60 * 1000
+let nowPlaying = { region: null, at: 0, ids: new Set() }
+
+async function nowPlayingIds(region) {
+  if (nowPlaying.region === region && Date.now() - nowPlaying.at < NOW_PLAYING_TTL_MS) return nowPlaying.ids
+  const ids = new Set()
+  for (let page = 1, pages = 1; page <= pages && page <= 10; page++) {
+    const data = await tmdb(`/movie/now_playing?region=${region}&page=${page}`)
+    pages = data.total_pages ?? 1
+    for (const m of data.results ?? []) ids.add(m.id)
+  }
+  nowPlaying = { region, at: Date.now(), ids }
+  return ids
+}
+
+/**
+ * A film's cinema run in the region: when it opens (theatrical or limited
+ * release), and whether it is showing now. Null when it never played there.
+ */
+async function cinemaRun(tmdbId, region) {
+  const [{ results = [] }, playing] = await Promise.all([tmdb(`/movie/${tmdbId}/release_dates`), nowPlayingIds(region)])
+  const dates = results.find((r) => r.iso_3166_1 === region)?.release_dates ?? []
+  // Release types: 2 limited, 3 theatrical. Digital (4) and TV (6) aren't cinemas.
+  const opens = dates.filter((d) => d.type === 2 || d.type === 3).map((d) => d.release_date.slice(0, 10)).sort()[0] ?? null
+  const now = playing.has(tmdbId)
+  return opens || now ? { opens, now } : null
+}
+
 /**
  * Everything TMDB knows that the list shows, for one IMDb id. Null when TMDB
  * has never heard of it — the caller keeps whatever it already had.
@@ -122,6 +152,8 @@ export async function enrich(imdbId) {
 
   const date = tv ? detail.first_air_date : detail.release_date
   const ne = detail.next_episode_to_air
+  const le = detail.last_episode_to_air
+  const cinema = tv ? null : await cinemaRun(hit.id, region).catch(() => null)
   return {
     tmdbId: hit.id,
     kind,
@@ -130,6 +162,8 @@ export async function enrich(imdbId) {
     poster: detail.poster_path ? `${TMDB_IMAGE}${detail.poster_path}` : null,
     providers: where,
     next: ne ? { season: ne.season_number, episode: ne.episode_number, airDate: ne.air_date } : null,
+    lastAired: le?.air_date ? { season: le.season_number, episode: le.episode_number, airDate: le.air_date } : null,
+    cinema,
     refreshedAt: Date.now(),
   }
 }
@@ -150,6 +184,21 @@ export async function withPopularity(query, candidates) {
       return c
     }
   }))
+}
+
+/**
+ * The episode that brings a watched show back, or null. It must have aired on
+ * a later day than the one you marked the show watched — an episode out the
+ * same day you finished it is assumed seen. Days are Istanbul days, which is
+ * close enough to TMDB's air dates for this.
+ *
+ * @param {{kind, watchedAt, lastAired?}} item  after the refresh
+ */
+export function episodeSinceWatched(item, today = new Date()) {
+  if (item.kind !== 'series' || !item.watchedAt || !item.lastAired?.airDate) return null
+  const day = (t) => new Date(t).toLocaleDateString('en-CA', { timeZone: 'Europe/Istanbul' })
+  const aired = item.lastAired.airDate
+  return aired > day(item.watchedAt) && aired <= day(today) ? item.lastAired : null
 }
 
 /** A title Cinemeta knows by id, for when TMDB doesn't. */

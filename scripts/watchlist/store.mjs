@@ -60,13 +60,19 @@ export function createStore(dir, { now = Date.now } = {}) {
       return { item: { ...item }, added: true }
     },
 
-    setWatched(id, watched) {
+    /**
+     * @param extra unwatching only: `newEpisode` ({season, episode, airDate}) when
+     *   a show came back because one aired; kept on the item until it is
+     *   watched again, and written to the history line.
+     */
+    setWatched(id, watched, extra = {}) {
       const item = find(id)
       if (!item) throw new Error(`not on the watchlist: ${id}`)
       if (Boolean(item.watchedAt) === watched) return { ...item }
       item.watchedAt = watched ? now() : null
+      item.newEpisode = watched ? null : (extra.newEpisode ?? null)
       save()
-      record(watched ? 'watched' : 'unwatched', item)
+      record(watched ? 'watched' : 'unwatched', item, extra)
       return { ...item }
     },
 

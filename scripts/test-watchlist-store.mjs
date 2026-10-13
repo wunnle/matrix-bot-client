@@ -23,6 +23,12 @@ assert.ok(store.setWatched('tt0903747', true).watchedAt)
 store.setWatched('tt0903747', true)
 assert.equal(store.setWatched('tt0903747', false).watchedAt, null)
 assert.throws(() => store.setWatched('tt0000001', true), /not on the watchlist/)
+// A show brought back by a new episode carries it until watched again.
+const ep = { season: 2, episode: 4, airDate: '2026-10-17' }
+store.setWatched('tt0903747', true)
+assert.deepEqual(store.setWatched('tt0903747', false, { newEpisode: ep }).newEpisode, ep)
+assert.equal(store.setWatched('tt0903747', true).newEpisode, null)
+store.setWatched('tt0903747', false)
 
 // A refresh changes details but never the list's own fields, and logs nothing.
 const before = store.get('tt11280740')
@@ -50,12 +56,18 @@ assert.deepEqual(store.history().map((h) => `${h.action} ${h.id}`), [
   'added tt11280740',
   'watched tt0903747',
   'unwatched tt0903747',
+  'watched tt0903747',
+  'unwatched tt0903747',
+  'watched tt0903747',
+  'unwatched tt0903747',
   'added tt0000002',
   'removed tt0000002',
   'played tt11280740',
   'removed tt11280740',
 ])
-assert.equal(store.history()[6].via, 'stremio')
+assert.equal(store.history()[10].via, 'stremio')
+// The episode that brought a show back is in its history line.
+assert.deepEqual(store.history()[5].newEpisode, ep)
 
 fs.rmSync(dir, { recursive: true })
 console.log('watchlist store passed')

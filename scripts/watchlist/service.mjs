@@ -16,7 +16,7 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { createStore } from './store.mjs'
-import { choiceLabel, cinemetaMeta, enrich, needsPopularity, parseInput, pickCandidate, searchCinemeta, withPopularity } from './lookup.mjs'
+import { choiceLabel, cinemetaMeta, enrich, episodeSinceWatched, needsPopularity, parseInput, pickCandidate, searchCinemeta, withPopularity } from './lookup.mjs'
 
 const HOMESERVER = process.env.HOMESERVER ?? 'https://matrix.org'
 const USER_ID = process.env.USER_ID_B
@@ -260,12 +260,18 @@ async function refreshStale(roomId) {
     const stale = store.list().filter((i) => Date.now() - (i.refreshedAt ?? 0) > REFRESH_AFTER_MS)
     if (!stale.length) return
     let changed = 0
+    const returned = []
     for (const item of stale) {
       try {
         const details = await enrich(item.id)
         if (details) {
-          store.update(item.id, details)
+          const updated = store.update(item.id, details)
           changed++
+          const ep = episodeSinceWatched(updated)
+          if (ep) {
+            store.setWatched(item.id, false, { newEpisode: ep })
+            returned.push({ ...updated, ep })
+          }
         } else {
           // Not on TMDB: don't ask again every hour.
           store.update(item.id, { refreshedAt: Date.now() })
@@ -276,6 +282,12 @@ async function refreshStale(roomId) {
     }
     log(`refreshed ${changed}/${stale.length} titles from TMDB`)
     await publish(roomId)
+    // One line per show that came back — a notice, so it reaches the phone.
+    for (const r of returned) {
+      log(`new episode: ${r.title} S${r.ep.season}E${r.ep.episode} — back on the list`)
+      await notice(roomId, `New episode of ${r.title} (S${r.ep.season} E${r.ep.episode}) — back on your list.`,
+        { action: 'unwatched', id: r.id, ok: true, newEpisode: r.ep })
+    }
   } finally {
     refreshing = false
   }

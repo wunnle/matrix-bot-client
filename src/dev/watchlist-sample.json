@@ -1,5 +1,39 @@
 [
   {
+    "id": "tt35538033",
+    "tmdbId": 1423191,
+    "kind": "movie",
+    "title": "Resident Evil",
+    "year": 2026,
+    "poster": "https://image.tmdb.org/t/p/w342/i7UyjfPio0VFHB9rBUZSFyhOoM8.jpg",
+    "providers": [],
+    "next": null,
+    "cinema": {
+      "opens": "2026-09-18",
+      "now": true
+    },
+    "refreshedAt": 1791862864983,
+    "addedAt": 1791862864983,
+    "watchedAt": null
+  },
+  {
+    "id": "tt34206385",
+    "tmdbId": 1375441,
+    "kind": "movie",
+    "title": "Primetime",
+    "year": 2026,
+    "poster": "https://image.tmdb.org/t/p/w342/51VDtNQFuD2I86hrT4ekytg9Dq3.jpg",
+    "providers": [],
+    "next": null,
+    "cinema": {
+      "opens": "2026-10-23",
+      "now": false
+    },
+    "refreshedAt": 1791862865250,
+    "addedAt": 1791862865250,
+    "watchedAt": null
+  },
+  {
     "id": "tt15239678",
     "tmdbId": 693134,
     "kind": "movie",
@@ -10,24 +44,12 @@
       "hbomax"
     ],
     "next": null,
-    "refreshedAt": 1791862625595,
-    "addedAt": 1791862625595,
-    "watchedAt": null
-  },
-  {
-    "id": "tt1160419",
-    "tmdbId": 438631,
-    "kind": "movie",
-    "title": "Dune",
-    "year": 2021,
-    "poster": "https://image.tmdb.org/t/p/w342/v1tRXZ4JtD2Iv6fjkPvT4GiwslV.jpg",
-    "providers": [
-      "netflix",
-      "hbomax"
-    ],
-    "next": null,
-    "refreshedAt": 1791862625666,
-    "addedAt": 1791862625666,
+    "cinema": {
+      "opens": "2024-03-01",
+      "now": false
+    },
+    "refreshedAt": 1791862865331,
+    "addedAt": 1791862865331,
     "watchedAt": null
   },
   {
@@ -73,7 +95,12 @@
     ],
     "next": null,
     "tmdbId": 95350,
-    "refreshedAt": 1791862497510
+    "refreshedAt": 1791862497510,
+    "newEpisode": {
+      "season": 1,
+      "episode": 4,
+      "airDate": "2026-10-12"
+    }
   },
   {
     "id": "tt16026746",

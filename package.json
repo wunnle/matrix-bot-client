@@ -1,7 +1,7 @@
 {
   "name": "construct",
   "private": true,
-  "version": "1.0.407",
+  "version": "1.0.408",
   "type": "module",
   "scripts": {
     "dev": "vite",

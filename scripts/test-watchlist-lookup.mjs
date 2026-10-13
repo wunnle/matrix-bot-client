@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { choiceLabel, needsPopularity, parseInput, pickCandidate } from './watchlist/lookup.mjs'
+import { choiceLabel, episodeSinceWatched, needsPopularity, parseInput, pickCandidate } from './watchlist/lookup.mjs'
 
 // Links in every shape IMDb hands out, and a bare id.
 assert.deepEqual(parseInput('https://www.imdb.com/title/tt11280740/'), { imdbId: 'tt11280740' })
@@ -37,5 +37,18 @@ assert.equal(needsPopularity('Pluribus', [c('tt1', 'Pluribus', 2025), c('tt2', '
 
 assert.equal(choiceLabel(c('tt4', 'Normal', 2025, 'movie')), 'Normal (2025, film)')
 assert.equal(choiceLabel(c('tt5', 'Normal People', null)), 'Normal People (series)')
+
+// A watched show comes back for an episode aired on a later (Istanbul) day.
+const today = new Date('2026-10-20T09:00:00Z')
+const show = (watchedAt, airDate) => ({ kind: 'series', watchedAt: Date.parse(watchedAt), lastAired: { season: 2, episode: 4, airDate } })
+assert.deepEqual(episodeSinceWatched(show('2026-10-10T18:00:00Z', '2026-10-17'), today), { season: 2, episode: 4, airDate: '2026-10-17' })
+// Aired the day you finished it: assumed seen.
+assert.equal(episodeSinceWatched(show('2026-10-17T20:00:00Z', '2026-10-17'), today), null)
+// 23:30 UTC on the 16th is already the 17th in Istanbul.
+assert.equal(episodeSinceWatched(show('2026-10-16T23:30:00Z', '2026-10-17'), today), null)
+// Announced but not out yet.
+assert.equal(episodeSinceWatched(show('2026-10-10T18:00:00Z', '2026-10-25'), today), null)
+assert.equal(episodeSinceWatched({ ...show('2026-10-10T18:00:00Z', '2026-10-17'), kind: 'movie' }, today), null)
+assert.equal(episodeSinceWatched({ ...show('2026-10-10T18:00:00Z', '2026-10-17'), watchedAt: null }, today), null)
 
 console.log('watchlist lookup passed')

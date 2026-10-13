@@ -99,6 +99,12 @@ function nextLabel(item: WatchlistItem) {
   return item.showStatus ? STATUS_LABELS[item.showStatus] : null
 }
 
+/** Sort rank for a watched title: 0 has a dated next episode, 1 is still running, 2 is over or unknown. */
+function comingBack(item: WatchlistItem) {
+  if (item.next) return 0
+  return item.showStatus === 'returning' || item.showStatus === 'in-production' ? 1 : 2
+}
+
 /** The poster's one badge, most urgent first. */
 function badge(item: WatchlistItem) {
   // A watched show only earns a badge once its next episode has a date.
@@ -125,7 +131,12 @@ export default function WatchlistView({ items, status, onAction, initialSelected
   // Shows that came back for a new episode lead, newest episode first.
   const toWatch = inTab.filter((i) => !i.watchedAt)
     .sort((a, b) => (b.newEpisode?.airDate ?? '').localeCompare(a.newEpisode?.airDate ?? ''))
-  const watched = inTab.filter((i) => i.watchedAt).sort((a, b) => b.watchedAt! - a.watchedAt!)
+  // Watched shows lead with what's coming back soonest, then the ones still
+  // running without a date, then the finished ones; most recently watched within each.
+  const watched = inTab.filter((i) => i.watchedAt).sort((a, b) =>
+    comingBack(a) - comingBack(b)
+    || (a.next?.airDate ?? '').localeCompare(b.next?.airDate ?? '')
+    || b.watchedAt! - a.watchedAt!)
   const current = items.find((i) => i.id === selected) ?? null
 
   const card = (item: WatchlistItem) => {

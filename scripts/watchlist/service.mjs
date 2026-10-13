@@ -134,8 +134,13 @@ async function ensureRoom() {
 
 let lastPublished = null
 
+// Matrix events are canonical JSON: integers only. A float anywhere in the
+// list makes every publish fail with M_BAD_JSON, freezing the page, so any
+// that slip in are sent as strings rather than taking the room down.
+const noFloats = (_key, value) => (typeof value === 'number' && !Number.isInteger(value) ? String(value) : value)
+
 async function publish(roomId) {
-  const content = { version: 1, items: store.list(), updatedAt: Date.now() }
+  const content = JSON.parse(JSON.stringify({ version: 1, items: store.list(), updatedAt: Date.now() }, noFloats))
   const fingerprint = JSON.stringify(content.items)
   if (fingerprint === lastPublished) return
   const bytes = Buffer.byteLength(JSON.stringify(content))

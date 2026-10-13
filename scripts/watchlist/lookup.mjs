@@ -223,12 +223,15 @@ export function episodeSinceWatched(item, today = new Date()) {
 /**
  * IMDb's own rating, which TMDB doesn't carry (its vote_average is TMDB's).
  * Cinemeta mirrors it keylessly. Null for titles too new to have one.
+ *
+ * A string ("7.8"), not a number: Matrix events are canonical JSON, which
+ * has no floats — a 7.8 in room state is rejected with M_BAD_JSON.
  */
 async function imdbScore(imdbId, kind) {
   try {
     const { meta } = await getJson(`${CINEMETA}/meta/${kind}/${imdbId}.json`)
     const score = parseFloat(meta?.imdbRating)
-    return Number.isFinite(score) && score > 0 ? score : null
+    return Number.isFinite(score) && score > 0 ? score.toFixed(1) : null
   } catch {
     return null
   }

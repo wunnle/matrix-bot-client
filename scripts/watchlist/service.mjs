@@ -16,6 +16,7 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { createStore } from './store.mjs'
+import { choiceLabel, cinemetaMeta, enrich, needsPopularity, parseInput, pickCandidate, searchCinemeta, withPopularity } from './lookup.mjs'
 
 const HOMESERVER = process.env.HOMESERVER ?? 'https://matrix.org'
 const USER_ID = process.env.USER_ID_B
@@ -35,6 +36,12 @@ const RESULT_KEY = 'com.construct.watchlist.result'
 const STALE_PLAY_MS = 2 * 60 * 1000
 // Matrix caps an event at 64 KiB. Warn well before the list gets there.
 const STATE_WARN_BYTES = 48 * 1024
+// TMDB details go stale (new seasons, providers rotating in and out of TR);
+// each title is looked up again once it is this old.
+const REFRESH_AFTER_MS = 24 * 60 * 60 * 1000
+const REFRESH_CHECK_MS = 60 * 60 * 1000
+// How long a "which one?" set of buttons stays answerable.
+const CHOICE_TTL_MS = 30 * 60 * 1000
 
 if (!USER_ID || !PASSWORD) {
   console.error('Missing USER_ID_B or PASSWORD_B in env')
@@ -148,7 +155,8 @@ async function notice(roomId, text, result) {
 
 /**
  * One handler per action. Each returns the line to show; throwing reports a
- * failure. `add` (BEN-301) and `play` (BEN-303) are wired in by those issues.
+ * failure. Adding is not an action: it comes in as a typed message (handleText).
+ * `play` arrives with BEN-303.
  */
 const handlers = {
   watched: ({ id }) => `✓ Watched: ${store.setWatched(id, true).title}`,
@@ -177,10 +185,108 @@ async function handleAction(roomId, event) {
   await notice(roomId, result.ok ? result.message : `⚠️ ${result.message}`, { request_id: requestId ?? null, action, id: id ?? null, ...result })
 }
 
+// --- Adding: anything the owner types in the room is a title or an IMDb link ---
+
+/** label → candidate, for the buttons of the last "which one?" question. */
+let choices = { expires: 0, byLabel: new Map() }
+
+function whereText(item) {
+  const names = { netflix: 'Netflix', hbomax: 'HBO Max', prime: 'Prime Video', apple: 'Apple TV+' }
+  return item.providers?.length ? item.providers.map((k) => names[k] ?? k).join(', ') : 'Stremio'
+}
+
+function offer(candidates, replaces = null) {
+  choices = {
+    expires: Date.now() + CHOICE_TTL_MS,
+    byLabel: new Map(candidates.map((c) => [choiceLabel(c), { ...c, replaces }])),
+  }
+  return [...choices.byLabel.keys()].map((l) => `[[${l}]]`).join(' ')
+}
+
+/**
+ * @param fallback what search already knew, used when TMDB has nothing
+ * @param others   same-named titles passed over by a popularity guess, offered as swaps
+ */
+async function addById(roomId, id, fallback = null, others = []) {
+  let details = await enrich(id).catch((err) => { log(`TMDB lookup for ${id} failed: ${err.message}`); return null })
+  details ??= fallback ?? await cinemetaMeta(id)
+  if (!details) {
+    return notice(roomId, `⚠️ Couldn't find ${id} on TMDB or Cinemeta.`, { action: 'add', id, ok: false })
+  }
+  const { item, added } = store.add({ ...details, id })
+  log(`add ${id} → ${added ? 'added' : 'duplicate'}: ${item.title}`)
+  await publish(roomId)
+  const year = item.year ? ` (${item.year})` : ''
+  const line = added ? `Added: ${item.title}${year} — ${whereText(item)}` : `Already on the list: ${item.title}${year}`
+  // A guess says so, and puts the alternatives one tap away.
+  const swap = added && others.length ? `\n\nNot this one?\n\n${offer(others, id)}` : ''
+  await notice(roomId, line + swap, { action: 'add', id, ok: true, added })
+}
+
+async function handleText(roomId, body) {
+  const chosen = Date.now() < choices.expires ? choices.byLabel.get(body.trim()) : null
+  if (chosen) {
+    choices = { expires: 0, byLabel: new Map() }
+    if (chosen.replaces && store.get(chosen.replaces)) {
+      store.remove(chosen.replaces)
+      log(`swap ${chosen.replaces} → ${chosen.id}`)
+    }
+    return addById(roomId, chosen.id, chosen)
+  }
+
+  const input = parseInput(body)
+  if (!input) return
+  if (input.imdbId) return addById(roomId, input.imdbId)
+
+  let candidates = await searchCinemeta(input.query)
+  if (needsPopularity(input.query, candidates)) candidates = await withPopularity(input.query, candidates)
+  const result = pickCandidate(input.query, candidates)
+  if (result.none) {
+    return notice(roomId, `Nothing found for “${input.query}”. An IMDb link always works.`, { action: 'add', id: null, ok: false })
+  }
+  if (result.pick) return addById(roomId, result.pick.id, result.pick, result.others)
+  await notice(roomId, `Which “${input.query}”?\n\n${offer(result.choices)}`)
+}
+
+// --- Refreshing TMDB details ---
+
+let refreshing = false
+
+/** Looks up every title whose details are older than REFRESH_AFTER_MS. One at a time — there's no hurry. */
+async function refreshStale(roomId) {
+  if (refreshing) return
+  refreshing = true
+  try {
+    const stale = store.list().filter((i) => Date.now() - (i.refreshedAt ?? 0) > REFRESH_AFTER_MS)
+    if (!stale.length) return
+    let changed = 0
+    for (const item of stale) {
+      try {
+        const details = await enrich(item.id)
+        if (details) {
+          store.update(item.id, details)
+          changed++
+        } else {
+          // Not on TMDB: don't ask again every hour.
+          store.update(item.id, { refreshedAt: Date.now() })
+        }
+      } catch (err) {
+        log(`refresh ${item.id} failed: ${err.message}`)
+      }
+    }
+    log(`refreshed ${changed}/${stale.length} titles from TMDB`)
+    await publish(roomId)
+  } finally {
+    refreshing = false
+  }
+}
+
 async function handleEvent(roomId, event) {
   if (event.sender !== OWNER_ID) return
   if (event.type === ACTION_EVENT) return handleAction(roomId, event)
-  // Plain messages — a title or an IMDb link — are BEN-301.
+  if (event.type === 'm.room.message' && event.content?.msgtype === 'm.text' && typeof event.content.body === 'string') {
+    return handleText(roomId, event.content.body)
+  }
 }
 
 // --- Sync loop ---
@@ -211,6 +317,11 @@ async function run() {
     writePrivate(syncFile, { since })
   }
   log(`listening in ${roomId}`)
+
+  // Off the sync loop: a slow TMDB must never hold up an answer to a tap.
+  const refresh = () => refreshStale(roomId).catch((err) => log(`refresh failed: ${err.message}`))
+  refresh()
+  setInterval(refresh, REFRESH_CHECK_MS)
 
   let backoff = 1000
   for (;;) {

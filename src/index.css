@@ -4251,7 +4251,8 @@ html.mac-app {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.wl-section-head--first { margin-top: 6px; }
+.room-view > :first-child > .wl-section-head,
+.room-view > .wl-section-head:first-child { margin-top: 6px; }
 .wl-section-toggle { -webkit-tap-highlight-color: transparent; }
 .wl-count {
   font-weight: 500;

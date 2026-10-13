@@ -61,6 +61,10 @@ export default function WatchlistView({ items, status, onAction, initialSelected
   const [showWatched, setShowWatched] = useState(initialShowWatched)
 
   const toWatch = items.filter((i) => !i.watchedAt)
+  const sections = [
+    { label: 'Shows', items: toWatch.filter((i) => i.kind !== 'movie') },
+    { label: 'Movies', items: toWatch.filter((i) => i.kind === 'movie') },
+  ].filter((s) => s.items.length)
   const watched = items.filter((i) => i.watchedAt).sort((a, b) => b.watchedAt! - a.watchedAt!)
   const current = items.find((i) => i.id === selected) ?? null
 
@@ -81,13 +85,16 @@ export default function WatchlistView({ items, status, onAction, initialSelected
 
   return (
     <div className="room-view wl">
-      <div className="wl-section-head wl-section-head--first">
-        <span>To watch</span>
-        <span className="wl-count">{toWatch.length}</span>
-      </div>
-      {toWatch.length
-        ? <div className="wl-grid">{toWatch.map(card)}</div>
-        : <p className="wl-empty">Nothing on the list. Send a title or an IMDb link below.</p>}
+      {sections.map((s) => (
+        <section key={s.label}>
+          <div className="wl-section-head">
+            <span>{s.label}</span>
+            <span className="wl-count">{s.items.length}</span>
+          </div>
+          <div className="wl-grid">{s.items.map(card)}</div>
+        </section>
+      ))}
+      {!toWatch.length && <p className="wl-empty">Nothing on the list. Send a title or an IMDb link below.</p>}
 
       {watched.length > 0 && (
         <>

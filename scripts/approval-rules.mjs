@@ -102,7 +102,23 @@ const SAFE_BASH_BINS = new Set([
 // arrives as three segments — the header, `do cmd`, and `done` — and only the
 // middle one names a program.
 const KEYWORD_HEADS = new Set(['for', 'while', 'until', 'if', 'elif', 'case'])
+// …except these, whose header *is* a command: `until git push; do` runs the
+// push. Treating the header as a no-op let any command through as a condition.
+const CONDITION_HEADS = new Set(['while', 'until', 'if', 'elif'])
 const KEYWORD_NOOPS = new Set(['do', 'then', 'else', 'done', 'fi', 'esac', '{', '}', '!', 'time', 'break', 'continue'])
+
+// The words of a segment with the shell keywords peeled off, leaving the
+// command that actually runs (or nothing, for `done` or a `for … in` header).
+function stripKeywords(tokens) {
+  while (tokens.length && KEYWORD_NOOPS.has(tokens[0])) tokens = tokens.slice(1)
+  if (tokens.length && KEYWORD_HEADS.has(tokens[0])) {
+    const at = tokens.findIndex((t) => t === 'do' || t === 'then')
+    if (at !== -1) tokens = tokens.slice(at + 1)
+    else tokens = CONDITION_HEADS.has(tokens[0]) ? tokens.slice(1) : []
+    while (tokens.length && KEYWORD_NOOPS.has(tokens[0])) tokens = tokens.slice(1)
+  }
+  return tokens
+}
 // Read-only by default, but each has flags/subcommands that mutate; the guards
 // below reject those before the binary is accepted.
 const GUARDED_BINS = {
@@ -181,13 +197,39 @@ function isHelperBin(token) {
 // m.room.name on the room the turn is already in; linear.js reaches Sinan's own
 // tracker; ha_helper.py reaches his own Home Assistant. Note the last one both
 // reads and writes — a pre-approved ha_helper.py can turn lights and switches
-// on and off without asking.
+// on and off without asking. send-image.mjs posts an image file into the room
+// the turn is in, the same reach as room-rename.mjs; it was a tap per
+// screenshot.
 const HOME = process.env.HOME ?? '/home/wunnle'
 const PREAPPROVED_SCRIPT_PATHS = new Set([
   `${HOME}/.openclaw/workspace/integrations/linear/linear.js`,
   `${HOME}/.openclaw/workspace/scripts/ha_helper.py`,
   `${HOME}/matrix-pwa/scripts/room-rename.mjs`,
+  `${HOME}/matrix-pwa/scripts/send-image.mjs`,
 ])
+
+// A headless Chromium that renders a page and exits: the screenshot half of the
+// CSS loop. Its only writes are the flags below, so each must land in a sandbox
+// root. A debugging port is refused — that leaves a browser running for anyone
+// to drive, and 9222 already belongs to Hermes.
+const CHROMIUM_BINS = new Set(['chromium', 'chromium-browser', 'google-chrome', 'chrome'])
+const CHROMIUM_WRITE_FLAGS = ['--screenshot', '--print-to-pdf', '--user-data-dir', '--crash-dumps-dir']
+function chromiumIsRender(tokens, effCwd, cwd) {
+  const args = tokens.slice(1).map((a) => a.replace(/^['"]|['"]$/g, ''))
+  if (!args.some((a) => a === '--headless' || a.startsWith('--headless='))) return false
+  if (args.some((a) => /^--remote-debugging-(port|pipe|address)\b/.test(a))) return false
+  for (const flag of CHROMIUM_WRITE_FLAGS) {
+    for (const a of args) {
+      if (a === flag) {
+        // Bare --screenshot/--print-to-pdf write into the working directory.
+        if (!isSandboxPathFrom('.', effCwd, cwd)) return false
+      } else if (a.startsWith(`${flag}=`)) {
+        if (!isSandboxPathFrom(a.slice(flag.length + 1), effCwd, cwd)) return false
+      }
+    }
+  }
+  return true
+}
 // Interpreters that run a *file*. `-c`/`-e` inline code is deliberately not
 // covered: the argument has to be one of the paths above.
 const SCRIPT_INTERPRETERS = new Set(['node', 'python3', 'python'])
@@ -410,14 +452,9 @@ export function bashIsSafe(command, cwd) {
   // Every pipeline/sequence segment must be a recognised read-only program.
   return splitSegments(cmd).every((seg) => {
     if (!redirectTargetsAllowed(seg, cwd)) return false
-    let tokens = seg.split(/\s+/)
-    // Shell keywords: `done`/`fi` name no program, and a loop or conditional
-    // header is judged by its body, which arrives as its own segment.
-    while (tokens.length && KEYWORD_NOOPS.has(tokens[0])) tokens = tokens.slice(1)
-    if (tokens.length && KEYWORD_HEADS.has(tokens[0])) {
-      const at = tokens.findIndex((t) => t === 'do' || t === 'then')
-      tokens = at === -1 ? [] : tokens.slice(at + 1)
-    }
+    // Shell keywords: `done`/`fi` name no program, a `for` header names none
+    // either, and a `while`/`until`/`if` header is judged as the command it runs.
+    let tokens = stripKeywords(seg.split(/\s+/))
     if (!tokens.length) return true
     while (tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens = tokens.slice(1) // strip VAR=val
     if (!tokens.length) return true      // assignment from an already-checked substitution
@@ -443,6 +480,7 @@ export function bashIsSafe(command, cwd) {
       base = tokens[0].split('/').pop()
     }
     if (base === 'curl' || base === 'wget') return httpIsRead(tokens, effCwd, cwd)
+    if (CHROMIUM_BINS.has(base)) return chromiumIsRender(tokens, effCwd, cwd)
     if (isHelperBin(tokens[0])) return true
     if (SAFE_BASH_BINS.has(base) || PREAPPROVED_BINS.has(base)) {
       const binGuard = GUARDED_BINS[base]
@@ -543,12 +581,7 @@ const PATH_DESTRUCTIVE_BINS = new Set(['rm', 'rmdir', 'mv', 'cp', 'chmod', 'chow
 // bashIsSafe does — keywords, VAR=val assignments, wrappers — kept separate
 // because that function answers a different question and returns a boolean.
 function segmentHead(seg) {
-  let tokens = unquoted(seg).trim().split(/\s+/).filter(Boolean)
-  while (tokens.length && KEYWORD_NOOPS.has(tokens[0])) tokens = tokens.slice(1)
-  if (tokens.length && KEYWORD_HEADS.has(tokens[0])) {
-    const at = tokens.findIndex((t) => t === 'do' || t === 'then')
-    tokens = at === -1 ? [] : tokens.slice(at + 1)
-  }
+  let tokens = stripKeywords(unquoted(seg).trim().split(/\s+/).filter(Boolean))
   while (tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens = tokens.slice(1)
   if (!tokens.length) return null
   let base = tokens[0].split('/').pop()

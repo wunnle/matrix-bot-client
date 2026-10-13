@@ -20,6 +20,23 @@ export interface WatchlistItem {
   /** Set when a watched show came back because this episode aired. */
   newEpisode?: { season: number, episode: number, airDate: string } | null
   /** IMDb's rating (via Cinemeta); null for titles too new to have one. */
+  /** Shows only, TMDB's: Returning Series, Ended, Canceled, In Production, Planned. */
+  status?: string | null
+  /** Film release or show premiere, YYYY-MM-DD. */
+  releaseDate?: string | null
+  /** Films: first digital release, in the region or else the US. */
+  digital?: { date: string, region: string } | null
+  /** Minutes — the film, or one episode. */
+  runtime?: number | null
+  genres?: string[]
+  overview?: string | null
+  /** Directors of a film, creators of a show. */
+  people?: string[]
+  cast?: string[]
+  ageRating?: string | null
+  /** YouTube video key. */
+  trailer?: string | null
+  seasons?: number | null
   // A string ("7.8") in room state — Matrix events can't carry floats.
   imdbRating?: string | number | null
   /** Films only: the cinema run in the region. `now` is TMDB's now-playing list. */
@@ -52,6 +69,49 @@ function whereLabel(item: WatchlistItem) {
   if (p.length) return p.map((k) => PROVIDER_LABELS[k]).join(' · ')
   // Not streaming anywhere you pay for: a cinema run says more than the fallback.
   return cinemaLabel(item) ?? 'Stremio'
+}
+
+/** How a show's run stands, in a word; null for films and unknowns. */
+function statusLabel(item: WatchlistItem) {
+  switch (item.status) {
+    case 'Ended': return 'Ended'
+    case 'Canceled': return 'Canceled'
+    case 'Returning Series': return 'Returning'
+    case 'In Production': return 'In production'
+    case 'Planned': return 'Planned'
+    default: return null
+  }
+}
+
+/** "2h 47m", "58m". */
+function runtimeLabel(min?: number | null) {
+  if (!min) return null
+  const h = Math.floor(min / 60)
+  return h ? `${h}h${min % 60 ? ` ${min % 60}m` : ''}` : `${min}m`
+}
+
+/** "27 Feb 2024". */
+const dateLabel = (iso: string) =>
+  new Date(`${iso}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+
+const isFuture = (iso: string, now = new Date()) => new Date(`${iso}T12:00:00`) > now
+
+/**
+ * The card's second line: where, plus what decides whether you start it —
+ * a film's length, a show's end.
+ */
+function cardLine(item: WatchlistItem) {
+  const extra = item.kind === 'movie'
+    ? runtimeLabel(item.runtime)
+    : item.status === 'Ended' || item.status === 'Canceled' ? statusLabel(item) : null
+  return [whereLabel(item), extra].filter(Boolean).join(' · ')
+}
+
+/** For a film not on your subscriptions: when it is (or was) out to rent or buy. */
+function digitalLabel(item: WatchlistItem) {
+  if (item.kind !== 'movie' || item.providers?.length || !item.digital) return null
+  const where = item.digital.region === 'TR' ? '' : ` (${item.digital.region})`
+  return `${isFuture(item.digital.date) ? 'Digital from' : 'Digital since'} ${dateLabel(item.digital.date)}${where}`
 }
 
 /** "Today", "Sat", or "Oct 24" — the air date as you'd say it. */
@@ -123,7 +183,7 @@ export default function WatchlistView({ items, status, onAction, initialSelected
           {s?.state === 'pending' && <span className="wl-poster-status">Starting…</span>}
         </div>
         <span className="wl-card-title">{item.title}</span>
-        <span className="wl-card-where">{whereLabel(item)}</span>
+        <span className="wl-card-where">{cardLine(item)}</span>
       </button>
     )
   }
@@ -172,10 +232,21 @@ export default function WatchlistView({ items, status, onAction, initialSelected
                   {[
                     current.year,
                     current.kind === 'series' ? 'Series' : 'Film',
-                    current.imdbRating ? `IMDb ${Number(current.imdbRating).toFixed(1)}` : null,
+                    current.kind === 'series'
+                      ? (current.seasons ? `${current.seasons} season${current.seasons > 1 ? 's' : ''}` : null)
+                      : runtimeLabel(current.runtime),
+                    current.ageRating,
                   ].filter(Boolean).join(' · ')}
                 </div>
-                <div className="wl-sheet-meta">{whereLabel(current)}</div>
+                {current.genres?.length ? <div className="wl-sheet-meta">{current.genres.slice(0, 3).join(', ')}</div> : null}
+                {(current.imdbRating || statusLabel(current)) && (
+                  <div className="wl-sheet-meta">
+                    {[current.imdbRating ? `IMDb ${Number(current.imdbRating).toFixed(1)}` : null, statusLabel(current)]
+                      .filter(Boolean).join(' · ')}
+                  </div>
+                )}
+                <div className="wl-sheet-meta wl-sheet-meta--where">{whereLabel(current)}</div>
+                {digitalLabel(current) && <div className="wl-sheet-meta">{digitalLabel(current)}</div>}
                 {current.providers?.length && cinemaLabel(current)
                   ? <div className="wl-sheet-meta">{cinemaLabel(current)}</div>
                   : null}
@@ -191,6 +262,24 @@ export default function WatchlistView({ items, status, onAction, initialSelected
                 )}
               </div>
             </div>
+
+            {(current.overview || current.people?.length || current.cast?.length || current.releaseDate) && (
+              <div className="wl-sheet-about">
+                {current.overview && <p className="wl-sheet-overview">{current.overview}</p>}
+                {current.people?.length ? (
+                  <p className="wl-sheet-credit">
+                    <span>{current.kind === 'movie' ? 'Directed by' : 'Created by'}</span> {current.people.join(', ')}
+                  </p>
+                ) : null}
+                {current.cast?.length ? <p className="wl-sheet-credit"><span>With</span> {current.cast.join(', ')}</p> : null}
+                {current.releaseDate && (
+                  <p className="wl-sheet-credit">
+                    <span>{current.kind === 'movie' ? (isFuture(current.releaseDate) ? 'Out' : 'Released') : 'Premiered'}</span>{' '}
+                    {dateLabel(current.releaseDate)}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* A film that is only in cinemas has nothing to play yet. */}
             {!(cinemaLabel(current) && !current.providers?.length) && (
@@ -219,6 +308,12 @@ export default function WatchlistView({ items, status, onAction, initialSelected
                 <span className="material-symbols-outlined" aria-hidden>{current.watchedAt ? 'undo' : 'check'}</span>
                 {current.watchedAt ? 'Back to the list' : 'Mark watched'}
               </button>
+              {current.trailer && (
+                <a className="message-sheet-action" href={`https://www.youtube.com/watch?v=${current.trailer}`} target="_blank" rel="noreferrer">
+                  <span className="material-symbols-outlined" aria-hidden>smart_display</span>
+                  Trailer
+                </a>
+              )}
               <a className="message-sheet-action" href={`https://www.imdb.com/title/${current.id}/`} target="_blank" rel="noreferrer">
                 <span className="material-symbols-outlined" aria-hidden>open_in_new</span>
                 IMDb

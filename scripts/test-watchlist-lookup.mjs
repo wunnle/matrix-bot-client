@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { choiceLabel, episodeSinceWatched, needsPopularity, parseInput, pickCandidate } from './watchlist/lookup.mjs'
+import { choiceLabel, episodeSinceWatched, needsPopularity, parseInput, pickCandidate, releaseInfo, trailerKey, truncate } from './watchlist/lookup.mjs'
 
 // Links in every shape IMDb hands out, and a bare id.
 assert.deepEqual(parseInput('https://www.imdb.com/title/tt11280740/'), { imdbId: 'tt11280740' })
@@ -50,5 +50,24 @@ assert.equal(episodeSinceWatched(show('2026-10-16T23:30:00Z', '2026-10-17'), tod
 assert.equal(episodeSinceWatched(show('2026-10-10T18:00:00Z', '2026-10-25'), today), null)
 assert.equal(episodeSinceWatched({ ...show('2026-10-10T18:00:00Z', '2026-10-17'), kind: 'movie' }, today), null)
 assert.equal(episodeSinceWatched({ ...show('2026-10-10T18:00:00Z', '2026-10-17'), watchedAt: null }, today), null)
+
+// Release dates: cinema run and age rating from the region, digital from the
+// region else the US (labelled), earliest date of each type.
+const rd = (iso, dates) => ({ iso_3166_1: iso, release_dates: dates.map(([type, date, certification = '']) => ({ type, release_date: `${date}T00:00:00.000Z`, certification })) })
+assert.deepEqual(
+  releaseInfo([rd('TR', [[3, '2026-10-23', '13+'], [2, '2026-10-20']]), rd('US', [[4, '2026-12-01', 'PG-13']])], 'TR'),
+  { cinemaOpens: '2026-10-20', digital: { date: '2026-12-01', region: 'US' }, ageRating: '13+' },
+)
+assert.deepEqual(
+  releaseInfo([rd('TR', [[4, '2026-11-14']]), rd('US', [[4, '2026-11-01', 'R']])], 'TR'),
+  { cinemaOpens: null, digital: { date: '2026-11-14', region: 'TR' }, ageRating: 'R' },
+)
+assert.deepEqual(releaseInfo(undefined, 'TR'), { cinemaOpens: null, digital: null, ageRating: null })
+
+assert.equal(trailerKey([{ site: 'YouTube', type: 'Teaser', key: 'a' }, { site: 'YouTube', type: 'Trailer', key: 'b' }, { site: 'YouTube', type: 'Trailer', key: 'c', official: true }]), 'c')
+assert.equal(trailerKey([{ site: 'Vimeo', type: 'Trailer', key: 'v' }]), null)
+
+assert.equal(truncate('short', 10), 'short')
+assert.equal(truncate('one two three four five', 14), 'one two three…')
 
 console.log('watchlist lookup passed')

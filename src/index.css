@@ -4429,5 +4429,26 @@ html.mac-app {
 }
 .wl-sheet-status--failed { color: var(--danger); }
 .wl-sheet .message-sheet-actions { margin-top: 6px; }
+/* The sheet outgrew the screen once it carried plot and credits. */
+.wl-sheet { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.wl-sheet-meta--where { color: var(--text); }
+.wl-sheet-about {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 20px 16px;
+}
+.wl-sheet-overview {
+  margin: 0 0 4px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.wl-sheet-credit {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+.wl-sheet-credit span { color: var(--text-muted); }
 .wl-sheet a.message-sheet-action { text-decoration: none; }
 .wl-remove, .wl-remove .material-symbols-outlined { color: var(--danger) !important; }

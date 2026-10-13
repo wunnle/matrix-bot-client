@@ -153,7 +153,10 @@ export async function enrich(imdbId) {
   const date = tv ? detail.first_air_date : detail.release_date
   const ne = detail.next_episode_to_air
   const le = detail.last_episode_to_air
-  const cinema = tv ? null : await cinemaRun(hit.id, region).catch(() => null)
+  const [cinema, imdbRating] = await Promise.all([
+    tv ? null : cinemaRun(hit.id, region).catch(() => null),
+    imdbScore(imdbId, kind),
+  ])
   return {
     tmdbId: hit.id,
     kind,
@@ -164,6 +167,7 @@ export async function enrich(imdbId) {
     next: ne ? { season: ne.season_number, episode: ne.episode_number, airDate: ne.air_date } : null,
     lastAired: le?.air_date ? { season: le.season_number, episode: le.episode_number, airDate: le.air_date } : null,
     cinema,
+    imdbRating,
     refreshedAt: Date.now(),
   }
 }
@@ -199,6 +203,20 @@ export function episodeSinceWatched(item, today = new Date()) {
   const day = (t) => new Date(t).toLocaleDateString('en-CA', { timeZone: 'Europe/Istanbul' })
   const aired = item.lastAired.airDate
   return aired > day(item.watchedAt) && aired <= day(today) ? item.lastAired : null
+}
+
+/**
+ * IMDb's own rating, which TMDB doesn't carry (its vote_average is TMDB's).
+ * Cinemeta mirrors it keylessly. Null for titles too new to have one.
+ */
+async function imdbScore(imdbId, kind) {
+  try {
+    const { meta } = await getJson(`${CINEMETA}/meta/${kind}/${imdbId}.json`)
+    const score = parseFloat(meta?.imdbRating)
+    return Number.isFinite(score) && score > 0 ? score : null
+  } catch {
+    return null
+  }
 }
 
 /** A title Cinemeta knows by id, for when TMDB doesn't. */

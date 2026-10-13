@@ -1,40 +1,8 @@
 [
   {
-    "id": "tt35538033",
-    "tmdbId": 1423191,
-    "kind": "movie",
-    "title": "Resident Evil",
-    "year": 2026,
-    "poster": "https://image.tmdb.org/t/p/w342/i7UyjfPio0VFHB9rBUZSFyhOoM8.jpg",
-    "providers": [],
-    "next": null,
-    "cinema": {
-      "opens": "2026-09-18",
-      "now": true
-    },
-    "refreshedAt": 1791862864983,
-    "addedAt": 1791862864983,
-    "watchedAt": null
-  },
-  {
-    "id": "tt34206385",
-    "tmdbId": 1375441,
-    "kind": "movie",
-    "title": "Primetime",
-    "year": 2026,
-    "poster": "https://image.tmdb.org/t/p/w342/51VDtNQFuD2I86hrT4ekytg9Dq3.jpg",
-    "providers": [],
-    "next": null,
-    "cinema": {
-      "opens": "2026-10-23",
-      "now": false
-    },
-    "refreshedAt": 1791862865250,
-    "addedAt": 1791862865250,
-    "watchedAt": null
-  },
-  {
     "id": "tt15239678",
+    "addedAt": 1791863379327,
+    "watchedAt": null,
     "tmdbId": 693134,
     "kind": "movie",
     "title": "Dune: Part Two",
@@ -44,13 +12,80 @@
       "hbomax"
     ],
     "next": null,
+    "lastAired": null,
     "cinema": {
       "opens": "2024-03-01",
       "now": false
     },
-    "refreshedAt": 1791862865331,
-    "addedAt": 1791862865331,
-    "watchedAt": null
+    "imdbRating": 8.4,
+    "refreshedAt": 1791863379695
+  },
+  {
+    "id": "tt35538033",
+    "addedAt": 1791863379327,
+    "watchedAt": null,
+    "tmdbId": 1423191,
+    "kind": "movie",
+    "title": "Resident Evil",
+    "year": 2026,
+    "poster": "https://image.tmdb.org/t/p/w342/i7UyjfPio0VFHB9rBUZSFyhOoM8.jpg",
+    "providers": [],
+    "next": null,
+    "lastAired": null,
+    "cinema": {
+      "opens": "2026-09-18",
+      "now": true
+    },
+    "imdbRating": null,
+    "refreshedAt": 1791863379876
+  },
+  {
+    "tmdbId": 1765072,
+    "providers": [],
+    "next": null,
+    "refreshedAt": 1791863380021,
+    "id": "tt45368240",
+    "kind": "movie",
+    "title": "You Can See Everything",
+    "year": 2026,
+    "poster": "https://image.tmdb.org/t/p/w342/l6iuf8OaKqvtaP56IYi0Aj6FSSc.jpg",
+    "addedAt": 1791862690174,
+    "watchedAt": null,
+    "lastAired": null,
+    "cinema": null,
+    "imdbRating": 7.8
+  },
+  {
+    "tmdbId": 926676,
+    "providers": [],
+    "next": null,
+    "refreshedAt": 1791863380088,
+    "id": "tt17041964",
+    "kind": "movie",
+    "title": "Navalny",
+    "year": 2022,
+    "poster": "https://image.tmdb.org/t/p/w342/9FXHNsqB4Wk9p42Yh0UtDflRY1f.jpg",
+    "addedAt": 1791862647286,
+    "watchedAt": null,
+    "lastAired": null,
+    "cinema": null,
+    "imdbRating": 7.8
+  },
+  {
+    "tmdbId": 1281331,
+    "providers": [],
+    "next": null,
+    "refreshedAt": 1791863380170,
+    "id": "tt37510326",
+    "kind": "movie",
+    "title": "The Social Reckoning",
+    "year": 2026,
+    "poster": "https://image.tmdb.org/t/p/w342/7jK6NuxVg1XuEV7UdNa6KO03IgZ.jpg",
+    "addedAt": 1791862629419,
+    "watchedAt": null,
+    "lastAired": null,
+    "cinema": null,
+    "imdbRating": null
   },
   {
     "id": "tt32603995",
@@ -65,7 +100,14 @@
     ],
     "next": null,
     "tmdbId": 256694,
-    "refreshedAt": 1791862496919
+    "refreshedAt": 1791863380303,
+    "lastAired": {
+      "season": 2,
+      "episode": 20,
+      "airDate": "2026-10-02"
+    },
+    "cinema": null,
+    "imdbRating": null
   },
   {
     "id": "tt37692332",
@@ -74,13 +116,20 @@
     "year": 2026,
     "poster": "https://image.tmdb.org/t/p/w342/lc9riW73Oee2pBxi1UrDPgyQjEr.jpg",
     "addedAt": 1791528618935,
-    "watchedAt": null,
+    "watchedAt": 1791862846645,
     "providers": [
       "hbomax"
     ],
     "next": null,
     "tmdbId": 296756,
-    "refreshedAt": 1791862497214
+    "refreshedAt": 1791863380335,
+    "lastAired": {
+      "season": 1,
+      "episode": 10,
+      "airDate": "2026-09-27"
+    },
+    "cinema": null,
+    "imdbRating": null
   },
   {
     "id": "tt26545992",
@@ -95,7 +144,14 @@
     ],
     "next": null,
     "tmdbId": 95350,
-    "refreshedAt": 1791862497510,
+    "refreshedAt": 1791863380367,
+    "lastAired": {
+      "season": 1,
+      "episode": 8,
+      "airDate": "2026-10-04"
+    },
+    "cinema": null,
+    "imdbRating": 7.8,
     "newEpisode": {
       "season": 1,
       "episode": 4,
@@ -113,7 +169,14 @@
     "providers": [],
     "next": null,
     "tmdbId": 138502,
-    "refreshedAt": 1791862497905
+    "refreshedAt": 1791863380398,
+    "lastAired": {
+      "season": 2,
+      "episode": 9,
+      "airDate": "2026-08-12"
+    },
+    "cinema": null,
+    "imdbRating": 8.7
   },
   {
     "id": "tt2861424",
@@ -122,14 +185,21 @@
     "year": 2013,
     "poster": "https://image.tmdb.org/t/p/w342/owhkU6KRqdXoUQpjV8uyZGPtX58.jpg",
     "addedAt": 1791204618935,
-    "watchedAt": 1791603425666,
+    "watchedAt": 1791862787557,
     "providers": [
       "netflix",
       "hbomax"
     ],
     "next": null,
     "tmdbId": 60625,
-    "refreshedAt": 1791862498285
+    "refreshedAt": 1791863380436,
+    "lastAired": {
+      "season": 9,
+      "episode": 10,
+      "airDate": "2026-07-26"
+    },
+    "cinema": null,
+    "imdbRating": 9
   },
   {
     "id": "tt14681596",
@@ -144,7 +214,14 @@
     ],
     "next": null,
     "tmdbId": 125909,
-    "refreshedAt": 1791862498649
+    "refreshedAt": 1791863380469,
+    "lastAired": {
+      "season": 2,
+      "episode": 10,
+      "airDate": "2026-07-31"
+    },
+    "cinema": null,
+    "imdbRating": 7.2
   },
   {
     "id": "tt3718778",
@@ -153,13 +230,20 @@
     "year": 2014,
     "poster": "https://image.tmdb.org/t/p/w342/m3lU8n7WxzMecxKZcqhq5y5ESy.jpg",
     "addedAt": 1790988618935,
-    "watchedAt": null,
+    "watchedAt": 1791862773469,
     "providers": [
       "hbomax"
     ],
     "next": null,
     "tmdbId": 61617,
-    "refreshedAt": 1791862498947
+    "refreshedAt": 1791863380502,
+    "lastAired": {
+      "season": 1,
+      "episode": 10,
+      "airDate": "2014-11-07"
+    },
+    "cinema": null,
+    "imdbRating": 8.7
   },
   {
     "id": "tt27497448",
@@ -174,7 +258,14 @@
     ],
     "next": null,
     "tmdbId": 224372,
-    "refreshedAt": 1791862499253
+    "refreshedAt": 1791863380670,
+    "lastAired": {
+      "season": 1,
+      "episode": 6,
+      "airDate": "2026-02-22"
+    },
+    "cinema": null,
+    "imdbRating": 8.6
   },
   {
     "id": "tt8550732",
@@ -189,7 +280,14 @@
     ],
     "next": null,
     "tmdbId": 102621,
-    "refreshedAt": 1791862499276
+    "refreshedAt": 1791863380782,
+    "lastAired": {
+      "season": 1,
+      "episode": 8,
+      "airDate": "2024-08-29"
+    },
+    "cinema": null,
+    "imdbRating": 7.4
   },
   {
     "id": "tt32604054",
@@ -198,7 +296,7 @@
     "year": 2026,
     "poster": "https://image.tmdb.org/t/p/w342/jqY3dj70ffSqKpM8XVUEToOEeLG.jpg",
     "addedAt": 1790664618935,
-    "watchedAt": null,
+    "watchedAt": 1791862890966,
     "providers": [
       "hbomax"
     ],
@@ -208,6 +306,13 @@
       "airDate": "2026-10-17"
     },
     "tmdbId": 256695,
-    "refreshedAt": 1791862499672
+    "refreshedAt": 1791863380881,
+    "lastAired": {
+      "season": 1,
+      "episode": 14,
+      "airDate": "2026-10-10"
+    },
+    "cinema": null,
+    "imdbRating": null
   }
 ]

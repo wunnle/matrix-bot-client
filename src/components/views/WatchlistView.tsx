@@ -19,6 +19,8 @@ export interface WatchlistItem {
   next?: { season: number, episode: number, airDate: string } | null
   /** Set when a watched show came back because this episode aired. */
   newEpisode?: { season: number, episode: number, airDate: string } | null
+  /** IMDb's rating (via Cinemeta); null for titles too new to have one. */
+  imdbRating?: number | null
   /** Films only: the cinema run in the region. `now` is TMDB's now-playing list. */
   cinema?: { opens: string | null, now: boolean } | null
 }
@@ -78,12 +80,14 @@ function savedTab(): Tab {
   try { return localStorage.getItem(TAB_KEY) === 'movie' ? 'movie' : 'series' } catch { return 'series' }
 }
 
+const episode = (e: { season: number, episode: number }) => `S${e.season} E${e.episode}`
+
 /** The poster's one badge, most urgent first. */
 function badge(item: WatchlistItem) {
   if (item.watchedAt) return null
-  if (item.newEpisode) return 'New episode'
+  if (item.newEpisode) return `New · ${episode(item.newEpisode)}`
   if (item.cinema?.now) return 'In theaters'
-  if (item.next) return `Next ep · ${airLabel(item.next.airDate)}`
+  if (item.next) return `${episode(item.next)} · ${airLabel(item.next.airDate)}`
   return null
 }
 
@@ -114,6 +118,7 @@ export default function WatchlistView({ items, status, onAction, initialSelected
         <div className="wl-poster">
           {item.poster ? <img src={item.poster} alt="" loading="lazy" /> : <span>{item.title.slice(0, 1)}</span>}
           {b && <span className="wl-badge">{b}</span>}
+          {item.kind === 'movie' && item.imdbRating && <span className="wl-rating">★ {item.imdbRating.toFixed(1)}</span>}
           {s?.state === 'pending' && <span className="wl-poster-status">Starting…</span>}
         </div>
         <span className="wl-card-title">{item.title}</span>
@@ -163,7 +168,11 @@ export default function WatchlistView({ items, status, onAction, initialSelected
               <div className="wl-sheet-info">
                 <div className="wl-sheet-title">{current.title}</div>
                 <div className="wl-sheet-meta">
-                  {[current.year, current.kind === 'series' ? 'Series' : 'Film'].filter(Boolean).join(' · ')}
+                  {[
+                    current.year,
+                    current.kind === 'series' ? 'Series' : 'Film',
+                    current.imdbRating ? `IMDb ${current.imdbRating.toFixed(1)}` : null,
+                  ].filter(Boolean).join(' · ')}
                 </div>
                 <div className="wl-sheet-meta">{whereLabel(current)}</div>
                 {current.providers?.length && cinemaLabel(current)
@@ -171,12 +180,12 @@ export default function WatchlistView({ items, status, onAction, initialSelected
                   : null}
                 {current.newEpisode && !current.watchedAt && (
                   <div className="wl-sheet-meta wl-sheet-meta--new">
-                    New: S{current.newEpisode.season} E{current.newEpisode.episode}
+                    New: {episode(current.newEpisode)} · out {airLabel(current.newEpisode.airDate)}
                   </div>
                 )}
                 {current.next && (
                   <div className="wl-sheet-meta">
-                    Next: S{current.next.season} E{current.next.episode} · {airLabel(current.next.airDate)}
+                    Next: {episode(current.next)} · {airLabel(current.next.airDate)}
                   </div>
                 )}
               </div>

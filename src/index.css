@@ -4331,6 +4331,17 @@ html.mac-app {
   font-size: 11px;
   font-weight: 600;
 }
+.wl-rating {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(15, 15, 19, 0.82);
+  color: var(--text-strong);
+  font-size: 11px;
+  font-weight: 600;
+}
 .wl-poster-status {
   position: absolute;
   inset: auto 0 0;

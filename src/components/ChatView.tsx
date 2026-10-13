@@ -2302,7 +2302,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
             stands in for it: the row would otherwise sit between you and the
             autocomplete, which offers the matching pills anyway. Kept in the
             DOM so a pill mid-drag or the add field keep their state. */}
-        <div ref={pillsRowRef} className={`pills${composing || pendingApproval ?' pills--hidden' : ''}`} onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>
+        {/* With no saved pills and no reply buttons there is nothing to show
+            but the lone "+", so the row goes; pills are still added from the
+            room editor. */}
+        <div ref={pillsRowRef} className={`pills${composing || pendingApproval || (!pills.length && !(modelPicker ? [] : lastActions).length && !addingPill) ? ' pills--hidden' : ''}`} onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>
           {(modelPicker ? [] : lastActions).map((action) => (
             <button
               key={`action-${action}`}
@@ -2358,7 +2361,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               placeholder="New reply…"
               enterKeyHint="done"
             />
-          ) : (
+          ) : pills.length > 0 && (
             <button className="pill pill-add" onClick={() => { setAddingPill(true); setTimeout(() => newPillRef.current?.focus(), 0) }}>
               +
             </button>

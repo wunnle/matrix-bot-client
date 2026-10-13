@@ -4251,8 +4251,30 @@ html.mac-app {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.room-view > :first-child > .wl-section-head,
-.room-view > .wl-section-head:first-child { margin-top: 6px; }
+.wl-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin: 2px 0 16px;
+  border-radius: 8px;
+  background: var(--bg-active);
+}
+.wl-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  -webkit-tap-highlight-color: transparent;
+}
+.wl-tab--on { background: var(--bg-hover); color: var(--text); }
+.wl-tab .wl-count { font-size: 13px; }
+.wl-sheet-meta--new { color: var(--accent-hover); font-weight: 600; }
 .wl-section-toggle { -webkit-tap-highlight-color: transparent; }
 .wl-count {
   font-weight: 500;

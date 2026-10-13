@@ -7,7 +7,8 @@ import sample from './watchlist-sample.json'
 // Dev only (main.tsx mounts it for ?watchlist under `vite`): the Watchlist room
 // page with real titles, no Matrix login. Actions are simulated locally, and the
 // footer is a static copy of ChatView's peek + composer markup.
-// ?watchlist=<imdb id> opens that title's sheet; &watched expands the section.
+// ?watchlist=<imdb id> opens that title's sheet; &watched expands the section;
+// &tab=movie opens on Movies.
 export default function WatchlistHarness() {
   const params = new URLSearchParams(location.search)
   const [items, setItems] = useState<WatchlistItem[]>(sample as WatchlistItem[])
@@ -36,6 +37,7 @@ export default function WatchlistHarness() {
             status={status}
             initialSelected={params.get('watchlist') || undefined}
             initialShowWatched={params.has('watched')}
+            initialTab={params.get('tab') === 'movie' ? 'movie' : 'series'}
             onAction={(action, id) => {
               if (action === 'play') {
                 setStatus((s) => ({ ...s, [id]: { state: 'pending' } }))

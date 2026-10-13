@@ -17,6 +17,10 @@ export interface WatchlistItem {
   /** Subscriptions it is included in. Empty means Stremio. */
   providers?: ProviderKey[]
   next?: { season: number, episode: number, airDate: string } | null
+  /** Set when a watched show came back because this episode aired. */
+  newEpisode?: { season: number, episode: number, airDate: string } | null
+  /** Films only: the cinema run in the region. `now` is TMDB's now-playing list. */
+  cinema?: { opens: string | null, now: boolean } | null
 }
 
 export type WatchlistAction = 'play' | 'watched' | 'unwatched' | 'remove'
@@ -31,9 +35,20 @@ const PROVIDER_LABELS: Record<ProviderKey, string> = {
   apple: 'Apple TV+',
 }
 
+/** "In theaters", "In theaters Fri" / "Oct 24" for an upcoming run, else null. */
+function cinemaLabel(item: WatchlistItem, now = new Date()) {
+  const c = item.cinema
+  if (!c || item.watchedAt) return null
+  if (c.now) return 'In theaters'
+  if (c.opens && new Date(`${c.opens}T12:00:00`) > now) return `In theaters ${airLabel(c.opens, now)}`
+  return null
+}
+
 function whereLabel(item: WatchlistItem) {
   const p = item.providers ?? []
-  return p.length ? p.map((k) => PROVIDER_LABELS[k]).join(' · ') : 'Stremio'
+  if (p.length) return p.map((k) => PROVIDER_LABELS[k]).join(' · ')
+  // Not streaming anywhere you pay for: a cinema run says more than the fallback.
+  return cinemaLabel(item) ?? 'Stremio'
 }
 
 /** "Today", "Sat", or "Oct 24" — the air date as you'd say it. */
@@ -52,29 +67,53 @@ interface Props {
   /** Opens with this title's sheet up — for the dev harness. */
   initialSelected?: string
   initialShowWatched?: boolean
+  initialTab?: 'series' | 'movie'
+}
+
+type Tab = 'series' | 'movie'
+const TABS: { id: Tab, label: string }[] = [{ id: 'series', label: 'Shows' }, { id: 'movie', label: 'Movies' }]
+const TAB_KEY = 'construct.watchlist.tab'
+
+function savedTab(): Tab {
+  try { return localStorage.getItem(TAB_KEY) === 'movie' ? 'movie' : 'series' } catch { return 'series' }
+}
+
+/** The poster's one badge, most urgent first. */
+function badge(item: WatchlistItem) {
+  if (item.watchedAt) return null
+  if (item.newEpisode) return 'New episode'
+  if (item.cinema?.now) return 'In theaters'
+  if (item.next) return `Next ep · ${airLabel(item.next.airDate)}`
+  return null
 }
 
 // Adding has no field here: the room's composer stays under the page, and a
 // title typed there is the same message to the service as one typed in chat.
-export default function WatchlistView({ items, status, onAction, initialSelected, initialShowWatched = false }: Props) {
+export default function WatchlistView({ items, status, onAction, initialSelected, initialShowWatched = false, initialTab }: Props) {
   const [selected, setSelected] = useState<string | null>(initialSelected ?? null)
   const [showWatched, setShowWatched] = useState(initialShowWatched)
+  const [tab, setTab] = useState<Tab>(() => initialTab ?? savedTab())
+  const pickTab = (t: Tab) => {
+    setTab(t)
+    try { localStorage.setItem(TAB_KEY, t) } catch { /* private mode: just don't remember */ }
+  }
 
-  const toWatch = items.filter((i) => !i.watchedAt)
-  const sections = [
-    { label: 'Shows', items: toWatch.filter((i) => i.kind !== 'movie') },
-    { label: 'Movies', items: toWatch.filter((i) => i.kind === 'movie') },
-  ].filter((s) => s.items.length)
-  const watched = items.filter((i) => i.watchedAt).sort((a, b) => b.watchedAt! - a.watchedAt!)
+  const ofKind = (t: Tab) => items.filter((i) => (t === 'movie') === (i.kind === 'movie'))
+  const inTab = ofKind(tab)
+  // Shows that came back for a new episode lead, newest episode first.
+  const toWatch = inTab.filter((i) => !i.watchedAt)
+    .sort((a, b) => (b.newEpisode?.airDate ?? '').localeCompare(a.newEpisode?.airDate ?? ''))
+  const watched = inTab.filter((i) => i.watchedAt).sort((a, b) => b.watchedAt! - a.watchedAt!)
   const current = items.find((i) => i.id === selected) ?? null
 
   const card = (item: WatchlistItem) => {
     const s = status[item.id]
+    const b = badge(item)
     return (
       <button key={item.id} type="button" className="wl-card" onClick={() => setSelected(item.id)}>
         <div className="wl-poster">
           {item.poster ? <img src={item.poster} alt="" loading="lazy" /> : <span>{item.title.slice(0, 1)}</span>}
-          {item.next && !item.watchedAt && <span className="wl-badge">New ep · {airLabel(item.next.airDate)}</span>}
+          {b && <span className="wl-badge">{b}</span>}
           {s?.state === 'pending' && <span className="wl-poster-status">Starting…</span>}
         </div>
         <span className="wl-card-title">{item.title}</span>
@@ -85,16 +124,25 @@ export default function WatchlistView({ items, status, onAction, initialSelected
 
   return (
     <div className="room-view wl">
-      {sections.map((s) => (
-        <section key={s.label}>
-          <div className="wl-section-head">
-            <span>{s.label}</span>
-            <span className="wl-count">{s.items.length}</span>
-          </div>
-          <div className="wl-grid">{s.items.map(card)}</div>
-        </section>
-      ))}
-      {!toWatch.length && <p className="wl-empty">Nothing on the list. Send a title or an IMDb link below.</p>}
+      <div className="wl-tabs" role="tablist" aria-label="Kind">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            className={tab === t.id ? 'wl-tab wl-tab--on' : 'wl-tab'}
+            onClick={() => pickTab(t.id)}
+          >
+            {t.label}
+            <span className="wl-count">{ofKind(t.id).filter((i) => !i.watchedAt).length}</span>
+          </button>
+        ))}
+      </div>
+
+      {toWatch.length
+        ? <div className="wl-grid">{toWatch.map(card)}</div>
+        : <p className="wl-empty">No {tab === 'movie' ? 'movies' : 'shows'} to watch. Send a title or an IMDb link below.</p>}
 
       {watched.length > 0 && (
         <>
@@ -118,23 +166,34 @@ export default function WatchlistView({ items, status, onAction, initialSelected
                   {[current.year, current.kind === 'series' ? 'Series' : 'Film'].filter(Boolean).join(' · ')}
                 </div>
                 <div className="wl-sheet-meta">{whereLabel(current)}</div>
+                {current.providers?.length && cinemaLabel(current)
+                  ? <div className="wl-sheet-meta">{cinemaLabel(current)}</div>
+                  : null}
+                {current.newEpisode && !current.watchedAt && (
+                  <div className="wl-sheet-meta wl-sheet-meta--new">
+                    New: S{current.newEpisode.season} E{current.newEpisode.episode}
+                  </div>
+                )}
                 {current.next && (
                   <div className="wl-sheet-meta">
-                    S{current.next.season} E{current.next.episode} · {airLabel(current.next.airDate)}
+                    Next: S{current.next.season} E{current.next.episode} · {airLabel(current.next.airDate)}
                   </div>
                 )}
               </div>
             </div>
 
-            <button
-              type="button"
-              className="wl-play"
-              disabled={status[current.id]?.state === 'pending'}
-              onClick={() => onAction('play', current.id)}
-            >
-              <span className="material-symbols-outlined" aria-hidden>play_arrow</span>
-              {status[current.id]?.state === 'pending' ? 'Starting on the TV…' : 'Play on TV'}
-            </button>
+            {/* A film that is only in cinemas has nothing to play yet. */}
+            {!(cinemaLabel(current) && !current.providers?.length) && (
+              <button
+                type="button"
+                className="wl-play"
+                disabled={status[current.id]?.state === 'pending'}
+                onClick={() => onAction('play', current.id)}
+              >
+                <span className="material-symbols-outlined" aria-hidden>play_arrow</span>
+                {status[current.id]?.state === 'pending' ? 'Starting on the TV…' : 'Play on TV'}
+              </button>
+            )}
             {status[current.id]?.message && (
               <div className={`wl-sheet-status${status[current.id].state === 'failed' ? ' wl-sheet-status--failed' : ''}`}>
                 {status[current.id].message}

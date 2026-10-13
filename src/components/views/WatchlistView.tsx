@@ -20,7 +20,8 @@ export interface WatchlistItem {
   /** Set when a watched show came back because this episode aired. */
   newEpisode?: { season: number, episode: number, airDate: string } | null
   /** IMDb's rating (via Cinemeta); null for titles too new to have one. */
-  imdbRating?: number | null
+  // A string ("7.8") in room state — Matrix events can't carry floats.
+  imdbRating?: string | number | null
   /** Films only: the cinema run in the region. `now` is TMDB's now-playing list. */
   cinema?: { opens: string | null, now: boolean } | null
 }
@@ -118,7 +119,7 @@ export default function WatchlistView({ items, status, onAction, initialSelected
         <div className="wl-poster">
           {item.poster ? <img src={item.poster} alt="" loading="lazy" /> : <span>{item.title.slice(0, 1)}</span>}
           {b && <span className="wl-badge">{b}</span>}
-          {item.kind === 'movie' && item.imdbRating && <span className="wl-rating">★ {item.imdbRating.toFixed(1)}</span>}
+          {item.kind === 'movie' && item.imdbRating && <span className="wl-rating">★ {Number(item.imdbRating).toFixed(1)}</span>}
           {s?.state === 'pending' && <span className="wl-poster-status">Starting…</span>}
         </div>
         <span className="wl-card-title">{item.title}</span>
@@ -171,7 +172,7 @@ export default function WatchlistView({ items, status, onAction, initialSelected
                   {[
                     current.year,
                     current.kind === 'series' ? 'Series' : 'Film',
-                    current.imdbRating ? `IMDb ${current.imdbRating.toFixed(1)}` : null,
+                    current.imdbRating ? `IMDb ${Number(current.imdbRating).toFixed(1)}` : null,
                   ].filter(Boolean).join(' · ')}
                 </div>
                 <div className="wl-sheet-meta">{whereLabel(current)}</div>

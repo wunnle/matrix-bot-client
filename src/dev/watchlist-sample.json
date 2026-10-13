@@ -17,7 +17,7 @@
       "opens": "2024-03-01",
       "now": false
     },
-    "imdbRating": 8.4,
+    "imdbRating": "8.4",
     "refreshedAt": 1791863379695
   },
   {
@@ -53,7 +53,7 @@
     "watchedAt": null,
     "lastAired": null,
     "cinema": null,
-    "imdbRating": 7.8
+    "imdbRating": "7.8"
   },
   {
     "tmdbId": 926676,
@@ -69,7 +69,7 @@
     "watchedAt": null,
     "lastAired": null,
     "cinema": null,
-    "imdbRating": 7.8
+    "imdbRating": "7.8"
   },
   {
     "tmdbId": 1281331,
@@ -151,7 +151,7 @@
       "airDate": "2026-10-04"
     },
     "cinema": null,
-    "imdbRating": 7.8,
+    "imdbRating": "7.8",
     "newEpisode": {
       "season": 1,
       "episode": 4,
@@ -176,7 +176,7 @@
       "airDate": "2026-08-12"
     },
     "cinema": null,
-    "imdbRating": 8.7
+    "imdbRating": "8.7"
   },
   {
     "id": "tt2861424",
@@ -199,7 +199,7 @@
       "airDate": "2026-07-26"
     },
     "cinema": null,
-    "imdbRating": 9
+    "imdbRating": "9"
   },
   {
     "id": "tt14681596",
@@ -221,7 +221,7 @@
       "airDate": "2026-07-31"
     },
     "cinema": null,
-    "imdbRating": 7.2
+    "imdbRating": "7.2"
   },
   {
     "id": "tt3718778",
@@ -243,7 +243,7 @@
       "airDate": "2014-11-07"
     },
     "cinema": null,
-    "imdbRating": 8.7
+    "imdbRating": "8.7"
   },
   {
     "id": "tt27497448",
@@ -265,7 +265,7 @@
       "airDate": "2026-02-22"
     },
     "cinema": null,
-    "imdbRating": 8.6
+    "imdbRating": "8.6"
   },
   {
     "id": "tt8550732",
@@ -287,7 +287,7 @@
       "airDate": "2024-08-29"
     },
     "cinema": null,
-    "imdbRating": 7.4
+    "imdbRating": "7.4"
   },
   {
     "id": "tt32604054",

@@ -4244,12 +4244,10 @@ html.mac-app {
   align-items: center;
   gap: 8px;
   width: 100%;
-  margin: 20px 0 10px;
-  font-size: 13px;
+  margin: 30px 0 12px;
+  font-size: 17px;
   font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--text-strong);
 }
 .wl-tabs {
   display: flex;
@@ -4274,44 +4272,81 @@ html.mac-app {
 }
 .wl-tab--on { background: var(--bg-hover); color: var(--text); }
 .wl-tab .wl-count { font-size: 13px; }
-.wl-sheet-meta--new { color: var(--accent-hover); font-weight: 600; }
-.wl-section-toggle { -webkit-tap-highlight-color: transparent; }
+.wl-sheet-meta--new { color: var(--text-strong); font-weight: 600; }
 .wl-count {
   font-weight: 500;
   color: var(--text-faint);
 }
-.wl-chevron { margin-left: auto; font-size: 20px; }
 
 .wl-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: 16px 10px;
+  gap: 10px;
 }
-.wl-grid--watched .wl-poster img { opacity: 0.45; }
+/* Watched: one sideways row of smaller posters, bleeding to the screen edges. */
+.wl-row {
+  display: flex;
+  gap: 10px;
+  margin: 0 -16px;
+  padding: 0 16px 4px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scroll-padding: 0 16px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.wl-row::-webkit-scrollbar { display: none; }
+.wl-row .wl-card {
+  flex: 0 0 92px;
+  scroll-snap-align: start;
+}
+.wl-row .wl-poster { border-radius: 10px; }
 
 .wl-card {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  display: block;
   min-width: 0;
-  text-align: left;
   -webkit-tap-highlight-color: transparent;
 }
 .wl-card:active .wl-poster { transform: scale(0.97); }
 .wl-poster {
   position: relative;
   aspect-ratio: 2 / 3;
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
   background: var(--bg-surface);
-  border: 1px solid var(--border);
-  margin-bottom: 4px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   transition: transform 0.1s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
-  color: var(--text-faint);
+}
+/* No poster: the title stands in for the art. */
+.wl-poster-title {
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: center;
+}
+/* Corner flag: a new episode, a dated next one, or a cinema run. */
+/* A dark rim under the white keeps it visible on light posters. */
+.wl-flag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  background: rgba(15, 15, 19, 0.75);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+.wl-flag::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 27px;
+  height: 27px;
+  background: #fff;
+  clip-path: polygon(0 0, 100% 0, 0 100%);
 }
 .wl-poster img {
   position: absolute;
@@ -4319,17 +4354,6 @@ html.mac-app {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-.wl-badge {
-  position: absolute;
-  left: 6px;
-  top: 6px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
 }
 .wl-rating {
   position: absolute;
@@ -4351,23 +4375,6 @@ html.mac-app {
   font-size: 11px;
   text-align: center;
 }
-.wl-card-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  line-height: 1.25;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.wl-card-where {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .wl-empty {
   padding: 24px 0;
   color: var(--text-muted);
@@ -4375,6 +4382,9 @@ html.mac-app {
   text-align: center;
 }
 
+/* Portalled to <body>, above the composer, the tab bar and every other layer. */
+.wl-sheet-overlay { z-index: 400; }
+.wl-sheet { touch-action: pan-y; overflow-y: auto; overscroll-behavior: contain; }
 .wl-sheet-head {
   display: flex;
   gap: 14px;
@@ -4412,13 +4422,13 @@ html.mac-app {
   height: 46px;
   margin: 0 20px;
   border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
+  background: #fff;
+  color: #0f0f13;
   font-size: 16px;
   font-weight: 600;
   -webkit-tap-highlight-color: transparent;
 }
-.wl-play:active:not(:disabled) { background: var(--accent-hover); }
+.wl-play:active:not(:disabled) { background: rgba(255, 255, 255, 0.82); }
 .wl-play:disabled { opacity: 0.6; }
 .wl-play .material-symbols-outlined { font-size: 24px; }
 .wl-sheet-status {

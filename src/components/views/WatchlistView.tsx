@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 // Keep in sync with scripts/watchlist/service.mjs.
 export const WATCHLIST_STATE_EVENT = 'com.construct.watchlist'
@@ -71,7 +72,6 @@ interface Props {
   onAction: (action: WatchlistAction, id: string) => void
   /** Opens with this title's sheet up — for the dev harness. */
   initialSelected?: string
-  initialShowWatched?: boolean
   initialTab?: 'series' | 'movie'
 }
 
@@ -105,21 +105,55 @@ function comingBack(item: WatchlistItem) {
   return item.showStatus === 'returning' || item.showStatus === 'in-production' ? 1 : 2
 }
 
-/** The poster's one badge, most urgent first. */
-function badge(item: WatchlistItem) {
-  // A watched show only earns a badge once its next episode has a date.
-  if (item.watchedAt) return item.next ? `${episode(item.next)} · ${airLabel(item.next.airDate)}` : null
-  if (item.newEpisode) return `New · ${episode(item.newEpisode)}`
-  if (item.cinema?.now) return 'In theaters'
-  if (item.next) return `${episode(item.next)} · ${airLabel(item.next.airDate)}`
-  return null
+/**
+ * Whether the poster gets its corner flag: something has happened or has a
+ * date — a new episode, a dated next one, a cinema run. The sheet says which.
+ */
+function flagged(item: WatchlistItem) {
+  if (item.next) return true
+  if (item.watchedAt) return false
+  return Boolean(item.newEpisode || item.cinema?.now)
+}
+
+/**
+ * Pull-down-to-close for a bottom sheet. Only starts when the sheet is
+ * scrolled to the top, so scrolling its content still works; past the
+ * threshold it slides out and calls onClose, otherwise it springs back.
+ */
+function useDragToClose(ref: React.RefObject<HTMLDivElement | null>, onClose: () => void) {
+  const drag = useRef<{ y: number, dy: number } | null>(null)
+  const set = (transform: string, transition: string) => {
+    if (!ref.current) return
+    ref.current.style.transition = transition
+    ref.current.style.transform = transform
+  }
+  return {
+    onTouchStart: (e: React.TouchEvent) => {
+      if ((ref.current?.scrollTop ?? 0) > 0) return
+      drag.current = { y: e.touches[0].clientY, dy: 0 }
+    },
+    onTouchMove: (e: React.TouchEvent) => {
+      if (!drag.current) return
+      drag.current.dy = Math.max(0, e.touches[0].clientY - drag.current.y)
+      set(`translateY(${drag.current.dy}px)`, 'none')
+    },
+    onTouchEnd: () => {
+      const dy = drag.current?.dy ?? 0
+      drag.current = null
+      if (dy > 90) {
+        set('translateY(100%)', 'transform 0.18s ease-in')
+        setTimeout(onClose, 180)
+      } else if (dy > 0) {
+        set('translateY(0)', 'transform 0.2s ease-out')
+      }
+    },
+  }
 }
 
 // Adding has no field here: the room's composer stays under the page, and a
 // title typed there is the same message to the service as one typed in chat.
-export default function WatchlistView({ items, status, onAction, initialSelected, initialShowWatched = false, initialTab }: Props) {
+export default function WatchlistView({ items, status, onAction, initialSelected, initialTab }: Props) {
   const [selected, setSelected] = useState<string | null>(initialSelected ?? null)
-  const [showWatched, setShowWatched] = useState(initialShowWatched)
   const [tab, setTab] = useState<Tab>(() => initialTab ?? savedTab())
   const pickTab = (t: Tab) => {
     setTab(t)
@@ -138,26 +172,24 @@ export default function WatchlistView({ items, status, onAction, initialSelected
     || (a.next?.airDate ?? '').localeCompare(b.next?.airDate ?? '')
     || b.watchedAt! - a.watchedAt!)
   const current = items.find((i) => i.id === selected) ?? null
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const sheet = useDragToClose(sheetRef, () => setSelected(null))
 
-  const card = (item: WatchlistItem) => {
-    const s = status[item.id]
-    const b = badge(item)
-    return (
-      <button key={item.id} type="button" className="wl-card" onClick={() => setSelected(item.id)}>
-        <div className="wl-poster">
-          {item.poster ? <img src={item.poster} alt="" loading="lazy" /> : <span>{item.title.slice(0, 1)}</span>}
-          {b && <span className="wl-badge">{b}</span>}
-          {item.kind === 'movie' && item.imdbRating && <span className="wl-rating">★ {Number(item.imdbRating).toFixed(1)}</span>}
-          {s?.state === 'pending' && <span className="wl-poster-status">Starting…</span>}
-        </div>
-        <span className="wl-card-title">{item.title}</span>
-        <span className="wl-card-where">{whereLabel(item)}</span>
-      </button>
-    )
-  }
+  // Posters only: the art already carries the title, and the sheet has the rest.
+  const card = (item: WatchlistItem) => (
+    <button key={item.id} type="button" className="wl-card" aria-label={item.title} onClick={() => setSelected(item.id)}>
+      <div className="wl-poster">
+        {item.poster ? <img src={item.poster} alt="" loading="lazy" /> : <span className="wl-poster-title">{item.title}</span>}
+        {flagged(item) && <span className="wl-flag" aria-hidden />}
+        {item.kind === 'movie' && item.imdbRating && <span className="wl-rating">★ {Number(item.imdbRating).toFixed(1)}</span>}
+        {status[item.id]?.state === 'pending' && <span className="wl-poster-status">Starting…</span>}
+      </div>
+    </button>
+  )
 
   return (
     <div className="room-view wl">
+
       <div className="wl-tabs" role="tablist" aria-label="Kind">
         {TABS.map((t) => (
           <button
@@ -180,18 +212,27 @@ export default function WatchlistView({ items, status, onAction, initialSelected
 
       {watched.length > 0 && (
         <>
-          <button type="button" className="wl-section-head wl-section-toggle" onClick={() => setShowWatched((v) => !v)}>
+          <div className="wl-section-head">
             <span>Watched</span>
             <span className="wl-count">{watched.length}</span>
-            <span className="material-symbols-outlined wl-chevron" aria-hidden>{showWatched ? 'expand_less' : 'expand_more'}</span>
-          </button>
-          {showWatched && <div className="wl-grid wl-grid--watched">{watched.map(card)}</div>}
+          </div>
+          <div className="wl-row">{watched.map(card)}</div>
         </>
       )}
 
-      {current && (
-        <div className="room-editor-overlay" onClick={() => setSelected(null)}>
-          <div className="room-editor wl-sheet" role="dialog" aria-label={current.title} onClick={(e) => e.stopPropagation()}>
+      {/* Portalled so it sits over the composer and the tab bar too. */}
+      {current && createPortal(
+        <div className="room-editor-overlay wl-sheet-overlay" onClick={() => setSelected(null)}>
+          <div
+            ref={sheetRef}
+            className="room-editor wl-sheet"
+            role="dialog"
+            aria-label={current.title}
+            onClick={(e) => e.stopPropagation()}
+            onTouchStart={sheet.onTouchStart}
+            onTouchMove={sheet.onTouchMove}
+            onTouchEnd={sheet.onTouchEnd}
+          >
             <div className="wl-sheet-head">
               {current.poster && <img className="wl-sheet-poster" src={current.poster} alt="" />}
               <div className="wl-sheet-info">
@@ -257,7 +298,8 @@ export default function WatchlistView({ items, status, onAction, initialSelected
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

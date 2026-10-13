@@ -1,18 +1,20 @@
 [
   {
     "id": "tt15239678",
-    "addedAt": 1791865775094,
+    "addedAt": 1791877192500,
     "watchedAt": null,
     "tmdbId": 693134,
     "kind": "movie",
     "title": "Dune: Part Two",
     "year": 2024,
     "poster": "https://image.tmdb.org/t/p/w342/6izwz7rsy95ARzTR3poZ8H6c5pp.jpg",
+    "backdrop": "https://image.tmdb.org/t/p/w780/eZ239CUp1d6OryZEBPnO2n87gMG.jpg",
     "providers": [
       "hbomax"
     ],
     "next": null,
     "lastAired": null,
+    "showStatus": null,
     "cinema": {
       "opens": "2024-03-01",
       "now": false
@@ -40,20 +42,23 @@
     "ageRating": "13+",
     "trailer": "U2Qp5pL3ovA",
     "seasons": null,
-    "refreshedAt": 1791865775396
+    "refreshedAt": 1791877193324,
+    "favoriteAt": 1791877197823
   },
   {
     "id": "tt35538033",
-    "addedAt": 1791865775094,
+    "addedAt": 1791877192500,
     "watchedAt": null,
     "tmdbId": 1423191,
     "kind": "movie",
     "title": "Resident Evil",
     "year": 2026,
     "poster": "https://image.tmdb.org/t/p/w342/i7UyjfPio0VFHB9rBUZSFyhOoM8.jpg",
+    "backdrop": "https://image.tmdb.org/t/p/w780/3icyRAqgakNcQn6aDVz9libFmBA.jpg",
     "providers": [],
     "next": null,
     "lastAired": null,
+    "showStatus": null,
     "cinema": {
       "opens": "2026-09-18",
       "now": true
@@ -79,7 +84,95 @@
     "ageRating": "18+",
     "trailer": "mNd1gb19A-c",
     "seasons": null,
-    "refreshedAt": 1791865775561
+    "refreshedAt": 1791877193643
+  },
+  {
+    "tmdbId": 194764,
+    "providers": [
+      "hbomax"
+    ],
+    "next": null,
+    "lastAired": {
+      "season": 1,
+      "episode": 8,
+      "airDate": "2024-11-10"
+    },
+    "showStatus": "ended",
+    "cinema": null,
+    "imdbRating": "8.6",
+    "releaseDate": "2024-09-19",
+    "digital": null,
+    "runtime": 70,
+    "genres": [
+      "Drama",
+      "Crime"
+    ],
+    "overview": "With the city in peril following the seawall's collapse, Oswald \"Oz\" Cobb seeks to fill the power vacuum left by the death of Carmine Falcone and finally give his mother Francis the life he's always promised. But first, Oz must confront his enemies and his own demoralizing reputation as \"the Penguin.\"",
+    "people": [
+      "Lauren LeFranc"
+    ],
+    "cast": [
+      "Colin Farrell",
+      "Cristin Milioti",
+      "Rhenzy Feliz"
+    ],
+    "ageRating": "18+",
+    "trailer": "sfJG6IiA_s8",
+    "seasons": 1,
+    "refreshedAt": 1791877193768,
+    "id": "tt15435876",
+    "kind": "series",
+    "title": "The Penguin",
+    "year": 2024,
+    "poster": "https://image.tmdb.org/t/p/w342/vOWcqC4oDQws1doDWLO7d3dh5qc.jpg",
+    "addedAt": 1791877062132,
+    "watchedAt": 1791877093616,
+    "newEpisode": null,
+    "backdrop": "https://image.tmdb.org/t/p/w780/4TdmuuwiIiKw3JOjIuhdgYxRXnN.jpg"
+  },
+  {
+    "tmdbId": 254953,
+    "providers": [
+      "hbomax"
+    ],
+    "next": null,
+    "lastAired": {
+      "season": 1,
+      "episode": 10,
+      "airDate": "2026-05-10"
+    },
+    "showStatus": "returning",
+    "cinema": null,
+    "imdbRating": "7.6",
+    "releaseDate": "2026-03-08",
+    "digital": null,
+    "runtime": 31,
+    "genres": [
+      "Comedy"
+    ],
+    "overview": "On a college campus, an author navigates a complicated relationship with his daughter.",
+    "people": [
+      "Bill Lawrence",
+      "Matt Tarses"
+    ],
+    "cast": [
+      "Steve Carell",
+      "Charly Clive",
+      "Danielle Deadwyler"
+    ],
+    "ageRating": "TV-MA",
+    "trailer": "L00r5BGgP64",
+    "seasons": 1,
+    "refreshedAt": 1791877193895,
+    "id": "tt32420734",
+    "kind": "series",
+    "title": "Rooster",
+    "year": 2026,
+    "poster": "https://image.tmdb.org/t/p/w342/aikvD4Nu7N6ekbrXNua8vJlO8JU.jpg",
+    "addedAt": 1791876876583,
+    "watchedAt": null,
+    "backdrop": "https://image.tmdb.org/t/p/w780/mhZAT8ktiNi7YwuL50kmumsau69.jpg",
+    "favoriteAt": 1791870000000
   },
   {
     "tmdbId": 225171,
@@ -92,7 +185,7 @@
     },
     "cinema": null,
     "imdbRating": "8.0",
-    "refreshedAt": 1791865775638,
+    "refreshedAt": 1791877194202,
     "id": "tt22202452",
     "kind": "series",
     "title": "Pluribus",
@@ -120,7 +213,8 @@
     ],
     "ageRating": "18+",
     "trailer": "a6lzvWby9UE",
-    "seasons": 1
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/ulm1ex4JFYJByyaPyqTr47MFyEQ.jpg"
   },
   {
     "tmdbId": 95396,
@@ -135,7 +229,7 @@
     },
     "cinema": null,
     "imdbRating": "8.6",
-    "refreshedAt": 1791865775719,
+    "refreshedAt": 1791877194387,
     "id": "tt11280740",
     "kind": "series",
     "title": "Severance",
@@ -164,7 +258,9 @@
     ],
     "ageRating": "18+",
     "trailer": "xEQP4VVuyrY",
-    "seasons": 3
+    "seasons": 3,
+    "backdrop": "https://image.tmdb.org/t/p/w780/ixgFmf1X59PUZam2qbAfskx2gQr.jpg",
+    "favoriteAt": 1791877196823
   },
   {
     "tmdbId": 219080,
@@ -179,7 +275,7 @@
     },
     "cinema": null,
     "imdbRating": "8.5",
-    "refreshedAt": 1791865775802,
+    "refreshedAt": 1791877194654,
     "id": "tt26453092",
     "kind": "series",
     "title": "The Mighty Nein",
@@ -206,13 +302,14 @@
     ],
     "ageRating": "TV-MA",
     "trailer": "Ri2wNyvSpiY",
-    "seasons": 1
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/7K7wbQIpkzif4fMhDHsCweXFS42.jpg"
   },
   {
     "tmdbId": 1765072,
     "providers": [],
     "next": null,
-    "refreshedAt": 1791865775976,
+    "refreshedAt": 1791877194984,
     "id": "tt45368240",
     "kind": "movie",
     "title": "You Can See Everything",
@@ -223,6 +320,7 @@
     "lastAired": null,
     "cinema": null,
     "imdbRating": "7.8",
+    "showStatus": null,
     "releaseDate": "2026-10-16",
     "digital": null,
     "runtime": 174,
@@ -241,13 +339,14 @@
     ],
     "ageRating": "R",
     "trailer": "IEx8D1Wb__U",
-    "seasons": null
+    "seasons": null,
+    "backdrop": "https://image.tmdb.org/t/p/w780/nhIL3O4W9h5V5JbNQm7yjoDk3So.jpg"
   },
   {
     "tmdbId": 926676,
     "providers": [],
     "next": null,
-    "refreshedAt": 1791865776054,
+    "refreshedAt": 1791877195436,
     "id": "tt17041964",
     "kind": "movie",
     "title": "Navalny",
@@ -258,6 +357,7 @@
     "lastAired": null,
     "cinema": null,
     "imdbRating": "7.8",
+    "showStatus": null,
     "releaseDate": "2022-04-08",
     "digital": {
       "date": "2022-04-24",
@@ -278,13 +378,14 @@
     ],
     "ageRating": "R",
     "trailer": "cPRuvKqZty0",
-    "seasons": null
+    "seasons": null,
+    "backdrop": "https://image.tmdb.org/t/p/w780/aZQR5Np9fZjck0HM3qYs1wUgwYD.jpg"
   },
   {
     "tmdbId": 1281331,
     "providers": [],
     "next": null,
-    "refreshedAt": 1791865776130,
+    "refreshedAt": 1791877195560,
     "id": "tt37510326",
     "kind": "movie",
     "title": "The Social Reckoning",
@@ -295,6 +396,7 @@
     "lastAired": null,
     "cinema": null,
     "imdbRating": null,
+    "showStatus": null,
     "releaseDate": "2026-10-07",
     "digital": null,
     "runtime": 112,
@@ -314,7 +416,8 @@
     ],
     "ageRating": "R",
     "trailer": "R8ANzYpaZaY",
-    "seasons": null
+    "seasons": null,
+    "backdrop": "https://image.tmdb.org/t/p/w780/wXTaGcqX3jvdXSKCJAkl5jZyrKp.jpg"
   },
   {
     "id": "tt32603995",
@@ -327,7 +430,7 @@
     "providers": [],
     "next": null,
     "tmdbId": 256694,
-    "refreshedAt": 1791865776203,
+    "refreshedAt": 1791877195831,
     "lastAired": {
       "season": 2,
       "episode": 20,
@@ -352,7 +455,8 @@
     ],
     "ageRating": "TV-PG",
     "trailer": "OEznILDuGj4",
-    "seasons": 2
+    "seasons": 2,
+    "backdrop": "https://image.tmdb.org/t/p/w780/l75H7ymGd96jPWdIjvOXW0qvEM4.jpg"
   },
   {
     "id": "tt37692332",
@@ -367,7 +471,7 @@
     ],
     "next": null,
     "tmdbId": 296756,
-    "refreshedAt": 1791865776367,
+    "refreshedAt": 1791877195863,
     "lastAired": {
       "season": 1,
       "episode": 10,
@@ -395,7 +499,8 @@
     ],
     "ageRating": "TV-14",
     "trailer": "KuSbjxrKvUc",
-    "seasons": 1
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/yoTP91XZZjSvE2gZgGvwNxVW96w.jpg"
   },
   {
     "id": "tt26545992",
@@ -410,7 +515,7 @@
     ],
     "next": null,
     "tmdbId": 95350,
-    "refreshedAt": 1791865776454,
+    "refreshedAt": 1791877196077,
     "lastAired": {
       "season": 1,
       "episode": 8,
@@ -440,6 +545,7 @@
     "ageRating": "18+",
     "trailer": "7UIBOsuUwc4",
     "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/wJjnJbVUwPz0GADAgpFt9nWtzUu.jpg",
     "newEpisode": {
       "season": 1,
       "episode": 4,
@@ -457,7 +563,7 @@
     "providers": [],
     "next": null,
     "tmdbId": 138502,
-    "refreshedAt": 1791865776630,
+    "refreshedAt": 1791877196347,
     "lastAired": {
       "season": 2,
       "episode": 9,
@@ -479,7 +585,8 @@
     "cast": [],
     "ageRating": "13+",
     "trailer": "pv3Ss8o9gGQ",
-    "seasons": 2
+    "seasons": 2,
+    "backdrop": "https://image.tmdb.org/t/p/w780/jIyEmnBrZtl6SEWyBoMO2hZnzMa.jpg"
   },
   {
     "id": "tt2861424",
@@ -495,7 +602,7 @@
     ],
     "next": null,
     "tmdbId": 60625,
-    "refreshedAt": 1791865776718,
+    "refreshedAt": 1791877196621,
     "lastAired": {
       "season": 9,
       "episode": 10,
@@ -525,7 +632,8 @@
     ],
     "ageRating": "18+",
     "trailer": "WNhH00OIPP0",
-    "seasons": 9
+    "seasons": 9,
+    "backdrop": "https://image.tmdb.org/t/p/w780/5BDNWWHweQL0q1fmTv7gmRXfnl4.jpg"
   },
   {
     "id": "tt14681596",
@@ -540,7 +648,7 @@
     ],
     "next": null,
     "tmdbId": 125909,
-    "refreshedAt": 1791865776802,
+    "refreshedAt": 1791877196893,
     "lastAired": {
       "season": 2,
       "episode": 10,
@@ -567,7 +675,8 @@
     ],
     "ageRating": "13+",
     "trailer": "1TRK90KSkFM",
-    "seasons": 2
+    "seasons": 2,
+    "backdrop": "https://image.tmdb.org/t/p/w780/vTqkpDUe1DUUPcHDpcf0RT0gIQ0.jpg"
   },
   {
     "id": "tt3718778",
@@ -582,7 +691,7 @@
     ],
     "next": null,
     "tmdbId": 61617,
-    "refreshedAt": 1791865776880,
+    "refreshedAt": 1791877197064,
     "lastAired": {
       "season": 1,
       "episode": 10,
@@ -612,7 +721,8 @@
     ],
     "ageRating": "7+",
     "trailer": "36mAsVSH_-s",
-    "seasons": 1
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/hozufHEzqIRpqJrlyGDqnsyFrAQ.jpg"
   },
   {
     "id": "tt27497448",
@@ -627,7 +737,7 @@
     ],
     "next": null,
     "tmdbId": 224372,
-    "refreshedAt": 1791865776965,
+    "refreshedAt": 1791877197242,
     "lastAired": {
       "season": 1,
       "episode": 6,
@@ -655,7 +765,8 @@
     ],
     "ageRating": "18+",
     "trailer": "sItUCKJQLTU",
-    "seasons": 1
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/7mkUu1F2hVUNgz24xO8HPx0D6mK.jpg"
   },
   {
     "id": "tt8550732",
@@ -670,7 +781,7 @@
     ],
     "next": null,
     "tmdbId": 102621,
-    "refreshedAt": 1791865777048,
+    "refreshedAt": 1791877197650,
     "lastAired": {
       "season": 1,
       "episode": 8,
@@ -696,7 +807,8 @@
     ],
     "ageRating": "18+",
     "trailer": "-max0wOTcuI",
-    "seasons": 1
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/oyKYPA1UXwwgrjmnM30sh33IRG5.jpg"
   },
   {
     "id": "tt32604054",
@@ -715,7 +827,7 @@
       "airDate": "2026-10-17"
     },
     "tmdbId": 256695,
-    "refreshedAt": 1791865777122,
+    "refreshedAt": 1791877197823,
     "lastAired": {
       "season": 1,
       "episode": 14,
@@ -744,6 +856,7 @@
     ],
     "ageRating": "7+",
     "trailer": null,
-    "seasons": 1
+    "seasons": 1,
+    "backdrop": "https://image.tmdb.org/t/p/w780/Zk5UmvJ634LhA56R18h8RfipFG.jpg"
   }
 ]

@@ -85,9 +85,20 @@ export function createStore(dir, { now = Date.now } = {}) {
       const item = find(id)
       if (!item) throw new Error(`not on the watchlist: ${id}`)
       // eslint-disable-next-line no-unused-vars
-      const { id: _id, addedAt, watchedAt, ...rest } = fields
+      const { id: _id, addedAt, watchedAt, favoriteAt, ...rest } = fields
       Object.assign(item, rest)
       save()
+      return { ...item }
+    },
+
+    /** Favorites lead every list on the page; `favoriteAt` orders them, newest first. */
+    setFavorite(id, favorite) {
+      const item = find(id)
+      if (!item) throw new Error(`not on the watchlist: ${id}`)
+      if (Boolean(item.favoriteAt) === favorite) return { ...item }
+      item.favoriteAt = favorite ? now() : null
+      save()
+      record(favorite ? 'favorited' : 'unfavorited', item)
       return { ...item }
     },
 

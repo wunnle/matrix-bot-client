@@ -4362,12 +4362,16 @@ html.mac-app {
   overflow: hidden;
 }
 .wl-card-where {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 16px;
   font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
+.wl-card-where > span:not(.wl-logos) { overflow: hidden; text-overflow: ellipsis; }
 .wl-empty {
   padding: 24px 0;
   color: var(--text-muted);
@@ -4405,12 +4409,12 @@ html.mac-app {
   color: var(--text-muted);
 }
 .wl-play {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   height: 46px;
-  margin: 0 20px;
   border-radius: 8px;
   background: var(--accent);
   color: #fff;
@@ -4432,12 +4436,125 @@ html.mac-app {
 /* The sheet outgrew the screen once it carried plot and credits. */
 .wl-sheet { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .wl-sheet-meta--where { color: var(--text); }
+
+/* Sheet header: the backdrop as an inset panel, the poster overlapping its
+   lower edge. No scrim — the title sits below the image, not on it. */
+.wl-hero {
+  margin: 12px 12px 0;
+  aspect-ratio: 16 / 9;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--bg-hover);
+  flex-shrink: 0;
+}
+.wl-hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wl-sheet-head--hero { margin-top: -44px; align-items: flex-end; padding-top: 0; }
+.wl-sheet-head--hero .wl-sheet-poster {
+  width: 84px;
+  border: 2px solid var(--bg-surface);
+  box-sizing: content-box;
+  border-radius: 10px;
+}
+.wl-sheet-head--hero .wl-sheet-info { padding-bottom: 2px; }
+.wl-sheet-score { font-size: 13px; color: var(--text-muted); }
+.wl-sheet-score-num { color: var(--text-strong); font-weight: 600; }
+
+.wl-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 14px; }
+.wl-chip {
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* Label/value rows: where, digital, cinemas, what's next. */
+.wl-facts {
+  display: flex;
+  flex-direction: column;
+  margin: 0 20px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.wl-fact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.wl-fact + .wl-fact { border-top: 1px solid var(--border); }
+.wl-fact-label { width: 64px; flex-shrink: 0; color: var(--text-muted); }
+.wl-fact-value { display: flex; align-items: center; gap: 8px; color: var(--text); min-width: 0; }
+.wl-fact--new .wl-fact-value { color: var(--accent-hover); font-weight: 600; }
+
+.wl-primary { display: flex; gap: 8px; padding: 0 20px; }
+.wl-fav {
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  -webkit-tap-highlight-color: transparent;
+}
+.wl-fav .material-symbols-outlined { font-size: 24px; font-variation-settings: 'FILL' 0; }
+.wl-fav--on { color: var(--accent-hover); box-shadow: inset 0 0 0 1.5px var(--accent); border-color: transparent; }
+.wl-fav--on .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
+.wl-fav:active { transform: scale(0.94); }
+
+.wl-secondary { display: flex; gap: 8px; padding: 0 20px; }
+.wl-secondary-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.wl-secondary-btn .material-symbols-outlined { font-size: 18px; color: var(--text-muted); }
+
+/* Provider logos: on cards and in the sheet. */
+.wl-logos { display: inline-flex; gap: 3px; flex-shrink: 0; }
+.wl-logos img { width: 16px; height: 16px; border-radius: 4px; display: block; }
+.wl-fact .wl-logos img { width: 20px; height: 20px; border-radius: 5px; }
+
+/* Favorite mark on the poster: top right, clear of the top-left badge. */
+.wl-fav-mark {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: rgba(15, 15, 19, 0.82);
+  color: var(--accent-hover);
+}
+.wl-fav-mark .material-symbols-outlined { font-size: 15px; font-variation-settings: 'FILL' 1; }
 .wl-sheet-about {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 0 20px 16px;
+  padding: 16px 20px;
 }
+.wl-primary + .wl-secondary, .wl-sheet-status + .wl-secondary { margin-top: 12px; }
 .wl-sheet-overview {
   margin: 0 0 4px;
   font-size: 14px;

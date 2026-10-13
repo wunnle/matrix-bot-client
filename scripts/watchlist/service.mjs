@@ -167,6 +167,8 @@ const handlers = {
   watched: ({ id }) => `✓ Watched: ${store.setWatched(id, true).title}`,
   unwatched: ({ id }) => `Back on the list: ${store.setWatched(id, false).title}`,
   remove: ({ id }) => `Removed: ${store.remove(id).title}`,
+  favorite: ({ id }) => `♥ Favorite: ${store.setFavorite(id, true).title}`,
+  unfavorite: ({ id }) => `No longer a favorite: ${store.setFavorite(id, false).title}`,
 }
 
 async function handleAction(roomId, event) {
@@ -200,19 +202,16 @@ function whereText(item) {
   return item.providers?.length ? item.providers.map((k) => names[k] ?? k).join(', ') : 'Stremio'
 }
 
-function offer(candidates, replaces = null) {
+function offer(candidates) {
   choices = {
     expires: Date.now() + CHOICE_TTL_MS,
-    byLabel: new Map(candidates.map((c) => [choiceLabel(c), { ...c, replaces }])),
+    byLabel: new Map(candidates.map((c) => [choiceLabel(c), c])),
   }
   return [...choices.byLabel.keys()].map((l) => `[[${l}]]`).join(' ')
 }
 
-/**
- * @param fallback what search already knew, used when TMDB has nothing
- * @param others   same-named titles passed over by a popularity guess, offered as swaps
- */
-async function addById(roomId, id, fallback = null, others = []) {
+/** @param fallback what search already knew, used when TMDB has nothing */
+async function addById(roomId, id, fallback = null) {
   let details = await enrich(id).catch((err) => { log(`TMDB lookup for ${id} failed: ${err.message}`); return null })
   details ??= fallback ?? await cinemetaMeta(id)
   if (!details) {
@@ -223,19 +222,13 @@ async function addById(roomId, id, fallback = null, others = []) {
   await publish(roomId)
   const year = item.year ? ` (${item.year})` : ''
   const line = added ? `Added: ${item.title}${year} — ${whereText(item)}` : `Already on the list: ${item.title}${year}`
-  // A guess says so, and puts the alternatives one tap away.
-  const swap = added && others.length ? `\n\nNot this one?\n\n${offer(others, id)}` : ''
-  await notice(roomId, line + swap, { action: 'add', id, ok: true, added })
+  await notice(roomId, line, { action: 'add', id, ok: true, added })
 }
 
 async function handleText(roomId, body) {
   const chosen = Date.now() < choices.expires ? choices.byLabel.get(body.trim()) : null
   if (chosen) {
     choices = { expires: 0, byLabel: new Map() }
-    if (chosen.replaces && store.get(chosen.replaces)) {
-      store.remove(chosen.replaces)
-      log(`swap ${chosen.replaces} → ${chosen.id}`)
-    }
     return addById(roomId, chosen.id, chosen)
   }
 
@@ -249,7 +242,12 @@ async function handleText(roomId, body) {
   if (result.none) {
     return notice(roomId, `Nothing found for “${input.query}”. An IMDb link always works.`, { action: 'add', id: null, ok: false })
   }
-  if (result.pick) return addById(roomId, result.pick.id, result.pick, result.others)
+  // Several titles share the name: ask, never add a guess. Popularity only
+  // decides the order — the one you most likely mean is the first button.
+  if (result.pick && result.others?.length) {
+    return notice(roomId, `Which “${input.query}”?\n\n${offer([result.pick, ...result.others])}`)
+  }
+  if (result.pick) return addById(roomId, result.pick.id, result.pick)
   await notice(roomId, `Which “${input.query}”?\n\n${offer(result.choices)}`)
 }
 

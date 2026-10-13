@@ -21,6 +21,10 @@ export interface WatchlistItem {
   showStatus?: 'returning' | 'in-production' | 'ended' | 'canceled' | null
   /** Set when a watched show came back because this episode aired. */
   newEpisode?: { season: number, episode: number, airDate: string } | null
+  /** When it was made a favorite; favorites lead every list. */
+  favoriteAt?: number | null
+  /** Wide still for the sheet's header. */
+  backdrop?: string | null
   /** Film release or show premiere, YYYY-MM-DD. */
   releaseDate?: string | null
   /** Films: first digital release, in the region or else the US. */
@@ -43,10 +47,10 @@ export interface WatchlistItem {
   cinema?: { opens: string | null, now: boolean } | null
 }
 
-export type WatchlistAction = 'play' | 'watched' | 'unwatched' | 'remove'
+export type WatchlistAction = 'play' | 'watched' | 'unwatched' | 'remove' | 'favorite' | 'unfavorite'
 
 /** What the service last said about a title, while a tap is in flight or just answered. */
-export interface ItemStatus { state: 'pending' | 'ok' | 'failed', message?: string }
+export interface ItemStatus { state: 'pending' | 'ok' | 'failed', action?: WatchlistAction, message?: string }
 
 const PROVIDER_LABELS: Record<ProviderKey, string> = {
   netflix: 'Netflix',
@@ -54,6 +58,27 @@ const PROVIDER_LABELS: Record<ProviderKey, string> = {
   prime: 'Prime Video',
   apple: 'Apple TV+',
 }
+
+// TMDB's own provider logos (from /watch/providers, region TR). Apple TV+ is
+// filed there under the Apple TV Store entry, which shares the logo.
+const PROVIDER_LOGOS: Record<ProviderKey, string> = {
+  netflix: 'https://image.tmdb.org/t/p/w92/rK1KljqmbvO9HQa1PBFLILWah72.png',
+  hbomax: 'https://image.tmdb.org/t/p/w92/skypuy7SXuugIQeYg0IglmzoKaS.png',
+  prime: 'https://image.tmdb.org/t/p/w92/gMZdpavHmxFNnLpMHwVxfqeux2g.png',
+  apple: 'https://image.tmdb.org/t/p/w92/qdEGArH3lKfFnAtYXMkSYk5wxuG.png',
+}
+
+function Logos({ providers }: { providers: ProviderKey[] }) {
+  return (
+    <span className="wl-logos">
+      {providers.map((k) => <img key={k} src={PROVIDER_LOGOS[k]} alt={PROVIDER_LABELS[k]} title={PROVIDER_LABELS[k]} />)}
+    </span>
+  )
+}
+
+/** Favorites first, newest favorite first; ties keep the caller's order. */
+const byFavorite = (a: WatchlistItem, b: WatchlistItem) =>
+  (b.favoriteAt ?? 0) - (a.favoriteAt ?? 0)
 
 /** "In theaters", "In theaters Fri" / "Oct 24" for an upcoming run, else null. */
 function cinemaLabel(item: WatchlistItem, now = new Date()) {
@@ -85,14 +110,13 @@ const dateLabel = (iso: string) =>
 const isFuture = (iso: string, now = new Date()) => new Date(`${iso}T12:00:00`) > now
 
 /**
- * The card's second line: where, plus what decides whether you start it —
+ * What follows "where" on the card: what decides whether you start it —
  * a film's length, a show's end.
  */
-function cardLine(item: WatchlistItem) {
-  const extra = item.kind === 'movie'
+function cardExtra(item: WatchlistItem) {
+  return item.kind === 'movie'
     ? runtimeLabel(item.runtime)
     : item.showStatus === 'ended' ? 'Ended' : item.showStatus === 'canceled' ? 'Canceled' : null
-  return [whereLabel(item), extra].filter(Boolean).join(' · ')
 }
 
 /** For a film not on your subscriptions: when it is (or was) out to rent or buy. */
@@ -174,30 +198,53 @@ export default function WatchlistView({ items, status, onAction, initialSelected
 
   const ofKind = (t: Tab) => items.filter((i) => (t === 'movie') === (i.kind === 'movie'))
   const inTab = ofKind(tab)
-  // Shows that came back for a new episode lead, newest episode first.
-  const toWatch = inTab.filter((i) => !i.watchedAt)
-    .sort((a, b) => (b.newEpisode?.airDate ?? '').localeCompare(a.newEpisode?.airDate ?? ''))
+  // Favorites first everywhere. Then: shows that came back for a new episode
+  // lead, newest episode first.
+  const toWatch = inTab.filter((i) => !i.watchedAt).sort((a, b) =>
+    byFavorite(a, b)
+    || (b.newEpisode?.airDate ?? '').localeCompare(a.newEpisode?.airDate ?? ''))
   // Watched shows lead with what's coming back soonest, then the ones still
   // running without a date, then the finished ones; most recently watched within each.
   const watched = inTab.filter((i) => i.watchedAt).sort((a, b) =>
-    comingBack(a) - comingBack(b)
+    byFavorite(a, b)
+    || comingBack(a) - comingBack(b)
     || (a.next?.airDate ?? '').localeCompare(b.next?.airDate ?? '')
     || b.watchedAt! - a.watchedAt!)
+
+  // A heart tap shows at once; the service's republished state then agrees.
+  const isFavorite = (item: WatchlistItem) => {
+    const s = status[item.id]
+    return s?.state === 'pending' && (s.action === 'favorite' || s.action === 'unfavorite')
+      ? s.action === 'favorite'
+      : Boolean(item.favoriteAt)
+  }
   const current = items.find((i) => i.id === selected) ?? null
 
   const card = (item: WatchlistItem) => {
     const s = status[item.id]
     const b = badge(item)
+    const extra = cardExtra(item)
     return (
       <button key={item.id} type="button" className="wl-card" onClick={() => setSelected(item.id)}>
         <div className="wl-poster">
           {item.poster ? <img src={item.poster} alt="" loading="lazy" /> : <span>{item.title.slice(0, 1)}</span>}
           {b && <span className="wl-badge">{b}</span>}
+          {isFavorite(item) && (
+            <span className="wl-fav-mark" aria-label="Favorite">
+              <span className="material-symbols-outlined" aria-hidden>favorite</span>
+            </span>
+          )}
           {item.kind === 'movie' && item.imdbRating && <span className="wl-rating">★ {Number(item.imdbRating).toFixed(1)}</span>}
-          {s?.state === 'pending' && <span className="wl-poster-status">Starting…</span>}
+          {s?.state === 'pending' && s.action === 'play' && <span className="wl-poster-status">Starting…</span>}
         </div>
         <span className="wl-card-title">{item.title}</span>
-        <span className="wl-card-where">{cardLine(item)}</span>
+        <span className="wl-card-where">
+          {item.providers?.length ? <Logos providers={item.providers} /> : null}
+          {/* One service: its name too — a 16px logo alone reads as a dark square. */}
+          {item.providers?.length === 1 && !extra && <span>{PROVIDER_LABELS[item.providers[0]]}</span>}
+          {!item.providers?.length && <span>{whereLabel(item)}</span>}
+          {extra && <span className="wl-card-extra">{extra}</span>}
+        </span>
       </button>
     )
   }
@@ -238,36 +285,87 @@ export default function WatchlistView({ items, status, onAction, initialSelected
       {current && (
         <div className="room-editor-overlay" onClick={() => setSelected(null)}>
           <div className="room-editor wl-sheet" role="dialog" aria-label={current.title} onClick={(e) => e.stopPropagation()}>
-            <div className="wl-sheet-head">
+            {current.backdrop && (
+              <div className="wl-hero"><img src={current.backdrop} alt="" /></div>
+            )}
+            <div className={`wl-sheet-head${current.backdrop ? ' wl-sheet-head--hero' : ''}`}>
               {current.poster && <img className="wl-sheet-poster" src={current.poster} alt="" />}
               <div className="wl-sheet-info">
                 <div className="wl-sheet-title">{current.title}</div>
                 <div className="wl-sheet-meta">
                   {[
                     current.year,
-                    current.kind === 'series' ? 'Series' : 'Film',
                     current.kind === 'series'
-                      ? (current.seasons ? `${current.seasons} season${current.seasons > 1 ? 's' : ''}` : null)
+                      ? (current.seasons ? `${current.seasons} season${current.seasons > 1 ? 's' : ''}` : 'Series')
                       : runtimeLabel(current.runtime),
                     current.ageRating,
                   ].filter(Boolean).join(' · ')}
                 </div>
-                {current.genres?.length ? <div className="wl-sheet-meta">{current.genres.slice(0, 3).join(', ')}</div> : null}
-                {/* A show's run (ended, returning…) is in nextLabel's line below. */}
-                {current.imdbRating && <div className="wl-sheet-meta">IMDb {Number(current.imdbRating).toFixed(1)}</div>}
-                <div className="wl-sheet-meta wl-sheet-meta--where">{whereLabel(current)}</div>
-                {digitalLabel(current) && <div className="wl-sheet-meta">{digitalLabel(current)}</div>}
-                {current.providers?.length && cinemaLabel(current)
-                  ? <div className="wl-sheet-meta">{cinemaLabel(current)}</div>
-                  : null}
-                {current.newEpisode && !current.watchedAt && (
-                  <div className="wl-sheet-meta wl-sheet-meta--new">
-                    New: {episode(current.newEpisode)} · out {airLabel(current.newEpisode.airDate)}
+                {current.imdbRating && (
+                  <div className="wl-sheet-score">
+                    <span className="wl-sheet-score-num">★ {Number(current.imdbRating).toFixed(1)}</span> IMDb
                   </div>
                 )}
-                {nextLabel(current) && <div className="wl-sheet-meta">{nextLabel(current)}</div>}
               </div>
             </div>
+
+            {current.genres?.length ? (
+              <div className="wl-chips">{current.genres.slice(0, 4).map((g) => <span key={g} className="wl-chip">{g}</span>)}</div>
+            ) : null}
+
+            <div className="wl-facts">
+              <div className="wl-fact">
+                <span className="wl-fact-label">Watch on</span>
+                {current.providers?.length
+                  ? <span className="wl-fact-value"><Logos providers={current.providers} /> {current.providers.map((k) => PROVIDER_LABELS[k]).join(', ')}</span>
+                  : <span className="wl-fact-value">{whereLabel(current)}</span>}
+              </div>
+              {digitalLabel(current) && <div className="wl-fact"><span className="wl-fact-label">Digital</span><span className="wl-fact-value">{digitalLabel(current)!.replace(/^Digital /, '')}</span></div>}
+              {current.providers?.length && cinemaLabel(current) ? (
+                <div className="wl-fact"><span className="wl-fact-label">Cinemas</span><span className="wl-fact-value">{cinemaLabel(current)}</span></div>
+              ) : null}
+              {current.newEpisode && !current.watchedAt && (
+                <div className="wl-fact wl-fact--new">
+                  <span className="wl-fact-label">New</span>
+                  <span className="wl-fact-value">{episode(current.newEpisode)} · out {airLabel(current.newEpisode.airDate)}</span>
+                </div>
+              )}
+              {nextLabel(current) && (
+                <div className="wl-fact">
+                  <span className="wl-fact-label">{current.next ? 'Next' : 'Status'}</span>
+                  <span className="wl-fact-value">{nextLabel(current)!.replace(/^Next: /, '')}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="wl-primary">
+              {/* A film that is only in cinemas has nothing to play yet. */}
+              {!(cinemaLabel(current) && !current.providers?.length) && (
+                <button
+                  type="button"
+                  className="wl-play"
+                  disabled={status[current.id]?.state === 'pending' && status[current.id]?.action === 'play'}
+                  onClick={() => onAction('play', current.id)}
+                >
+                  <span className="material-symbols-outlined" aria-hidden>play_arrow</span>
+                  {status[current.id]?.state === 'pending' && status[current.id]?.action === 'play' ? 'Starting on the TV…' : 'Play on TV'}
+                </button>
+              )}
+              <button
+                type="button"
+                className={`wl-fav${isFavorite(current) ? ' wl-fav--on' : ''}`}
+                aria-pressed={isFavorite(current)}
+                aria-label={isFavorite(current) ? 'Remove from favorites' : 'Add to favorites'}
+                onClick={() => onAction(isFavorite(current) ? 'unfavorite' : 'favorite', current.id)}
+              >
+                <span className="material-symbols-outlined" aria-hidden>favorite</span>
+              </button>
+            </div>
+            {status[current.id]?.message && status[current.id]?.action === 'play' && (
+              <div className={`wl-sheet-status${status[current.id].state === 'failed' ? ' wl-sheet-status--failed' : ''}`}>
+                {status[current.id].message}
+              </div>
+            )}
 
             {(current.overview || current.people?.length || current.cast?.length || current.releaseDate) && (
               <div className="wl-sheet-about">
@@ -287,23 +385,18 @@ export default function WatchlistView({ items, status, onAction, initialSelected
               </div>
             )}
 
-            {/* A film that is only in cinemas has nothing to play yet. */}
-            {!(cinemaLabel(current) && !current.providers?.length) && (
-              <button
-                type="button"
-                className="wl-play"
-                disabled={status[current.id]?.state === 'pending'}
-                onClick={() => onAction('play', current.id)}
-              >
-                <span className="material-symbols-outlined" aria-hidden>play_arrow</span>
-                {status[current.id]?.state === 'pending' ? 'Starting on the TV…' : 'Play on TV'}
-              </button>
-            )}
-            {status[current.id]?.message && (
-              <div className={`wl-sheet-status${status[current.id].state === 'failed' ? ' wl-sheet-status--failed' : ''}`}>
-                {status[current.id].message}
-              </div>
-            )}
+            <div className="wl-secondary">
+              {current.trailer && (
+                <a className="wl-secondary-btn" href={`https://www.youtube.com/watch?v=${current.trailer}`} target="_blank" rel="noreferrer">
+                  <span className="material-symbols-outlined" aria-hidden>smart_display</span>
+                  Trailer
+                </a>
+              )}
+              <a className="wl-secondary-btn" href={`https://www.imdb.com/title/${current.id}/`} target="_blank" rel="noreferrer">
+                <span className="material-symbols-outlined" aria-hidden>open_in_new</span>
+                IMDb
+              </a>
+            </div>
 
             <div className="message-sheet-actions">
               <button
@@ -314,16 +407,6 @@ export default function WatchlistView({ items, status, onAction, initialSelected
                 <span className="material-symbols-outlined" aria-hidden>{current.watchedAt ? 'undo' : 'check'}</span>
                 {current.watchedAt ? 'Back to the list' : 'Mark watched'}
               </button>
-              {current.trailer && (
-                <a className="message-sheet-action" href={`https://www.youtube.com/watch?v=${current.trailer}`} target="_blank" rel="noreferrer">
-                  <span className="material-symbols-outlined" aria-hidden>smart_display</span>
-                  Trailer
-                </a>
-              )}
-              <a className="message-sheet-action" href={`https://www.imdb.com/title/${current.id}/`} target="_blank" rel="noreferrer">
-                <span className="material-symbols-outlined" aria-hidden>open_in_new</span>
-                IMDb
-              </a>
               <button
                 type="button"
                 className="message-sheet-action wl-remove"

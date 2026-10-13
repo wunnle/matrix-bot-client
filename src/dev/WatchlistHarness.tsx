@@ -42,6 +42,8 @@ export default function WatchlistHarness() {
               if (action === 'play') {
                 setStatus((s) => ({ ...s, [id]: { state: 'pending' } }))
                 setTimeout(() => setStatus((s) => ({ ...s, [id]: { state: 'ok', message: 'Playing on HBO Max' } })), 1500)
+              } else if (action === 'favorite' || action === 'unfavorite') {
+                setItems((all) => all.map((i) => (i.id === id ? { ...i, favoriteAt: action === 'favorite' ? Date.now() : null } : i)))
               } else if (action === 'remove') {
                 setItems((all) => all.filter((i) => i.id !== id))
               } else {

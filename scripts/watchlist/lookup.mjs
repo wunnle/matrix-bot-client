@@ -31,8 +31,9 @@ const DOMINANT = 3
 /**
  * Decide between adding at once and asking. One exact title match, or a single
  * result, is added. Several exact matches are settled by TMDB popularity when
- * one clearly dominates (`others` then holds the runners-up, so the reply can
- * offer a swap); otherwise, and for fuzzy matches, it's a choice.
+ * one clearly dominates (`others` then holds the runners-up; the service still
+ * asks, with `pick` as the first button); otherwise, and for fuzzy matches,
+ * it's a choice.
  *
  * @param {{id, kind, title, year, popularity?}[]} candidates in source order
  * @returns {{pick, others?} | {choices} | {none: true}}
@@ -216,6 +217,8 @@ export async function enrich(imdbId) {
     title: tv ? detail.name : detail.title,
     year: parseInt(date, 10) || null,
     poster: detail.poster_path ? `${TMDB_IMAGE}${detail.poster_path}` : null,
+    // The sheet's header image. w780 is plenty for a phone-width sheet.
+    backdrop: detail.backdrop_path ? `https://image.tmdb.org/t/p/w780${detail.backdrop_path}` : null,
     providers: where,
     next: ne ? { season: ne.season_number, episode: ne.episode_number, airDate: ne.air_date } : null,
     lastAired: le?.air_date ? { season: le.season_number, episode: le.episode_number, airDate: le.air_date } : null,

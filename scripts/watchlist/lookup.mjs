@@ -96,6 +96,20 @@ function subscriptions() {
   return JSON.parse(fs.readFileSync(path.join(CONFIG_DIR, 'subscriptions.json'), 'utf8'))
 }
 
+/**
+ * Corrections for where TMDB's region data is wrong, by IMDb id:
+ * `{"tt…": {"notOn": ["hbomax"]}}`. Read on every lookup, so an edit applies
+ * at the next refresh without a restart. Missing file means no corrections.
+ */
+function overrides() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(CONFIG_DIR, 'overrides.json'), 'utf8'))
+  } catch (err) {
+    if (err.code === 'ENOENT') return {}
+    throw err
+  }
+}
+
 const tmdb = (p) => getJson(`${TMDB}${p}`, { Authorization: `Bearer ${tmdbToken()}` })
 
 // What's in cinemas in the region: TMDB's now-playing list, a few pages, shared
@@ -146,8 +160,9 @@ export async function enrich(imdbId) {
   // pay extra for it" is not "it's on your subscription".
   const { region, subscriptions: subs } = subscriptions()
   const flat = providers.results?.[region]?.flatrate ?? []
+  const notOn = overrides()[imdbId]?.notOn ?? []
   const where = Object.entries(subs)
-    .filter(([, s]) => flat.some((f) => s.tmdb_ids.includes(f.provider_id)))
+    .filter(([key, s]) => !notOn.includes(key) && flat.some((f) => s.tmdb_ids.includes(f.provider_id)))
     .map(([key]) => key)
 
   const date = tv ? detail.first_air_date : detail.release_date

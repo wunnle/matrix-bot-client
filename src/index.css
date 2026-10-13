@@ -4358,38 +4358,13 @@ html.mac-app {
 }
 .wl-card-meta--soon { background: #fff; color: #0f0f13; padding-left: 4px; }
 .wl-card-meta .material-symbols-outlined { font-size: 14px; font-variation-settings: 'FILL' 1; }
-/* Wide favorite card: title and metadata bottom left. */
-.wl-wide-info {
-  position: absolute;
-  inset: auto 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 36px 12px 10px;
-  background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.8));
-}
-.wl-wide-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: #fff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.wl-wide-info .wl-card-meta {
-  position: static;
+/* Wide favorite card: the pill sits bottom left, a little larger. */
+.wl-card--wide .wl-card-meta {
+  left: 8px;
+  bottom: 8px;
   transform: none;
-  align-self: flex-start;
-  max-width: 100%;
-  padding: 0;
-  background: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
 }
-.wl-wide-info .wl-card-meta--soon { color: #fff; font-weight: 700; }
 .wl-poster-status {
   position: absolute;
   inset: auto 0 0;
@@ -4414,6 +4389,14 @@ html.mac-app {
   height: 20px;
   border-radius: 5px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+/* Stremio's icon is a diamond with transparent corners: a dark square under
+   it matches the services' square logos. */
+.wl-logos img.wl-logo-stremio {
+  background: #17142e;
+  padding: 2px;
+  box-sizing: border-box;
+  object-fit: contain;
 }
 .wl-card-where-name {
   padding: 2px 6px;

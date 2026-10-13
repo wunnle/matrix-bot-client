@@ -77,6 +77,17 @@ function Logos({ providers }: { providers: ProviderKey[] }) {
   )
 }
 
+// The fallback when no subscription has it. Stremio's own app icon, served
+// from public/ rather than hotlinked; the diamond sits on a dark square so it
+// lines up with the services' square logos.
+function StremioLogo() {
+  return (
+    <span className="wl-logos">
+      <img className="wl-logo-stremio" src="/stremio.png" alt="Stremio" title="Stremio" />
+    </span>
+  )
+}
+
 /** Favorites first, newest favorite first; ties keep the caller's order. */
 const byFavorite = (a: WatchlistItem, b: WatchlistItem) =>
   (b.favoriteAt ?? 0) - (a.favoriteAt ?? 0)
@@ -267,11 +278,13 @@ export default function WatchlistView({ items, status, onAction, initialSelected
   const favorites = toWatch.filter(isFavorite)
   const rest = toWatch.filter((i) => !isFavorite(i))
 
-  // Where it streams, in the card's top-right corner: the service logos, or
-  // the fallback's name when there are none.
+  // Where it streams, in the card's top-right corner: the service logos, else
+  // a cinema run by name, else Stremio's icon.
   const where = (item: WatchlistItem) => (
     <span className="wl-card-where">
-      {item.providers?.length ? <Logos providers={item.providers} /> : <span className="wl-card-where-name">{whereLabel(item)}</span>}
+      {item.providers?.length
+        ? <Logos providers={item.providers} />
+        : cinemaLabel(item) ? <span className="wl-card-where-name">{cinemaLabel(item)}</span> : <StremioLogo />}
     </span>
   )
   const meta = (item: WatchlistItem) => {
@@ -306,17 +319,14 @@ export default function WatchlistView({ items, status, onAction, initialSelected
     </button>
   )
 
-  // Favorite card: wide, on the backdrop. Backdrops rarely carry title art,
-  // so the title is written in.
+  // Favorite card: wide, on the backdrop, with the same corner logo and pill
+  // as the posters and no title.
   const wideCard = (item: WatchlistItem) => (
     <button key={item.id} type="button" className="wl-card wl-card--wide" aria-label={item.title} onClick={() => setSelected(item.id)}>
       <div className="wl-poster wl-poster--wide">
         {(item.backdrop ?? item.poster) && <img src={(item.backdrop ?? item.poster)!} alt="" loading="lazy" />}
         {where(item)}
-        <span className="wl-wide-info">
-          <span className="wl-wide-title">{item.title}</span>
-          {meta(item)}
-        </span>
+        {meta(item)}
         {starting(item)}
       </div>
     </button>
@@ -402,7 +412,7 @@ export default function WatchlistView({ items, status, onAction, initialSelected
                 <span className="wl-fact-label">Watch on</span>
                 {current.providers?.length
                   ? <span className="wl-fact-value"><Logos providers={current.providers} /> {current.providers.map((k) => PROVIDER_LABELS[k]).join(', ')}</span>
-                  : <span className="wl-fact-value">{whereLabel(current)}</span>}
+                  : <span className="wl-fact-value">{!cinemaLabel(current) && <StremioLogo />}{whereLabel(current)}</span>}
               </div>
               {digitalLabel(current) && <div className="wl-fact"><span className="wl-fact-label">Digital</span><span className="wl-fact-value">{digitalLabel(current)!.replace(/^Digital /, '')}</span></div>}
               {current.providers?.length && cinemaLabel(current) ? (

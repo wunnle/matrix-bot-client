@@ -174,6 +174,18 @@ export function parseUntil(value, nowMs = Date.now()) {
   return Math.floor(ms / 1000);
 }
 
+/** `since`: when a count-up began (the sleep card, mac/sleep-card), as unix
+    seconds or an ISO date. The widget counts up from it as H:MM, correct to
+    9:59, so a start more than 8 hours back or in the future is refused. A
+    minute of clock skew either way is let through, clamped to now. */
+export function parseSince(value, nowMs = Date.now()) {
+  const ms = typeof value === "number" ? value * 1000 : typeof value === "string" ? Date.parse(value) : NaN;
+  if (!Number.isFinite(ms)) throw new ActivityError(400, "since must be unix seconds or an ISO date");
+  if (ms > nowMs + 60_000) throw new ActivityError(400, "since is in the future");
+  if (ms < nowMs - MAX_TTL_S * 1000) throw new ActivityError(400, "since is more than 8 hours ago");
+  return Math.floor(Math.min(ms, nowMs) / 1000);
+}
+
 /**
  * The content-state for a start (no `prev`) or an update (merged over `prev`).
  * Pure apart from reading the clock for `until`; throws ActivityError(400) on
@@ -183,6 +195,9 @@ export function parseUntil(value, nowMs = Date.now()) {
  * asks for one (`until`); `null` clears it. It is not the activity's lifetime:
  * that's the TTL, which only drives stale-date and cleanup. Sending the TTL as
  * endsAt put a meaningless "59:41" on every card.
+ *
+ * `since` sets `startedAt`, which turns the card into the sleep card: a
+ * count-up from that moment, ignoring everything but tiles. `null` clears it.
  */
 export function buildContentState(input, prev = null, { roomId, roomName, nowMs = Date.now() }) {
   const title = str(input.title, "title", 80, { required: !prev });
@@ -213,6 +228,7 @@ export function buildContentState(input, prev = null, { roomId, roomName, nowMs 
     roomName,
   };
   const endsAt = input.until === undefined || input.until === null ? undefined : parseUntil(input.until, nowMs);
+  const startedAt = input.since === undefined || input.since === null ? undefined : parseSince(input.since, nowMs);
   // Optional keys are dropped rather than sent as null: Swift's defaults cover
   // a missing key, and an explicit null clears them on purpose.
   for (const [key, value, raw] of [
@@ -220,6 +236,7 @@ export function buildContentState(input, prev = null, { roomId, roomName, nowMs 
     ["step", step, input.step],
     ["endsAt", endsAt, input.until],
     ["tiles", tiles, input.tiles],
+    ["startedAt", startedAt, input.since],
   ]) {
     if (raw === null) delete next[key];
     else if (value !== undefined) next[key] = value;

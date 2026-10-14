@@ -20,6 +20,8 @@
 //   --no-tiles                    back to the normal layout
 //   --countdown 10m | 90s | 1h30m show a countdown ending that far from now
 //   --until 18:30 | ISO | none    show a countdown to a time (next 18:30, local)
+//   --since now | 23:40 | ISO | none   the sleep card: count up from a time
+//                                 (the last 23:40, local), within 8 hours
 //   --alert none|quiet|loud       (start: quiet by default; updates: none)
 //   --ttl SECS                    lifetime, default 3600, max 28800; it only
 //                                 dims and removes the card, it's not shown
@@ -79,6 +81,23 @@ function parseUntil(text) {
   return text
 }
 
+/** "now", "23:40" (the last one, local time), an ISO date, unix seconds, or
+    "none" to clear. The server checks it's within the past 8 hours. */
+function parseSince(text) {
+  if (text === 'none') return null
+  if (text === 'now') return Math.floor(Date.now() / 1000)
+  if (/^\d+$/.test(text)) return Number(text)
+  const hm = text.match(/^(\d{1,2}):(\d{2})$/)
+  if (hm) {
+    const at = new Date()
+    at.setHours(Number(hm[1]), Number(hm[2]), 0, 0)
+    if (at > new Date()) at.setDate(at.getDate() - 1)
+    return Math.floor(at.getTime() / 1000)
+  }
+  if (Number.isNaN(Date.parse(text))) die(`--since must be now, HH:MM, an ISO date, unix seconds or none, not "${text}"`)
+  return text
+}
+
 const [command, ...rest] = process.argv.slice(2)
 if (!command || command === '-h' || command === '--help') {
   // The header comment is the help text, up to the paragraph about installation.
@@ -108,6 +127,7 @@ try {
       alert: { type: 'string' },
       countdown: { type: 'string' },
       until: { type: 'string' },
+      since: { type: 'string' },
       ttl: { type: 'string' },
       'dismiss-in': { type: 'string' },
     },
@@ -138,6 +158,7 @@ if (values.ttl !== undefined) body.ttl = Number(values.ttl)
 if (values.countdown !== undefined && values.until !== undefined) die('use --countdown or --until, not both')
 if (values.countdown !== undefined) body.until = Math.floor(Date.now() / 1000) + parseDuration(values.countdown)
 if (values.until !== undefined) body.until = parseUntil(values.until)
+if (values.since !== undefined) body.since = parseSince(values.since)
 if (values['no-actions']) body.actions = []
 else if (values.action) {
   body.actions = values.action.map((a) => {

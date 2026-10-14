@@ -1105,7 +1105,8 @@ struct ConstructActivityAttributes: ActivityAttributes {
         // place of the title, and shows no countdown or buttons.
         var tiles: [Tile]? = nil
         // Sleep card: unix seconds (since 1970, like endsAt) when sleep began.
-        // When present (and tiles aren't) the card is one big count-up timer.
+        // When present (and tiles aren't) the card is two tiles: time asleep,
+        // counting up, and bedtime.
         var startedAt: Double? = nil
 
         struct Action: Codable, Hashable {

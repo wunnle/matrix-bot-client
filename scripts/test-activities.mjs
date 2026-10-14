@@ -8,7 +8,7 @@
 // Nothing here touches the network.
 import assert from 'node:assert'
 import {
-  buildContentState, parseAlert, parseTtl, parseUntil, lifetimeFor, expiredIds, evictionIds, assertVisibleSends,
+  buildContentState, parseAlert, parseTtl, parseUntil, parseSince, lifetimeFor, expiredIds, evictionIds, assertVisibleSends,
   reconcileDrops,
   ActivityError, ID_PATTERN, DEFAULT_TTL_S, MAX_TTL_S, MAX_LIVE,
 } from '../api/_activities.js'
@@ -125,6 +125,24 @@ check('lifetime stretches to cover a countdown, unless ttl was explicit', () => 
   const long = buildContentState({ title: 'T', until: NOW / 1000 + 2 * 3600 }, null, ctx)
   assert.strictEqual(lifetimeFor(long, lifetime, { explicitTtl: false, nowMs: NOW }), NOW + (2 * 3600 + 600) * 1000)
   rejects(() => lifetimeFor(long, lifetime, { explicitTtl: true, nowMs: NOW }), 400, /after the activity's ttl/)
+})
+
+check('since sets startedAt in unix seconds, survives updates, clears with null', () => {
+  const c = buildContentState({ title: 'Asleep since 23:40', since: NOW / 1000 - 3 * 3600 }, null, ctx)
+  assert.strictEqual(c.startedAt, NOW / 1000 - 3 * 3600)
+  assert.ok(Number.isInteger(c.startedAt))
+  const iso = buildContentState({ title: 'T', since: new Date(NOW - 90_500).toISOString() }, null, ctx)
+  assert.strictEqual(iso.startedAt, NOW / 1000 - 91)
+  assert.strictEqual(buildContentState({ body: 'b' }, c, ctx).startedAt, c.startedAt)
+  assert.ok(!('startedAt' in buildContentState({ since: null }, c, ctx)))
+  assert.ok(!('startedAt' in buildContentState({ title: 'T' }, null, ctx)))
+})
+
+check('since: future, too old, or garbage is refused; a little skew is clamped to now', () => {
+  rejects(() => parseSince(NOW / 1000 + 120, NOW), 400, /future/)
+  rejects(() => parseSince(NOW / 1000 - 9 * 3600, NOW), 400, /8 hours/)
+  rejects(() => parseSince('earlier', NOW), 400, /unix seconds or an ISO/)
+  assert.strictEqual(parseSince(NOW / 1000 + 30, NOW), NOW / 1000)
 })
 
 check('tiles: at most 3, in order; a bundled logo name is fine as an icon', () => {

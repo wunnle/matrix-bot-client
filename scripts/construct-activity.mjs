@@ -14,7 +14,7 @@
 //   --no-actions                  remove the buttons
 //   --tile "icon|value|sub|tone"  a tile (repeat, up to 3, drawn in order): icon
 //                                 is an SF Symbol name (sun.max.fill…) or a
-//                                 bundled logo ("linear"); sub and tone
+//                                 bundled logo ("linear", "discord"); sub and tone
 //                                 optional. Tiles switch the card to the tile
 //                                 layout: tiles, then 2 body lines.
 //   --no-tiles                    back to the normal layout

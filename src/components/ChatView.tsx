@@ -12,7 +12,7 @@ import {
 import * as sdk from 'matrix-js-sdk'
 import {
   DndContext,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   useSensor,
   useSensors,
@@ -307,8 +307,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [showEditor, setShowEditor] = useState(false)
   const [pills, setPills] = useState<string[]>([])
   const [currentModel, setCurrentModel] = useState<string | null>(() => getRoomModel(roomId))
+  // MouseSensor, not PointerSensor: a finger fires pointerdown too, and the
+  // pointer sensor claims the drag before TouchSensor's long-press can — then
+  // the row's native sideways scroll cancels it, so touch drags never started.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
   )
   const handleDragEnd = useCallback((event: DragEndEvent) => {

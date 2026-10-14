@@ -2118,6 +2118,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   white-space: nowrap;
   user-select: none;
   -webkit-user-select: none;
+  /* Holding a pill is how a drag starts; don't let iOS open its callout. */
+  -webkit-touch-callout: none;
 }
 
 /* Touch browsers leave :hover stuck on whatever sat under the finger, so a tap

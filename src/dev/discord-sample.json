@@ -1,0 +1,81 @@
+{
+  "needs": [
+    {
+      "id": "1560014030104567941",
+      "ts": "2026-10-14T19:38:00+00:00",
+      "author": "Daniel",
+      "channel": "ai-random",
+      "thread": "Test runner MCP",
+      "content": "https://example.com/docs/mcp\n\nseems like a useful one. used it to analyze failed runs and find flaky end-to-end tests. probably more use cases for us, will keep digging\n\n@william @wunnle fyi",
+      "replyTo": null,
+      "attachments": [],
+      "url": "https://discord.com/channels/1/2/1560014030104567941",
+      "reasons": ["mention"],
+      "ack": null,
+      "answered": false
+    },
+    {
+      "id": "1559999000000000001",
+      "ts": "2026-10-14T16:05:00+00:00",
+      "author": "New Relic",
+      "channel": "oh-shit-urgent",
+      "thread": null,
+      "content": "Metric query deviated from the baseline for at least 5 minutes on 'Number of active games dropped unexpectedly'",
+      "replyTo": null,
+      "attachments": [],
+      "url": "https://discord.com/channels/1/3/1559999000000000001",
+      "reasons": ["urgent"],
+      "ack": null,
+      "answered": false
+    },
+    {
+      "id": "1559900000000000002",
+      "ts": "2026-10-14T09:12:00+00:00",
+      "author": "Mira",
+      "channel": "team-engineering",
+      "thread": "Release checklist v327",
+      "content": "can you double check the migration order before we cut the branch?",
+      "replyTo": { "author": "wunnle", "content": "I'll take the db side of this one" },
+      "attachments": ["checklist.png"],
+      "url": "https://discord.com/channels/1/4/1559900000000000002",
+      "reasons": ["reply"],
+      "ack": null,
+      "answered": false
+    }
+  ],
+  "pending": [
+    {
+      "id": "1559800000000000003",
+      "ts": "2026-10-13T14:30:00+00:00",
+      "author": "Efe",
+      "channel": "team-foundation",
+      "thread": "Profile Cleanup Project",
+      "content": "@wunnle initiative done https://linear.app/example/initiative/profile-clean-up",
+      "replyTo": null,
+      "attachments": [],
+      "url": "https://discord.com/channels/1/5/1559800000000000003",
+      "reasons": ["mention"],
+      "ack": "seen",
+      "answered": false,
+      "note": "review the initiative before Thursday",
+      "pendingAt": 1792000000000
+    }
+  ],
+  "seen": [
+    {
+      "id": "1559787201674481676",
+      "ts": "2026-10-14T04:37:00+00:00",
+      "author": "Efe",
+      "channel": "dev-general",
+      "thread": "Manager access",
+      "content": "Who has manager access? Need to send a notification to players inbox @Developer",
+      "replyTo": null,
+      "attachments": [],
+      "url": "https://discord.com/channels/1/6/1559787201674481676",
+      "reasons": ["role"],
+      "ack": "seen",
+      "answered": false
+    }
+  ],
+  "syncedAt": "2026-10-14T20:10:00+00:00"
+}

@@ -25,6 +25,8 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).has('location-pi
   import('./dev/LocationPickerHarness').then(({ default: Harness }) => root.render(<Harness />))
 } else if (import.meta.env.DEV && new URLSearchParams(location.search).has('watchlist')) {
   import('./dev/WatchlistHarness').then(({ default: Harness }) => root.render(<Harness />))
+} else if (import.meta.env.DEV && new URLSearchParams(location.search).has('discord')) {
+  import('./dev/DiscordHarness').then(({ default: Harness }) => root.render(<Harness />))
 } else {
   root.render(
     <StrictMode>

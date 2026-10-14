@@ -27,6 +27,9 @@ const ALLOWED = [
   `^/guilds/${ID}/threads/active$`,
   `^/channels/${ID}$`,
   `^/channels/${ID}/messages$`,
+  `^/channels/${ID}/messages/${ID}$`,
+  // Who reacted with one emoji (URL-encoded): Sinan's ✅/👀 acks.
+  `^/channels/${ID}/messages/${ID}/reactions/[^/]{1,80}$`,
   `^/channels/${ID}/threads/archived/public$`,
   `^/channels/${ID}/users/@me/threads/archived/private$`,
 ].map((p) => new RegExp(p));

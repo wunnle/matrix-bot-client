@@ -710,9 +710,26 @@ private struct IslandTrailing: View {
     }
 }
 
-/// Compact island, right of the notch: the morning card's first tile, else the
-/// most time-sensitive thing the state has — countdown, then step, then
-/// progress, else a plain tone-tinted glyph.
+/// One tile squeezed into a compact island slot: glyph and value, no sub.
+private struct CompactTile: View {
+    let tile: ConstructActivityAttributes.ContentState.Tile
+    var alignment: Alignment = .trailing
+    var body: some View {
+        HStack(spacing: 3) {
+            TileIcon(name: tile.icon, glyph: 12)
+            Text(tile.value)
+        }
+            .font(.caption.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: 72, alignment: alignment)
+    }
+}
+
+/// Compact island, right of the notch: a tile card's last tile (its other
+/// side has the one before it, see CompactLeading), else the most
+/// time-sensitive thing the state has — countdown, then step, then progress,
+/// else a plain tone-tinted glyph.
 private struct CompactTrailing: View {
     let state: ConstructActivityAttributes.ContentState
     var body: some View {
@@ -720,15 +737,8 @@ private struct CompactTrailing: View {
             // Same as the countdown below, counting up.
             SleepTimer(start: start)
                 .font(.caption.weight(.semibold))
-        } else if let tile = state.shownTiles.first {
-            HStack(spacing: 3) {
-                TileIcon(name: tile.icon, glyph: 12)
-                Text(tile.value)
-            }
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(maxWidth: 72, alignment: .trailing)
+        } else if let tile = state.shownTiles.last {
+            CompactTile(tile: tile)
         } else if let end = state.endDate {
             // Timer Text reserves its widest layout; cap it to the compact slot.
             Text(timerInterval: Date()...end, countsDown: true)
@@ -753,7 +763,24 @@ private struct CompactTrailing: View {
     }
 }
 
-/// Compact leading and minimal: the moon on the sleep card, else the room.
+/// Compact island, left of the notch: with two or more tiles, the one before
+/// the last, so the island shows a card's last two tiles either side of the
+/// camera (the morning card's Discord and Linear, after sleep, which leads on
+/// the lock screen). Otherwise the room, as minimal does.
+private struct CompactLeading: View {
+    let state: ConstructActivityAttributes.ContentState
+    var body: some View {
+        let tiles = state.shownTiles
+        if state.sleepStart == nil, tiles.count >= 2 {
+            CompactTile(tile: tiles[tiles.count - 2], alignment: .leading)
+        } else {
+            IslandGlyph(state: state)
+        }
+    }
+}
+
+/// Minimal, and compact leading without tiles: the moon on the sleep card,
+/// else the room.
 private struct IslandGlyph: View {
     let state: ConstructActivityAttributes.ContentState
     var body: some View {
@@ -800,7 +827,7 @@ struct ContructWidgetsLiveActivity: Widget {
                         .padding(.trailing, 4)
                 }
             } compactLeading: {
-                IslandGlyph(state: context.state)
+                CompactLeading(state: context.state)
             } compactTrailing: {
                 CompactTrailing(state: context.state)
             } minimal: {

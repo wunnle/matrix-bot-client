@@ -684,10 +684,12 @@ private func startLiveActivityDemoOnce() {
         startedAt: Date().addingTimeInterval(-(3 * 3600 + 12 * 60)).timeIntervalSince1970)
     // `-LiveActivityDemo morning`: just the morning cards, two and three columns.
     // `-LiveActivityDemo sleep`: just the sleep card.
+    // `-LiveActivityDemo discord`: just the sleep / Discord / Linear card.
     let samples: [State]
     switch UserDefaults.standard.string(forKey: "LiveActivityDemo") {
     case "morning": samples = [sunnyMorning, rainyMorning, sunnyMorning3, rainyMorning3, discordMorning3]
     case "sleep": samples = [asleep]
+    case "discord": samples = [discordMorning3]
     default: samples = all
     }
     Task {

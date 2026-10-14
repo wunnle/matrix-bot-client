@@ -11,12 +11,13 @@ import type { Room } from 'matrix-js-sdk'
 export const ROOM_VIEW_EVENT = 'com.construct.room_view'
 
 /** The kinds this build knows how to draw. An unknown kind falls back to chat. */
-export const ROOM_VIEW_KINDS = ['watchlist'] as const
+export const ROOM_VIEW_KINDS = ['watchlist', 'discord'] as const
 export type RoomViewKind = typeof ROOM_VIEW_KINDS[number]
 
 /** What the composer under the page is for, as its placeholder. */
 export const ROOM_VIEW_COMPOSER_HINT: Record<RoomViewKind, string> = {
   watchlist: 'Add a title or IMDb link…',
+  discord: 'Paste a Discord link to keep it pending…',
 }
 
 export function roomViewKind(room: Room | null | undefined): RoomViewKind | null {

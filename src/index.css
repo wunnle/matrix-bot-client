@@ -4612,3 +4612,139 @@ html.mac-app {
 .wl-sheet-credit span { color: var(--text-muted); }
 .wl-sheet a.message-sheet-action { text-decoration: none; }
 .wl-remove, .wl-remove .material-symbols-outlined { color: var(--danger) !important; }
+
+/* Discord page: section heads from the Watchlist, then a column of message
+   cards. Each card opens a sheet; pin and check act from the card itself. */
+.dc .wl-section-head:first-of-type { margin-top: 6px; }
+.dc-list { display: flex; flex-direction: column; gap: 8px; }
+.dc-card {
+  display: flex;
+  align-items: flex-start;
+  border-radius: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+}
+.dc-card--quiet { opacity: 0.72; }
+.dc-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+  padding: 12px 4px 12px 12px;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.dc-card-main:active { opacity: 0.7; }
+.dc-avatar {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: hsl(var(--dc-hue, 250) 35% 28%);
+  color: hsl(var(--dc-hue, 250) 70% 86%);
+  font-size: 14px;
+  font-weight: 600;
+}
+.dc-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.dc-card-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dc-card-author {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dc-card-time { font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
+.dc-reason {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.dc-reason--mention, .dc-reason--reply { color: var(--text-strong); }
+.dc-reason--urgent { color: #ff9f0a; border-color: rgba(255, 159, 10, 0.4); }
+.dc-card-where {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dc-card-body {
+  margin-top: 3px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.dc-card-note {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.dc-card-actions { display: flex; flex-direction: column; padding: 6px 6px 6px 0; gap: 2px; }
+.dc-icon-btn {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  color: var(--text-muted);
+  -webkit-tap-highlight-color: transparent;
+}
+.dc-icon-btn:active { background: var(--bg-hover); color: var(--text); }
+.dc-icon-btn .material-symbols-outlined { font-size: 20px; }
+.dc-empty { margin: 0; padding: 18px 0 6px; color: var(--text-muted); font-size: 14px; }
+.dc-synced { margin: 22px 0 0; text-align: center; font-size: 12px; color: var(--text-faint); }
+.dc-error {
+  margin-bottom: 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.dc-sheet-head { display: flex; align-items: center; gap: 12px; padding: 18px 20px 12px; }
+.dc-sheet-head .dc-avatar { width: 40px; height: 40px; border-radius: 11px; font-size: 17px; }
+.dc-sheet-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dc-sheet-author { font-size: 17px; font-weight: 600; color: var(--text-strong); }
+.dc-sheet-meta { font-size: 13px; color: var(--text-muted); }
+.dc-sheet-reply {
+  display: flex;
+  gap: 6px;
+  margin: 0 20px 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.dc-sheet-reply .material-symbols-outlined { font-size: 16px; flex-shrink: 0; }
+.dc-sheet-reply b { color: var(--text); font-weight: 600; }
+.dc-sheet-content {
+  margin: 0 20px 14px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dc-sheet-files, .dc-sheet-note, .dc-sheet-state { margin: 0 20px 12px; font-size: 13px; color: var(--text-muted); }
+.dc-sheet-note span { color: var(--text-muted); font-weight: 600; margin-right: 4px; }
+.dc-sheet-note { color: var(--text); }
+.dc-open { text-decoration: none; }
+.dc-sheet .message-sheet-actions { margin-top: 6px; }

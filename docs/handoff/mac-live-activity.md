@@ -269,3 +269,66 @@ debug demo, and `-LiveActivityDemo morning` starts just those two. "Normal"
 (sun, 7h 12 "Slept well" green) and "short night + rain" (rain, 5h 04 "Short
 night" amber, body truncated at two lines) both fit the lock-screen height.
 Not yet on the phone.
+
+## Sleep card
+
+Branch: `mac/sleep-card`. Not merged.
+
+### Contract addition
+
+ContentState gains an optional `startedAt: Double?`, unix seconds since 1970
+(not Date, same reason as `endsAt`). Identical in the app and widget copies,
+lenient decode (missing → nil). The plugin's `start`/`update` pass it through
+like the other fields, and `LiveActivityState` in `src/lib/liveActivity.ts`
+has it.
+
+With `startedAt` set and no `tiles`, the card is the sleep card and ignores
+everything else (title, body, roomName, endsAt, progress, actions). `tiles`
+wins: a morning card that carries `startedAt` stays a morning card. Without
+`startedAt` nothing changes. Older builds ignore the field and show the title,
+so keep sending "Asleep since 23:40" as `title`.
+
+### Layout (deviates from the brief, at Sinan's request)
+
+Instead of one large timer with "since 23:40" beneath it, the card reuses the
+morning card's tiles:
+
+- **Lock screen:** two tiles side by side: `moon.zzz.fill` with the time asleep
+  (H:MM, counting up, "Asleep" beneath), and `bed.double.fill` with the start
+  time (24-hour, phone's zone, "Bedtime" beneath). Same tile style, white
+  glyphs, no purple and no dimming. No avatar, room, title, body or buttons.
+- **Expanded island:** the same two tiles, one in the leading and one in the
+  trailing region, level with the camera. In the bottom region they sat under
+  an empty top row.
+- **Compact island:** moon leading, H:MM trailing. **Minimal:** the moon.
+
+### The H:MM timer
+
+Seconds are hidden, and it still ticks with no pushes:
+
+- `SystemFormatStyle.Timer` (iOS 18) can drop seconds, but it switches to
+  words ("3 hours, 12 minutes") whenever it judges the space tight. In the
+  compact island it always did, even at a fixed 44pt, and with minute
+  precision it did on the lock screen too. Not usable.
+- So `SleepTimer` is the countdown card's `Text(timerInterval:)` counting up
+  from 10 hours before `startedAt`, so it always reads "1H:MM:SS". It is clipped
+  to a window the width of "0:00", which drops the leading "1" and the trailing
+  ":SS". Monospaced digits make the window exact. Correct from 0:00 to 9:59;
+  past 10 hours it would show the wrong hour digit, but iOS ends a Live
+  Activity after 8.
+
+### Debug demo and preview
+
+`-LiveActivityDemo sleep` starts just the sleep card (3h12 in). The `sleep`
+#Preview state is in both preview groups.
+
+### Tested
+
+- iOS 27 simulator (iPhone 18 Pro), debug demo: lock screen, expanded island
+  and compact island, at 3h12 ("3:12") and with a temporary 12-minute card
+  ("0:12"). Nothing clipped; the island tiles mirror each other.
+- Release archive of all five targets builds cleanly.
+- **Not tested:** whether a Live Activity shows on the dimmed Sleep Focus lock
+  screen. The simulator has no way to enter Sleep Focus from `simctl`. Needs
+  the phone.
+- Not yet on the phone. A start from the Pi with `startedAt` is untested.

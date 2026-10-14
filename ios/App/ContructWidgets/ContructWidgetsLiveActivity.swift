@@ -33,6 +33,9 @@ struct ConstructActivityAttributes: ActivityAttributes {
         // Morning card: at most 2 tiles. When present the card draws them in
         // place of the title, and shows no countdown or buttons.
         var tiles: [Tile]? = nil
+        // Sleep card: unix seconds (since 1970, like endsAt) when sleep began.
+        // When present (and tiles aren't) the card is one big count-up timer.
+        var startedAt: Double? = nil
 
         struct Action: Codable, Hashable {
             var label: String = ""
@@ -59,7 +62,7 @@ struct ConstructActivityAttributes: ActivityAttributes {
 // word. Decode every field leniently so a partial push still lands.
 extension ConstructActivityAttributes.ContentState {
     private enum Keys: String, CodingKey {
-        case title, body, tone, progress, step, actions, roomId, roomName, endsAt, tiles
+        case title, body, tone, progress, step, actions, roomId, roomName, endsAt, tiles, startedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -74,6 +77,7 @@ extension ConstructActivityAttributes.ContentState {
         roomName = try c.decodeIfPresent(String.self, forKey: .roomName) ?? ""
         endsAt = try c.decodeIfPresent(Double.self, forKey: .endsAt)
         tiles = try c.decodeIfPresent([Tile].self, forKey: .tiles)
+        startedAt = try c.decodeIfPresent(Double.self, forKey: .startedAt)
     }
 }
 
@@ -117,11 +121,18 @@ private extension ConstructActivityAttributes.ContentState {
     /// The morning card's tiles (at most 3); empty on every other card.
     var shownTiles: [Tile] { Array((tiles ?? []).prefix(3)) }
 
+    /// startedAt as a Date: set means this is the sleep card. Tiles win, so a
+    /// morning card that carries startedAt stays a morning card.
+    var sleepStart: Date? {
+        guard let startedAt, shownTiles.isEmpty else { return nil }
+        return Date(timeIntervalSince1970: startedAt)
+    }
+
     /// endsAt as a Date, only while it's still ahead — a timer view needs a
     /// non-empty range, and a finished countdown has nothing to show. Never on
-    /// the morning card, which has no countdown.
+    /// the morning or sleep card, which have no countdown.
     var endDate: Date? {
-        guard let endsAt, shownTiles.isEmpty else { return nil }
+        guard let endsAt, shownTiles.isEmpty, sleepStart == nil else { return nil }
         let date = Date(timeIntervalSince1970: endsAt)
         return date > Date() ? date : nil
     }
@@ -389,20 +400,42 @@ private struct TileIcon: View {
 private struct TileView: View {
     let tile: ConstructActivityAttributes.ContentState.Tile
     var body: some View {
+        TileBox(icon: tile.icon, sub: tile.sub, tone: tile.tone) {
+            Text(tile.value)
+        }
+    }
+}
+
+/// A tile's frame, for any value view: the sleep card puts a live timer where
+/// a morning tile has its text.
+private struct TileBox<Value: View>: View {
+    let icon: String
+    var sub: String?
+    var tone: String?
+    let value: Value
+
+    init(icon: String, sub: String? = nil, tone: String? = nil, @ViewBuilder value: () -> Value) {
+        self.icon = icon
+        self.sub = sub
+        self.tone = tone
+        self.value = value()
+    }
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                TileIcon(name: tile.icon, size: 24)
-                Text(tile.value)
+                TileIcon(name: icon, size: 24)
+                value
             }
             .font(.system(size: 20, weight: .semibold))
             .lineLimit(1)
             .minimumScaleFactor(0.6)
             // A fixed row height, so each tile's sub line starts at the same y.
             .frame(height: 26)
-            if let sub = tile.sub, !sub.isEmpty {
+            if let sub, !sub.isEmpty {
                 Text(sub)
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(toneColor(tile.tone) ?? .secondary)
+                    .foregroundStyle(toneColor(tone) ?? .secondary)
                     .lineLimit(1)
             }
         }
@@ -426,6 +459,78 @@ private struct TilesRow: View {
     }
 }
 
+/// Time since `start` as H:MM, ticking with no pushes.
+///
+/// SystemFormatStyle's timer can drop the seconds, but it switches to words
+/// ("3 hours, 12 minutes") whenever it judges the space tight, which in the
+/// compact island is always. So this is the countdown card's timer Text, made
+/// to read H:MM by clipping: it starts 10 hours early, so it always shows
+/// "1H:MM:SS", and only the "H:MM" in the middle is left visible. Monospaced
+/// digits make every digit the width of "0", so the window is exact. Right for
+/// 0:00 to 9:59; iOS ends a Live Activity after 8 hours.
+private struct SleepTimer: View {
+    let start: Date
+    private static let lead: TimeInterval = 10 * 3600
+    var body: some View {
+        // The visible window: the width of "0:00"...
+        Text("0:00")
+            .hidden()
+            .overlay(alignment: .trailing) {
+                // ...over a strip one digit wider, so the timer's leading
+                // "1" hangs off the left edge, and ":SS" off the right.
+                HStack(spacing: 0) { Text("0"); Text("0:00") }
+                    .hidden()
+                    .fixedSize()
+                    .overlay(alignment: .leading) {
+                        Text(timerInterval: start.addingTimeInterval(-Self.lead)...start.addingTimeInterval(86_400),
+                             countsDown: false)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(1)
+                            .frame(width: 300, alignment: .leading)
+                    }
+            }
+            .clipped()
+            .monospacedDigit()
+    }
+}
+
+/// The start in the phone's zone, always 24-hour: "23:40".
+private let sleepClock: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "HH:mm"
+    return f
+}()
+
+/// The sleep card, in the morning card's tiles: time asleep (counting up) and
+/// when it began. Nothing else from the state is drawn.
+private struct SleepTiles: View {
+    let start: Date
+    var body: some View {
+        HStack(spacing: 8) {
+            AsleepTile(start: start)
+            BedtimeTile(start: start)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct AsleepTile: View {
+    let start: Date
+    var body: some View {
+        TileBox(icon: "moon.zzz.fill", sub: "Asleep") { SleepTimer(start: start) }
+    }
+}
+
+private struct BedtimeTile: View {
+    let start: Date
+    var body: some View {
+        TileBox(icon: "bed.double.fill", sub: "Bedtime") {
+            Text(sleepClock.string(from: start)).monospacedDigit()
+        }
+    }
+}
+
 /// Progress bar in the tone's accent, when the state carries progress.
 private struct ProgressBar: View {
     let state: ConstructActivityAttributes.ContentState
@@ -442,6 +547,16 @@ struct LockScreenView: View {
     let state: ConstructActivityAttributes.ContentState
     let activityId: String
     var body: some View {
+        if let start = state.sleepStart {
+            SleepTiles(start: start)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 20)
+        } else {
+            cardBody
+        }
+    }
+
+    private var cardBody: some View {
         HStack(alignment: .top, spacing: 12) {
             // The morning card spends the whole width on its tiles.
             if state.shownTiles.isEmpty {
@@ -505,7 +620,11 @@ struct IslandBottomView: View {
     let activityId: String
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if !state.shownTiles.isEmpty {
+            if state.sleepStart != nil {
+                // Sleep card: its tiles sit in the leading and trailing
+                // regions, level with the camera, so nothing goes here.
+                EmptyView()
+            } else if !state.shownTiles.isEmpty {
                 // Morning card: tiles and body only.
                 TilesRow(state: state)
                 MessageText(state: state, showsTitle: false, maxBodyLines: 2)
@@ -514,7 +633,7 @@ struct IslandBottomView: View {
             } else {
                 MessageText(state: state)
             }
-            if state.shownTiles.isEmpty {
+            if state.shownTiles.isEmpty, state.sleepStart == nil {
                 ProgressBar(state: state)
                 if #available(iOS 17.0, *) {
                     if !state.actions.isEmpty {
@@ -545,6 +664,16 @@ private struct IslandRoomLabel: View {
 private struct IslandLeading: View {
     let state: ConstructActivityAttributes.ContentState
     var body: some View {
+        // The sleep card: one tile each side of the camera. In the bottom
+        // region they'd sit under an empty top row.
+        if let start = state.sleepStart {
+            AsleepTile(start: start)
+        } else {
+            roomAndTitle
+        }
+    }
+
+    private var roomAndTitle: some View {
         VStack(alignment: .leading, spacing: 4) {
             IslandRoomLabel(state: state)
             if state.endDate != nil {
@@ -559,7 +688,12 @@ private struct IslandLeading: View {
 private struct IslandTrailing: View {
     let state: ConstructActivityAttributes.ContentState
     var body: some View {
-        if let end = state.endDate {
+        if let start = state.sleepStart {
+            BedtimeTile(start: start)
+                // The region's own inset is 6 smaller than the leading one;
+                // even them so the two tiles mirror each other.
+                .padding(.trailing, 6)
+        } else if let end = state.endDate {
             VStack(alignment: .trailing, spacing: 0) {
                 if let step = state.step, !step.isEmpty {
                     MetaLabel(state: state, showsTimer: false)
@@ -578,7 +712,11 @@ private struct IslandTrailing: View {
 private struct CompactTrailing: View {
     let state: ConstructActivityAttributes.ContentState
     var body: some View {
-        if let tile = state.shownTiles.first {
+        if let start = state.sleepStart {
+            // Same as the countdown below, counting up.
+            SleepTimer(start: start)
+                .font(.caption.weight(.semibold))
+        } else if let tile = state.shownTiles.first {
             HStack(spacing: 3) {
                 TileIcon(name: tile.icon, glyph: 12)
                 Text(tile.value)
@@ -607,6 +745,18 @@ private struct CompactTrailing: View {
         } else {
             Image(systemName: "bubble.left.fill")
                 .foregroundStyle(state.accent)
+        }
+    }
+}
+
+/// Compact leading and minimal: the moon on the sleep card, else the room.
+private struct IslandGlyph: View {
+    let state: ConstructActivityAttributes.ContentState
+    var body: some View {
+        if state.sleepStart != nil {
+            TileIcon(name: "moon.zzz.fill")
+        } else {
+            RoomAvatar(size: 20, roomId: state.roomId)
         }
     }
 }
@@ -646,11 +796,11 @@ struct ContructWidgetsLiveActivity: Widget {
                         .padding(.trailing, 4)
                 }
             } compactLeading: {
-                RoomAvatar(size: 20, roomId: context.state.roomId)
+                IslandGlyph(state: context.state)
             } compactTrailing: {
                 CompactTrailing(state: context.state)
             } minimal: {
-                RoomAvatar(size: 20, roomId: context.state.roomId)
+                IslandGlyph(state: context.state)
             }
             // The island routes its own taps, separately from the lock screen.
             .widgetURL(roomDeepLink(context.state.roomId))
@@ -733,6 +883,12 @@ private extension ConstructActivityAttributes.ContentState {
                 .init(icon: "cloud.rain.fill", value: "14°", sub: "Rain at 10"),
                 .init(icon: "linear", value: "12", sub: "2 urgent", tone: "warning")]
     )
+    // Sleep card, 3h12 in. The title is what older builds show instead.
+    static let sleep = ConstructActivityAttributes.ContentState(
+        title: "Asleep since 23:40",
+        roomName: "Sleep",
+        startedAt: Date().addingTimeInterval(-(3 * 3600 + 12 * 60)).timeIntervalSince1970
+    )
     // Error, long body, no buttons: should truncate, not clip.
     static let failed = ConstructActivityAttributes.ContentState(
         title: "Build failed",
@@ -787,6 +943,7 @@ private struct IslandExpandedMock: View {
         PreviewBanner(state: .morningRough)
         PreviewBanner(state: .morning3)
         PreviewBanner(state: .morning3Rough)
+        PreviewBanner(state: .sleep)
         PreviewBanner(state: .failed)
     }
     .padding()
@@ -803,6 +960,7 @@ private struct IslandExpandedMock: View {
         IslandExpandedMock(state: .morningRough)
         IslandExpandedMock(state: .morning3)
         IslandExpandedMock(state: .morning3Rough)
+        IslandExpandedMock(state: .sleep)
         IslandExpandedMock(state: .failed)
     }
     .padding()

@@ -34,6 +34,8 @@ export interface LiveActivityState {
   roomName?: string
   /** Unix seconds. */
   endsAt?: number
+  /** Unix seconds. Sleep card: counts up from here. */
+  startedAt?: number
 }
 
 interface LiveActivityPlugin {

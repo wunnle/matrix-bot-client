@@ -671,9 +671,18 @@ private func startLiveActivityDemoOnce() {
         tiles: [.init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning"),
                 .init(icon: "cloud.rain.fill", value: "14°", sub: "Rain at 10"),
                 .init(icon: "linear", value: "12", sub: "2 urgent", tone: "warning")])
+    // The sleep card, 3h12 in. The title is what older builds show instead.
+    let asleep = State(
+        title: "Asleep since 23:40", roomName: "Sleep",
+        startedAt: Date().addingTimeInterval(-(3 * 3600 + 12 * 60)).timeIntervalSince1970)
     // `-LiveActivityDemo morning`: just the morning cards, two and three columns.
-    let samples = UserDefaults.standard.string(forKey: "LiveActivityDemo") == "morning"
-        ? [sunnyMorning, rainyMorning, sunnyMorning3, rainyMorning3] : all
+    // `-LiveActivityDemo sleep`: just the sleep card.
+    let samples: [State]
+    switch UserDefaults.standard.string(forKey: "LiveActivityDemo") {
+    case "morning": samples = [sunnyMorning, rainyMorning, sunnyMorning3, rainyMorning3]
+    case "sleep": samples = [asleep]
+    default: samples = all
+    }
     Task {
         for activity in Activity<ConstructActivityAttributes>.activities
         where activity.attributes.activityId.hasPrefix("demo-") {
@@ -1095,6 +1104,9 @@ struct ConstructActivityAttributes: ActivityAttributes {
         // Morning card: at most 2 tiles. When present the card draws them in
         // place of the title, and shows no countdown or buttons.
         var tiles: [Tile]? = nil
+        // Sleep card: unix seconds (since 1970, like endsAt) when sleep began.
+        // When present (and tiles aren't) the card is one big count-up timer.
+        var startedAt: Double? = nil
 
         struct Action: Codable, Hashable {
             var label: String = ""
@@ -1121,7 +1133,7 @@ struct ConstructActivityAttributes: ActivityAttributes {
 // word. Decode every field leniently so a partial push still lands.
 extension ConstructActivityAttributes.ContentState {
     private enum Keys: String, CodingKey {
-        case title, body, tone, progress, step, actions, roomId, roomName, endsAt, tiles
+        case title, body, tone, progress, step, actions, roomId, roomName, endsAt, tiles, startedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -1136,6 +1148,7 @@ extension ConstructActivityAttributes.ContentState {
         roomName = try c.decodeIfPresent(String.self, forKey: .roomName) ?? ""
         endsAt = try c.decodeIfPresent(Double.self, forKey: .endsAt)
         tiles = try c.decodeIfPresent([Tile].self, forKey: .tiles)
+        startedAt = try c.decodeIfPresent(Double.self, forKey: .startedAt)
     }
 }
 
@@ -1418,6 +1431,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                       sub: $0["sub"] as? String, tone: $0["tone"] as? String)
             }
         }
+        if let v = call.getDouble("startedAt") { s.startedAt = v }
         return s
     }
 }

@@ -671,6 +671,13 @@ private func startLiveActivityDemoOnce() {
         tiles: [.init(icon: "moon.zzz.fill", value: "5h 04", sub: "Short night", tone: "warning"),
                 .init(icon: "cloud.rain.fill", value: "14°", sub: "Rain at 10"),
                 .init(icon: "linear", value: "12", sub: "2 urgent", tone: "warning")])
+    // Sleep, then the two bundled brand glyphs: Discord and Linear.
+    let discordMorning3 = State(
+        body: "Three Discord threads mention you, one from last night. Two Linear issues are urgent.",
+        roomName: "Morning",
+        tiles: [.init(icon: "moon.zzz.fill", value: "7h 12", sub: "Slept well", tone: "success"),
+                .init(icon: "discord", value: "3", sub: "mentions"),
+                .init(icon: "linear", value: "7", sub: "2 urgent", tone: "warning")])
     // The sleep card, 3h12 in. The title is what older builds show instead.
     let asleep = State(
         title: "Asleep since 23:40", roomName: "Sleep",
@@ -679,7 +686,7 @@ private func startLiveActivityDemoOnce() {
     // `-LiveActivityDemo sleep`: just the sleep card.
     let samples: [State]
     switch UserDefaults.standard.string(forKey: "LiveActivityDemo") {
-    case "morning": samples = [sunnyMorning, rainyMorning, sunnyMorning3, rainyMorning3]
+    case "morning": samples = [sunnyMorning, rainyMorning, sunnyMorning3, rainyMorning3, discordMorning3]
     case "sleep": samples = [asleep]
     default: samples = all
     }

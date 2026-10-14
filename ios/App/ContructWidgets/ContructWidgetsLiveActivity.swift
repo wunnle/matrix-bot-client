@@ -370,7 +370,10 @@ private struct MessageText: View {
 /// (white, hierarchical), else the string itself as text (an emoji). `size`
 /// gives every icon the same box: glyphs differ in height (moon.zzz is taller
 /// than calendar), and an unboxed one shifts its tile's lines out of step.
-/// `glyph` sizes a bundled image, which has no font to take its size from.
+/// `glyph` sizes a bundled image, which has no font to take its size from:
+/// its height, with a wide mark allowed up to 1.25× that across, so Discord
+/// (about 4:3) reads as big as Linear's circle instead of shrinking to fit a
+/// square. 1.25 keeps it inside the 24pt box tiles give the icon.
 private struct TileIcon: View {
     let name: String
     var size: CGFloat? = nil
@@ -382,7 +385,7 @@ private struct TileIcon: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: glyph, height: glyph)
+                    .frame(maxWidth: glyph * 1.25, maxHeight: glyph)
                     .foregroundStyle(.white)
             } else if UIImage(systemName: name) != nil {
                 Image(systemName: name)

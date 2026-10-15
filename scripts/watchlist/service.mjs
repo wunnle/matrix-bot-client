@@ -1,22 +1,27 @@
 #!/usr/bin/env node
 // The watchlist service: owns the Watchlist room, keeps the list, and answers
-// what Construct and the owner send there. No LLM anywhere in it.
+// what Construct and the owner send there. It is the only writer of the list.
 //
 // The room-view contract (first instance — see BEN-304):
 //   declare  m.room.create-time state `com.construct.room_view` = {kind: 'watchlist'}
 //   read     `com.construct.watchlist` room state holds the whole list
 //   act      Construct sends `com.construct.watchlist.action` events; each one
 //            is answered by an m.notice carrying `com.construct.watchlist.result`
+//   talk     typed messages (except IMDb links) go to the room's agent, the
+//            `watchlist` Hermes profile; its tools (~/.hermes/scripts/
+//            watchlist_mcp.py) call back in through TOOL_SOCKET
 //
 // Runs as @bender-2 on its OWN device. The Claude bot uses Rust crypto on its
 // device, and to-device messages (megolm keys) are deleted once any client
 // syncing that device acknowledges them — sharing its token would quietly steal
 // the bot's room keys. The room is unencrypted, so this client needs no crypto.
 import * as fs from 'node:fs'
+import * as http from 'node:http'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { askRoomAgent, roomAgentQueue } from '../room-services/agent.mjs'
 import { createStore } from './store.mjs'
-import { choiceLabel, cinemetaMeta, enrich, episodeSinceWatched, needsPopularity, parseInput, pickCandidate, searchCinemeta, withPopularity } from './lookup.mjs'
+import { choiceLabel, cinemetaMeta, enrich, episodeSinceWatched, needsPopularity, parseInput, searchCinemeta, withPopularity } from './lookup.mjs'
 
 const HOMESERVER = process.env.HOMESERVER ?? 'https://matrix.org'
 const USER_ID = process.env.USER_ID_B
@@ -40,8 +45,6 @@ const STATE_WARN_BYTES = 48 * 1024
 // each title is looked up again once it is this old.
 const REFRESH_AFTER_MS = 24 * 60 * 60 * 1000
 const REFRESH_CHECK_MS = 60 * 60 * 1000
-// How long a "which one?" set of buttons stays answerable.
-const CHOICE_TTL_MS = 30 * 60 * 1000
 
 if (!USER_ID || !PASSWORD) {
   console.error('Missing USER_ID_B or PASSWORD_B in env')
@@ -192,22 +195,11 @@ async function handleAction(roomId, event) {
   await notice(roomId, result.ok ? result.message : `⚠️ ${result.message}`, { request_id: requestId ?? null, action, id: id ?? null, ...result })
 }
 
-// --- Adding: anything the owner types in the room is a title or an IMDb link ---
-
-/** label → candidate, for the buttons of the last "which one?" question. */
-let choices = { expires: 0, byLabel: new Map() }
+// --- Adding by IMDb link ---
 
 function whereText(item) {
   const names = { netflix: 'Netflix', hbomax: 'HBO Max', prime: 'Prime Video', apple: 'Apple TV+' }
   return item.providers?.length ? item.providers.map((k) => names[k] ?? k).join(', ') : 'Stremio'
-}
-
-function offer(candidates) {
-  choices = {
-    expires: Date.now() + CHOICE_TTL_MS,
-    byLabel: new Map(candidates.map((c) => [choiceLabel(c), c])),
-  }
-  return [...choices.byLabel.keys()].map((l) => `[[${l}]]`).join(' ')
 }
 
 /** @param fallback what search already knew, used when TMDB has nothing */
@@ -225,30 +217,139 @@ async function addById(roomId, id, fallback = null) {
   await notice(roomId, line, { action: 'add', id, ok: true, added })
 }
 
-async function handleText(roomId, body) {
-  const chosen = Date.now() < choices.expires ? choices.byLabel.get(body.trim()) : null
-  if (chosen) {
-    choices = { expires: 0, byLabel: new Map() }
-    return addById(roomId, chosen.id, chosen)
-  }
+// --- Talking: typed messages go to the room's agent ---
+//
+// The `watchlist` Hermes profile, whose only tools (watchlist_mcp.py) call
+// back into this service through TOOL_SOCKET, so this stays the one writer of
+// the list. A button reply to "which one?" and an IMDb link stay instant.
 
+const AGENT_PROFILE = 'watchlist'
+const enqueue = roomAgentQueue()
+
+async function typing(roomId, on) {
+  await api('PUT', `/rooms/${encodeURIComponent(roomId)}/typing/${encodeURIComponent(USER_ID)}`,
+    on ? { typing: true, timeout: 30000 } : { typing: false }).catch(() => {})
+}
+
+/** Off the sync loop: an agent turn takes ~20 s and taps must stay instant. */
+function askAgent(roomId, text) {
+  enqueue(async () => {
+    await typing(roomId, true)
+    const keepTyping = setInterval(() => typing(roomId, true), 25000)
+    const started = Date.now()
+    try {
+      const session = `watchlist-room-${roomId.replace(/[^A-Za-z0-9]/g, '').slice(0, 12)}`
+      const reply = await askRoomAgent({ profile: AGENT_PROFILE, session, text })
+      log(`agent answered in ${Math.round((Date.now() - started) / 1000)}s`)
+      await notice(roomId, reply)
+    } catch (err) {
+      log(`agent failed: ${err.message}`)
+      await notice(roomId, `⚠️ ${err.message}`)
+    } finally {
+      clearInterval(keepTyping)
+      await typing(roomId, false)
+    }
+  })
+}
+
+// --- The agent's tools, served on a local socket ---
+
+const TOOL_SOCKET = process.env.WATCHLIST_TOOL_SOCKET ?? `/run/user/${process.getuid()}/watchlist.sock`
+
+const KIND = { series: 'show', movie: 'film' }
+
+/** One line per title: everything the agent needs to talk about it. */
+function itemLine(i) {
+  const bits = [`${i.id}`, `${i.title}${i.year ? ` (${i.year})` : ''}`, KIND[i.kind] ?? i.kind,
+    i.watchedAt ? 'watched' : 'to watch', whereText(i)]
+  if (i.favoriteAt) bits.push('♥ favorite')
+  if (i.newEpisode && !i.watchedAt) bits.push(`new episode S${i.newEpisode.season}E${i.newEpisode.episode}`)
+  if (i.next) bits.push(`next S${i.next.season}E${i.next.episode} on ${i.next.airDate}`)
+  else if (i.showStatus) bits.push(i.showStatus)
+  if (i.imdbRating) bits.push(`IMDb ${i.imdbRating}`)
+  if (i.cinema?.now) bits.push('in cinemas')
+  return bits.join(' · ')
+}
+
+const tools = {
+  list: ({ status = 'to-watch', kind = 'all' } = {}) => {
+    const rows = store.list()
+      .filter((i) => status === 'all' || (status === 'watched') === Boolean(i.watchedAt))
+      .filter((i) => kind === 'all' || i.kind === (kind === 'show' ? 'series' : kind === 'film' ? 'movie' : kind))
+    return rows.map(itemLine).join('\n') || '(nothing)'
+  },
+  details: ({ id }) => {
+    const i = store.get(id)
+    if (!i) throw new Error(`not on the watchlist: ${id}`)
+    const extra = [
+      i.genres?.length && `Genres: ${i.genres.join(', ')}`,
+      i.runtime && `Runtime: ${i.runtime} min`,
+      i.seasons && `Seasons: ${i.seasons}`,
+      i.people?.length && `${i.kind === 'movie' ? 'Directed by' : 'Created by'}: ${i.people.join(', ')}`,
+      i.cast?.length && `With: ${i.cast.join(', ')}`,
+      i.releaseDate && `Released: ${i.releaseDate}`,
+      i.digital && `Digital: ${i.digital.date} (${i.digital.region})`,
+      i.overview && `Plot: ${i.overview}`,
+    ].filter(Boolean)
+    return [itemLine(i), ...extra].join('\n')
+  },
+  search: async ({ query }) => {
+    let candidates = await searchCinemeta(String(query ?? ''))
+    if (needsPopularity(query, candidates)) candidates = await withPopularity(query, candidates)
+    return candidates.slice(0, 8).map((c) =>
+      `${c.id} · ${choiceLabel(c)} · ${KIND[c.kind] ?? c.kind}${store.get(c.id) ? ' · already on the list' : ''}`,
+    ).join('\n') || `(nothing found for "${query}")`
+  },
+  add: async ({ id }, roomId) => {
+    if (!/^tt\d+$/.test(id ?? '')) throw new Error('add needs an IMDb id (tt…); use search first')
+    let details = await enrich(id).catch(() => null)
+    details ??= await cinemetaMeta(id)
+    if (!details) throw new Error(`couldn't find ${id} on TMDB or Cinemeta`)
+    const { item, added } = store.add({ ...details, id })
+    await publish(roomId)
+    return `${added ? 'Added' : 'Already on the list'}: ${itemLine(item)}`
+  },
+  set: async ({ id, action }, roomId) => {
+    const handler = handlers[action]
+    if (!handler) throw new Error(`unknown action ${action}; use watched, unwatched, favorite, unfavorite or remove`)
+    const message = await handler({ id, roomId })
+    await publish(roomId)
+    return message
+  },
+}
+
+function startToolSocket(roomId) {
+  try { fs.unlinkSync(TOOL_SOCKET) } catch { /* not there */ }
+  const server = http.createServer((req, res) => {
+    let body = ''
+    req.on('data', (c) => { body += c })
+    req.on('end', async () => {
+      let out
+      try {
+        const { tool, args } = JSON.parse(body || '{}')
+        if (!tools[tool]) throw new Error(`unknown tool ${tool}`)
+        out = { ok: true, text: await tools[tool](args ?? {}, roomId) }
+        log(`tool ${tool} ${JSON.stringify(args ?? {})} → ok`)
+      } catch (err) {
+        out = { ok: false, text: `error: ${err.message}` }
+        log(`tool failed: ${err.message}`)
+      }
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(out))
+    })
+  })
+  server.listen(TOOL_SOCKET, () => {
+    fs.chmodSync(TOOL_SOCKET, 0o600)
+    log(`agent tools on ${TOOL_SOCKET}`)
+  })
+}
+
+/** An IMDb link adds at once; everything else, titles included, is the agent's. */
+async function handleText(roomId, body) {
   const input = parseInput(body)
   if (!input) return
   if (input.imdbId) return addById(roomId, input.imdbId)
-
-  let candidates = await searchCinemeta(input.query)
-  if (needsPopularity(input.query, candidates)) candidates = await withPopularity(input.query, candidates)
-  const result = pickCandidate(input.query, candidates)
-  if (result.none) {
-    return notice(roomId, `Nothing found for “${input.query}”. An IMDb link always works.`, { action: 'add', id: null, ok: false })
-  }
-  // Several titles share the name: ask, never add a guess. Popularity only
-  // decides the order — the one you most likely mean is the first button.
-  if (result.pick && result.others?.length) {
-    return notice(roomId, `Which “${input.query}”?\n\n${offer([result.pick, ...result.others])}`)
-  }
-  if (result.pick) return addById(roomId, result.pick.id, result.pick)
-  await notice(roomId, `Which “${input.query}”?\n\n${offer(result.choices)}`)
+  return askAgent(roomId, body)
 }
 
 // --- Refreshing TMDB details ---
@@ -332,6 +433,7 @@ async function run() {
     writePrivate(syncFile, { since })
   }
   log(`listening in ${roomId}`)
+  startToolSocket(roomId)
 
   // Off the sync loop: a slow TMDB must never hold up an answer to a tap.
   const refresh = () => refreshStale(roomId).catch((err) => log(`refresh failed: ${err.message}`))

@@ -24,12 +24,20 @@ export function useDiscordRoom(client: sdk.MatrixClient, roomId: string) {
   const [state, setState] = useState<DiscordState>(EMPTY)
   const [status, setStatus] = useState<Record<string, DiscordStatus>>({})
 
+  // Listens on the client, not the room object: the page can open before the
+  // room is joined or synced (right after accepting the invite), and a
+  // room-level listener attached to nothing never fired again.
   useEffect(() => {
-    const room = client.getRoom(roomId)
-    if (!room) return
+    let last: string | null = null
     const read = () => {
+      const room = client.getRoom(roomId)
+      if (!room) return
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const c = room.currentState.getStateEvents(DISCORD_STATE_EVENT as any, '')?.getContent()
+      // Read on every sync; only a changed list re-renders.
+      const key = JSON.stringify(c ?? null)
+      if (key === last) return
+      last = key
       setState({
         needs: Array.isArray(c?.needs) ? c.needs : [],
         pending: Array.isArray(c?.pending) ? c.pending : [],
@@ -38,20 +46,33 @@ export function useDiscordRoom(client: sdk.MatrixClient, roomId: string) {
       })
     }
     read()
-    const onState = (ev: sdk.MatrixEvent) => { if (ev.getType() === DISCORD_STATE_EVENT) read() }
+    // Read on the next tick: RoomStateEvent.Events can fire before
+    // currentState holds the new event.
+    const onState = (ev: sdk.MatrixEvent) => {
+      if (ev.getRoomId() === roomId && ev.getType() === DISCORD_STATE_EVENT) setTimeout(read, 0)
+    }
+    const onRoom = (r: sdk.Room) => { if (r.roomId === roomId) read() }
     const onTimeline = (ev: sdk.MatrixEvent, r: sdk.Room | undefined) => {
       if (r?.roomId !== roomId) return
+      if (ev.getType() === DISCORD_STATE_EVENT) setTimeout(read, 0)
       const result = ev.getContent()?.[RESULT_KEY]
       if (!result?.id) return
       setStatus((s) => ({ ...s, [result.id]: { state: result.ok ? 'ok' : 'failed', action: result.action, message: result.message } }))
     }
-    room.on(sdk.RoomStateEvent.Events, onState)
-    room.on(sdk.RoomEvent.CurrentStateUpdated, read)
+    // After the app sleeps (backgrounded phone), sync catches up in one go;
+    // reading again when the page is shown again covers anything missed.
+    const onVisible = () => { if (document.visibilityState === 'visible') read() }
+    client.on(sdk.RoomStateEvent.Events, onState)
+    client.on(sdk.ClientEvent.Room, onRoom)
     client.on(sdk.RoomEvent.Timeline, onTimeline)
+    client.on(sdk.ClientEvent.Sync, read)
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
-      room.off(sdk.RoomStateEvent.Events, onState)
-      room.off(sdk.RoomEvent.CurrentStateUpdated, read)
+      client.off(sdk.RoomStateEvent.Events, onState)
+      client.off(sdk.ClientEvent.Room, onRoom)
       client.off(sdk.RoomEvent.Timeline, onTimeline)
+      client.off(sdk.ClientEvent.Sync, read)
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [client, roomId])
 

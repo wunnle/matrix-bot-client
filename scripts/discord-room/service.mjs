@@ -51,6 +51,7 @@ const SEEN_MAX = 15
 const DONE_KEEP_MS = 30 * 24 * 60 * 60 * 1000
 // The collector writes every 5 min; checking its file each minute is cheap.
 const CHECK_MS = 60 * 1000
+const SYNCED_EVERY_MS = 15 * 60 * 1000
 // Long messages are cut in room state: Matrix caps an event at 64 KiB.
 const CONTENT_MAX = 700
 const STATE_WARN_BYTES = 48 * 1024
@@ -220,15 +221,20 @@ function view() {
   }
 }
 
+let lastPublishedAt = 0
+
 async function publish(roomId) {
   const content = JSON.parse(JSON.stringify({ ...view(), updatedAt: Date.now() }, noFloats))
-  const { updatedAt: _u, ...rest } = content
+  // The lists decide; syncedAt alone moves every 5 min and would put a state
+  // event in the room each time, so it only republishes every SYNCED_EVERY_MS.
+  const { updatedAt: _u, syncedAt: _s, ...rest } = content
   const fingerprint = JSON.stringify(rest)
-  if (fingerprint === lastPublished) return
+  if (fingerprint === lastPublished && Date.now() - lastPublishedAt < SYNCED_EVERY_MS) return
   const bytes = Buffer.byteLength(JSON.stringify(content))
   if (bytes > STATE_WARN_BYTES) log(`⚠️ discord state is ${bytes} bytes, nearing Matrix's 64 KiB event cap`)
   await api('PUT', `/rooms/${encodeURIComponent(roomId)}/state/${STATE_EVENT}/`, content)
   lastPublished = fingerprint
+  lastPublishedAt = Date.now()
   log(`published ${content.needs.length} needing you, ${content.pending.length} pending, ${content.seen.length} seen`)
 }
 

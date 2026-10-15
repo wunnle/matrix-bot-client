@@ -4229,6 +4229,10 @@ html.mac-app {
   text-overflow: ellipsis;
 }
 .room-peek-open { font-size: 20px; color: var(--text-muted); }
+.room-peek--thinking .room-peek-who,
+.room-peek--thinking .room-peek-body { color: var(--accent); }
+.room-peek--thinking .room-peek-body { animation: room-peek-pulse 1.6s ease-in-out infinite; }
+@keyframes room-peek-pulse { 50% { opacity: 0.55; } }
 
 .room-view {
   flex: 1;

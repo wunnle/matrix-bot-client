@@ -446,6 +446,17 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [renderStart, setRenderStart] = useState(0)
   const [typingUsers, setTypingUsers] = useState<string[]>([])
   const [bot, setBot] = useState<{ name: string; avatarUrl: string | null } | null>(null)
+  // When the bot started typing, for the page's "Thinking… 12s" strip; ticks
+  // once a second while it lasts.
+  const thinking = typingUsers.length > 0
+  const [thinkingSince, setThinkingSince] = useState<number | null>(null)
+  const [, setThinkingTick] = useState(0)
+  useEffect(() => {
+    setThinkingSince((since) => (thinking ? since ?? Date.now() : null))
+    if (!thinking) return
+    const t = setInterval(() => setThinkingTick((n) => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [thinking])
   const [roomAvatarUrl, setRoomAvatarUrl] = useState<string | null>(null)
   const [roomTopic, setRoomTopic] = useState('')
   const [sendError, setSendError] = useState('')
@@ -2243,7 +2254,18 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       )}
 
       <div className="chat-footer" ref={footerRef}>
-        {pageShown && (() => {
+        {pageShown && thinking && (
+          // A room's agent can take half a minute; the page has no chat to
+          // show it working, so the strip does until the reply lands.
+          <button type="button" className="room-peek room-peek--thinking" onClick={() => setShowPage(false)}>
+            <span className="room-peek-who">{bot?.name ?? 'Bot'}</span>
+            <span className="room-peek-body">
+              Thinking…{thinkingSince ? ` ${Math.max(0, Math.round((Date.now() - thinkingSince) / 1000))}s` : ''}
+            </span>
+            <span className="material-symbols-outlined room-peek-open" aria-hidden>expand_less</span>
+          </button>
+        )}
+        {pageShown && !thinking && (() => {
           // The page keeps the chat within reach: the latest line, which
           // opens the full chat, above the composer you add titles with.
           const last = [...messages].reverse().find((m) => m.body && !m.toolProgress)

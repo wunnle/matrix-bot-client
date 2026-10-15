@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 // Keep in sync with scripts/discord-room/service.mjs.
@@ -139,6 +139,12 @@ export default function DiscordView({ state, status, onAction, initialSelected }
   const [selected, setSelected] = useState<string | null>(initialSelected ?? null)
   const sheetRef = useRef<HTMLDivElement>(null)
   const sheet = useDragToClose(sheetRef, () => setSelected(null))
+  // "12m" and "checked 3m ago" are relative: redraw them every half minute.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 30_000)
+    return () => clearInterval(t)
+  }, [])
 
   // A tap shows at once: the item leaves its list while the service answers.
   const moving = (item: DiscordItem) => status[item.id]?.state === 'pending'

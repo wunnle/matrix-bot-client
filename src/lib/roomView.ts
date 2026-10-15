@@ -16,7 +16,7 @@ export type RoomViewKind = typeof ROOM_VIEW_KINDS[number]
 
 /** What the composer under the page is for, as its placeholder. */
 export const ROOM_VIEW_COMPOSER_HINT: Record<RoomViewKind, string> = {
-  watchlist: 'Add a title or IMDb link…',
+  watchlist: 'Add a title, or ask about your list…',
   discord: 'Ask about Discord, or paste a link…',
 }
 

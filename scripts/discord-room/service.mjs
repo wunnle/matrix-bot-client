@@ -260,6 +260,23 @@ async function publish(roomId) {
   lastPublished = fingerprint
   lastPublishedAt = Date.now()
   log(`published ${content.needs.length} needing you, ${content.pending.length} pending, ${content.seen.length} seen, ${content.threads.length} threads`)
+  await nameRoom(roomId, content.needs.length)
+}
+
+// "Discord (N)" in the room list, N = what needs Sinan, as the Tasks room's
+// "Tasks (N)" (update_tasks_room_name.py). Renamed only when N changes.
+let lastNamed = null
+
+async function nameRoom(roomId, count) {
+  const name = `Discord (${count})`
+  if (name === lastNamed) return
+  const room = encodeURIComponent(roomId)
+  const current = await api('GET', `/rooms/${room}/state/m.room.name/`).catch(() => null)
+  if (current?.name !== name) {
+    await api('PUT', `/rooms/${room}/state/m.room.name/`, { name })
+    log(`renamed the room to ${name}`)
+  }
+  lastNamed = name
 }
 
 let txn = 0

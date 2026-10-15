@@ -13,7 +13,7 @@ const RESULT_KEY = 'com.construct.discord.result'
 // A tap the service never answers (it is down) must not spin forever.
 const PENDING_TIMEOUT_MS = 30_000
 
-const EMPTY: DiscordState = { needs: [], pending: [], seen: [], syncedAt: null }
+const EMPTY: DiscordState = { needs: [], pending: [], seen: [], threads: [], syncedAt: null }
 
 /**
  * The Discord room's lists, from `com.construct.discord` room state, and a way
@@ -42,6 +42,7 @@ export function useDiscordRoom(client: sdk.MatrixClient, roomId: string) {
         needs: Array.isArray(c?.needs) ? c.needs : [],
         pending: Array.isArray(c?.pending) ? c.pending : [],
         seen: Array.isArray(c?.seen) ? c.seen : [],
+        threads: Array.isArray(c?.threads) ? c.threads : [],
         syncedAt: typeof c?.syncedAt === 'string' ? c.syncedAt : null,
       })
     }

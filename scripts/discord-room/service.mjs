@@ -10,7 +10,7 @@
 //
 // The room-view contract (as the Watchlist's):
 //   declare  m.room.create-time state `com.construct.room_view` = {kind: 'discord'}
-//   read     `com.construct.discord` room state: {needs, pending, seen, syncedAt}
+//   read     `com.construct.discord` room state: {needs, pending, seen, threads, syncedAt}
 //   act      Construct sends `com.construct.discord.action` events
 //            ({action: pend|unpend|done|undone, id}); each is answered by an
 //            m.notice carrying `com.construct.discord.result`
@@ -36,6 +36,9 @@ const DIGEST = process.env.DISCORD_DIGEST ?? path.join(os.homedir(), '.hermes', 
 const CACHE_DIR = process.env.DISCORD_DIGEST_DIR ?? path.join(os.homedir(), '.hermes', 'state', 'discord')
 const ROOM_STORE = path.join(CACHE_DIR, 'room.json')
 const CACHE_STATE = path.join(CACHE_DIR, 'state.json')
+// Thread summaries, written by `discord_digest.py summarize` (cron, 10 min).
+const SUMMARIES = path.join(CACHE_DIR, 'summaries.json')
+const THREADS_MAX = 15
 
 // Keep in sync with Construct's DiscordView.
 const ROOM_VIEW_EVENT = 'com.construct.room_view'
@@ -212,11 +215,29 @@ function view() {
       && Date.parse(r.ts) > recent)
     .reverse()
     .slice(0, SEEN_MAX)
+  // What's going on elsewhere: every thread active in the last day, newest
+  // first, with its summary once `summarize` has written one.
+  const threads = Object.values(readJson(SUMMARIES) ?? {})
+    .sort((a, b) => Date.parse(b.last_ts) - Date.parse(a.last_ts))
+    .slice(0, THREADS_MAX)
+    .map((t) => ({
+      id: t.id,
+      channel: t.channel,
+      thread: t.thread ?? null,
+      topic: t.topic ?? null,
+      summary: t.summary ?? null,
+      status: t.status ?? null,
+      count: t.count,
+      people: t.people ?? [],
+      lastTs: t.last_ts,
+      url: t.url,
+    }))
   return {
     version: 1,
     needs: needs.map(slim),
     pending,
     seen: seen.map(slim),
+    threads,
     syncedAt: readJson(CACHE_STATE)?.synced ?? null,
   }
 }
@@ -235,7 +256,7 @@ async function publish(roomId) {
   await api('PUT', `/rooms/${encodeURIComponent(roomId)}/state/${STATE_EVENT}/`, content)
   lastPublished = fingerprint
   lastPublishedAt = Date.now()
-  log(`published ${content.needs.length} needing you, ${content.pending.length} pending, ${content.seen.length} seen`)
+  log(`published ${content.needs.length} needing you, ${content.pending.length} pending, ${content.seen.length} seen, ${content.threads.length} threads`)
 }
 
 let txn = 0
@@ -355,7 +376,7 @@ async function check(roomId, force = false) {
   if (checking) return
   checking = true
   try {
-    const mtime = Math.max(...[CACHE_STATE, ROOM_STORE].map((f) => { try { return fs.statSync(f).mtimeMs } catch { return 0 } }))
+    const mtime = Math.max(...[CACHE_STATE, ROOM_STORE, SUMMARIES].map((f) => { try { return fs.statSync(f).mtimeMs } catch { return 0 } }))
     if (!force && mtime === lastMtime) return
     lastMtime = mtime
     await readAlerts()

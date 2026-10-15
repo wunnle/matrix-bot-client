@@ -31,6 +31,25 @@ export interface DiscordItem {
   pendingAt?: number
 }
 
+export type ThreadStatus = 'waiting_on_you' | 'open' | 'decided' | 'fyi'
+
+/** A thread or channel active in the last day, as Hermes summarised it. */
+export interface DiscordThread {
+  id: string
+  channel: string
+  thread: string | null
+  /** Short "what it's about"; null until first summarised. */
+  topic: string | null
+  summary: string | null
+  status: ThreadStatus | null
+  /** Messages in the last day. */
+  count: number
+  /** Who's talking, most recent first. */
+  people: string[]
+  lastTs: string
+  url: string
+}
+
 export interface DiscordState {
   /** Open alerts, newest first. */
   needs: DiscordItem[]
@@ -38,8 +57,17 @@ export interface DiscordState {
   pending: DiscordItem[]
   /** Alerts reacted to or answered in the last two days, to keep one if needed. */
   seen: DiscordItem[]
+  /** Everything else going on, newest first. */
+  threads: DiscordThread[]
   /** When the collector last read Discord. */
   syncedAt: string | null
+}
+
+const STATUS_LABELS: Record<ThreadStatus, string> = {
+  waiting_on_you: 'Waiting on you',
+  open: 'Open',
+  decided: 'Decided',
+  fyi: 'FYI',
 }
 
 export type DiscordAction = 'pend' | 'unpend' | 'done' | 'undone'
@@ -204,6 +232,25 @@ export default function DiscordView({ state, status, onAction, initialSelected }
     )
   }
 
+  // A thread card opens the thread in Discord: the summary is the point, and
+  // the messages themselves live there.
+  const threadCard = (t: DiscordThread) => (
+    <a key={t.id} className="dc-thread" href={t.url} target="_blank" rel="noreferrer">
+      <span className="dc-thread-top">
+        <span className="dc-thread-name">{t.thread ?? `#${t.channel}`}</span>
+        {t.status && <span className={`dc-reason dc-status--${t.status}`}>{STATUS_LABELS[t.status]}</span>}
+      </span>
+      {t.thread && <span className="dc-card-where">#{t.channel}{t.topic ? ` · ${t.topic}` : ''}</span>}
+      {!t.thread && t.topic && <span className="dc-card-where">{t.topic}</span>}
+      <span className="dc-thread-summary">{t.summary ?? 'Not summarised yet.'}</span>
+      <span className="dc-thread-meta">
+        {t.count} message{t.count === 1 ? '' : 's'}
+        {t.people.length > 0 && ` · ${t.people.slice(0, 3).join(', ')}${t.people.length > 3 ? ` +${t.people.length - 3}` : ''}`}
+        {` · ${ago(t.lastTs)}`}
+      </span>
+    </a>
+  )
+
   const failed = Object.entries(status).find(([, s]) => s.state === 'failed')
 
   return (
@@ -211,6 +258,15 @@ export default function DiscordView({ state, status, onAction, initialSelected }
       {failed && <div className="dc-error">{failed[1].message}</div>}
       {section('Needs you', state.needs, 'needs', 'Nothing on Discord needs you.')}
       {section('Pending', state.pending, 'pending')}
+      {state.threads.length > 0 && (
+        <>
+          <div className="wl-section-head">
+            <span>Threads</span>
+            <span className="wl-count">{state.threads.length}</span>
+          </div>
+          <div className="dc-list">{state.threads.map(threadCard)}</div>
+        </>
+      )}
       {section('Recently seen', state.seen, 'seen')}
       <p className="dc-synced">
         {state.syncedAt ? `Discord checked ${ago(state.syncedAt)} ago`.replace('now ago', 'just now') : 'Waiting for the first Discord sync'}

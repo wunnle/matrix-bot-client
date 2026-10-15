@@ -12,7 +12,7 @@ import sample from './discord-sample.json'
 export default function DiscordHarness() {
   const params = new URLSearchParams(location.search)
   const [state, setState] = useState<DiscordState>(
-    params.has('empty') ? { needs: [], pending: [], seen: [], syncedAt: sample.syncedAt } : sample as DiscordState,
+    params.has('empty') ? { needs: [], pending: [], seen: [], threads: [], syncedAt: sample.syncedAt } : sample as DiscordState,
   )
   const [status] = useState<Record<string, DiscordStatus>>({})
   const [showPage, setShowPage] = useState(true)

@@ -77,5 +77,55 @@
       "answered": false
     }
   ],
+  "threads": [
+    {
+      "id": "1559787196167364738",
+      "channel": "dev-general",
+      "thread": "Player announcements",
+      "topic": "Who can send in-game announcements",
+      "summary": "Lena sent the announcement before the agreed 2pm slot; Tom wants a heads-up next time. Ravi is checking whether it can be pulled.",
+      "status": "open",
+      "count": 9,
+      "people": ["Lena", "Tom", "Ravi"],
+      "lastTs": "2026-10-15T04:50:00+00:00",
+      "url": "https://discord.com/channels/1/7"
+    },
+    {
+      "id": "1558342236586901545",
+      "channel": "deployments",
+      "thread": "v326",
+      "topic": "Release date typo",
+      "summary": "The release date says Oct 13 instead of Oct 15. It can wait for the next version; no hotfix.",
+      "status": "decided",
+      "count": 4,
+      "people": ["Mira", "Juan"],
+      "lastTs": "2026-10-15T04:47:00+00:00",
+      "url": "https://discord.com/channels/1/8"
+    },
+    {
+      "id": "1539559966971666432",
+      "channel": "team-growth",
+      "thread": "Daily Sync",
+      "topic": "PR timing and QA brief",
+      "summary": "Mira asked when your PR merges and when to sync. Oz should brief QA on two problems and track the Bot, Casual and Ranked tabs.",
+      "status": "waiting_on_you",
+      "count": 3,
+      "people": ["Mira", "Oz", "Sam", "Kai"],
+      "lastTs": "2026-10-14T13:27:00+00:00",
+      "url": "https://discord.com/channels/1/9"
+    },
+    {
+      "id": "1483098922866970695",
+      "channel": "ai-random",
+      "thread": null,
+      "topic": "Test runner MCP",
+      "summary": null,
+      "status": null,
+      "count": 1,
+      "people": ["Daniel"],
+      "lastTs": "2026-10-14T19:38:00+00:00",
+      "url": "https://discord.com/channels/1/10"
+    }
+  ],
   "syncedAt": "2026-10-14T20:10:00+00:00"
 }

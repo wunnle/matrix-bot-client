@@ -43,13 +43,14 @@ import RoomEditor from './RoomEditor'
 import { HeaderUsageBar } from './PlanUsageMeter'
 import { usePlanUsage, useCodexUsage } from '../hooks/usePlanUsage'
 import { Marked } from 'marked'
-import type { Message, RoomConfig, ConstructThread, ConstructApproval, ToolProgressLine, SharedLocation } from '../types'
+import type { Message, RoomConfig, ConstructThread, ConstructApproval, ConstructForm, ToolProgressLine, SharedLocation } from '../types'
 import { useAgentRun, type AgentRun } from '../hooks/useAgentActivity'
 import { AgentActivityBar } from './AgentActivityBar'
 import MessageActionSheet from './MessageActionSheet'
 import ApprovalBar from './ApprovalBar'
 import ModelMenu from './ModelMenu'
 import { approvalChoices, parseApprovalCard } from '../lib/approval'
+import { extractFormBlock, formAnswerBody, formResponseFromContent, FORM_RESPONSE_KEY } from '../lib/form'
 import { extractLocationBlocks, formatCoords, locationContent, locationFromContent, mapsUrl, mapTiles, MAP_ATTRIBUTION } from '../lib/location'
 import LocationPicker from './LocationPicker'
 import { hapticPress, hapticSend, hapticSuccess, hapticTick, hapticWarning } from '../lib/haptics'
@@ -1504,7 +1505,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
   // follow: false is for the quick-command pills, which you tap from wherever
   // you are reading. The sent message lands at the end without taking you there.
-  const sendMessage = useCallback(async (text: string, { follow = true }: { follow?: boolean } = {}) => {
+  // extra: more keys for the event, e.g. which form this message answers.
+  const sendMessage = useCallback(async (
+    text: string,
+    { follow = true, extra }: { follow?: boolean, extra?: Record<string, unknown> } = {},
+  ) => {
     if (!text.trim() || sending) return
     hapticSend()
     // Keep the keyboard up only if the composer was already focused (i.e. the
@@ -1533,6 +1538,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         'com.construct.capabilities': ['actionable'],
         'com.construct.client': 'construct-web',
         'com.construct.version': __CONSTRUCT_VERSION__,
+        ...extra,
       } as any)
     } catch (err: any) {
       if (clearedComposer) setInput(text) // restore input so message isn't lost
@@ -1544,6 +1550,22 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [client, roomId, sending, scrollToBottom, stopDictation])
 
+  // A form's Submit: an ordinary message the agent reads as your answer, tagged
+  // so the form can show what you picked and stop taking answers.
+  const submitForm = useCallback((eventId: string, form: ConstructForm, picked: string[]) => {
+    void sendMessage(formAnswerBody(form, picked), {
+      follow: false,
+      extra: { [FORM_RESPONSE_KEY]: { event_id: eventId, picked } },
+    })
+  }, [sendMessage])
+
+  // Each answered form's picks, by the form's event id. Joined into one string
+  // so the row gets a primitive prop (labels never hold a newline).
+  const formAnswers = useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const m of messages) if (m.formResponse) out[m.formResponse.eventId] = m.formResponse.picked.join('\n')
+    return out
+  }, [messages])
 
   const sendReaction = useCallback(async (eventId: string, emoji: string) => {
     try {
@@ -2209,6 +2231,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 onOpenToolDialog={openToolDialog}
                 onOpenLightbox={openLightbox}
                 onOpenApproval={setApprovalDialog}
+                formAnswer={msg.form ? formAnswers[msg.eventId] : undefined}
+                onSubmitForm={submitForm}
                 onRichClick={onBotRichTextClick}
                 onRichPointerDown={onBotRichTextPointerDown}
                 onReact={sendReaction}
@@ -2620,9 +2644,12 @@ function eventToMessage(
     : undefined
   const placed = isFailure ? undefined : extractLocationBlocks(String(body), rawHtml)
   if (placed?.locations.length) body = placed.body
+  let html = placed?.locations.length ? placed.html : rawHtml
+  // Same for a ```form block: it becomes a checklist under the text.
+  const asked = isFailure ? undefined : extractFormBlock(String(body), html)
+  if (asked?.form) ({ body, html } = asked)
 
   let formattedBody: string | undefined
-  const html = placed?.locations.length ? placed.html : rawHtml
   if (html) formattedBody = sanitizeHtml(html)
 
   const sender = event.getSender() ?? ''
@@ -2729,6 +2756,8 @@ function eventToMessage(
     caption,
     location,
     places: placed?.locations.length ? placed.locations : undefined,
+    form: asked?.form,
+    formResponse: isOwnMessage ? formResponseFromContent(content) : undefined,
     cards: cards && cards.length > 0 ? cards : undefined,
     threads: threads && threads.length > 0 ? threads : undefined,
     approval,
@@ -2912,6 +2941,76 @@ function LocationLink({ location }: { location: NonNullable<Message['location']>
   )
 }
 
+// An agent's ```form: tick what applies, then Submit. Once answered it stays
+// in the chat showing your picks, read-only.
+function FormCard({ form, answer, onSubmit }: {
+  form: ConstructForm
+  answer?: string
+  onSubmit: (picked: string[]) => void
+}) {
+  const [picked, setPicked] = useState<string[]>([])
+  // Locks the form from the tap until the answer comes back from the server;
+  // if it never does (the send failed), it opens up again.
+  const [sentAt, setSentAt] = useState(0)
+  useEffect(() => {
+    if (!sentAt || answer !== undefined) return
+    const t = setTimeout(() => setSentAt(0), 15_000)
+    return () => clearTimeout(t)
+  }, [sentAt, answer])
+  const done = answer !== undefined || sentAt > 0
+  const shown = answer !== undefined ? answer.split('\n') : picked
+  const toggle = (label: string) => {
+    if (done) return
+    setPicked((cur) => cur.includes(label) ? cur.filter((l) => l !== label) : [...cur, label])
+  }
+  return (
+    <div className={`msg-form${done ? ' msg-form--done' : ''}`} onClick={(e) => e.stopPropagation()}>
+      {form.question && <div className="msg-form-question">{form.question}</div>}
+      <div className="msg-form-options" role="group">
+        {form.options.map((opt) => {
+          const on = shown.includes(opt.label)
+          return (
+            <button
+              key={opt.label}
+              type="button"
+              role="checkbox"
+              aria-checked={on}
+              disabled={done}
+              className={`msg-form-option${on ? ' msg-form-option--on' : ''}`}
+              onClick={() => toggle(opt.label)}
+            >
+              <span className="material-symbols-outlined msg-form-check" aria-hidden>
+                {on ? 'check_box' : 'check_box_outline_blank'}
+              </span>
+              <span className="msg-form-text">
+                <span className="msg-form-label">{opt.label}</span>
+                {opt.description && <span className="msg-form-description">{opt.description}</span>}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      {done
+        ? <div className="msg-form-status">{answer !== undefined ? 'Sent' : 'Sending…'}</div>
+        : (
+          <button
+            type="button"
+            className="msg-form-submit"
+            disabled={!picked.length}
+            onClick={() => {
+              // Options order, not tap order: reads the way the question did.
+              const ordered = form.options.map((o) => o.label).filter((l) => picked.includes(l))
+              setSentAt(Date.now())
+              onSubmit(ordered)
+            }}
+          >
+            Submit
+          </button>
+        )}
+    </div>
+  )
+}
+
 export interface MessageRowProps {
   msg: Message
   userId: string
@@ -2940,6 +3039,9 @@ export interface MessageRowProps {
   onOpenToolDialog: (eventId: string) => void
   onOpenLightbox: (url: string, alt: string) => void
   onOpenApproval: (approval: ConstructApproval) => void
+  /** The picks already sent for this row's form, newline-joined; undefined while it is open. */
+  formAnswer?: string
+  onSubmitForm: (eventId: string, form: ConstructForm, picked: string[]) => void
   onRichClick: (e: React.MouseEvent<HTMLDivElement>) => void
   onRichPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void
   onReact: (eventId: string, emoji: string) => void
@@ -2981,6 +3083,8 @@ function MessageRowInner({
   onOpenToolDialog,
   onOpenLightbox,
   onOpenApproval,
+  formAnswer,
+  onSubmitForm,
   onRichClick,
   onRichPointerDown,
   onReact,
@@ -3163,6 +3267,13 @@ function MessageRowInner({
                                     <div className="msg-places">
                                       {msg.places.map((place, pi) => <LocationLink key={pi} location={place} />)}
                                     </div>
+                                  )}
+                                  {msg.form && (
+                                    <FormCard
+                                      form={msg.form}
+                                      answer={formAnswer}
+                                      onSubmit={(picked) => onSubmitForm(msg.eventId, msg.form!, picked)}
+                                    />
                                   )}
                                 </div>
                                 {msg.approval && (

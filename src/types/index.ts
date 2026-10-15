@@ -48,6 +48,18 @@ export interface ConstructApproval {
   body: string
 }
 
+// A pick-any question from an agent's ```form block.
+export interface ConstructForm {
+  question?: string
+  options: { label: string; description?: string }[]
+}
+
+// Your answer to one: which form, and the labels you picked.
+export interface ConstructFormResponse {
+  eventId: string
+  picked: string[]
+}
+
 export interface Message {
   eventId: string
   sender: string
@@ -63,6 +75,8 @@ export interface Message {
   location?: SharedLocation
   // Places an agent put in ```location blocks, shown as cards under its text.
   places?: SharedLocation[]
+  form?: ConstructForm
+  formResponse?: ConstructFormResponse
   cards?: ConstructCard[]
   threads?: ConstructThread[]
   approval?: ConstructApproval

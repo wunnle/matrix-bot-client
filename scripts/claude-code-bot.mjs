@@ -590,6 +590,20 @@ const LOCATION_INSTRUCTION =
   '`~/.hermes/scripts/places.py search "<place, city>" [--near LAT LON]`, and ' +
   'get the user\'s current position, if needed, from `~/.hermes/scripts/local_time.py`.'
 
+// Construct turns a ```form block into a checklist with a Submit button
+// (src/lib/form.ts, extractFormBlock); the answer comes back as an ordinary
+// message. Hermes agents learn it from their construct-form skill.
+const FORM_INSTRUCTION =
+  'To ask the user which of several options apply, put a fenced block with ' +
+  'the language `form` at the end of your reply, holding JSON like ' +
+  '{"question": "Which ones?", "options": ["A", {"label": "B", ' +
+  '"description": "one short line"}]}. 2-12 options, labels under 80 ' +
+  'characters. Construct renders it as a checklist with a Submit button, and ' +
+  'the answer arrives as a message: the question, then "→" and the picked ' +
+  'labels. It is always pick-any; when exactly one answer makes sense, use ' +
+  '[[quick answers]] instead. Do not add quick answers to a message that has ' +
+  'a form.'
+
 // Runs one turn through the room's provider, resuming its session if it has one.
 // Everything provider-specific — how a turn is invoked, how instructions are
 // injected, how the resumable id comes back — lives behind the adapter.
@@ -607,7 +621,7 @@ function runTurn(roomId, prompt) {
 
   // Room policy, not provider policy: what the agent should be told about this
   // room. The adapter decides where these end up.
-  const instructions = [QUICK_ANSWER_INSTRUCTION, liveActivityInstruction(roomId), LOCATION_INSTRUCTION]
+  const instructions = [QUICK_ANSWER_INSTRUCTION, liveActivityInstruction(roomId), LOCATION_INSTRUCTION, FORM_INSTRUCTION]
   // The rename nudge rides on the prompt, not the instructions: it drops out
   // after turn two, and changing the system prompt of a resumed session
   // throws away its cached prefix (and, on Opus 5.5 / Fable 5.1, its earlier

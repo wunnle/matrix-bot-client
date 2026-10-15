@@ -1085,6 +1085,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
    Scoped to :has(pre) so plain-text messages keep their tight long-press highlight. */
 .message.other .message-pin-surface:has(pre) { width: 100%; }
 .message.other .message-pin-surface:has(pre) .bot-text { width: 100%; }
+/* Same for a form, so its options are one width whatever their labels. */
+.message.other .message-pin-surface:has(.msg-form),
+.message.other .message-pin-surface:has(.msg-form) .bot-text { width: 100%; }
 
 .message.own .message-body { align-items: flex-end; }
 .message.other .message-body { align-items: flex-start; }
@@ -2576,6 +2579,54 @@ a.msg-file:hover { text-decoration: underline; }
   margin-top: 10px;
 }
 .msg-location-title { font-size: 15px; font-weight: 600; }
+
+/* An agent's ```form: a checklist and a Submit, under its text. */
+.msg-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  white-space: normal;
+}
+.msg-form-question { font-weight: 600; color: var(--text-strong); }
+.msg-form-options { display: flex; flex-direction: column; gap: 6px; }
+.msg-form-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-active);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+.msg-form-option--on { border-color: var(--accent); background: var(--accent-dim); }
+.msg-form-option:disabled { cursor: default; }
+.msg-form--done .msg-form-option:not(.msg-form-option--on) { opacity: 0.45; }
+.msg-form-check { font-size: 20px; line-height: 1.2; color: var(--text-muted); }
+.msg-form-option--on .msg-form-check { color: var(--accent); font-variation-settings: 'FILL' 1; }
+.msg-form-text { display: flex; flex-direction: column; min-width: 0; }
+.msg-form-label { overflow-wrap: anywhere; }
+.msg-form-description { font-size: 13px; color: var(--text-muted); }
+.msg-form-submit {
+  align-self: flex-start;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.msg-form-submit:hover:not(:disabled) { background: var(--accent-hover); }
+.msg-form-submit:disabled { opacity: 0.4; cursor: default; }
+.msg-form-status { font-size: 13px; color: var(--text-muted); }
 .msg-location-coords {
   font-size: 12px;
   opacity: 0.7;

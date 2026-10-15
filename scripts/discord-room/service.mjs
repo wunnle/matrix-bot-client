@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // The Discord room service: owns the Discord room, shows what on Sinan's work
-// Discord needs him, and keeps the list he marks as pending. No LLM anywhere.
+// Discord needs him, and keeps the list he marks as pending. Taps are handled
+// here, instantly; typed questions and requests go to the room's agent (the
+// `discord` Hermes profile with only the room's tools, ../room-services/agent.mjs).
 //
 // The data comes from the Pi's Discord collector (~/.hermes/scripts/
 // discord_digest.py, cron every 5 min), which this only reads through its CLI.
@@ -25,6 +27,7 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { promisify } from 'node:util'
+import { askRoomAgent, roomAgentQueue } from '../room-services/agent.mjs'
 
 const HOMESERVER = process.env.HOMESERVER ?? 'https://matrix.org'
 const USER_ID = process.env.USER_ID_B
@@ -334,11 +337,45 @@ async function handleAction(roomId, event) {
 
 const LINK = /https?:\/\/(?:\w+\.)?discord(?:app)?\.com\/channels\/\d+\/\d+\/\d+/
 
+// --- Talking: everything else goes to the room's agent ---
+
+const AGENT_PROFILE = 'discord'
+const enqueue = roomAgentQueue()
+
+async function typing(roomId, on) {
+  await api('PUT', `/rooms/${encodeURIComponent(roomId)}/typing/${encodeURIComponent(USER_ID)}`,
+    on ? { typing: true, timeout: 30000 } : { typing: false }).catch(() => {})
+}
+
+/** Off the sync loop: an agent turn takes ~20 s and taps must stay instant. */
+function askAgent(roomId, text) {
+  enqueue(async () => {
+    // Typing notices expire after 30 s; keep it up while the agent works.
+    await typing(roomId, true)
+    const keepTyping = setInterval(() => typing(roomId, true), 25000)
+    const started = Date.now()
+    try {
+      const session = `discord-room-${roomId.replace(/[^A-Za-z0-9]/g, '').slice(0, 12)}`
+      const reply = await askRoomAgent({ profile: AGENT_PROFILE, session, text })
+      log(`agent answered in ${Math.round((Date.now() - started) / 1000)}s`)
+      await notice(roomId, reply)
+    } catch (err) {
+      log(`agent failed: ${err.message}`)
+      await notice(roomId, `⚠️ ${err.message}`)
+    } finally {
+      clearInterval(keepTyping)
+      await typing(roomId, false)
+    }
+    // Its tools may have changed the pending list; republish now, not in a minute.
+    await check(roomId, true)
+  })
+}
+
 async function handleText(roomId, body) {
   const link = body.match(LINK)?.[0]
-  if (!link) {
-    return notice(roomId, 'Paste a Discord message link (Copy Message Link) to keep it pending. Anything else you type goes in as its note.')
-  }
+  // A link with a note is the quick way to keep something pending; anything
+  // else, a link with a question included, is for the agent.
+  if (!link || body.includes('?')) return askAgent(roomId, body)
   const note = body.replace(link, '').replace(/\s+/g, ' ').trim() || null
   let record
   try {

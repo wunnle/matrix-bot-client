@@ -3775,6 +3775,17 @@ a.msg-card-link:hover {
   margin: 12px 4px 0;
 }
 .usage-provider:first-of-type { margin-top: 0; }
+.process-rooms { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 10px 0; font-size: 13px; }
+.process-rooms a { color: var(--accent); overflow-wrap: anywhere; }
+.process-group .usage-card-head { gap: 12px; }
+.process-group .usage-card-head strong { white-space: nowrap; }
+.process-details { margin-top: 12px; }
+.process-details summary { cursor: pointer; color: var(--text-secondary); font-size: 13px; padding: 6px 0; }
+.process-entry { margin-top: 12px; border-left: 1px solid var(--border); }
+.process-entry .usage-row { gap: 8px; font-size: 13px; }
+.process-entry .usage-row > span { overflow-wrap: anywhere; min-width: 0; }
+.process-entry .usage-row strong { white-space: nowrap; }
+.process-entry .usage-card-hint { font-size: 11px; margin: 4px 0; }
 .usage-card { --usage-color: var(--accent); }
 .usage-card--warn { --usage-color: #e0a84e; }
 .usage-card--critical { --usage-color: var(--danger); }

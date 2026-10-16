@@ -92,12 +92,18 @@ const base = { prompt: 'hi', cwd: dir, model: 'm', sessionId: null, approval }
   // One timeline, so the order the room would see is checked too.
   const seen = []
   let session = null
-  const res = await claude.run({
+  const pending = claude.run({
     ...base, roomId: '!ok', timeoutMs: 10000,
     onProgress: (p) => seen.push(`tool:${p.tool}`),
     onText: (t) => seen.push(`text:${t}`),
     onSession: (id) => { session = id },
   })
+  const roots = claude.processRoots()
+  assert.equal(roots.length, 1)
+  assert.deepEqual(roots[0].roomIds, ['!ok'])
+  assert.ok(roots[0].pid > 0)
+  const res = await pending
+  assert.deepEqual(claude.processRoots(), [], 'completed processes leave no stale room mapping')
   assert.deepEqual(res, { text: 'Done.', isError: false })
   assert.equal(session, 's1')
   assert.deepEqual(seen, [

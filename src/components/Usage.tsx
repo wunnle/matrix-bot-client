@@ -1,4 +1,5 @@
 import * as sdk from 'matrix-js-sdk'
+import ProcessUsage from './ProcessUsage'
 import { getClient } from '../lib/matrix'
 import {
   STALE_MS, currentPercent, resetLabel, usageLevel, useMinuteClock, usePlanUsage, useCodexUsage,
@@ -99,6 +100,7 @@ export default function Usage() {
   return (
     <div className="settings-screen usage-screen">
       <h1 className="settings-title">Usage</h1>
+      <ProcessUsage client={client} />
 
       {!usage && !codex && (
         <section className="settings-section">

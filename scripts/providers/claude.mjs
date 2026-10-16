@@ -142,6 +142,12 @@ export const claude = {
   models: MODELS,
   defaultModel: MODELS.opus,
 
+  processRoots() {
+    return [...running].filter(([, child]) => child.pid && child.exitCode === null).map(([roomId, child]) => ({
+      pid: child.pid, id: `claude-${child.pid}`, label: 'Claude agent', roomIds: [roomId], shared: false, mapping: 'dedicated-room',
+    }))
+  },
+
   // Accept a bare alias or a full id; anything else is not ours.
   resolveModel(name) {
     const key = String(name).toLowerCase()

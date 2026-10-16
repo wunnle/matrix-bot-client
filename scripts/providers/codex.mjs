@@ -549,6 +549,13 @@ export const codex = {
   models: MODELS,
   defaultModel: 'gpt-6.1-sol',
 
+  // One app-server hosts many room threads: never invent per-room RAM shares.
+  processRoots(roomIds = []) {
+    if (!server.child?.pid || server.child.exitCode !== null) return []
+    return [{ pid: server.child.pid, id: `codex-${server.child.pid}`, label: 'Codex app-server',
+      roomIds: [...new Set([...roomIds, ...server.turnsByRoom.keys()])], shared: true, mapping: 'shared-provider' }]
+  },
+
   resolveModel(name) {
     const key = String(name).toLowerCase()
     return MODELS[key] ?? null

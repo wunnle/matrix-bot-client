@@ -144,7 +144,7 @@ export function useCodexUsage(client: sdk.MatrixClient | null): CodexUsage | nul
   return usePublishedUsage(client, 'codex', toCodexUsage)
 }
 
-function usePublishedUsage<T>(
+export function usePublishedUsage<T>(
   client: sdk.MatrixClient | null,
   stateKey: string,
   parse: (content: any) => T | null,
@@ -155,7 +155,7 @@ function usePublishedUsage<T>(
     if (!client) return
     const read = () => setUsage(readNewest(client, stateKey, parse))
     read()
-    const onState = (ev: sdk.MatrixEvent) => { if (ev.getType() === PLAN_USAGE_EVENT) read() }
+    const onState = (ev: sdk.MatrixEvent) => { if (ev.getType() === PLAN_USAGE_EVENT) setTimeout(read, 0) }
     // Rooms arriving in a later sync bring their state with them, but not as
     // a state event this listener would see — so a finished sync re-reads too.
     const onSync = (state: sdk.SyncState) => { if (state === sdk.SyncState.Prepared) read() }

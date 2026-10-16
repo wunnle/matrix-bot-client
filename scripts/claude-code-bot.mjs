@@ -14,6 +14,7 @@ import { createApprovalQueue } from './approval-queue.mjs'
 import { createQuestionQueue } from './question-queue.mjs'
 import { requiresHuman } from './approval-rules.mjs'
 import { detectLimitBlock } from './limit-block.mjs'
+import { createProcessSampler } from './process-usage.mjs'
 import { fetchPlanUsage, sameUsage, fetchCodexUsage, sameCodexUsage } from './plan-usage.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
@@ -1120,6 +1121,35 @@ async function refreshUsage({ force = false } = {}) {
 
 refreshUsage({ force: true })
 setInterval(() => refreshUsage({ force: true }), USAGE_POLL_MS)
+
+// Process readings are independent of provider quota checks/authentication.
+const sampleProcesses = createProcessSampler()
+let processPollBusy = false
+let processVerified = false
+async function refreshProcesses() {
+  if (processPollBusy) return
+  processPollBusy = true
+  try {
+    const room = usageRoom()
+    if (!room) return
+    const roots = Object.values(PROVIDERS).flatMap(provider => provider.processRoots?.(
+      Object.entries(sessions).filter(([, s]) => (s.provider ?? 'claude') === provider.name).map(([id]) => id),
+    ) ?? [])
+    const reading = sampleProcesses({ roots, roomName: id => client.getRoom(id)?.name })
+    // Leave headroom for the Matrix event envelope; never silently truncate trees.
+    if (Buffer.byteLength(JSON.stringify(reading)) > 48000) throw new Error('process reading exceeds Matrix state budget')
+    await client.sendStateEvent(room.roomId, USAGE_EVENT, reading, 'processes')
+    if (!processVerified) {
+      const stored = await client.getStateEvent(room.roomId, USAGE_EVENT, 'processes')
+      if (stored.fetched_at !== reading.fetched_at) throw new Error('process state readback mismatch')
+      processVerified = true
+      log(`Process usage: verified ${stored.groups.length} groups by state readback in ${room.roomId}`)
+    }
+  } catch (e) { log(`Process usage: ${e.message}`) }
+  finally { processPollBusy = false }
+}
+refreshProcesses()
+setInterval(refreshProcesses, 30000)
 
 // Runs `first`, then whatever piled up while it ran, until the room is idle.
 // Queued messages are coalesced into one prompt instead of one turn each: two

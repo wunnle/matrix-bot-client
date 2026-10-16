@@ -107,7 +107,7 @@ extension ConstructActivityAttributes.ContentState.Tile {
 /// Deep link that opens the activity's room. Same URL the app builds for a
 /// notification tap, and RoomsLayout already routes it — without one, a tap
 /// just opens the app wherever it happened to be.
-private func roomDeepLink(_ roomId: String) -> URL? {
+func roomDeepLink(_ roomId: String) -> URL? {
     guard !roomId.isEmpty else { return nil }
     var allowed = CharacterSet.urlQueryAllowed
     allowed.remove(charactersIn: "&+=?")
@@ -141,7 +141,7 @@ private extension ConstructActivityAttributes.ContentState {
 
 /// A tone's colour; nil for "neutral" and anything unknown, so each caller
 /// picks its own neutral (the card's purple, a tile's secondary text).
-private func toneColor(_ tone: String?) -> Color? {
+func toneColor(_ tone: String?) -> Color? {
     switch tone {
     case "success": return .green
     case "warning": return Color(red: 1.0, green: 0.72, blue: 0.2)
@@ -374,7 +374,7 @@ private struct MessageText: View {
 /// its height, with a wide mark allowed up to 1.25× that across, so Discord
 /// (about 4:3) reads as big as Linear's circle instead of shrinking to fit a
 /// square. 1.25 keeps it inside the 24pt box tiles give the icon.
-private struct TileIcon: View {
+struct TileIcon: View {
     let name: String
     var size: CGFloat? = nil
     var glyph: CGFloat = 19
@@ -411,8 +411,9 @@ private struct TileView: View {
 }
 
 /// A tile's frame, for any value view: the sleep card puts a live timer where
-/// a morning tile has its text.
-private struct TileBox<Value: View>: View {
+/// a morning tile has its text. The home-screen board (ContructWidgets.swift)
+/// draws its tiles with it too.
+struct TileBox<Value: View>: View {
     let icon: String
     var sub: String?
     var tone: String?

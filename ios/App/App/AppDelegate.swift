@@ -7,6 +7,7 @@ import AVFoundation
 import AppIntents
 import UniformTypeIdentifiers
 import Intents
+import WidgetKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -90,6 +91,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // away, adopt activities the server started meanwhile, retry anything
         // the server refused, and (re)post the push-to-start token.
         if #available(iOS 16.2, *) { syncLiveActivityRegistrations() }
+        // The home-screen boards have no push: opening the app is the one
+        // reliable moment to fetch them besides iOS's own reload budget.
+        WidgetCenter.shared.reloadTimelines(ofKind: "ContructWidgets")
         #if DEBUG
         if #available(iOS 16.2, *) { startLiveActivityDemoOnce() }
         #endif

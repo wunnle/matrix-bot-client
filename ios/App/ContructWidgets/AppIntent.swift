@@ -8,11 +8,13 @@
 import WidgetKit
 import AppIntents
 
+/// Which board a home-screen widget shows. Bots name boards when they set them
+/// (`construct-widget set --id discord …`); long-press the widget → Edit Widget
+/// to point it at one.
 struct ConfigurationAppIntent: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource { "Configuration" }
-    static var description: IntentDescription { "This is an example widget." }
+    static var title: LocalizedStringResource { "Board" }
+    static var description: IntentDescription { "What a bot has put on one of your boards." }
 
-    // An example configurable parameter.
-    @Parameter(title: "Favorite Emoji", default: "😃")
-    var favoriteEmoji: String
+    @Parameter(title: "Board", default: "main")
+    var board: String
 }

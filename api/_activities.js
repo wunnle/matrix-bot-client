@@ -48,7 +48,7 @@ export const MIN_UPDATE_INTERVAL_MS = 2000;
 /** Ended activities stay on the lock screen this long unless told otherwise. */
 export const DEFAULT_DISMISS_S = 10 * 60;
 
-const TONES = new Set(["neutral", "success", "warning", "error"]);
+export const TONES = new Set(["neutral", "success", "warning", "error"]);
 const ALERTS = new Set(["none", "quiet", "loud"]);
 export const ID_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/;
 
@@ -83,14 +83,14 @@ async function accountDataUrl(type) {
   return `${HOMESERVER}/_matrix/client/v3/user/${encodeURIComponent(await userId())}/account_data/${type}`;
 }
 
-async function readDoc(type) {
+export async function readDoc(type) {
   const r = await fetch(await accountDataUrl(type), { headers: { Authorization: `Bearer ${ACCESS_TOKEN}` } });
   if (r.status === 404) return {};
   if (!r.ok) throw new Error(`read ${type} failed: ${r.status}`);
   return (await r.json()) ?? {};
 }
 
-async function writeDoc(type, value) {
+export async function writeDoc(type, value) {
   const r = await fetch(await accountDataUrl(type), {
     method: "PUT",
     headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" },
@@ -108,7 +108,7 @@ export const writeRegistry = (reg) => writeDoc(REGISTRY_TYPE, reg);
 
 /* ── Content-state ────────────────────────────────────────────────────── */
 
-function str(value, field, max, { required = false } = {}) {
+export function str(value, field, max, { required = false } = {}) {
   if (value === undefined || value === null) {
     if (required) throw new ActivityError(400, `missing ${field}`);
     return undefined;
@@ -136,13 +136,14 @@ function parseActions(actions) {
     are optional (tone tints sub). With tiles the widget drops title, avatar
     and buttons and shows the tiles, then up to 2 body lines; the compact
     island shows the first tile. Builds before mac/morning-3col draw only the
-    first 2. `null` clears them. Pure. */
+    first 2. `null` clears them. `max` lets the home-screen board take more.
+    Pure. */
 export const MAX_TILES = 3;
-export function parseTiles(tiles) {
+export function parseTiles(tiles, max = MAX_TILES) {
   if (tiles === undefined) return undefined;
   if (tiles === null) return null;
   if (!Array.isArray(tiles)) throw new ActivityError(400, "tiles must be an array");
-  if (tiles.length > MAX_TILES) throw new ActivityError(400, `at most ${MAX_TILES} tiles`);
+  if (tiles.length > max) throw new ActivityError(400, `at most ${max} tiles`);
   return tiles.map((t, i) => {
     const out = {
       icon: str(t?.icon, `tiles[${i}].icon`, 40, { required: true }),

@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { UsageTabs, type UsageTab } from './UsageTabs'
 import * as sdk from 'matrix-js-sdk'
 import ProcessUsage from './ProcessUsage'
 import { getClient } from '../lib/matrix'
@@ -91,6 +93,7 @@ function Freshness({ fetchedAt, now, provider }: { fetchedAt: number, now: numbe
 }
 
 export default function Usage() {
+  const [tab, setTab] = useState<UsageTab>('llm')
   let client: sdk.MatrixClient | null = null
   try { client = getClient() } catch { /* opened before the client started */ }
   const usage = usePlanUsage(client)
@@ -100,7 +103,7 @@ export default function Usage() {
   return (
     <div className="settings-screen usage-screen">
       <h1 className="settings-title">Usage</h1>
-      <ProcessUsage client={client} />
+      <UsageTabs tab={tab} onChange={setTab} system={<ProcessUsage client={client} />} llm={<>
 
       {!usage && !codex && (
         <section className="settings-section">
@@ -162,6 +165,7 @@ export default function Usage() {
       {(usage || codex) && (
         <p className="usage-footnote">The bot re-checks every 5 minutes and after each agent turn.</p>
       )}
+      </>} />
     </div>
   )
 }

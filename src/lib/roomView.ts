@@ -20,6 +20,15 @@ export const ROOM_VIEW_COMPOSER_HINT: Record<RoomViewKind, string> = {
   discord: 'Ask about Discord, or paste a link…',
 }
 
+/**
+ * Where a page's sheet is portalled: #root, not <body>. On the Mac app #root
+ * is the containing block that sizes fixed elements to the real window
+ * (.mac-app in index.css); a sheet portalled to <body> sized against the
+ * unzoomed window instead and opened partly below the screen. Inside #root it
+ * still covers the composer and the tab bar.
+ */
+export const sheetHost = () => document.getElementById('root') ?? document.body
+
 export function roomViewKind(room: Room | null | undefined): RoomViewKind | null {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const kind = room?.currentState.getStateEvents(ROOM_VIEW_EVENT as any, '')?.getContent()?.kind

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { sheetHost } from '../../lib/roomView'
 
 // Keep in sync with scripts/watchlist/service.mjs.
 export const WATCHLIST_STATE_EVENT = 'com.construct.watchlist'
@@ -366,7 +367,8 @@ export default function WatchlistView({ items, status, onAction, initialSelected
       {!toWatch.length && <p className="wl-empty">No {tab === 'movie' ? 'movies' : 'shows'} to watch. Send a title or an IMDb link below.</p>}
       {section('Watched', watched, card)}
 
-      {/* Portalled so it sits over the composer and the tab bar too. */}
+      {/* Portalled so it sits over the composer and the tab bar too (into
+          #root, not <body>: see sheetHost). */}
       {current && createPortal(
         <div className="room-editor-overlay wl-sheet-overlay" onClick={() => setSelected(null)}>
           <div
@@ -512,7 +514,7 @@ export default function WatchlistView({ items, status, onAction, initialSelected
             </div>
           </div>
         </div>,
-        document.body,
+        sheetHost(),
       )}
     </div>
   )

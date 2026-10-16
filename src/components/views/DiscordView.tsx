@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { sheetHost } from '../../lib/roomView'
 
 // Keep in sync with scripts/discord-room/service.mjs.
 export const DISCORD_STATE_EVENT = 'com.construct.discord'
@@ -272,7 +273,8 @@ export default function DiscordView({ state, status, onAction, initialSelected }
         {state.syncedAt ? `Discord checked ${ago(state.syncedAt)} ago`.replace('now ago', 'just now') : 'Waiting for the first Discord sync'}
       </p>
 
-      {/* Portalled so it sits over the composer and the tab bar too. */}
+      {/* Portalled so it sits over the composer and the tab bar too (into
+          #root, not <body>: see sheetHost). */}
       {current && createPortal(
         <div className="room-editor-overlay wl-sheet-overlay" onClick={() => setSelected(null)}>
           <div
@@ -339,7 +341,7 @@ export default function DiscordView({ state, status, onAction, initialSelected }
             </div>
           </div>
         </div>,
-        document.body,
+        sheetHost(),
       )}
     </div>
   )

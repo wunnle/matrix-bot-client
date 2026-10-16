@@ -388,7 +388,26 @@ function askAgent(roomId, text) {
   })
 }
 
+// "add 1298…", "follow <channel link>": a command, not a conversation. The
+// agent (luna) read "add <id>" as "describe this channel" on 2026-10-15, so
+// the service runs it directly; it answers in a second or two.
+const FOLLOW = /^\s*(?:add|follow|watch|track)\s+#?(\d{15,22}|https?:\/\/\S*discord(?:app)?\.com\/channels\/\d+\/\d+\/?)\s*$/i
+
+async function followChannel(roomId, target) {
+  let line
+  try {
+    line = (await run('python3', [DIGEST, 'track', target], { timeout: 120_000 })).stdout.trim()
+  } catch (err) {
+    line = String(err.stdout ?? '').trim() || `error: ${err.message}`
+  }
+  log(`follow ${target} → ${line}`)
+  await notice(roomId, line.startsWith('error:') ? `⚠️ ${line.slice(7)}` : line)
+  await check(roomId, true)
+}
+
 async function handleText(roomId, body) {
+  const follow = body.match(FOLLOW)
+  if (follow) return followChannel(roomId, follow[1])
   const link = body.match(LINK)?.[0]
   // A link with a note is the quick way to keep something pending; anything
   // else, a link with a question included, is for the agent.

@@ -2630,7 +2630,7 @@ a.msg-file:hover { text-decoration: underline; }
 .msg-form-submit:disabled { opacity: 0.4; cursor: default; }
 .msg-form-status { font-size: 13px; color: var(--text-muted); }
 
-/* [[…]] buttons too long for pills: lettered options under the text. */
+/* A bot's [[…]] answers: lettered options under the text. */
 .msg-choices {
   display: flex;
   flex-direction: column;

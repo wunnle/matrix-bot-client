@@ -554,8 +554,8 @@ const RENAME_INSTRUCTION =
 
 // Construct renders trailing `[[Label]]` tokens as tappable buttons, so a turn
 // that ends in a question is much cheaper to answer from a phone if it offers
-// the likely replies. Applies to every turn, not just the first ones. Labels
-// over 24 characters turn the set into a lettered list under the message.
+// the likely replies. Applies to every turn, not just the first ones. They
+// show as a lettered A, B, C list under the message, whatever their length.
 const QUICK_ANSWER_INSTRUCTION =
   'When your reply ends in a question or offers the user a choice, finish with ' +
   'two to four short quick-answer options in double-bracket notation on the ' +

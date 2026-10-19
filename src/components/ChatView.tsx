@@ -409,8 +409,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     () => (lastActionMessage && isModelPicker(lastActionMessage) ? { msg: lastActionMessage, options: lastActions } : null),
     [lastActionMessage, lastActions],
   )
-  // Messages whose buttons are too long for pills show them as a lettered list
-  // under the text instead: open on the last message, faded on older ones,
+  // A bot message's [[…]] answers show as a lettered list under its text, not
+  // as pills: open on the last message, faded on older ones,
   // with the option your next message picked kept lit. That message itself
   // leaves the timeline: the lit option already says what you sent.
   const { choiceLists, choiceReplies } = useMemo(() => {
@@ -424,6 +424,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       if (!m.body.includes('[[')) continue
       const { actions } = parseActions(m.body)
       if (!isChoiceList(actions)) continue
+      // Approval cards answer through the approval bar.
+      if (approvalChoices(actions).approve && parseApprovalCard(m.body)) continue
       const picked = m !== lastActionMessage && reply ? pickedChoice(reply.body, actions) : undefined
       if (picked) replies.add(reply!.eventId)
       lists[m.eventId] = { open: m === lastActionMessage, picked }

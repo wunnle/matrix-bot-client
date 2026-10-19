@@ -47,19 +47,13 @@ const TOKEN = /\[\[([^\]\n]{1,80})\]\]/g
 // The run of [[CTA]] tokens a message ends with, across lines.
 const TRAILING_TOKENS = /(?:\s*\[\[[^\]\n]{1,80}\]\])+\s*$/
 
-// Past this, a reply button no longer reads as a pill: the set shows as a
-// lettered list under its message instead (see ChoiceList in ChatView).
-const CHOICE_MIN_LABEL = 24
-
 /**
- * Whether a message's [[…]] buttons are options to pick from (a lettered list)
- * rather than short replies (pills). Bot commands — !model, /luna — stay pills
- * however long, since their pickers have their own UI.
+ * Whether a message's [[…]] buttons show as a lettered list under it (see
+ * ChoiceList in ChatView) rather than as pills. All answers do; bot commands —
+ * !model, /luna — stay pills, since their pickers have their own UI.
  */
 export function isChoiceList(actions: string[]): boolean {
-  return actions.length >= 2
-    && actions.some((a) => a.length > CHOICE_MIN_LABEL)
-    && !actions.some((a) => /^[!/]/.test(a))
+  return actions.length > 0 && !actions.some((a) => /^[!/]/.test(a))
 }
 
 export function choiceLetter(index: number): string {

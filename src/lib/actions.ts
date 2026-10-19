@@ -43,9 +43,43 @@ export function splitMarkdownCode(body: string): { text: string; isCode: boolean
   return out
 }
 
-const TOKEN = /\[\[([^\]\n]{1,40})\]\]/g
+const TOKEN = /\[\[([^\]\n]{1,80})\]\]/g
 // The run of [[CTA]] tokens a message ends with, across lines.
-const TRAILING_TOKENS = /(?:\s*\[\[[^\]\n]{1,40}\]\])+\s*$/
+const TRAILING_TOKENS = /(?:\s*\[\[[^\]\n]{1,80}\]\])+\s*$/
+
+// Past this, a reply button no longer reads as a pill: the set shows as a
+// lettered list under its message instead (see ChoiceList in ChatView).
+const CHOICE_MIN_LABEL = 24
+
+/**
+ * Whether a message's [[…]] buttons are options to pick from (a lettered list)
+ * rather than short replies (pills). Bot commands — !model, /luna — stay pills
+ * however long, since their pickers have their own UI.
+ */
+export function isChoiceList(actions: string[]): boolean {
+  return actions.length >= 2
+    && actions.some((a) => a.length > CHOICE_MIN_LABEL)
+    && !actions.some((a) => /^[!/]/.test(a))
+}
+
+export function choiceLetter(index: number): string {
+  return String.fromCharCode(65 + index)
+}
+
+/** The option a lone letter in the composer stands for ("b" → 1), or -1. */
+export function choiceIndexFromInput(input: string, count: number): number {
+  const t = input.trim()
+  if (!/^[a-z]$/i.test(t)) return -1
+  const i = t.toUpperCase().charCodeAt(0) - 65
+  return i < count ? i : -1
+}
+
+/** Which option a reply picked: its full label, or its letter from another client. */
+export function pickedChoice(reply: string, actions: string[]): string | undefined {
+  const t = reply.trim().toLowerCase()
+  const i = choiceIndexFromInput(t, actions.length)
+  return i >= 0 ? actions[i] : actions.find((a) => a.toLowerCase() === t)
+}
 
 /**
  * What an inline [[…]] reads as: agents that write notes (Lore) put Obsidian
@@ -93,10 +127,10 @@ export function parseActions(body: string): { text: string; actions: string[] } 
 }
 
 const CODE_BLOCK = /<code(\s[^>]*)?>[\s\S]*?<\/code>/gi
-const HTML_TOKEN = /\[\[([^\]<\n]{1,40})\]\]/g
+const HTML_TOKEN = /\[\[([^\]<\n]{1,80})\]\]/g
 // The [[CTA]] run the HTML ends with (line breaks between tokens allowed),
 // then the closing tags after it, which stay.
-const TRAILING_HTML_TOKENS = /(?:(?:\s|<br\s*\/?>)*\[\[[^\]<\n]{1,40}\]\])+((?:\s|<\/[a-z0-9]+>)*)$/i
+const TRAILING_HTML_TOKENS = /(?:(?:\s|<br\s*\/?>)*\[\[[^\]<\n]{1,80}\]\])+((?:\s|<\/[a-z0-9]+>)*)$/i
 
 /**
  * The HTML side of parseActions: the trailing [[CTA]] run goes (it's the pill

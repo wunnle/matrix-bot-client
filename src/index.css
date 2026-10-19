@@ -1085,9 +1085,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
    Scoped to :has(pre) so plain-text messages keep their tight long-press highlight. */
 .message.other .message-pin-surface:has(pre) { width: 100%; }
 .message.other .message-pin-surface:has(pre) .bot-text { width: 100%; }
-/* Same for a form, so its options are one width whatever their labels. */
-.message.other .message-pin-surface:has(.msg-form),
-.message.other .message-pin-surface:has(.msg-form) .bot-text { width: 100%; }
+/* Same for a form or a lettered list, so its options are one width whatever their labels. */
+.message.other .message-pin-surface:has(.msg-form, .msg-choices),
+.message.other .message-pin-surface:has(.msg-form, .msg-choices) .bot-text { width: 100%; }
 
 .message.own .message-body { align-items: flex-end; }
 .message.other .message-body { align-items: flex-start; }
@@ -2629,6 +2629,53 @@ a.msg-file:hover { text-decoration: underline; }
 .msg-form-submit:hover:not(:disabled) { background: var(--accent-hover); }
 .msg-form-submit:disabled { opacity: 0.4; cursor: default; }
 .msg-form-status { font-size: 13px; color: var(--text-muted); }
+
+/* [[…]] buttons too long for pills: lettered options under the text. */
+.msg-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+  white-space: normal;
+}
+.msg-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* No bleed past the text column: .message-body clips its overflow. */
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 12px;
+  background: none;
+  color: var(--text-strong);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.msg-choice:hover:not(:disabled) { background: var(--bg-active); }
+.msg-choice:disabled { cursor: default; }
+.msg-choice-key {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.msg-choice-label { min-width: 0; overflow-wrap: anywhere; }
+/* Lit (its letter typed, or picked) in greys, not the accent: a filled key. */
+.msg-choice--on { background: var(--bg-hover); }
+.msg-choice--on .msg-choice-key { border-color: transparent; background: rgba(255, 255, 255, 0.16); color: var(--text-strong); }
+/* Answered: only the pick stays, as a plain row. Unanswered, all fade. */
+.msg-choices--done .msg-choice { color: var(--text-muted); }
+.msg-choices--done .msg-choice--on { background: none; color: var(--text-strong); }
+.msg-choices--done:has(.msg-choice--on) .msg-choice:not(.msg-choice--on) { display: none; }
 .msg-location-coords {
   font-size: 12px;
   opacity: 0.7;

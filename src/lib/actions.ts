@@ -60,19 +60,20 @@ export function choiceLetter(index: number): string {
   return String.fromCharCode(65 + index)
 }
 
-/** The option a lone letter in the composer stands for ("b" → 1), or -1. */
-export function choiceIndexFromInput(input: string, count: number): number {
-  const t = input.trim()
-  if (!/^[a-z]$/i.test(t)) return -1
-  const i = t.toUpperCase().charCodeAt(0) - 65
+/** The option a letter key stands for ("b" → 1), or -1. */
+export function choiceIndexFromKey(key: string, count: number): number {
+  if (!/^[a-z]$/i.test(key)) return -1
+  const i = key.toUpperCase().charCodeAt(0) - 65
   return i < count ? i : -1
 }
 
-/** Which option a reply picked: its full label, or its letter from another client. */
+/**
+ * Which option a reply picked: one whose label it is. A typed letter is just
+ * a message, not a pick.
+ */
 export function pickedChoice(reply: string, actions: string[]): string | undefined {
   const t = reply.trim().toLowerCase()
-  const i = choiceIndexFromInput(t, actions.length)
-  return i >= 0 ? actions[i] : actions.find((a) => a.toLowerCase() === t)
+  return actions.find((a) => a.toLowerCase() === t)
 }
 
 /**

@@ -1,6 +1,7 @@
 import * as sdk from 'matrix-js-sdk'
 import type { AuthState } from '../types'
 import { loadAuth } from './auth'
+import { AGENT_ROOM_TYPE } from './roomMeta'
 
 let client: sdk.MatrixClient | null = null
 let initPromise: Promise<RoomSummary[]> | null = null
@@ -53,6 +54,8 @@ export interface RoomSummary {
   name: string
   lastMessage?: string
   lastTs?: number
+  /** A Claude Code / Codex agent room: listed as a chat row, not an app tile. */
+  agent?: boolean
   unreadCount: number
   avatarMxc?: string
   // Absent in caches written before invites were supported — treat as 'join'.
@@ -141,17 +144,34 @@ export function toRoomSummaries(c: sdk.MatrixClient, userId: string): RoomSummar
   return getRooms(c, userId)
 }
 
+// The newest message worth previewing: its latest edit, and not an agent's
+// tool-progress line or an edit event standing alone.
+export function lastPreviewMessage(room: sdk.Room): { body: string; ts: number } | undefined {
+  const timeline = room.getLiveTimeline().getEvents()
+  for (let i = timeline.length - 1; i >= 0; i--) {
+    const e = timeline[i]
+    if (e.getType() !== 'm.room.message') continue
+    const content = e.getContent()
+    if (content['m.relates_to']?.rel_type === 'm.replace') continue
+    const edited = e.replacingEvent()?.getContent()?.['m.new_content'] ?? content
+    if (edited['com.construct.tool_progress']) continue
+    if (typeof edited.body !== 'string' || !edited.body.trim()) continue
+    return { body: edited.body, ts: e.getTs() }
+  }
+  return undefined
+}
+
 export function toRoomSummary(room: sdk.Room, userId: string): RoomSummary {
   const invited = room.getMyMembership() === 'invite'
-  const timeline = room.getLiveTimeline().getEvents()
-  const last = [...timeline].reverse().find((e) => e.getType() === 'm.room.message')
+  const last = invited ? undefined : lastPreviewMessage(room)
   const avatarEvent = room.currentState.getStateEvents('m.room.avatar', '')
   const avatarMxc = avatarEvent?.getContent()?.url ?? undefined
   return {
     roomId: room.roomId,
     name: room.name,
-    lastMessage: invited ? undefined : last?.getContent()?.body,
-    lastTs: invited ? undefined : last?.getTs(),
+    lastMessage: last?.body,
+    lastTs: last?.ts,
+    agent: room.currentState.getStateEvents('m.room.create', '')?.getContent()?.type === AGENT_ROOM_TYPE,
     // An unjoined room has no readable timeline, so a count would be meaningless.
     unreadCount: invited ? 0 : getRoomUnreadCount(room, userId),
     avatarMxc,

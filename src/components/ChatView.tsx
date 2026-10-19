@@ -34,7 +34,7 @@ import { loadPills, savePills, isAgentRoom, agentRoomModels } from '../lib/roomM
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { Capacitor } from '@capacitor/core'
 import { isMobileSafari } from '../lib/isMobileSafari'
-import { actionLabel, parseActions, stripActionMarkersInRichHtml } from '../lib/actions'
+import { actionLabel, choiceIndexFromInput, choiceLetter, isChoiceList, parseActions, pickedChoice, stripActionMarkersInRichHtml } from '../lib/actions'
 import { formatModel } from '../lib/modelLabel'
 import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
@@ -409,6 +409,30 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     () => (lastActionMessage && isModelPicker(lastActionMessage) ? { msg: lastActionMessage, options: lastActions } : null),
     [lastActionMessage, lastActions],
   )
+  // Messages whose buttons are too long for pills show them as a lettered list
+  // under the text instead: open on the last message, faded on older ones,
+  // with the option your next message picked kept lit.
+  const choiceLists = useMemo(() => {
+    const out: Record<string, { open: boolean; picked?: string }> = {}
+    // Walking back, the nearest own message after the one being looked at.
+    let reply: string | undefined
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (m.isOwnMessage) { reply = m.body; continue }
+      if (!m.body.includes('[[')) continue
+      const { actions } = parseActions(m.body)
+      if (!isChoiceList(actions)) continue
+      out[m.eventId] = {
+        open: m === lastActionMessage,
+        picked: m !== lastActionMessage && reply !== undefined ? pickedChoice(reply, actions) : undefined,
+      }
+    }
+    return out
+  }, [messages, lastActionMessage])
+  const openChoices = lastActionMessage && choiceLists[lastActionMessage.eventId] ? lastActions : null
+  // The reply buttons the pill row shows: none when the model menu or the
+  // lettered list stands in for them.
+  const pillActions = modelPicker || openChoices ? [] : lastActions
   // The header chip's dropdown, holding the command it sent. It opens at once
   // and loads for as long as that command is still the last word.
   const [modelMenuRequest, setModelMenuRequest] = useState<string | null>(null)
@@ -1670,12 +1694,24 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [client, roomId, scrollToBottom])
 
+  // A lone letter in the composer that names an open list's option: the option
+  // lights up, and sending sends its label. Any more typing and it is just text.
+  const typedChoice = openChoices ? choiceIndexFromInput(input, openChoices.length) : -1
+
+  const pickChoice = useCallback((label: string) => {
+    void sendMessage(label, { follow: false })
+  }, [sendMessage])
+
   // What Send, Enter and dictation auto-send do: the composer's text, plus the
   // pending attachment if there is one.
   const sendComposer = useCallback((text: string) => {
-    if (pending) void sendFile(pending.file, text, pending.previewUrl)
-    else void sendMessage(text)
-  }, [pending, sendFile, sendMessage])
+    if (pending) { void sendFile(pending.file, text, pending.previewUrl); return }
+    const i = openChoices ? choiceIndexFromInput(text, openChoices.length) : -1
+    if (i < 0) { void sendMessage(text); return }
+    // sendMessage only clears the composer when it sends the composer's text.
+    setInput('')
+    void sendMessage(openChoices![i])
+  }, [pending, sendFile, sendMessage, openChoices])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -2238,6 +2274,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 onOpenApproval={setApprovalDialog}
                 formAnswer={msg.form ? formAnswers[msg.eventId] : undefined}
                 onSubmitForm={submitForm}
+                choiceOpen={choiceLists[msg.eventId]?.open}
+                choicePicked={choiceLists[msg.eventId]?.picked}
+                choiceTyped={choiceLists[msg.eventId]?.open ? typedChoice : -1}
+                onPickChoice={pickChoice}
                 onRichClick={onBotRichTextClick}
                 onRichPointerDown={onBotRichTextPointerDown}
                 onReact={sendReaction}
@@ -2354,8 +2394,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         {/* With no saved pills and no reply buttons there is nothing to show
             but the lone "+", so the row goes; pills are still added from the
             room editor. */}
-        <div ref={pillsRowRef} className={`pills${composing || pendingApproval || (!pills.length && !(modelPicker ? [] : lastActions).length && !addingPill) ? ' pills--hidden' : ''}`} onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>
-          {(modelPicker ? [] : lastActions).map((action) => (
+        <div ref={pillsRowRef} className={`pills${composing || pendingApproval || (!pills.length && !pillActions.length && !addingPill) ? ' pills--hidden' : ''}`} onWheel={(e) => { const el = e.currentTarget as HTMLDivElement; if (e.deltaY !== 0 && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY }}>
+          {pillActions.map((action) => (
             <button
               key={`action-${action}`}
               className="pill pill-action"
@@ -3043,6 +3083,37 @@ function FormCard({ form, answer, onSubmit }: {
   )
 }
 
+// A message's [[…]] buttons when they are options rather than short replies:
+// a lettered list under its text. A tap sends the option, as a pill would;
+// typing its letter in the composer lights it, and Enter sends it. Once the
+// room moves on it fades, keeping what was picked lit.
+function ChoiceList({ actions, open, picked, typed, onPick }: {
+  actions: string[]
+  open: boolean
+  picked?: string
+  typed: number
+  onPick: (label: string) => void
+}) {
+  return (
+    <div className={`msg-choices${open ? '' : ' msg-choices--done'}`} role="group" onClick={(e) => e.stopPropagation()}>
+      {actions.map((action, i) => (
+        <button
+          key={action}
+          type="button"
+          className={`msg-choice${action === picked || i === typed ? ' msg-choice--on' : ''}`}
+          disabled={!open}
+          // Like the pills: a tap must not move focus to or from the composer.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onPick(action)}
+        >
+          <span className="msg-choice-key" aria-hidden>{choiceLetter(i)}</span>
+          <span className="msg-choice-label">{actionLabel(action)}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export interface MessageRowProps {
   msg: Message
   userId: string
@@ -3074,6 +3145,13 @@ export interface MessageRowProps {
   /** The picks already sent for this row's form, newline-joined; undefined while it is open. */
   formAnswer?: string
   onSubmitForm: (eventId: string, form: ConstructForm, picked: string[]) => void
+  /** Set when this row's [[…]] buttons show as a lettered list: whether it still takes a pick. */
+  choiceOpen?: boolean
+  /** The option the reply after it picked, for a closed list. */
+  choicePicked?: string
+  /** The option a lone letter in the composer names, or -1. */
+  choiceTyped: number
+  onPickChoice: (label: string) => void
   onRichClick: (e: React.MouseEvent<HTMLDivElement>) => void
   onRichPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void
   onReact: (eventId: string, emoji: string) => void
@@ -3117,6 +3195,10 @@ function MessageRowInner({
   onOpenApproval,
   formAnswer,
   onSubmitForm,
+  choiceOpen,
+  choicePicked,
+  choiceTyped,
+  onPickChoice,
   onRichClick,
   onRichPointerDown,
   onReact,
@@ -3225,7 +3307,7 @@ function MessageRowInner({
                               </div>
                             )
                           }
-                          const { text } = parseActions(msg.body)
+                          const { text, actions } = parseActions(msg.body)
                           const cleanHtml = msg.formattedBody
                             ? stripActionMarkersInRichHtml(msg.formattedBody).trim()
                             : undefined
@@ -3305,6 +3387,15 @@ function MessageRowInner({
                                       form={msg.form}
                                       answer={formAnswer}
                                       onSubmit={(picked) => onSubmitForm(msg.eventId, msg.form!, picked)}
+                                    />
+                                  )}
+                                  {choiceOpen !== undefined && (
+                                    <ChoiceList
+                                      actions={actions}
+                                      open={choiceOpen}
+                                      picked={choicePicked}
+                                      typed={choiceTyped}
+                                      onPick={onPickChoice}
                                     />
                                   )}
                                 </div>

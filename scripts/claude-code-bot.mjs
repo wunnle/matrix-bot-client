@@ -554,13 +554,17 @@ const RENAME_INSTRUCTION =
 
 // Construct renders trailing `[[Label]]` tokens as tappable buttons, so a turn
 // that ends in a question is much cheaper to answer from a phone if it offers
-// the likely replies. Applies to every turn, not just the first ones.
+// the likely replies. Applies to every turn, not just the first ones. Labels
+// over 24 characters turn the set into a lettered list under the message.
 const QUICK_ANSWER_INSTRUCTION =
   'When your reply ends in a question or offers the user a choice, finish with ' +
   'two to four short quick-answer options in double-bracket notation on the ' +
   'last line, e.g. [[yes]] [[no]] [[restart service]]. Each label should be a ' +
   'few words at most and be a reply the user could plausibly send. Omit them ' +
-  'when you are not asking anything.'
+  'when you are not asking anything. When you are instead offering a few ' +
+  'distinct things to do next, the options may be full phrases up to 80 ' +
+  'characters, e.g. [[Plan the wake word training (BEN-263)]]; Construct shows ' +
+  'those as a lettered A, B, C list.'
 
 // The Live Activity channel: a lock-screen card with buttons, for moments worth
 // reaching the phone for. Part of the fixed instructions, so adding it changed

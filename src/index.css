@@ -677,6 +677,141 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   position: relative;
 }
 
+/* The chat and its side panel, side by side. */
+.chat-shell { display: flex; height: 100%; min-height: 0; }
+.chat-shell > .chat-view { flex: 1; min-width: 0; }
+
+/* What was shared in the room. A sheet over everything on the phone… */
+.room-sidebar {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  padding-top: env(safe-area-inset-top);
+}
+/* …a column beside the chat on wider screens. */
+@media (min-width: 641px) {
+  .room-sidebar {
+    position: static;
+    z-index: auto;
+    flex: none;
+    width: 320px;
+    border-left: 1px solid var(--border);
+  }
+}
+.room-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px 20px;
+  flex-shrink: 0;
+}
+.room-sidebar-title { font-weight: 600; color: var(--text-strong); }
+.room-sidebar-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+.room-sidebar-close:hover { background: var(--bg-hover); color: var(--text); }
+.room-sidebar-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 12px calc(24px + env(safe-area-inset-bottom));
+}
+.room-sidebar-empty { padding: 8px; font-size: 14px; color: var(--text-muted); }
+.room-sidebar-section { margin-bottom: 18px; }
+.room-sidebar-section h3 {
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.room-sidebar-section h3 span { margin-left: 4px; font-weight: 500; color: var(--text-faint); }
+.room-sidebar-group + .room-sidebar-group { margin-top: 6px; }
+.room-sidebar-host { padding: 4px 8px 2px; font-size: 12px; color: var(--text-muted); }
+.room-sidebar-row { display: flex; align-items: center; border-radius: 10px; }
+.room-sidebar-row:hover { background: var(--bg-hover); }
+.room-sidebar-link {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 7px 8px;
+  color: var(--text);
+  text-decoration: none;
+}
+.room-sidebar-link[aria-disabled='true'] { pointer-events: none; opacity: 0.5; }
+.room-sidebar-link-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+}
+.room-sidebar-link-sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.room-sidebar-ref-kind { font-size: 11px; color: var(--text-muted); }
+.room-sidebar-jump {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin-right: 4px;
+  border-radius: 8px;
+  color: var(--text-faint);
+  display: grid;
+  place-items: center;
+}
+.room-sidebar-jump .material-symbols-outlined { font-size: 18px; }
+.room-sidebar-row:hover .room-sidebar-jump { color: var(--text-muted); }
+.room-sidebar-jump:hover { background: var(--bg-active); color: var(--text); }
+.room-sidebar-images {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 0 4px;
+}
+.room-sidebar-image {
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--bg-active);
+}
+.room-sidebar-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.room-sidebar-more {
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.room-sidebar-more:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+
+.header-sidebar {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  color: var(--text-muted);
+  -webkit-tap-highlight-color: transparent;
+}
+.header-sidebar .material-symbols-outlined { font-size: 20px; }
+.header-sidebar:hover { background: var(--bg-active); color: var(--text); }
+.header-sidebar--open { color: var(--text-strong); background: var(--bg-active); }
+
 .drop-overlay {
   position: absolute;
   inset: 0;

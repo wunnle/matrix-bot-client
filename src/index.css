@@ -1337,6 +1337,12 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 .bot-text.bot-text-rich { white-space: normal; }
 
+.message.other:not(.peer) .bot-text:not(.bot-text-machine) {
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+
 /* A peer: someone other than you and other than the room's owner (the member
    at the top power level). They make requests in a room you share, so they read
    as someone talking — indented and attributed — rather than as the bot's own

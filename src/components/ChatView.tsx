@@ -40,6 +40,8 @@ import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
 import { useVisualViewportResize } from '../hooks/useVisualViewport'
 import RoomEditor from './RoomEditor'
+import RoomSidebar from './RoomSidebar'
+import { collectRoomMedia } from '../lib/roomMedia'
 import { HeaderUsageBar } from './PlanUsageMeter'
 import { usePlanUsage, useCodexUsage } from '../hooks/usePlanUsage'
 import { Marked } from 'marked'
@@ -78,6 +80,9 @@ const MSG_CAP = 200 // max messages kept in state; old ones dropped from the fro
 // How long a room with nothing cached waits on the server before the spinner
 // gives way to a retry. /messages has no timeout of its own.
 const INITIAL_LOAD_TIMEOUT_MS = 8000
+// Where the side panel is a column rather than a sheet; matches the CSS.
+const WIDE = '(min-width: 641px)'
+const SIDEBAR_KEY = 'room-sidebar-open'
 
 // Our swipe-back gesture is only useful where nothing else owns the edge
 // swipe. In a regular browser (iOS Safari, most Android browsers) the
@@ -1966,6 +1971,24 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       ?.querySelector(`[data-event-id="${window.CSS.escape(msg.eventId)}"]`)
       ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
+  // The side panel of what was shared here. A column on wide screens, which
+  // stays open across rooms and launches; a sheet on the phone, closed each time.
+  const [showSidebar, setShowSidebar] = useState(
+    () => window.matchMedia(WIDE).matches && localStorage.getItem(SIDEBAR_KEY) === '1',
+  )
+  const toggleSidebar = (open: boolean) => {
+    setShowSidebar(open)
+    if (window.matchMedia(WIDE).matches) localStorage.setItem(SIDEBAR_KEY, open ? '1' : '0')
+  }
+  const roomMedia = useMemo(() => (showSidebar ? collectRoomMedia(messages) : null), [showSidebar, messages])
+  const jumpToMessage = (eventId: string) => {
+    const row = messagesRef.current?.querySelector(`[data-event-id="${window.CSS.escape(eventId)}"]`)
+    if (!row) { showToast('Not in the loaded part of the chat'); return }
+    // On the phone the sheet covers the chat; get out of the way first.
+    if (!window.matchMedia(WIDE).matches) setShowSidebar(false)
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
   const footerError = sendError || dictationError || pinError
   const dismissFooterError = () => {
     setSendError('')
@@ -1973,7 +1996,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     clearDictationError()
   }
 
+  // The chat and its side panel share a row, so the chat column narrows
+  // rather than being covered. (The chat-view below keeps its old indent.)
   return (
+    <div className="chat-shell">
     <div
       className={`chat-view${pageShown ? ' chat-view--page' : ''}`}
       onTouchStart={enableSwipeBack ? handleTouchStart : undefined}
@@ -2070,6 +2096,16 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
               </span>
             </button>
           )}
+          <button
+            type="button"
+            className={`header-sidebar${showSidebar ? ' header-sidebar--open' : ''}`}
+            aria-pressed={showSidebar}
+            aria-label={showSidebar ? 'Hide shared links and media' : 'Show shared links and media'}
+            title="Links and media"
+            onClick={() => toggleSidebar(!showSidebar)}
+          >
+            <span className="material-symbols-outlined" aria-hidden>view_sidebar</span>
+          </button>
           {viewKind && <RoomViewToggle showPage={showPage} onChange={setShowPage} />}
         </div>
         {isClaudeRoom && planUsage && (
@@ -2670,6 +2706,19 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         </div>
         </div>
       </div>
+    </div>
+    {roomMedia && (
+      <RoomSidebar
+        media={roomMedia}
+        mediaUrls={imageUrls}
+        hasMore={hasMore}
+        loadingMore={loadingMore}
+        onLoadMore={() => { void loadMore() }}
+        onJump={jumpToMessage}
+        onOpenImage={openLightbox}
+        onClose={() => toggleSidebar(false)}
+      />
+    )}
     </div>
   )
 }

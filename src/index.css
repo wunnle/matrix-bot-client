@@ -1294,7 +1294,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   max-width: 78%;
 }
 
-.message.other .message-body { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; }
+.message.other .message-body { width: 100%; max-width: 75%; min-width: 0; overflow: hidden; }
 /* Full-row so a code block spans the width instead of clipping into a narrow box
    on short messages. The .bot-text wrapper (.message-pin-surface) is a shrink-to-
    fit flex item, so it (and the <pre> inside) only got as wide as the text.
@@ -1324,9 +1324,11 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 .bot-text {
+  --text: #d0d0de;
+  --text-strong: #e2e2ef;
   min-width: 0;
   font-size: 15px;
-  line-height: 1.55;
+  line-height: 1.65;
   color: var(--text);
   word-break: break-word;
   white-space: pre-wrap;

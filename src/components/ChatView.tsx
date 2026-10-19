@@ -34,7 +34,7 @@ import { loadPills, savePills, isAgentRoom, agentRoomModels } from '../lib/roomM
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { Capacitor } from '@capacitor/core'
 import { isMobileSafari } from '../lib/isMobileSafari'
-import { actionLabel, choiceIndexFromInput, choiceLetter, isChoiceList, parseActions, pickedChoice, stripActionMarkersInRichHtml } from '../lib/actions'
+import { actionLabel, choiceIndexFromKey, choiceLetter, isChoiceList, parseActions, pickedChoice, stripActionMarkersInRichHtml } from '../lib/actions'
 import { formatModel } from '../lib/modelLabel'
 import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
@@ -1699,23 +1699,19 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [client, roomId, scrollToBottom])
 
-  // A lone letter in the composer that names an open list's option: the option
-  // lights up, and sending sends its label. Any more typing and it is just text.
-  const typedChoice = openChoices ? choiceIndexFromInput(input, openChoices.length) : -1
-
   const pickChoice = useCallback((label: string) => {
     void sendMessage(label, { follow: false })
   }, [sendMessage])
 
   // With nothing focused to type into, a letter key picks the open list's
-  // option outright: there is no half-typed message for it to be the start of.
+  // option outright. In a focused composer a letter is only ever text.
   useEffect(() => {
     if (!openChoices) return
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.isComposing) return
       const el = document.activeElement
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement | null)?.isContentEditable) return
-      const i = choiceIndexFromInput(e.key, openChoices.length)
+      const i = choiceIndexFromKey(e.key, openChoices.length)
       if (i < 0) return
       e.preventDefault()
       pickChoice(openChoices[i])
@@ -1727,13 +1723,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // What Send, Enter and dictation auto-send do: the composer's text, plus the
   // pending attachment if there is one.
   const sendComposer = useCallback((text: string) => {
-    if (pending) { void sendFile(pending.file, text, pending.previewUrl); return }
-    const i = openChoices ? choiceIndexFromInput(text, openChoices.length) : -1
-    if (i < 0) { void sendMessage(text); return }
-    // sendMessage only clears the composer when it sends the composer's text.
-    setInput('')
-    void sendMessage(openChoices![i])
-  }, [pending, sendFile, sendMessage, openChoices])
+    if (pending) void sendFile(pending.file, text, pending.previewUrl)
+    else void sendMessage(text)
+  }, [pending, sendFile, sendMessage])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -2298,7 +2290,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 onSubmitForm={submitForm}
                 choiceOpen={choiceLists[msg.eventId]?.open}
                 choicePicked={choiceLists[msg.eventId]?.picked}
-                choiceTyped={choiceLists[msg.eventId]?.open ? typedChoice : -1}
                 onPickChoice={pickChoice}
                 onRichClick={onBotRichTextClick}
                 onRichPointerDown={onBotRichTextPointerDown}
@@ -3105,15 +3096,13 @@ function FormCard({ form, answer, onSubmit }: {
   )
 }
 
-// A message's [[…]] buttons when they are options rather than short replies:
-// a lettered list under its text. A tap sends the option, as a pill would;
-// typing its letter in the composer lights it, and Enter sends it. Once the
-// room moves on it fades, keeping what was picked lit.
-function ChoiceList({ actions, open, picked, typed, onPick }: {
+// A bot message's [[…]] answers: a lettered list under its text. A tap sends
+// the option, as a pill would, and so does its letter key while no text field
+// has focus. Once answered it collapses to the pick; unanswered, it fades.
+function ChoiceList({ actions, open, picked, onPick }: {
   actions: string[]
   open: boolean
   picked?: string
-  typed: number
   onPick: (label: string) => void
 }) {
   return (
@@ -3122,7 +3111,7 @@ function ChoiceList({ actions, open, picked, typed, onPick }: {
         <button
           key={action}
           type="button"
-          className={`msg-choice${action === picked || i === typed ? ' msg-choice--on' : ''}`}
+          className={`msg-choice${action === picked ? ' msg-choice--on' : ''}`}
           disabled={!open}
           // Like the pills: a tap must not move focus to or from the composer.
           onMouseDown={(e) => e.preventDefault()}
@@ -3171,8 +3160,6 @@ export interface MessageRowProps {
   choiceOpen?: boolean
   /** The option the reply after it picked, for a closed list. */
   choicePicked?: string
-  /** The option a lone letter in the composer names, or -1. */
-  choiceTyped: number
   onPickChoice: (label: string) => void
   onRichClick: (e: React.MouseEvent<HTMLDivElement>) => void
   onRichPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void
@@ -3219,7 +3206,6 @@ function MessageRowInner({
   onSubmitForm,
   choiceOpen,
   choicePicked,
-  choiceTyped,
   onPickChoice,
   onRichClick,
   onRichPointerDown,
@@ -3416,7 +3402,6 @@ function MessageRowInner({
                                       actions={actions}
                                       open={choiceOpen}
                                       picked={choicePicked}
-                                      typed={choiceTyped}
                                       onPick={onPickChoice}
                                     />
                                   )}

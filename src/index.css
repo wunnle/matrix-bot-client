@@ -30,6 +30,7 @@
   --diff-del: #f08c8c;
   --diff-del-bg: rgba(224, 92, 92, 0.14);
   --sidebar-width: 280px;
+  --chat-desktop-width: 560px;
 
   font: 15px/1.5 system-ui, -apple-system, sans-serif;
   color: var(--text);
@@ -37,7 +38,7 @@
   -webkit-font-smoothing: antialiased;
 }
 /* More room for the agent rows' previews once the window can spare it. */
-@media (min-width: 1100px) { :root { --sidebar-width: 320px; } }
+@media (min-width: 1100px) { :root { --sidebar-width: 320px; --chat-desktop-width: 720px; } }
 @media (min-width: 1440px) { :root { --sidebar-width: 360px; } }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -933,7 +934,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 @media (min-width: 641px) {
-  .chat-header-inner { max-width: 560px; }
+  .chat-header-inner { max-width: var(--chat-desktop-width); }
 }
 
 .chat-avatar {
@@ -1150,7 +1151,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 
 @media (min-width: 641px) {
-  .pinned-strip { max-width: 560px; }
+  .pinned-strip { max-width: var(--chat-desktop-width); }
   .pinned-toggle { padding: 1px 0; }
   .pinned-strip-inner { padding: 0 0 12px; }
 }
@@ -1272,7 +1273,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 @media (min-width: 641px) {
   .messages-inner {
-    max-width: 560px;
+    max-width: var(--chat-desktop-width);
     padding-left: 0;
     padding-right: 0;
   }
@@ -2206,7 +2207,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 
 @media (min-width: 641px) {
   .chat-footer > * {
-    max-width: 560px;
+    max-width: var(--chat-desktop-width);
   }
 }
 

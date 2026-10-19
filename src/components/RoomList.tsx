@@ -4,7 +4,7 @@ import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSe
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
-import { fetchJoinedRooms, getCachedRooms, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, type RoomSummary } from '../lib/matrix'
+import { fetchJoinedRooms, getCachedRooms, lastPreviewMessage, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, type RoomSummary } from '../lib/matrix'
 import { seedAgentPills, backfillAgentPills } from '../lib/roomMeta'
 import { findSpawnHostRoom, spawnAgentRoom } from '../lib/spawnAgent'
 import { createSpawnGate, type AgentProvider } from '../lib/spawnCommand'
@@ -13,6 +13,7 @@ import { donateShareTargets, cacheRoomAvatars } from '../lib/liveActivity'
 import { getDisabledShareRooms, isShareableRoom } from '../lib/shareRooms'
 import NotificationCenter from './NotificationCenter'
 import { hapticPress } from '../lib/haptics'
+import { parseActions } from '../lib/actions'
 import { useRoomAgentStates } from '../hooks/useRoomAgentStates'
 import type { RoomAgentState } from '../lib/roomAgentState'
 import type { RoomNotification } from '../hooks/useRoomNotifications'
@@ -62,6 +63,48 @@ const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar
     </button>
   )
 })
+
+// An agent room is a conversation, not an app: a row with its newest message
+// (or what the agent is doing) under the name, in a section of its own below
+// the tiles. Same avatar and badge as a tile.
+const AgentRoomRow = memo(function AgentRoomRow({ room, isActive, avatar, hasNotification, agent, onSelect }: {
+  room: RoomSummary
+  isActive: boolean
+  avatar?: string
+  hasNotification: boolean
+  agent?: RoomAgentState
+  onSelect: (roomId: string, name: string) => void
+}) {
+  const unread = room.unreadCount > 0 || hasNotification
+  const status = agent && agentStatusLabel(agent)
+  return (
+    <button
+      className={`room-row${isActive ? ' active' : ''}${unread ? ' room-row--unread' : ''}`}
+      onClick={() => onSelect(room.roomId, room.name)}
+      aria-description={status ?? (unread ? 'Unread' : undefined)}
+    >
+      <div className="room-card-avatar room-row-avatar">
+        {avatar ? <img src={avatar} alt="" /> : <span>{roomInitial(room.name)}</span>}
+        <RoomCardBadge agent={agent} unread={unread} />
+      </div>
+      <div className="room-row-text">
+        <div className="room-row-name">{room.name}</div>
+        <div className="room-row-preview">{status ?? previewLine(room.lastMessage)}</div>
+      </div>
+    </button>
+  )
+})
+
+// The first line of a message as plain text: no [[buttons]], code blocks or
+// markdown marks.
+function previewLine(body?: string): string {
+  if (!body) return ''
+  return parseActions(body).text
+    .replace(/```[\s\S]*?(?:```|$)/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`#>]+/g, '')
+    .split('\n').map((l) => l.trim()).find(Boolean) ?? ''
+}
 
 // One iOS-style badge per tile, showing only what matters most: the agent is
 // waiting on you, else it's working, else there's something unread. The count
@@ -126,27 +169,29 @@ const InviteTile = memo(function InviteTile({ room, busy, onAccept }: {
   )
 })
 
-// The ghost tile that spawns a new agent room. Deliberately shaped like the
-// invite tile: what it produces *is* an invite, and it sits in the same place
-// the new room's own tile will appear a moment later.
+// The ghost row that spawns a new agent room, at the end of the agent section:
+// dashed like an invite, since what it produces *is* an invite, which it then
+// accepts.
 const SpawnTile = memo(function SpawnTile({ provider, busy, disabled, onSpawn }: {
   provider: AgentProvider
   busy: boolean
   disabled: boolean
   onSpawn: (provider: AgentProvider) => void
 }) {
-  const label = provider === 'codex' ? 'codexbot' : 'claudebot'
+  const label = provider === 'codex' ? 'Codex' : 'Claude Code'
   return (
     <button
-      className="room-card room-card--spawn"
+      className="room-row room-row--spawn"
       onClick={() => onSpawn(provider)}
       disabled={disabled}
-      title={`Start a new ${provider === 'codex' ? 'Codex' : 'Claude Code'} agent room`}
+      title={`Start a new ${label} agent room`}
     >
-      <div className="room-card-avatar">
+      <div className="room-card-avatar room-row-avatar">
         <span>{busy ? '…' : '+'}</span>
       </div>
-      <div className="room-card-name">{busy ? 'spawning…' : `new ${label}`}</div>
+      <div className="room-row-text">
+        <div className="room-row-name">{busy ? 'Spawning…' : `New ${label} room`}</div>
+      </div>
     </button>
   )
 })
@@ -180,6 +225,13 @@ export default function RoomList({
   const invites = useMemo(() => rooms.filter(isInvite), [rooms])
   const joinedRooms = useMemo(() => rooms.filter((r) => !isInvite(r)), [rooms])
   const joinedRoomIds = useMemo(() => joinedRooms.map((r) => r.roomId), [joinedRooms])
+  // Hermes and other rooms are tiles in the order you arranged; agent rooms
+  // are chat rows below them, most recently active first.
+  const tileRooms = useMemo(() => joinedRooms.filter((r) => !r.agent), [joinedRooms])
+  const agentRooms = useMemo(
+    () => joinedRooms.filter((r) => r.agent).sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0)),
+    [joinedRooms],
+  )
   const agentStates = useRoomAgentStates(clientReady, joinedRoomIds, auth.userId)
 
   // Only offered when there is somewhere to send `!spawn` — the command needs a
@@ -306,21 +358,28 @@ export default function RoomList({
     let client: ReturnType<typeof getClient>
     try { client = getClient() } catch { return }
 
+    // Agent rows also show the newest message, so it follows along too.
     const onEvent = (event: sdk.MatrixEvent, room: sdk.Room | undefined) => {
       if (!room) return
       const type = event.getType()
       if (type !== 'm.room.message' && type !== 'm.room.encrypted') return
       const newCount = room.roomId === activeRoomIdRef.current ? 0 : getRoomUnreadCount(room, auth.userId)
+      const last = lastPreviewMessage(room)
       setRooms((prev) => {
         let changed = false
         const next = prev.map((r) => {
           if (r.roomId !== room.roomId) return r
-          if (r.unreadCount === newCount) return r
+          if (r.unreadCount === newCount && r.lastMessage === last?.body && r.lastTs === last?.ts) return r
           changed = true
-          return { ...r, unreadCount: newCount }
+          return { ...r, unreadCount: newCount, lastMessage: last?.body, lastTs: last?.ts }
         })
         return changed ? next : prev
       })
+    }
+    // An encrypted message is only readable once it decrypts, after Timeline.
+    const onDecrypted = (event: sdk.MatrixEvent) => {
+      const room = client.getRoom(event.getRoomId() ?? '')
+      if (room) onEvent(event, room)
     }
 
     const onReceipt = (_event: sdk.MatrixEvent, room: sdk.Room) => {
@@ -337,9 +396,11 @@ export default function RoomList({
     }
 
     client.on(sdk.RoomEvent.Timeline, onEvent)
+    client.on(sdk.MatrixEventEvent.Decrypted, onDecrypted)
     client.on(sdk.RoomEvent.Receipt, onReceipt)
     return () => {
       client.off(sdk.RoomEvent.Timeline, onEvent)
+      client.off(sdk.MatrixEventEvent.Decrypted, onDecrypted)
       client.off(sdk.RoomEvent.Receipt, onReceipt)
     }
   }, [clientReady])
@@ -428,7 +489,19 @@ export default function RoomList({
       setRooms((prev) => {
         const changed = fresh.length !== prev.length
           || fresh.some((r, i) => r.roomId !== prev[i]?.roomId || r.membership !== prev[i]?.membership)
-        if (!changed) return prev
+        if (!changed) {
+          // Same rooms: refresh what a row shows, which a list painted from
+          // the cache (or written before agent rows existed) may lack.
+          const byId = new Map(fresh.map((r) => [r.roomId, r]))
+          let patched = false
+          const next = prev.map((r) => {
+            const f = byId.get(r.roomId)
+            if (!f || (f.agent === r.agent && f.lastMessage === r.lastMessage && f.lastTs === r.lastTs)) return r
+            patched = true
+            return { ...r, agent: f.agent, lastMessage: f.lastMessage, lastTs: f.lastTs }
+          })
+          return patched ? next : prev
+        }
         // Keep every room already on screen exactly where it is; anything
         // new lands at the end. Re-deriving from saved order here would
         // reshuffle rooms that have no saved position.
@@ -539,9 +612,9 @@ export default function RoomList({
         {inviteError && <p className="error">{inviteError}</p>}
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={hapticPress} onDragEnd={handleDragEnd}>
-          <SortableContext items={joinedRooms.map(r => r.roomId)} strategy={rectSortingStrategy}>
+          <SortableContext items={tileRooms.map(r => r.roomId)} strategy={rectSortingStrategy}>
             <div className="room-grid">
-              {joinedRooms.map((room) => (
+              {tileRooms.map((room) => (
                 <SortableRoomCard
                   key={room.roomId}
                   room={room}
@@ -562,27 +635,43 @@ export default function RoomList({
                   onAccept={handleAcceptInvite}
                 />
               ))}
-              {/* Last tiles in the grid: they create rooms rather than opening
-                  one, so they should never sit above rooms that exist. */}
-              {canSpawn && (
-                <>
-                  <SpawnTile
-                    provider="claude"
-                    busy={spawning === 'claude'}
-                    disabled={spawning !== null}
-                    onSpawn={handleSpawn}
-                  />
-                  <SpawnTile
-                    provider="codex"
-                    busy={spawning === 'codex'}
-                    disabled={spawning !== null}
-                    onSpawn={handleSpawn}
-                  />
-                </>
-              )}
             </div>
           </SortableContext>
         </DndContext>
+        {(agentRooms.length > 0 || canSpawn) && (
+          <section className="room-rows" aria-label="Agents">
+            <h2 className="room-rows-title">Agents</h2>
+            {agentRooms.map((room) => (
+              <AgentRoomRow
+                key={room.roomId}
+                room={room}
+                isActive={room.roomId === activeRoomId}
+                avatar={roomAvatars[room.roomId]}
+                hasNotification={notifications.some(n => n.roomId === room.roomId)}
+                agent={agentStates[room.roomId]}
+                onSelect={onSelectRoom}
+              />
+            ))}
+            {/* Last: they create rooms rather than opening one, so they should
+                never sit above rooms that exist. */}
+            {canSpawn && (
+              <>
+                <SpawnTile
+                  provider="claude"
+                  busy={spawning === 'claude'}
+                  disabled={spawning !== null}
+                  onSpawn={handleSpawn}
+                />
+                <SpawnTile
+                  provider="codex"
+                  busy={spawning === 'codex'}
+                  disabled={spawning !== null}
+                  onSpawn={handleSpawn}
+                />
+              </>
+            )}
+          </section>
+        )}
         <NotificationCenter
           notifications={notifications}
           onDismiss={onDismissNotification}

@@ -411,23 +411,24 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   )
   // Messages whose buttons are too long for pills show them as a lettered list
   // under the text instead: open on the last message, faded on older ones,
-  // with the option your next message picked kept lit.
-  const choiceLists = useMemo(() => {
-    const out: Record<string, { open: boolean; picked?: string }> = {}
+  // with the option your next message picked kept lit. That message itself
+  // leaves the timeline: the lit option already says what you sent.
+  const { choiceLists, choiceReplies } = useMemo(() => {
+    const lists: Record<string, { open: boolean; picked?: string }> = {}
+    const replies = new Set<string>()
     // Walking back, the nearest own message after the one being looked at.
-    let reply: string | undefined
+    let reply: Message | undefined
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i]
-      if (m.isOwnMessage) { reply = m.body; continue }
+      if (m.isOwnMessage) { reply = m; continue }
       if (!m.body.includes('[[')) continue
       const { actions } = parseActions(m.body)
       if (!isChoiceList(actions)) continue
-      out[m.eventId] = {
-        open: m === lastActionMessage,
-        picked: m !== lastActionMessage && reply !== undefined ? pickedChoice(reply, actions) : undefined,
-      }
+      const picked = m !== lastActionMessage && reply ? pickedChoice(reply.body, actions) : undefined
+      if (picked) replies.add(reply!.eventId)
+      lists[m.eventId] = { open: m === lastActionMessage, picked }
     }
-    return out
+    return { choiceLists: lists, choiceReplies: replies }
   }, [messages, lastActionMessage])
   const openChoices = lastActionMessage && choiceLists[lastActionMessage.eventId] ? lastActions : null
   // The reply buttons the pill row shows: none when the model menu or the
@@ -619,10 +620,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     }
   }, [refreshPinned])
 
-  // Model-picker traffic is the header menu's business, not the timeline's.
+  // Model-picker traffic is the header menu's business, not the timeline's;
+  // a pick from a lettered list shows as that list's lit option.
   const visibleMessages = useMemo(
-    () => (renderStart > 0 ? messages.slice(renderStart) : messages).filter((m) => !isModelPickerTraffic(m)),
-    [messages, renderStart],
+    () => (renderStart > 0 ? messages.slice(renderStart) : messages)
+      .filter((m) => !isModelPickerTraffic(m) && !choiceReplies.has(m.eventId)),
+    [messages, renderStart, choiceReplies],
   )
 
   // Tool group IDs: each tool message maps to the eventId its group starts at,
@@ -1701,6 +1704,23 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const pickChoice = useCallback((label: string) => {
     void sendMessage(label, { follow: false })
   }, [sendMessage])
+
+  // With nothing focused to type into, a letter key picks the open list's
+  // option outright: there is no half-typed message for it to be the start of.
+  useEffect(() => {
+    if (!openChoices) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.isComposing) return
+      const el = document.activeElement
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement | null)?.isContentEditable) return
+      const i = choiceIndexFromInput(e.key, openChoices.length)
+      if (i < 0) return
+      e.preventDefault()
+      pickChoice(openChoices[i])
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [openChoices, pickChoice])
 
   // What Send, Enter and dictation auto-send do: the composer's text, plus the
   // pending attachment if there is one.

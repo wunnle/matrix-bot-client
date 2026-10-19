@@ -1347,7 +1347,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [])
 
   // Load older messages
-  const loadMore = useCallback(async () => {
+  const loadMore = useCallback(async (fill = false) => {
     if (loadingMore || !hasMore) return
     const room = client.getRoom(roomId)
     if (!room) return
@@ -1356,8 +1356,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
     // User is scrolling up — unpin from bottom so the messages.length effect
     // doesn't advance renderStart to the tail after new messages are loaded.
-    stickToBottomRef.current = false
-    programmaticScrollUntilRef.current = 0
+    // A fill (see below) isn't the user moving, so it leaves the pin alone.
+    if (!fill) {
+      stickToBottomRef.current = false
+      programmaticScrollUntilRef.current = 0
+    }
 
     setLoadingMore(true)
     loadingMoreRef.current = true
@@ -1382,6 +1385,26 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       setLoadingMore(false)
     }
   }, [client, roomId, userId, loadingMore, hasMore])
+
+  // Scrollback is driven by scroll events, and a list too short to scroll never
+  // fires one. Agent rooms get there easily: a whole tool run folds into one
+  // chip, so a page of events can draw a few rows and leave the screen empty
+  // above them with no way to pull the history in. Keep fetching until the
+  // list overflows or the history runs out. A page that adds nothing visible
+  // stops it, so a room of hidden events can't loop.
+  const fillRowsRef = useRef(-1)
+  useEffect(() => {
+    if (!isActive || initializing || loadingMore || !hasMore) return
+    const container = messagesRef.current
+    if (!container || container.clientHeight === 0) return
+    if (container.scrollHeight > container.clientHeight + 80) {
+      fillRowsRef.current = -1
+      return
+    }
+    if (fillRowsRef.current === visibleMessages.length) return
+    fillRowsRef.current = visibleMessages.length
+    void loadMore(true)
+  }, [isActive, initializing, loadingMore, hasMore, visibleMessages, loadMore])
 
   // Slide render window up when user scrolls to top of rendered slice
   // How far a code block is scrolled sideways is state the DOM does not keep

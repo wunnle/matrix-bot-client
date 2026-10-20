@@ -9,6 +9,13 @@
 // Output is stream-json rather than json so tool calls can be reported while
 // the turn is still running; the final `result` event carries exactly what the
 // single json object used to.
+//
+// Input is stream-json too, with stdin held open, so a message sent while the
+// turn runs can steer it (see `steer`). The CLI takes such a message in at the
+// next tool boundary and echoes it back (`isReplay`); one that lands while the
+// final answer is being written becomes a turn of its own in the same process,
+// with its own `result`. So a turn is over only once a `result` arrives with
+// every message written also echoed — until then stdin stays open.
 import * as path from 'node:path'
 import { spawn } from 'node:child_process'
 
@@ -39,9 +46,13 @@ const APPROVAL_SETTINGS = JSON.stringify({
   ].map((name) => [name, 'off'])),
 })
 
-// Turns in flight, so a turn can be stopped without waiting it out. Keyed by
-// room because that is the unit the bot serialises on — a room has at most one.
+// Turns in flight, so a turn can be stopped or steered without waiting it out.
+// Keyed by room because that is the unit the bot serialises on — a room has at
+// most one. Each entry is { child, write } where `write(text)` hands the turn
+// another user message, or returns false once the turn is wrapping up.
 const running = new Map()
+
+const userLine = (text) => JSON.stringify({ type: 'user', message: { role: 'user', content: text } }) + '\n'
 
 // Kept stderr is only for the error message; a chatty CLI must not grow it forever.
 const STDERR_LIMIT = 64 * 1024
@@ -143,7 +154,7 @@ export const claude = {
   defaultModel: MODELS.opus,
 
   processRoots() {
-    return [...running].filter(([, child]) => child.pid && child.exitCode === null).map(([roomId, child]) => ({
+    return [...running].filter(([, { child }]) => child.pid && child.exitCode === null).map(([roomId, { child }]) => ({
       pid: child.pid, id: `claude-${child.pid}`, label: 'Claude agent', roomIds: [roomId], shared: false, mapping: 'dedicated-room',
     }))
   },
@@ -167,9 +178,10 @@ export const claude = {
   // return value the caller could rely on mid-turn.
   run({ roomId, prompt, cwd, model, sessionId, instructions = [], approval, onProgress, onText, timeoutMs, onSession }) {
     const args = [
-      '-p', prompt,
+      '-p',
       // stream-json in print mode refuses to run without --verbose.
       '--output-format', 'stream-json', '--verbose',
+      '--input-format', 'stream-json', '--replay-user-messages',
       '--permission-mode', 'acceptEdits',
       '--model', model,
       // The PreToolUse hook is the real gate; see claude-approval-hook.mjs.
@@ -182,7 +194,7 @@ export const claude = {
     return new Promise((resolve) => {
       const child = spawn('claude', args, {
         cwd,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
         // The hook runs as a grandchild of this process; hand it the broker
         // address so an overridden port stays consistent.
         env: {
@@ -199,7 +211,19 @@ export const claude = {
           ENABLE_CLAUDEAI_MCP_SERVERS: 'false',
         },
       })
-      running.set(roomId, child)
+      // Messages written but not yet echoed back as taken in.
+      let unread = 0
+      let closing = false
+      const write = (text) => {
+        if (closing || !child.stdin.writable) return false
+        unread++
+        child.stdin.write(userLine(text))
+        return true
+      }
+      // A process that dies early must not crash the bot on a write to it.
+      child.stdin.on('error', () => { closing = true })
+      running.set(roomId, { child, write })
+      write(prompt)
 
       let result = null
       let partial = ''
@@ -224,7 +248,18 @@ export const claude = {
         if (!line.trim()) return
         let event
         try { event = JSON.parse(line) } catch { return }
-        if (event.type === 'result') { result = event; return }
+        if (event.type === 'user' && event.isReplay) { unread = Math.max(0, unread - 1); return }
+        if (event.type === 'result') {
+          // An earlier result answered a message that one sent mid-answer has
+          // since overtaken. Its text is still held in `pendingText`, so the next
+          // turn's first block posts it as narration like any other.
+          result = event
+          if (unread === 0) {
+            closing = true
+            child.stdin.end()
+          }
+          return
+        }
         for (const block of mainAgentBlocks(event)) {
           if (block?.type === 'text' && block.text?.trim()) {
             flushText()
@@ -284,9 +319,16 @@ export const claude = {
   // Stops the turn in flight, if any. The killed process still fires `close`,
   // so the caller gets a resolved turn rather than a hang.
   cancel(roomId) {
-    const child = running.get(roomId)
-    if (!child) return false
-    child.kill('SIGTERM')
+    const turn = running.get(roomId)
+    if (!turn) return false
+    turn.child.kill('SIGTERM')
     return true
+  },
+
+  // Hands a message to the turn in flight, which reads it at its next tool
+  // boundary — or answers it right after, if it lands mid-answer. False when
+  // there is no turn or it is already wrapping up; the caller queues it then.
+  steer(roomId, text) {
+    return running.get(roomId)?.write(text) ?? false
   },
 }

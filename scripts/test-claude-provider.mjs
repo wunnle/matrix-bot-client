@@ -60,6 +60,36 @@ const mode = process.env.FAKE_CLAUDE_MODE
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n')
 if (mode === 'hang') { out({ type: 'system', subtype: 'init', session_id: 's-hang' }); setInterval(() => {}, 1000) }
 else if (mode === 'crash') { process.stderr.write('boom\\n'); process.exit(3) }
+else if (mode === 'chat') {
+  // Like the real CLI with stream-json input: a message waiting at a tool
+  // boundary joins the turn; one marked "late" stands for a message that lands
+  // mid-answer, so it gets a turn and a result of its own after this one.
+  const inbox = []
+  let turn = null
+  const replay = () => out({ type: 'user', isReplay: true })
+  const runTurn = async (texts) => {
+    texts.forEach(replay)
+    out({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id: 't' + Math.random(), name: 'Bash', input: {} }] } })
+    await new Promise((r) => setTimeout(r, 150))
+    for (let i = inbox.length - 1; i >= 0; i--) {
+      if (!inbox[i].includes('late')) { replay(); texts.push(...inbox.splice(i, 1)) }
+    }
+    const answer = 'answer: ' + texts.join(' | ')
+    out({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'text', text: answer }] } })
+    out({ type: 'result', subtype: 'success', result: answer, is_error: false, session_id: 's-chat' })
+  }
+  const next = () => {
+    if (turn || !inbox.length) return
+    turn = runTurn([inbox.shift()]).then(() => { turn = null; next() })
+  }
+  let buf = ''
+  process.stdin.setEncoding('utf8')
+  process.stdin.on('data', (c) => {
+    const lines = (buf + c).split('\\n'); buf = lines.pop()
+    for (const l of lines) if (l.trim()) inbox.push(JSON.parse(l).message.content)
+    next()
+  })
+}
 else {
   const say = (text, parent = null) => out({ type: 'assistant', parent_tool_use_id: parent, message: { content: [{ type: 'text', text }] } })
   out({ type: 'system', subtype: 'init', session_id: 's1' })
@@ -120,6 +150,31 @@ const base = { prompt: 'hi', cwd: dir, model: 'm', sessionId: null, approval }
   const fail = () => { throw new Error('x') }
   const res = await claude.run({ ...base, roomId: '!throw', timeoutMs: 10000, onProgress: fail, onText: fail })
   assert.equal(res.text, 'Done.')
+}
+
+process.env.FAKE_CLAUDE_MODE = 'chat'
+{
+  // A message sent mid-turn joins the turn rather than waiting for the next.
+  assert.equal(claude.steer('!steer', 'nobody home'), false, 'no turn, nothing to steer')
+  const seen = []
+  const pending = claude.run({ ...base, roomId: '!steer', timeoutMs: 10000, onText: (t) => seen.push(t) })
+  await new Promise((r) => setTimeout(r, 50))
+  assert.equal(claude.steer('!steer', 'actually'), true)
+  const res = await pending
+  assert.deepEqual(res, { text: 'answer: hi | actually', isError: false })
+  assert.deepEqual(seen, [])
+  assert.equal(claude.steer('!steer', 'too late'), false, 'a finished turn takes nothing more')
+}
+{
+  // One that lands mid-answer is answered too, before the turn ends; the first
+  // answer becomes narration and the last one is the reply.
+  const seen = []
+  const pending = claude.run({ ...base, roomId: '!late', timeoutMs: 10000, onText: (t) => seen.push(t) })
+  await new Promise((r) => setTimeout(r, 50))
+  assert.equal(claude.steer('!late', 'late one'), true)
+  const res = await pending
+  assert.deepEqual(res, { text: 'answer: late one', isError: false })
+  assert.deepEqual(seen, ['answer: hi'])
 }
 
 process.env.FAKE_CLAUDE_MODE = 'crash'

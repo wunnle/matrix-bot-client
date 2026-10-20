@@ -1667,6 +1667,27 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
   }
 
+  // A provider that can take a message mid-turn gets it there, so it steers the
+  // run instead of waiting it out. Not once anything is queued, which keeps the
+  // order, and not after !stop, whose queue is about to be thrown away.
+  const provider = providerFor(sessions[roomId])
+  if (busy.has(roomId) && provider.steer && !queued.get(roomId)?.length && !stopped.has(roomId)) {
+    let text
+    try {
+      text = await promptFor(event, body)
+    } catch (e) {
+      await sendRoomText(roomId, `⚠️ Could not read that attachment: ${e.message}`).catch(() => {})
+      text = `(I tried to send a file here but it could not be read: ${e.message})`
+    }
+    if (busy.has(roomId) && !stopped.has(roomId) && provider.steer(roomId, text)) {
+      await client.sendReadReceipt(event).catch(() => {})
+      log(`Steered the turn in ${roomId}`)
+      return
+    }
+    // The turn wrapped up while the attachment downloaded: the room is either
+    // still draining, so the queue picks this up, or idle and it starts its own.
+  }
+
   if (busy.has(roomId)) {
     const pending = queued.get(roomId) ?? []
     if (pending.length >= MAX_QUEUED) {

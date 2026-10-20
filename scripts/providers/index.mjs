@@ -13,6 +13,9 @@
 //                  onText(text) for narration mid-turn; never the final reply,
 //                  which comes back as `text` (optional — Codex doesn't)
 //   cancel(roomId) -> boolean               (false when nothing was running)
+//   steer(roomId, text) -> boolean          hand a message to the turn in flight
+//                  (optional — without it, or on false, the bot queues the
+//                  message for a turn of its own once this one ends)
 import { claude } from './claude.mjs'
 import { codex } from './codex.mjs'
 

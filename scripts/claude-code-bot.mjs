@@ -679,16 +679,19 @@ function runTurn(roomId, prompt) {
 }
 
 // Creates a fresh agent room bound to `cwd` and invites the owner.
-// Avatar for spawned rooms, one per provider so a Codex room is not mistaken
-// for a Claude one in the room list. Uploaded once and the resulting mxc://
-// cached, so every later spawn is just a state event. Absent icon or a failed
-// upload is not fatal — rooms simply get the default letter tile.
+// Avatars for spawned rooms, a cast per provider so a Codex room is not
+// mistaken for a Claude one in the room list, and Claude rooms are told apart
+// by face: the invader plus the pixel characters scripts/gen-agent-avatars.mjs
+// draws from src/design/sprites.ts. Each is uploaded once and its mxc://
+// cached, so every later spawn is just a state event. An absent icon or a
+// failed upload is not fatal — it drops out of the cast, or rooms get the
+// default letter tile.
 const AVATAR_FILES = {
-  claude: path.join(import.meta.dirname, 'agent-avatar.png'),
-  codex: path.join(import.meta.dirname, 'agent-avatar-codex.png'),
+  claude: ['agent-avatar.png', 'agent-avatar-squid.png', 'agent-avatar-rocket.png', 'agent-avatar-crown.png', 'agent-avatar-saucer.png'],
+  codex: ['agent-avatar-codex.png'],
 }
 const AVATAR_CACHE = path.join(STORE_DIR, 'avatar.json')
-// provider -> mxc:// of its uploaded icon.
+// provider -> mxc:// of each icon in its cast, in AVATAR_FILES order.
 let avatarMxc = {}
 
 // Every avatar this bot has ever uploaded. Used to tell "the icon we set last
@@ -701,40 +704,59 @@ async function ensureAvatars() {
   try {
     if (fs.existsSync(AVATAR_CACHE)) cached = JSON.parse(fs.readFileSync(AVATAR_CACHE, 'utf8'))
   } catch {}
-  // The cache predating per-provider icons held a single {mxc, size}; that one
-  // was the Claude icon, and its mxc still has to stay in `known` or the
+  // Older caches were keyed by provider ({byProvider: {claude, codex}}), and
+  // before that held a single {mxc, size}, the Claude icon. Those are the
+  // invader and Codex files; their mxcs also have to stay in `known` or the
   // backfill would treat every existing room's tile as user-chosen.
-  const byProvider = cached.byProvider ?? (cached.mxc ? { claude: { mxc: cached.mxc, size: cached.size } } : {})
+  const legacy = cached.byProvider ?? (cached.mxc ? { claude: { mxc: cached.mxc, size: cached.size } } : {})
+  const byFile = cached.byFile ?? {
+    ...(legacy.claude ? { 'agent-avatar.png': legacy.claude } : {}),
+    ...(legacy.codex ? { 'agent-avatar-codex.png': legacy.codex } : {}),
+  }
   knownAvatars = cached.known ?? (cached.mxc ? [cached.mxc] : [])
 
-  for (const [provider, file] of Object.entries(AVATAR_FILES)) {
-    try {
-      if (!fs.existsSync(file)) continue
-      const size = fs.statSync(file).size
-      // Re-upload only if the icon changed since it was cached.
-      if (byProvider[provider]?.mxc && byProvider[provider].size === size) {
-        avatarMxc[provider] = byProvider[provider].mxc
-        continue
+  for (const [provider, files] of Object.entries(AVATAR_FILES)) {
+    avatarMxc[provider] = []
+    for (const name of files) {
+      const file = path.join(import.meta.dirname, name)
+      try {
+        if (!fs.existsSync(file)) continue
+        const size = fs.statSync(file).size
+        // Re-upload only if the icon changed since it was cached.
+        if (byFile[name]?.mxc && byFile[name].size === size) {
+          avatarMxc[provider].push(byFile[name].mxc)
+          continue
+        }
+        const data = fs.readFileSync(file)
+        const res = await client.uploadContent(data, { name, type: 'image/png', rawResponse: false })
+        avatarMxc[provider].push(res.content_uri)
+        byFile[name] = { mxc: res.content_uri, size: data.length }
+        if (!knownAvatars.includes(res.content_uri)) knownAvatars.push(res.content_uri)
+        log(`Uploaded ${provider} room avatar ${name}: ${res.content_uri}`)
+      } catch (e) {
+        log(`Avatar ${name} unavailable (${e.message}) — left out of the ${provider} cast.`)
       }
-      const data = fs.readFileSync(file)
-      const res = await client.uploadContent(data, {
-        name: path.basename(file),
-        type: 'image/png',
-        rawResponse: false,
-      })
-      avatarMxc[provider] = res.content_uri
-      byProvider[provider] = { mxc: res.content_uri, size: data.length }
-      if (!knownAvatars.includes(res.content_uri)) knownAvatars.push(res.content_uri)
-      log(`Uploaded ${provider} room avatar: ${res.content_uri}`)
-    } catch (e) {
-      log(`Avatar for ${provider} unavailable (${e.message}) — those rooms use the default tile.`)
     }
   }
   try {
-    fs.writeFileSync(AVATAR_CACHE, JSON.stringify({ byProvider, known: knownAvatars }))
+    fs.writeFileSync(AVATAR_CACHE, JSON.stringify({ byFile, known: knownAvatars }))
   } catch (e) {
     log(`Could not write the avatar cache (${e.message}); icons re-upload next start.`)
   }
+}
+
+// The icon a room wears: one of its provider's cast, picked from the room id,
+// so a room keeps its face across restarts, renames and devices.
+function avatarFor(provider, roomId) {
+  const cast = avatarMxc[provider] ?? []
+  if (!cast.length) return undefined
+  // FNV-1a, then a final mix: a plain *31 hash taken mod 5 only sums the
+  // characters (31 ≡ 1), which piled most rooms onto one face.
+  let h = 2166136261
+  for (const c of roomId) h = Math.imul(h ^ c.charCodeAt(0), 16777619)
+  h = Math.imul(h ^ (h >>> 15), 2246822507)
+  h ^= h >>> 13
+  return cast[(h >>> 0) % cast.length]
 }
 
 // Short alias for a resolved model id, for display. Asks whichever provider
@@ -918,15 +940,22 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null) {
     // api/matrix-push.js drops it as a badge-only update — agent rooms never
     // pushed. These are bot rooms on a homeserver we control, so plaintext is
     // the right trade for working notifications.
+    // The cast's first icon, so the invite never shows a bare letter; the
+    // room's own pick needs its id, so it follows just below.
     initial_state: [
-      ...(avatarMxc[provider] ? [{
+      ...(avatarMxc[provider]?.length ? [{
         type: 'm.room.avatar',
         state_key: '',
-        content: { url: avatarMxc[provider] },
+        content: { url: avatarMxc[provider][0] },
       }] : []),
       { type: MODELS_EVENT, state_key: '', content: modelsContent(provider) },
     ],
   })
+  const face = avatarFor(provider, room_id)
+  if (face && face !== avatarMxc[provider][0]) {
+    await client.sendStateEvent(room_id, 'm.room.avatar', { url: face }, '')
+      .catch((e) => log(`Could not set avatar on ${room_id}: ${e.message}`))
+  }
   // `worktree` marks the cwd as ours to clean up on !end. A room bound to a
   // directory the user chose must never have it removed.
   sessions[room_id] = { sessionId: null, cwd, model, provider, ...(branch ? { worktree: true, branch } : {}) }
@@ -1652,12 +1681,14 @@ await ensureAvatars()
 // room state is server-side — so unlike a client change, this reaches every
 // device immediately. Never overwrites an avatar that is already set.
 //
-// Also corrects a room whose icon belongs to the other provider: the icon it is
-// wearing is one of ours, so replacing it is allowed by the same rule.
+// Also corrects a room whose icon belongs to the other provider, or is not its
+// pick from the cast (every room wore the invader before there was a cast):
+// the icon it is wearing is one of ours, so replacing it is allowed by the
+// same rule.
 async function backfillAvatars() {
   for (const [roomId, entry] of Object.entries(sessions)) {
     try {
-      const wanted = avatarMxc[entry.provider ?? DEFAULT_PROVIDER]
+      const wanted = avatarFor(entry.provider ?? DEFAULT_PROVIDER, roomId)
       if (!wanted) continue
       const room = client.getRoom(roomId)
       if (!room || room.getMyMembership() !== 'join') continue

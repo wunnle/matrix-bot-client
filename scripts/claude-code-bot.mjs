@@ -1200,7 +1200,9 @@ setInterval(refreshProcesses, 30000)
 async function drainRoom(roomId, first, firstPrompt = null) {
   busy.add(roomId)
   // Turns can run for minutes; keep the typing indicator alive so the room doesn't look dead.
-  await client.sendTyping(roomId, true, 30000)
+  // Typing is cosmetic: a rate limit/outage must never abort the turn or
+  // leave this room permanently busy before the cleanup block is installed.
+  await client.sendTyping(roomId, true, 30000).catch(() => {})
   const keepAlive = setInterval(() => {
     client.sendTyping(roomId, true, 30000).catch(() => {})
   }, 25000)

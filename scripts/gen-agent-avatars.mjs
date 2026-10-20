@@ -1,23 +1,25 @@
 #!/usr/bin/env node
-// Draws the agent avatar cast (src/design/sprites.ts SPRITES) as PNGs beside
-// the original invader, at its exact size, colours and 36px pixel:
-//   scripts/agent-avatar-<name>.png
-// The invader itself is the hand-made scripts/agent-avatar.png and is left
-// alone. Run after changing the cast, then restart the bot, which uploads any
-// new or changed icon and hands them out (see AVATAR_FILES there).
+// Draws the agent avatar cast (src/design/sprites.ts: every SPRITES character
+// on every SHADES tile) as PNGs at the original invader's size, sprite colour
+// and 36px pixel:
+//   scripts/agent-avatar-<character>-<shade>.png
+// Stale combinations are deleted. The hand-made scripts/agent-avatar.png stays:
+// rooms still wearing it are recognised as ours and moved onto the cast. Run
+// after changing the cast, then restart the bot, which uploads any new or
+// changed icon and hands them out (see AVATAR_FILES there).
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
-import { SPRITES, AVATAR_BG, AVATAR_FG } from '../src/design/sprites.ts'
+import { SPRITES, SHADES, AVATAR_FG } from '../src/design/sprites.ts'
 
 const SIZE = 512
 const PIXEL = 36
+const CAST_FILE = /^agent-avatar-[a-z]+-[a-z]+\.png$/
 
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
-const bg = rgb(AVATAR_BG)
 const fg = rgb(AVATAR_FG)
 
-function png(grid) {
+function png(grid, bg) {
   const w = grid[0].length * PIXEL
   const h = grid.length * PIXEL
   const ox = Math.round((SIZE - w) / 2)
@@ -53,9 +55,19 @@ function png(grid) {
   ])
 }
 
+const wanted = new Set()
 for (const [name, grid] of Object.entries(SPRITES)) {
-  if (name === 'invader') continue
-  const file = path.join(import.meta.dirname, `agent-avatar-${name}.png`)
-  fs.writeFileSync(file, png(grid))
-  console.log(`wrote ${path.basename(file)}`)
+  for (const [shade, hex] of Object.entries(SHADES)) {
+    const file = `agent-avatar-${name}-${shade}.png`
+    wanted.add(file)
+    fs.writeFileSync(path.join(import.meta.dirname, file), png(grid, rgb(hex)))
+  }
 }
+// Combinations no longer in the cast.
+for (const file of fs.readdirSync(import.meta.dirname)) {
+  if (CAST_FILE.test(file) && !wanted.has(file)) {
+    fs.rmSync(path.join(import.meta.dirname, file))
+    console.log(`removed ${file}`)
+  }
+}
+console.log(`wrote ${wanted.size} avatars`)

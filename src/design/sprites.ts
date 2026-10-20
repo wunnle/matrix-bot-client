@@ -3,8 +3,9 @@
  * original invader (scripts/agent-avatar.png): one row per string, X for a
  * lit pixel. Kept symmetrical; that is what makes them read at 36px.
  *
- * SPRITES is the cast the bot hands out. Changing one means regenerating its
- * PNG: node scripts/gen-agent-avatars.mjs, then restart the bot.
+ * SPRITES is the cast the bot hands out, each in every SHADES colour. Changing
+ * either means regenerating the PNGs: node scripts/gen-agent-avatars.mjs, then
+ * restart the bot.
  */
 export const SPRITES: Record<string, string[]> = {
   invader: ['..X.....X..', '...X...X...', '..XXXXXXX..', '.XX.XXX.XX.', 'XXXXXXXXXXX', 'X.XXXXXXX.X', 'X.X.....X.X', '...XX.XX...'],
@@ -28,10 +29,22 @@ export const CANDIDATES: Record<string, string[]> = {
   tree: ['....X....', '...XXX...', '..XXXXX..', '...XXX...', '..XXXXX..', '.XXXXXXX.', '..XXXXX..', '.XXXXXXX.', 'XXXXXXXXX', '...XXX...'],
 }
 
-// The invader PNG's own colours; scripts/gen-agent-avatars.mjs draws the rest
-// of the cast with them, at its 36px pixel.
+// The original invader PNG's colours: its orange is the default tile here,
+// and its off-white is every sprite's colour.
 export const AVATAR_BG = '#d97757'
 export const AVATAR_FG = '#faf9f5'
+
+/**
+ * The tiles the cast is drawn on, all from the Claude family but spread over
+ * hue (about 5° to 30°) rather than lightness, so they tell apart at 36px.
+ * Each character comes in each shade (scripts/gen-agent-avatars.mjs), and the
+ * bot picks one combination per room.
+ */
+export const SHADES: Record<string, string> = {
+  brick: '#b84a3c',
+  crail: '#c15f3c',
+  amber: '#d4843f',
+}
 
 /**
  * A sprite as an SVG tile. The pixel size matches the invader's (a 14.2-pixel

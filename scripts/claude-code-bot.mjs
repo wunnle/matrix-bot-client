@@ -681,13 +681,17 @@ function runTurn(roomId, prompt) {
 // Creates a fresh agent room bound to `cwd` and invites the owner.
 // Avatars for spawned rooms, a cast per provider so a Codex room is not
 // mistaken for a Claude one in the room list, and Claude rooms are told apart
-// by face: the invader plus the pixel characters scripts/gen-agent-avatars.mjs
-// draws from src/design/sprites.ts. Each is uploaded once and its mxc://
-// cached, so every later spawn is just a state event. An absent icon or a
-// failed upload is not fatal — it drops out of the cast, or rooms get the
-// default letter tile.
+// by face: pixel characters on Claude-family shades, which
+// scripts/gen-agent-avatars.mjs draws from src/design/sprites.ts as
+// agent-avatar-<character>-<shade>.png. Whatever of those is on disk is the
+// cast. Each is uploaded once and its mxc:// cached, so every later spawn is
+// just a state event. An absent icon or a failed upload is not fatal — it
+// drops out of the cast, or rooms get the default letter tile.
+//
+// The original agent-avatar.png is no longer handed out; rooms still wearing
+// it are moved onto the cast by the backfill, since its mxc is in `known`.
 const AVATAR_FILES = {
-  claude: ['agent-avatar.png', 'agent-avatar-squid.png', 'agent-avatar-rocket.png', 'agent-avatar-crown.png', 'agent-avatar-saucer.png'],
+  claude: fs.readdirSync(import.meta.dirname).filter((f) => /^agent-avatar-[a-z]+-[a-z]+\.png$/.test(f)).sort(),
   codex: ['agent-avatar-codex.png'],
 }
 const AVATAR_CACHE = path.join(STORE_DIR, 'avatar.json')
@@ -750,12 +754,15 @@ async function ensureAvatars() {
 function avatarFor(provider, roomId) {
   const cast = avatarMxc[provider] ?? []
   if (!cast.length) return undefined
-  // FNV-1a, then a final mix: a plain *31 hash taken mod 5 only sums the
-  // characters (31 ≡ 1), which piled most rooms onto one face.
+  // FNV-1a, then MurmurHash3's finaliser: without a full mix the low bits,
+  // which pick the shade, piled most rooms onto one colour.
   let h = 2166136261
   for (const c of roomId) h = Math.imul(h ^ c.charCodeAt(0), 16777619)
-  h = Math.imul(h ^ (h >>> 15), 2246822507)
+  h ^= h >>> 16
+  h = Math.imul(h, 0x85ebca6b)
   h ^= h >>> 13
+  h = Math.imul(h, 0xc2b2ae35)
+  h ^= h >>> 16
   return cast[(h >>> 0) % cast.length]
 }
 

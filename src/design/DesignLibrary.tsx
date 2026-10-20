@@ -10,7 +10,7 @@ import ApprovalBar from '../components/ApprovalBar'
 import { AgentActivityBar } from '../components/AgentActivityBar'
 import RoomSidebar from '../components/RoomSidebar'
 import { AgentRoomRow, InviteTile, SortableRoomCard, SpawnTile } from '../components/RoomList'
-import { CANDIDATES, SPRITES, spriteSvg } from './sprites'
+import { AVATAR_BG, CANDIDATES, SHADES, SPRITES, spriteSvg } from './sprites'
 import './design.css'
 
 /**
@@ -20,7 +20,7 @@ import './design.css'
 
 const noop = () => {}
 const svgUrl = (svg: string) => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
-const avatar = (name: keyof typeof SPRITES) => svgUrl(spriteSvg(SPRITES[name]))
+const avatar = (name: keyof typeof SPRITES, shade: keyof typeof SHADES = 'crail') => svgUrl(spriteSvg(SPRITES[name], SHADES[shade]))
 
 const NOW = Date.now()
 const ME = '@sinan:matrix.org'
@@ -125,12 +125,12 @@ const room = (name: string, extra: Partial<RoomSummary> = {}): RoomSummary =>
   ({ roomId: `!${name}`, name, unreadCount: 0, membership: 'join', ...extra })
 const TILES = [room('Hermes'), room('Spotify', { unreadCount: 2 }), room('Day'), room('Watchlist')]
 const AGENTS: { room: RoomSummary; avatar: string; agent?: RoomAgentState; active?: boolean }[] = [
-  { room: room('Discord Digest', { lastMessage: 'Approve: git push origin main' }), avatar: avatar('invader'), agent: { kind: 'approval' } },
-  { room: room('Grok Bot Lessons', { lastMessage: 'Agreed. For agent rooms the avatar is just…' }), avatar: avatar('squid'), active: true },
+  { room: room('Discord Digest', { lastMessage: 'Approve: git push origin main' }), avatar: avatar('invader', 'brick'), agent: { kind: 'approval' } },
+  { room: room('Grok Bot Lessons', { lastMessage: 'Agreed. For agent rooms the avatar is just…' }), avatar: avatar('saucer', 'amber'), active: true },
   { room: room('Push Room Names', { lastMessage: 'The change is live: Vercel shows commit 9f2…', unreadCount: 1 }), avatar: avatar('rocket') },
-  { room: room('Jev Exploration', { lastMessage: 'Looking at the fast commands' }), avatar: avatar('invader'), agent: { kind: 'working', label: 'Bash' } },
-  { room: room('Voice PE Bender', { lastMessage: 'Which wake word model?' }), avatar: avatar('squid'), agent: { kind: 'question' } },
-  { room: room('Usage Limit', { lastMessage: 'Paused until 14:00' }), avatar: avatar('rocket'), agent: { kind: 'blocked' } },
+  { room: room('Jev Exploration', { lastMessage: 'Looking at the fast commands' }), avatar: avatar('crown', 'amber'), agent: { kind: 'working', label: 'Bash' } },
+  { room: room('Voice PE Bender', { lastMessage: 'Which wake word model?' }), avatar: avatar('squid', 'brick'), agent: { kind: 'question' } },
+  { room: room('Usage Limit', { lastMessage: 'Paused until 14:00' }), avatar: avatar('rocket', 'brick'), agent: { kind: 'blocked' } },
   { room: room('Jev Experiments'), avatar: avatar('invader') },
 ]
 
@@ -153,11 +153,14 @@ function Frame({ label, children, className = '' }: { label?: string; children: 
   )
 }
 
-function Sprite({ name, grid }: { name: string; grid: string[] }) {
+// A character at 72px, then at 36px on each tile it comes in.
+function Sprite({ name, grid, shades }: { name: string; grid: string[]; shades: string[] }) {
   return (
     <figure className="dl-sprite">
-      <img src={svgUrl(spriteSvg(grid))} alt="" width={72} height={72} />
-      <img src={svgUrl(spriteSvg(grid))} alt="" width={36} height={36} />
+      <img src={svgUrl(spriteSvg(grid, shades[0]))} alt="" width={72} height={72} />
+      <div className="dl-sprite-shades">
+        {shades.map((c) => <img key={c} src={svgUrl(spriteSvg(grid, c))} alt="" width={36} height={36} />)}
+      </div>
       <figcaption>{name}</figcaption>
     </figure>
   )
@@ -171,14 +174,14 @@ export default function DesignLibrary() {
         <p>The real components with sample data. Dark theme, as in the app.</p>
       </header>
 
-      <Section title="Agent avatars" note="The cast in use, then candidates. Same pixel size as the original invader; 72px and 36px." wide>
-        <div className="dl-label">In use</div>
+      <Section title="Agent avatars" note="Each Claude room gets one character on one shade, picked from its room id. Then candidates, on the original orange." wide>
+        <div className="dl-label">In use · {Object.keys(SHADES).join(', ')}</div>
         <div className="dl-sprites">
-          {Object.entries(SPRITES).map(([n, g]) => <Sprite key={n} name={n} grid={g} />)}
+          {Object.entries(SPRITES).map(([n, g]) => <Sprite key={n} name={n} grid={g} shades={Object.values(SHADES)} />)}
         </div>
         <div className="dl-label">Candidates</div>
         <div className="dl-sprites">
-          {Object.entries(CANDIDATES).map(([n, g]) => <Sprite key={n} name={n} grid={g} />)}
+          {Object.entries(CANDIDATES).map(([n, g]) => <Sprite key={n} name={n} grid={g} shades={[AVATAR_BG]} />)}
         </div>
       </Section>
 

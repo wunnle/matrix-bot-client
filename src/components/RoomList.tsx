@@ -27,7 +27,8 @@ interface Props {
   onDismissNotification: (roomId: string) => void
 }
 
-const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar, hasNotification, agent, onSelect }: {
+// Exported, like the rows below, for the design library (src/design).
+export const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar, hasNotification, agent, onSelect }: {
   room: RoomSummary
   isActive: boolean
   avatar?: string
@@ -67,7 +68,7 @@ const SortableRoomCard = memo(function SortableRoomCard({ room, isActive, avatar
 // An agent room is a conversation, not an app: a row with its newest message
 // (or what the agent is doing) under the name, in a section of its own below
 // the tiles. Same avatar and badge as a tile.
-const AgentRoomRow = memo(function AgentRoomRow({ room, isActive, avatar, hasNotification, agent, onSelect }: {
+export const AgentRoomRow = memo(function AgentRoomRow({ room, isActive, avatar, hasNotification, agent, onSelect }: {
   room: RoomSummary
   isActive: boolean
   avatar?: string
@@ -149,7 +150,7 @@ function agentStatusLabel(agent: RoomAgentState): string | undefined {
 // An invite renders as a faded version of the room tile it will become.
 // Tapping accepts and opens it — the two-button card was a second visual
 // language for what is really just "a room you have not opened yet".
-const InviteTile = memo(function InviteTile({ room, busy, onAccept }: {
+export const InviteTile = memo(function InviteTile({ room, busy, onAccept }: {
   room: RoomSummary
   busy: boolean
   onAccept: (roomId: string, name: string) => void
@@ -172,7 +173,7 @@ const InviteTile = memo(function InviteTile({ room, busy, onAccept }: {
 // The ghost row that spawns a new agent room, at the end of the agent section:
 // dashed like an invite, since what it produces *is* an invite, which it then
 // accepts.
-const SpawnTile = memo(function SpawnTile({ provider, busy, disabled, onSpawn }: {
+export const SpawnTile = memo(function SpawnTile({ provider, busy, disabled, onSpawn }: {
   provider: AgentProvider
   busy: boolean
   disabled: boolean

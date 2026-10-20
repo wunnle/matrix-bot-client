@@ -520,14 +520,14 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-row.active .room-row-avatar:not(:has(img)) { background: rgba(255, 255, 255, 0.08); }
 .room-row-avatar {
   flex: none;
-  width: 44px;
-  height: 44px;
-  border-radius: 13px;
-  font-size: 17px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  font-size: 15px;
   /* Not a drag handle here: a touch on it should scroll the list. */
   touch-action: auto;
 }
-.room-row-avatar img { border-radius: 13px; }
+.room-row-avatar img { border-radius: 10px; }
 .room-row .room-card-badge { top: auto; bottom: -4px; right: -4px; width: 18px; height: 18px; }
 .room-row .room-card-badge .material-symbols-outlined { font-size: 12px; }
 .room-row .room-card-badge-spinner { width: 9px; height: 9px; }
@@ -844,6 +844,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-sidebar-meta-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
 .room-sidebar-meta-text::after { content: '·'; margin: 0 6px; }
 .room-sidebar-ref-icon { flex: none; width: 16px; height: 16px; fill: var(--text-muted); }
+.room-sidebar-note-icon { flex: none; width: 16px; font-size: 18px; color: var(--text-muted); }
 /* Above the stretched link, so it alone jumps to the message. */
 .room-sidebar-jump {
   position: relative;
@@ -1295,7 +1296,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   max-width: 78%;
 }
 
-.message.other .message-body { width: 100%; max-width: 75%; min-width: 0; overflow: hidden; }
+/* Bot replies take most of the row; the cap keeps lines readable once the
+   chat column is wide. */
+.message.other .message-body { width: 100%; max-width: min(90%, 640px); min-width: 0; overflow: hidden; }
 /* Full-row so a code block spans the width instead of clipping into a narrow box
    on short messages. The .bot-text wrapper (.message-pin-surface) is a shrink-to-
    fit flex item, so it (and the <pre> inside) only got as wide as the text.
@@ -2807,53 +2810,32 @@ a.msg-file:hover { text-decoration: underline; }
 }
 .msg-location-title { font-size: 15px; font-weight: 600; }
 
-/* An agent's ```form: a checklist and a Submit, under its text. */
+/* An agent's ```form: the lettered list's rows (.msg-choices, below), ticked
+   ones with a check in the key, and a Submit under them. */
 .msg-form {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 4px;
   margin-top: 10px;
   white-space: normal;
 }
+.msg-form .msg-choices { margin-top: 0; }
 .msg-form-question { font-weight: 600; color: var(--text-strong); }
-.msg-form-options { display: flex; flex-direction: column; gap: 6px; }
-.msg-form-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-active);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.1s ease, border-color 0.1s ease;
-}
-.msg-form-option--on { border-color: var(--accent); background: var(--accent-dim); }
-.msg-form-option:disabled { cursor: default; }
-.msg-form--done .msg-form-option:not(.msg-form-option--on) { opacity: 0.45; }
-.msg-form-check { font-size: 20px; line-height: 1.2; color: var(--text-muted); }
-.msg-form-option--on .msg-form-check { color: var(--accent); font-variation-settings: 'FILL' 1; }
+.msg-form-check { font-size: 17px; line-height: 1; font-variation-settings: 'wght' 600; }
 .msg-form-text { display: flex; flex-direction: column; min-width: 0; }
-.msg-form-label { overflow-wrap: anywhere; }
 .msg-form-description { font-size: 13px; color: var(--text-muted); }
 .msg-form-submit {
   align-self: flex-start;
-  padding: 8px 18px;
-  border: none;
+  margin: 6px 0 0 8px;
+  padding: 6px 16px;
   border-radius: 10px;
-  background: var(--accent);
-  color: #fff;
-  font: inherit;
+  background: var(--bg-active);
+  color: var(--text-strong);
   font-weight: 600;
-  cursor: pointer;
 }
-.msg-form-submit:hover:not(:disabled) { background: var(--accent-hover); }
+.msg-form-submit:hover:not(:disabled) { background: var(--bg-hover); }
 .msg-form-submit:disabled { opacity: 0.4; cursor: default; }
-.msg-form-status { font-size: 13px; color: var(--text-muted); }
+.msg-form-status { margin-left: 8px; font-size: 13px; color: var(--text-muted); }
 
 /* A bot's [[…]] answers: lettered options under the text. */
 .msg-choices {

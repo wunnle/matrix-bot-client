@@ -7,6 +7,7 @@ import type { RoomAgentState } from '../lib/roomAgentState'
 import { collectRoomMedia } from '../lib/roomMedia'
 import { MessageRow, type MessageRowProps } from '../components/ChatView'
 import ApprovalBar from '../components/ApprovalBar'
+import { AgentActivityBar } from '../components/AgentActivityBar'
 import RoomSidebar from '../components/RoomSidebar'
 import { AgentRoomRow, InviteTile, SortableRoomCard, SpawnTile } from '../components/RoomList'
 import { CANDIDATES, SPRITES, spriteSvg } from './sprites'
@@ -79,6 +80,30 @@ const MESSAGES = {
   }),
   place: bot('📍 Kronotrop Levent', { location: { lat: 41.08012, lon: 29.01145, description: 'Kronotrop Levent' } }),
   tool: bot('🔧 Bash: npm run build', { toolProgress: [{ emoji: '🔧', tool: 'Bash', content: 'npm run build' }] }),
+  dated: bot('Good morning. Three things on the calendar today.', { timestamp: NOW - 86_400_000 }),
+  reacted: { ...own('Ship it'), reactions: { '👍': ['@bot:matrix.org'], '🚀': ['@bot:matrix.org', ME] } },
+  peer: bot('Can you add the Kadıköy one too?', { isPeerMessage: true, senderName: 'Deniz' }),
+  machine: bot('📝 Note saved: Daily Notes/2026-10-20', { machine: { kind: 'notification', source: 'note-watcher' } }),
+  failed: bot('🔒 Unable to decrypt', { isDecryptionFailure: true }),
+  cards: bot('Two options under 3,000 TL.', {
+    cards: [
+      {
+        title: 'Keychron K2 Pro',
+        subtitle: 'Hepsiburada · in stock',
+        description: 'Wireless, hot-swappable, brown switches.',
+        image: svgUrl(spriteSvg(SPRITES.rocket, '#2a2a38', '#9ab')),
+        price: '2,849 TL',
+        actions: [{ label: 'Open', url: 'https://example.com' }, { label: 'Compare', url: 'https://example.com' }],
+      },
+      { title: 'Construct deploys', subtitle: 'vercel.com', description: 'A plain link card: the whole card is the link.', url: 'https://vercel.com' },
+    ],
+  }),
+  threads: bot('threads', {
+    threads: [
+      { title: 'Why the build failed', summary: 'A type error in RoomList.tsx after the merge.', body: 'The merge kept both `agent` fields.\n\n```\nsrc/components/RoomList.tsx:88 TS2300 Duplicate identifier\n```\n\nFixed by dropping the older one.' },
+      { title: 'What changed in the bot', summary: 'Avatar cast, per-room pick.', body: '- Five characters\n- Picked from the room id\n- Never replaces an avatar you set' },
+    ],
+  }),
 }
 
 const SHARED = collectRoomMedia([
@@ -91,6 +116,8 @@ const SHARED = collectRoomMedia([
   { ...bot('squid.png'), imageMxc: 'mxc://demo/2', eventId: '$img2' },
   { ...bot('report.pdf'), fileMxc: 'mxc://demo/3', fileName: 'grok-bot-notes.pdf', eventId: '$file1' },
   MESSAGES.place,
+  bot('Saved to obsidian://open?vault=Obsidian&file=Bender%2FFunctionalities%2FGH%20Wrapper'),
+  bot('This builds on [[Bender/Functionalities/Hermes Gateway]] and [[Daily Notes/2026-10-20|today]].'),
 ])
 const SHARED_URLS = { $img1: avatar('rocket'), $img2: avatar('squid'), $file1: '#' }
 
@@ -178,7 +205,7 @@ export default function DesignLibrary() {
         </Frame>
       </Section>
 
-      <Section title="Messages" note="Bot text, rich text, your message, cards, places and the tool chip.">
+      <Section title="Messages" note="Bot text, rich text, your message, a card, a place and the tool chip.">
         <Frame className="dl-chat">
           <div className="messages-inner">
             <Row msg={MESSAGES.plain} />
@@ -191,13 +218,42 @@ export default function DesignLibrary() {
         </Frame>
       </Section>
 
+      <Section title="More messages" note="Date divider, reactions, someone else in the room, a machine notification, a message that would not decrypt.">
+        <Frame className="dl-chat">
+          <div className="messages-inner">
+            <Row msg={MESSAGES.dated} showDateDivider />
+            <Row msg={MESSAGES.reacted} />
+            <Row msg={MESSAGES.peer} showPeerSender />
+            <Row msg={MESSAGES.machine} />
+            <Row msg={MESSAGES.failed} />
+          </div>
+        </Frame>
+      </Section>
+
+      <Section title="Cards" note="com.construct.cards: with image, price and actions; a plain link card.">
+        <Frame className="dl-chat"><div className="messages-inner"><Row msg={MESSAGES.cards} /></div></Frame>
+      </Section>
+
+      <Section title="Accordion" note="com.construct.threads: a title and summary that open into the full text.">
+        <Frame className="dl-chat"><div className="messages-inner"><Row msg={MESSAGES.threads} /></div></Frame>
+      </Section>
+
+      <Section title="Agent activity" note="Above the composer while a run is on: thinking, then the tool in flight.">
+        <Frame className="dl-footer">
+          <AgentActivityBar run={{ phase: 'thinking', label: 'Thinking', startedAt: NOW - 4_000, lastSignalAt: NOW }} botTyping onLiveChange={noop} />
+        </Frame>
+        <Frame className="dl-footer">
+          <AgentActivityBar run={{ phase: 'working', label: 'Running', detail: 'npm run build', startedAt: NOW - 73_000, lastSignalAt: NOW }} botTyping={false} onLiveChange={noop} />
+        </Frame>
+      </Section>
+
       <Section title="Answer lists" note="[[…]] options: open; answered (collapses to the pick); passed by (fades). Letter keys pick when the composer is not focused.">
         <Frame label="Open" className="dl-chat"><div className="messages-inner"><Row msg={MESSAGES.choicesOpen} choiceOpen /></div></Frame>
         <Frame label="Answered" className="dl-chat"><div className="messages-inner"><Row msg={MESSAGES.choicesPicked} choiceOpen={false} choicePicked="Prep a checklist for the uhubctl udev setup" /></div></Frame>
         <Frame label="Unanswered, room moved on" className="dl-chat"><div className="messages-inner"><Row msg={MESSAGES.choicesFaded} choiceOpen={false} /></div></Frame>
       </Section>
 
-      <Section title="Forms" note="```form blocks: pick any, then Submit.">
+      <Section title="Forms" note="```form blocks: pick any, then Submit. Same rows as the answer lists.">
         <Frame label="Open" className="dl-chat"><div className="messages-inner"><Row msg={MESSAGES.formOpen} /></div></Frame>
         <Frame label="Answered" className="dl-chat"><div className="messages-inner"><Row msg={MESSAGES.formDone} formAnswer={'Links\nPlaces'} /></div></Frame>
       </Section>

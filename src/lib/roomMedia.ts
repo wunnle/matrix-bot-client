@@ -1,15 +1,18 @@
 import type { Message, SharedLocation } from '../types'
+import { parseActions, splitMarkdownCode } from './actions'
 
 /**
- * What a room's side panel lists: the links, images, files, places and
- * Linear issues / GitHub PRs in its loaded messages, newest first, each
- * pointing back at the message it came from.
+ * What a room's side panel lists: the links, images, files, places, Obsidian
+ * notes and Linear issues / GitHub PRs in its loaded messages, newest first,
+ * each pointing back at the message it came from.
  */
 
 export interface RoomLink { url: string; title?: string; host: string; eventId: string; timestamp: number }
 export interface RoomMediaItem { eventId: string; name: string; timestamp: number }
 export interface RoomPlace { location: SharedLocation; eventId: string; timestamp: number }
 export interface RoomRef { kind: 'linear' | 'github'; label: string; url: string; title?: string; eventId: string; timestamp: number }
+/** A vault note: `path` is its file path in the vault, without ".md". */
+export interface RoomNote { path: string; title: string; folder?: string; url: string; eventId: string; timestamp: number }
 
 export interface RoomMedia {
   links: RoomLink[]
@@ -17,6 +20,7 @@ export interface RoomMedia {
   files: RoomMediaItem[]
   places: RoomPlace[]
   refs: RoomRef[]
+  notes: RoomNote[]
 }
 
 // Bare issue keys only for the teams that are actually used: a generic
@@ -27,8 +31,14 @@ const LINEAR_KEY = new RegExp(`\\b((?:${LINEAR_TEAMS.join('|')})-\\d{1,5})\\b`, 
 const LINEAR_URL = /^https:\/\/linear\.app\/[^/]+\/issue\/([A-Z][A-Z0-9]*-\d+)/i
 const GITHUB_REF = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/(pull|issues)\/(\d+)/
 
-const BODY_URL = /https?:\/\/[^\s<>"'`)\]]+/g
-const HTML_ANCHOR = /<a\s[^>]*href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
+// Sinan's one vault (~/Documents/Obsidian), which obsidian:// links name.
+const OBSIDIAN_VAULT = 'Obsidian'
+const OBSIDIAN_URL = /^obsidian:\/\/open\?/
+// [[Note]] and [[Folder/Note|shown text]], as the Lore agents write them.
+const WIKILINK = /\[\[([^\]\n]{1,200})\]\]/g
+
+const BODY_URL = /(?:https?|obsidian):\/\/[^\s<>"'`)\]]+/g
+const HTML_ANCHOR = /<a\s[^>]*href="((?:https?|obsidian):\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
 
 function decodeEntities(s: string): string {
   return s
@@ -45,7 +55,15 @@ function hostOf(url: string): string | undefined {
   try { return new URL(url).hostname.replace(/^www\./, '') } catch { return undefined }
 }
 
-/** Every http(s) link in a message, with the anchor text when it has some. */
+/** The vault path an obsidian://open link points at. */
+function obsidianPath(url: string): string | undefined {
+  try {
+    const file = new URL(url).searchParams.get('file')
+    return file ? file.replace(/\.md$/, '') : undefined
+  } catch { return undefined }
+}
+
+/** Every http(s) and obsidian:// link in a message, with the anchor text when it has some. */
 function messageLinks(m: Message): { url: string; title?: string }[] {
   const out: { url: string; title?: string }[] = []
   if (m.formattedBody) {
@@ -65,9 +83,31 @@ function messageLinks(m: Message): { url: string; title?: string }[] {
   return out
 }
 
+/**
+ * The [[wikilinks]] in a message's prose. Not its trailing [[…]] run, which
+ * is reply buttons, and not anything inside code.
+ */
+function messageWikilinks(body: string): string[] {
+  if (!body.includes('[[')) return []
+  const buttons = new Set(parseActions(body).actions)
+  const out: string[] = []
+  for (const seg of splitMarkdownCode(body)) {
+    if (seg.isCode) continue
+    WIKILINK.lastIndex = 0
+    for (let w = WIKILINK.exec(seg.text); w; w = WIKILINK.exec(seg.text)) {
+      if (buttons.has(w[1].trim())) continue
+      // [[Note|shown text]] and [[Note#Heading]] are both still the note.
+      const path = w[1].split('|')[0].replace(/#.*$/, '').trim()
+      if (path) out.push(path)
+    }
+  }
+  return out
+}
+
 export function collectRoomMedia(messages: Message[], linearWorkspace = LINEAR_WORKSPACE): RoomMedia {
   const links = new Map<string, RoomLink>()
   const refs = new Map<string, RoomRef>()
+  const notes = new Map<string, RoomNote>()
   const images: RoomMediaItem[] = []
   const files: RoomMediaItem[] = []
   const places: RoomPlace[] = []
@@ -88,10 +128,26 @@ export function collectRoomMedia(messages: Message[], linearWorkspace = LINEAR_W
       refs.delete(ref.label)
       refs.set(ref.label, { ...ref, title: ref.title ?? prev?.title, ...at })
     }
+    const addNote = (path: string, url?: string) => {
+      const slash = path.lastIndexOf('/')
+      notes.delete(path)
+      notes.set(path, {
+        path,
+        title: path.slice(slash + 1),
+        folder: slash > 0 ? path.slice(0, slash) : undefined,
+        url: url ?? `obsidian://open?vault=${OBSIDIAN_VAULT}&file=${encodeURIComponent(path)}`,
+        ...at,
+      })
+    }
 
     // A shared location's body is a maps link to itself; the place covers it.
     if (!m.location) {
       for (const { url, title } of messageLinks(m)) {
+        if (OBSIDIAN_URL.test(url)) {
+          const path = obsidianPath(url)
+          if (path) addNote(path, url)
+          continue
+        }
         const host = hostOf(url)
         if (!host) continue
         const linear = LINEAR_URL.exec(url)
@@ -109,6 +165,8 @@ export function collectRoomMedia(messages: Message[], linearWorkspace = LINEAR_W
       }
     }
 
+    for (const path of messageWikilinks(m.body)) addNote(path)
+
     // Issue keys written out in text, outside any link.
     const text = m.body.replace(BODY_URL, '')
     LINEAR_KEY.lastIndex = 0
@@ -123,9 +181,11 @@ export function collectRoomMedia(messages: Message[], linearWorkspace = LINEAR_W
     files: files.reverse(),
     places: places.reverse(),
     refs: [...refs.values()].reverse(),
+    notes: [...notes.values()].reverse(),
   }
 }
 
 export function isEmptyRoomMedia(media: RoomMedia): boolean {
-  return !media.links.length && !media.images.length && !media.files.length && !media.places.length && !media.refs.length
+  return !media.links.length && !media.images.length && !media.files.length
+    && !media.places.length && !media.refs.length && !media.notes.length
 }

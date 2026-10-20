@@ -9,7 +9,8 @@ const GITHUB_PATH = 'M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.
 const day = (ts: number) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 
 /**
- * A room's side panel: what was shared in it, collected from the loaded
+ * A room's side panel: what was shared in it (issues and PRs, Obsidian notes,
+ * links, images, files, places), collected from the loaded
  * messages. A column beside the chat on wide screens, a full sheet on the
  * phone. A row opens its thing; "In chat" under it finds the message it came from.
  */
@@ -85,6 +86,19 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
                   <path d={r.kind === 'linear' ? LINEAR_PATH : GITHUB_PATH} />
                 </svg>
               ),
+            }))}
+          </section>
+        )}
+
+        {media.notes.length > 0 && (
+          <section className="room-sidebar-section">
+            <h3>Notes <span>{media.notes.length}</span></h3>
+            {media.notes.map((n) => row(n.path, n.eventId, {
+              href: n.url,
+              title: n.title,
+              sub: n.folder ?? day(n.timestamp),
+              hover: n.path,
+              icon: <span className="material-symbols-outlined room-sidebar-note-icon" aria-label="Obsidian note">description</span>,
             }))}
           </section>
         )}

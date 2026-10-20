@@ -3098,8 +3098,9 @@ function LocationLink({ location }: { location: NonNullable<Message['location']>
   )
 }
 
-// An agent's ```form: tick what applies, then Submit. Once answered it stays
-// in the chat showing your picks, read-only.
+// An agent's ```form: tick what applies, then Submit. Drawn with the lettered
+// list's rows (ChoiceList), a ticked one showing a check in its key; once
+// answered it collapses to your picks, read-only, as a list does.
 function FormCard({ form, answer, onSubmit }: {
   form: ConstructForm
   answer?: string
@@ -3123,8 +3124,8 @@ function FormCard({ form, answer, onSubmit }: {
   return (
     <div className={`msg-form${done ? ' msg-form--done' : ''}`} onClick={(e) => e.stopPropagation()}>
       {form.question && <div className="msg-form-question">{form.question}</div>}
-      <div className="msg-form-options" role="group">
-        {form.options.map((opt) => {
+      <div className={`msg-choices${done ? ' msg-choices--done' : ''}`} role="group">
+        {form.options.map((opt, i) => {
           const on = shown.includes(opt.label)
           return (
             <button
@@ -3133,14 +3134,14 @@ function FormCard({ form, answer, onSubmit }: {
               role="checkbox"
               aria-checked={on}
               disabled={done}
-              className={`msg-form-option${on ? ' msg-form-option--on' : ''}`}
+              className={`msg-choice${on ? ' msg-choice--on' : ''}`}
               onClick={() => toggle(opt.label)}
             >
-              <span className="material-symbols-outlined msg-form-check" aria-hidden>
-                {on ? 'check_box' : 'check_box_outline_blank'}
+              <span className="msg-choice-key" aria-hidden>
+                {on ? <span className="material-symbols-outlined msg-form-check">check</span> : choiceLetter(i)}
               </span>
               <span className="msg-form-text">
-                <span className="msg-form-label">{opt.label}</span>
+                <span className="msg-choice-label">{opt.label}</span>
                 {opt.description && <span className="msg-form-description">{opt.description}</span>}
               </span>
             </button>
@@ -3148,7 +3149,7 @@ function FormCard({ form, answer, onSubmit }: {
         })}
       </div>
       {done
-        ? <div className="msg-form-status">{answer !== undefined ? 'Sent' : 'Sending…'}</div>
+        ? answer === undefined && <div className="msg-form-status">Sending…</div>
         : (
           <button
             type="button"

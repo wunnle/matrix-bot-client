@@ -31,7 +31,8 @@ import { getClient } from '../lib/matrix'
 import { getRoomOwners } from '../lib/roomOwners'
 import { pinRoomEvent, unpinRoomEvent } from '../lib/pinRoomMessage'
 import { loadPills, savePills, isAgentRoom, agentRoomModels } from '../lib/roomMeta'
-import { resolveMediaUrl } from '../lib/mediaUrl'
+import { resolveMediaUrl, type EncryptedMedia } from '../lib/mediaUrl'
+import { encryptAttachment, type EncryptedFile } from '../lib/attachmentCrypto.js'
 import { Capacitor } from '@capacitor/core'
 import { isMobileSafari } from '../lib/isMobileSafari'
 import { actionLabel, choiceIndexFromKey, choiceLetter, isChoiceList, parseActions, pickedChoice, stripActionMarkersInRichHtml } from '../lib/actions'
@@ -1108,19 +1109,16 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     return () => window.removeEventListener('keydown', onKey)
   }, [lightbox])
   useEffect(() => {
-    const toResolve: { eventId: string; mxc: string }[] = []
-    for (const m of messages) {
+    const toResolve: { eventId: string; mxc: string; encrypted?: EncryptedMedia }[] = []
+    for (const m of [...messages, ...pinnedDisplay]) {
       const mxc = m.imageMxc ?? m.fileMxc
       if (mxc && !m.imageUrl && !resolvedImagesRef.current.has(m.eventId)) {
         resolvedImagesRef.current.add(m.eventId)
-        toResolve.push({ eventId: m.eventId, mxc })
-      }
-    }
-    for (const m of pinnedDisplay) {
-      const mxc = m.imageMxc ?? m.fileMxc
-      if (mxc && !m.imageUrl && !resolvedImagesRef.current.has(m.eventId)) {
-        resolvedImagesRef.current.add(m.eventId)
-        toResolve.push({ eventId: m.eventId, mxc })
+        toResolve.push({
+          eventId: m.eventId,
+          mxc,
+          encrypted: m.mediaFile ? { file: m.mediaFile, mimetype: m.fileMime } : undefined,
+        })
       }
     }
     if (toResolve.length === 0) return
@@ -1129,8 +1127,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     // within seconds by the bot's reply, which re-runs this effect while the
     // full-size download is still in flight — dropping it left the photo blank.
     // Merging by eventId is idempotent, so a late result is always safe to keep.
-    Promise.all(toResolve.map(async ({ eventId, mxc }) => {
-      const url = await resolveMediaUrl(client, mxc)
+    Promise.all(toResolve.map(async ({ eventId, mxc, encrypted }) => {
+      const url = await resolveMediaUrl(client, mxc, undefined, undefined, undefined, encrypted)
       return { eventId, url }
     })).then(results => {
       setImageUrls(prev => {
@@ -1671,14 +1669,29 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setSending(true)
     requestAnimationFrame(scrollToBottom)
     try {
-      const upload = await client.uploadContent(file, { name: file.name, type: file.type })
-      const mxc = upload.content_uri
+      // In an encrypted room the event is megolm-encrypted, but the upload
+      // isn't: it has to be encrypted here, or the homeserver keeps the file in
+      // the clear. The ciphertext goes up nameless and typeless, since both
+      // would be readable server-side; the real ones travel in the event.
+      const encrypt = await roomIsEncrypted(client, roomId)
+      let media: { url: string } | { file: EncryptedFile }
+      if (encrypt) {
+        const sealed = await encryptAttachment(await file.arrayBuffer())
+        const upload = await client.uploadContent(new Blob([sealed.data]), {
+          type: 'application/octet-stream',
+          includeFilename: false,
+        })
+        media = { file: { ...sealed.file, url: upload.content_uri } }
+      } else {
+        const upload = await client.uploadContent(file, { name: file.name, type: file.type })
+        media = { url: upload.content_uri }
+      }
       const isImage = file.type.startsWith('image/')
       const msgContent: Record<string, unknown> = {
         msgtype: isImage ? 'm.image' : 'm.file',
         body: text || file.name,
         ...(text ? { filename: file.name } : {}),
-        url: mxc,
+        ...media,
         info: { mimetype: file.type, size: file.size },
         'com.construct.capabilities': ['actionable'],
         'com.construct.client': 'construct-web',
@@ -2761,6 +2774,19 @@ function getMaxReadTs(room: sdk.Room, userId: string): number {
 }
 
 
+/** Whether messages to this room are megolm-encrypted. Asks the crypto module
+ *  (which also knows about rooms whose encryption state it has pinned), and
+ *  falls back to the room's own state when crypto isn't up. */
+async function roomIsEncrypted(client: sdk.MatrixClient, roomId: string): Promise<boolean> {
+  try {
+    const crypto = client.getCrypto()
+    if (crypto) return await crypto.isEncryptionEnabledInRoom(roomId)
+  } catch {
+    // fall through to room state
+  }
+  return client.getRoom(roomId)?.hasEncryptionStateEvent() ?? false
+}
+
 function eventToMessage(
   event: sdk.MatrixEvent,
   userId: string,
@@ -2791,7 +2817,7 @@ function eventToMessage(
 
   if (isFailure || (isEncrypted && !body)) {
     body = '🔒 Unable to decrypt'
-  } else if ((content?.msgtype === 'm.image' || content?.msgtype === 'm.file') && content?.url) {
+  } else if ((content?.msgtype === 'm.image' || content?.msgtype === 'm.file') && (content?.url || content?.file?.url)) {
     body = content.body ?? ''
   }
 
@@ -2822,8 +2848,12 @@ function eventToMessage(
   // names the author for anything that isn't the user's own message.
   const authorName = room?.getMember(sender)?.rawDisplayName || shortUserId(sender)
 
-  const imageMxc = content?.msgtype === 'm.image' && content?.url ? content.url : undefined
-  const fileMxc = content?.msgtype === 'm.file' && content?.url ? content.url : undefined
+  // Encrypted rooms carry the attachment as content.file (ciphertext url plus
+  // its key) instead of content.url; the mxc is the same kind of handle either way.
+  const mediaFile = !content?.url && typeof content?.file?.url === 'string' ? content.file as EncryptedFile : undefined
+  const mediaMxc: string | undefined = content?.url || mediaFile?.url || undefined
+  const imageMxc = content?.msgtype === 'm.image' ? mediaMxc : undefined
+  const fileMxc = content?.msgtype === 'm.file' ? mediaMxc : undefined
   // With a caption, body is the caption and filename the original name;
   // without one, body is the name.
   const mediaFilename = typeof content?.filename === 'string' ? content.filename : undefined
@@ -2908,6 +2938,7 @@ function eventToMessage(
     imageUrl,
     imageMxc,
     fileMxc,
+    mediaFile,
     fileName,
     fileMime,
     caption,

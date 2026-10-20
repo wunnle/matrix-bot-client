@@ -40,7 +40,7 @@ async function whoami(token) {
 /** The account this deployment serves. The in-flight promise is cached so
     concurrent cold readers share one lookup; cleared on failure. */
 let ownerPromise = null;
-function owner() {
+export function owner() {
   if (!ownerPromise) {
     ownerPromise = (ACCESS_TOKEN ? whoami(ACCESS_TOKEN) : Promise.resolve(null)).then((id) => {
       if (!id) ownerPromise = null;

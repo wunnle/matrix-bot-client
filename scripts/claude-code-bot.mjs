@@ -1,6 +1,8 @@
 // Agent bot — each Matrix room is a persistent coding-agent session.
 // Send `!spawn [path]` in any room it's in to create a fresh agent room. If a
 // room already holds that repo, the new one gets its own git worktree.
+// `!spawn --encrypted` makes it end-to-end encrypted; `!encrypt` in an agent
+// room turns encryption on later (permanent, so it asks first).
 // Which agent runs a room is the provider's business; see providers/index.mjs.
 // Run: node --env-file=scripts/.env scripts/claude-code-bot.mjs
 // Stop with Ctrl+C.
@@ -16,6 +18,8 @@ import { requiresHuman } from './approval-rules.mjs'
 import { detectLimitBlock } from './limit-block.mjs'
 import { createProcessSampler } from './process-usage.mjs'
 import { fetchPlanUsage, sameUsage, fetchCodexUsage, sameCodexUsage } from './plan-usage.mjs'
+import { encryptAttachment, decryptAttachment } from '../src/lib/attachmentCrypto.js'
+import { notifyEncrypted, wantsPush } from './bot-push.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
@@ -233,6 +237,13 @@ client.on(sdk.RoomEvent.MyMembership, async (room, membership) => {
 // Rooms that have asked to end and are awaiting confirmation. Ending is not
 // reversible from chat, and !end sits next to !model on the pill row.
 const pendingEnds = new Set()
+// Rooms asked to turn on encryption, awaiting confirmation: it is permanent.
+const pendingEncrypts = new Set()
+
+// m.room.encryption content for rooms this bot encrypts — at spawn with
+// `!spawn --encrypted`, or later with `!encrypt`. Megolm, with the spec's
+// default rotation.
+const ENCRYPTION_CONTENT = { algorithm: 'm.megolm.v1.aes-sha2' }
 
 // One approval on screen per room, the rest waiting behind it. The bookkeeping
 // lives in approval-queue.mjs; posting the card is the part that belongs here.
@@ -396,14 +407,30 @@ function roomForRequest({ roomId, sessionId }) {
 // stayed blank in the Bender room for so long without anyone chasing it.
 function sendRoomText(roomId, text, extra = {}) {
   const model = sessions[roomId]?.model
-  return client.sendMessage(roomId, {
+  const content = {
     msgtype: 'm.text',
     body: text,
     format: 'org.matrix.custom.html',
     formatted_body: markdownToHtml(text),
     ...(model ? { 'com.construct.model': model } : {}),
     ...extra,
+  }
+  return client.sendMessage(roomId, content).then((res) => {
+    pushIfEncrypted(roomId, res?.event_id, content)
+    return res
   })
+}
+
+// Every message this bot sends to an encrypted room also asks the gateway to
+// notify (scripts/bot-push.mjs): matrix.org can't read it, so its own push has
+// no text. Fire and forget — the message is already in the room either way,
+// and a turn must never wait on a notification.
+function pushIfEncrypted(roomId, eventId, content) {
+  if (!eventId || !wantsPush(content)) return
+  roomIsEncrypted(roomId).then((encrypted) => {
+    if (!encrypted) return
+    return notifyEncrypted({ roomId, eventId, content, roomName: client.getRoom(roomId)?.name, log })
+  }).catch((e) => log(`Encrypted-room push for ${eventId} failed: ${e.message}`))
 }
 
 // Machine-marked so a turn's tool lines never push or count as unread;
@@ -482,8 +509,74 @@ function escapeHtml(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+// Whether messages to this room are megolm-encrypted. Rust crypto's answer,
+// which also covers a room whose encryption it has pinned; room state is the
+// fallback should crypto ever be unavailable.
+async function roomIsEncrypted(roomId) {
+  try {
+    const crypto = client.getCrypto()
+    if (crypto) return await crypto.isEncryptionEnabledInRoom(roomId)
+  } catch {}
+  return client.getRoom(roomId)?.hasEncryptionStateEvent() ?? false
+}
+
+// Posts a local image into a room. In an encrypted room the file is encrypted
+// before upload (content.file), so matrix.org only ever holds ciphertext, and
+// the event itself goes out through this process's megolm session — the only
+// one this device has, which is why scripts/send-image.mjs hands encrypted
+// rooms to us instead of posting itself.
+async function sendImageFile(roomId, file, caption, mimetype) {
+  const data = fs.readFileSync(file)
+  const body = caption || path.basename(file)
+  const info = { mimetype, size: data.length }
+  let media
+  if (await roomIsEncrypted(roomId)) {
+    const sealed = await encryptAttachment(data)
+    const up = await client.uploadContent(Buffer.from(sealed.data), {
+      type: 'application/octet-stream', includeFilename: false, rawResponse: false,
+    })
+    media = { file: { ...sealed.file, url: up.content_uri } }
+  } else {
+    const up = await client.uploadContent(data, { name: path.basename(file), type: mimetype, rawResponse: false })
+    media = { url: up.content_uri }
+  }
+  const content = { msgtype: 'm.image', body, ...media, info }
+  const res = await client.sendMessage(roomId, content)
+  pushIfEncrypted(roomId, res.event_id, content)
+  return { eventId: res.event_id, encrypted: 'file' in media }
+}
+
+// POST /send-image {roomId, file, caption, mimetype} from scripts/send-image.mjs.
+function handleSendImage(req, res) {
+  let raw = ''
+  req.on('data', (c) => { raw += c })
+  req.on('end', async () => {
+    const reply = (status, payload) => {
+      res.writeHead(status, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(payload))
+    }
+    let payload
+    try { payload = JSON.parse(raw) } catch { return reply(400, { error: 'malformed request' }) }
+    const { roomId, file, caption, mimetype } = payload ?? {}
+    if (typeof roomId !== 'string' || typeof file !== 'string' || typeof mimetype !== 'string' || !mimetype.startsWith('image/')) {
+      return reply(400, { error: 'roomId, file and an image mimetype are required' })
+    }
+    if (client.getRoom(roomId)?.getMyMembership() !== 'join') return reply(404, { error: `not in ${roomId}` })
+    if (!path.isAbsolute(file) || !fs.existsSync(file)) return reply(400, { error: `no such file: ${file}` })
+    try {
+      const sent = await sendImageFile(roomId, file, typeof caption === 'string' ? caption : '', mimetype)
+      log(`[${roomId}] sent image ${file}${sent.encrypted ? ' (encrypted)' : ''}`)
+      reply(200, sent)
+    } catch (e) {
+      log(`[${roomId}] could not send image ${file}: ${e.message}`)
+      reply(502, { error: e.message })
+    }
+  })
+}
+
 function startApprovalBroker() {
   const server = http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url.startsWith('/send-image')) return handleSendImage(req, res)
     if (req.method !== 'POST' || !req.url.startsWith('/approve')) {
       res.writeHead(404).end()
       return
@@ -893,7 +986,7 @@ async function removeWorktree(dir, branch) {
   return { removed: true, branchDeleted }
 }
 
-async function spawnRoom(cwd, model, provider, worktreeFrom = null) {
+async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted = false } = {}) {
   // The name is needed before the room exists: it names the worktree and its
   // branch, and the room's topic has to carry the path we actually bind to.
   const name = nextRoomName()
@@ -942,14 +1035,18 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null) {
       users: { [USER_ID]: 100, ...(OWNER_ID ? { [OWNER_ID]: 100 } : {}) },
     },
     invite: OWNER_ID ? [OWNER_ID] : [],
-    // Deliberately NOT encrypted. With megolm the homeserver has no plaintext,
-    // so the push it hands the gateway carries no content.body and
-    // api/matrix-push.js drops it as a badge-only update — agent rooms never
-    // pushed. These are bot rooms on a homeserver we control, so plaintext is
-    // the right trade for working notifications.
-    // The cast's first icon, so the invite never shows a bare letter; the
-    // room's own pick needs its id, so it follows just below.
+    // Unencrypted unless asked (`!spawn --encrypted`). The homeserver is
+    // matrix.org, not one we run, so a plaintext room's every message and
+    // attachment sits readable there. Encryption used to cost notifications —
+    // matrix.org can't read a megolm event, so its push carries no text — but
+    // the bot now sends its own pushes for encrypted rooms
+    // (scripts/bot-push.mjs → api/_bot-push.js) and both ends encrypt
+    // attachments, so the trade is gone. Room state (name, topic, avatar,
+    // com.construct.* events) is never encrypted either way.
     initial_state: [
+      ...(encrypted ? [{ type: 'm.room.encryption', state_key: '', content: ENCRYPTION_CONTENT }] : []),
+      // The cast's first icon, so the invite never shows a bare letter; the
+      // room's own pick needs its id, so it follows just below.
       ...(avatarMxc[provider]?.length ? [{
         type: 'm.room.avatar',
         state_key: '',
@@ -1009,23 +1106,27 @@ const MEDIA_EXT = {
 // Downloads an m.image/m.file attachment and returns its local path.
 async function downloadAttachment(event) {
   const content = event.getContent()
-  // Encrypted attachments arrive as content.file with the AES keys inline and
-  // need a separate decrypt step; the Construct client uploads in the clear, so
-  // this is a diagnostic rather than a path we support.
-  if (content.file && !content.url) throw new Error('encrypted attachment (unsupported)')
-  if (!content.url) throw new Error('no media url')
+  // Encrypted rooms carry the attachment as content.file: the mxc holds only
+  // ciphertext, and the AES key, IV and hash ride inside the megolm-encrypted
+  // event. Decrypted here, so the agent sees the same file either way.
+  const sealed = !content.url && content.file?.url ? content.file : null
+  const mxc = content.url ?? sealed?.url
+  if (!mxc) throw new Error('no media url')
 
   // Media is authenticated on modern homeservers (MSC3916): the legacy
   // unauthenticated /_matrix/media/ route 404s, so the token must be sent.
-  const url = client.mxcUrlToHttp(content.url, null, null, null, false, true, true)
-  if (!url) throw new Error(`unusable media url: ${content.url}`)
+  const url = client.mxcUrlToHttp(mxc, null, null, null, false, true, true)
+  if (!url) throw new Error(`unusable media url: ${mxc}`)
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${client.getAccessToken()}` },
   })
   if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`)
-  const buf = Buffer.from(await res.arrayBuffer())
+  const raw = Buffer.from(await res.arrayBuffer())
+  const buf = sealed ? Buffer.from(await decryptAttachment(raw, sealed)) : raw
 
-  const mime = content.info?.mimetype ?? res.headers.get('content-type') ?? ''
+  // An encrypted upload's served content-type is octet-stream by design, so
+  // only the event's own mimetype says what it is.
+  const mime = content.info?.mimetype ?? (sealed ? '' : res.headers.get('content-type')) ?? ''
   // Trust the sender's filename for its extension only, never for the path —
   // a body of "../../x" would otherwise escape MEDIA_DIR.
   const ext = MEDIA_EXT[mime.split(';')[0].trim()] ?? path.extname(content.body ?? '') ?? ''
@@ -1319,9 +1420,13 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   // an approval answer and can fall through to the turn path, where promptFor
   // downloads it and points the agent at the file.
 
-  // !spawn [path] [model] — both optional, model recognised by being a known name.
+  // !spawn [--encrypted] [path] [model] — all optional, model recognised by
+  // being a known name. --encrypted (or -e) makes the room end-to-end
+  // encrypted from its first event; see spawnRoom.
   if (body.startsWith('!spawn')) {
-    const parts = body.slice('!spawn'.length).trim().split(/\s+/).filter(Boolean)
+    let parts = body.slice('!spawn'.length).trim().split(/\s+/).filter(Boolean)
+    const encrypted = parts.some((p) => p === '--encrypted' || p === '-e')
+    parts = parts.filter((p) => p !== '--encrypted' && p !== '-e')
     // The model name identifies its backend, so naming one is also how a room
     // picks a provider — no extra argument needed.
     let { provider, model } = DEFAULT
@@ -1361,11 +1466,11 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
     pendingSpawns.delete(`${roomId}:${cwd}`)
     try {
-      const spawned = await spawnRoom(cwd, model, provider, sharing.length > 0 ? root : null)
+      const spawned = await spawnRoom(cwd, model, provider, sharing.length > 0 ? root : null, { encrypted })
       const where = spawned.branch
         ? `a worktree of ${path.basename(cwd)} on \`${spawned.branch}\``
         : path.basename(cwd)
-      await sendRoomText(roomId, `Spawned ${where} on ${modelLabel(model)} — check your invites.`)
+      await sendRoomText(roomId, `Spawned ${encrypted ? 'an encrypted room for ' : ''}${where} on ${modelLabel(model)} — check your invites.`)
       // A requested worktree that git refused still spawns, in the shared tree.
       if (sharing.length > 0 && root && !spawned.branch) {
         await sendRoomText(roomId,
@@ -1555,6 +1660,42 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     await sendRoomText(roomId, '↺ Fresh session. Directory and model are unchanged; I have no memory of this conversation now.'
       + (auto ? ' Auto mode is off again.' : ''))
     return
+  }
+
+  // !encrypt — turn on end-to-end encryption for this room. Confirmed, because
+  // Matrix offers no way back: once m.room.encryption is set it stays set.
+  if (body === '!encrypt') {
+    if (await roomIsEncrypted(roomId)) {
+      await sendRoomText(roomId, '🔒 This room is already end-to-end encrypted.')
+      return
+    }
+    pendingEncrypts.add(roomId)
+    await sendRoomText(roomId,
+      'Turn on end-to-end encryption here? It **cannot be turned off** again. ' +
+      'New messages and attachments become unreadable to matrix.org; ' +
+      'earlier messages, the room name, topic and other room state stay as they are.' +
+      '\n\n[[Confirm encrypt]] [[Cancel]]')
+    return
+  }
+
+  if (pendingEncrypts.has(roomId)) {
+    const reply = body.toLowerCase()
+    if (reply === 'confirm encrypt') {
+      pendingEncrypts.delete(roomId)
+      try {
+        await client.sendStateEvent(roomId, 'm.room.encryption', ENCRYPTION_CONTENT, '')
+        log(`Enabled encryption in ${roomId}`)
+        await sendRoomText(roomId, '🔒 Encryption is on. Messages from now on are end-to-end encrypted.')
+      } catch (e) {
+        await sendRoomText(roomId, `Could not turn on encryption: ${e.message}`)
+      }
+      return
+    }
+    if (reply === 'cancel') {
+      pendingEncrypts.delete(roomId)
+      await sendRoomText(roomId, 'Cancelled — encryption stays off.')
+      return
+    }
   }
 
   // !end — unbind the room and leave it. Confirmed because it cannot be undone

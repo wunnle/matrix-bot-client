@@ -1,4 +1,5 @@
 import type { MatrixClient } from 'matrix-js-sdk'
+import { decryptAttachment, type EncryptedFile } from './attachmentCrypto.js'
 
 const cache = new Map<string, string>()
 const base64Cache = new Map<string, string>()
@@ -31,14 +32,28 @@ export async function resolveMediaBase64(
   }
 }
 
+/** An encrypted attachment (`content.file` from an encrypted room). The
+ *  homeserver holds only ciphertext, so it can't make thumbnails: always
+ *  fetched full size, then verified and decrypted here. */
+export interface EncryptedMedia {
+  file: EncryptedFile
+  mimetype?: string
+}
+
 export async function resolveMediaUrl(
   client: MatrixClient,
   mxc: string,
   width?: number,
   height?: number,
   resizeMethod?: string,
+  encrypted?: EncryptedMedia,
 ): Promise<string | null> {
   if (!mxc) return null
+  if (encrypted) {
+    width = undefined
+    height = undefined
+    resizeMethod = undefined
+  }
   const key = `${mxc}:${width}:${height}:${resizeMethod}`
   if (cache.has(key)) return cache.get(key)!
 
@@ -50,7 +65,11 @@ export async function resolveMediaUrl(
       headers: { Authorization: `Bearer ${client.getAccessToken()}` },
     })
     if (!res.ok) return null
-    const blob = await res.blob()
+    const blob = encrypted
+      ? new Blob([await decryptAttachment(await res.arrayBuffer(), encrypted.file)], {
+          type: encrypted.mimetype || 'application/octet-stream',
+        })
+      : await res.blob()
     const objectUrl = URL.createObjectURL(blob)
     cache.set(key, objectUrl)
     return objectUrl

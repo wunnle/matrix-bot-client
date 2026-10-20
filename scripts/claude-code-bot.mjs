@@ -17,6 +17,7 @@ import { detectLimitBlock } from './limit-block.mjs'
 import { createProcessSampler } from './process-usage.mjs'
 import { fetchPlanUsage, sameUsage, fetchCodexUsage, sameCodexUsage } from './plan-usage.mjs'
 import { encryptAttachment, decryptAttachment } from '../src/lib/attachmentCrypto.js'
+import { notifyEncrypted, wantsPush } from './bot-push.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
@@ -397,14 +398,30 @@ function roomForRequest({ roomId, sessionId }) {
 // stayed blank in the Bender room for so long without anyone chasing it.
 function sendRoomText(roomId, text, extra = {}) {
   const model = sessions[roomId]?.model
-  return client.sendMessage(roomId, {
+  const content = {
     msgtype: 'm.text',
     body: text,
     format: 'org.matrix.custom.html',
     formatted_body: markdownToHtml(text),
     ...(model ? { 'com.construct.model': model } : {}),
     ...extra,
+  }
+  return client.sendMessage(roomId, content).then((res) => {
+    pushIfEncrypted(roomId, res?.event_id, content)
+    return res
   })
+}
+
+// Every message this bot sends to an encrypted room also asks the gateway to
+// notify (scripts/bot-push.mjs): matrix.org can't read it, so its own push has
+// no text. Fire and forget — the message is already in the room either way,
+// and a turn must never wait on a notification.
+function pushIfEncrypted(roomId, eventId, content) {
+  if (!eventId || !wantsPush(content)) return
+  roomIsEncrypted(roomId).then((encrypted) => {
+    if (!encrypted) return
+    return notifyEncrypted({ roomId, eventId, content, roomName: client.getRoom(roomId)?.name, log })
+  }).catch((e) => log(`Encrypted-room push for ${eventId} failed: ${e.message}`))
 }
 
 // Machine-marked so a turn's tool lines never push or count as unread;
@@ -514,7 +531,9 @@ async function sendImageFile(roomId, file, caption, mimetype) {
     const up = await client.uploadContent(data, { name: path.basename(file), type: mimetype, rawResponse: false })
     media = { url: up.content_uri }
   }
-  const res = await client.sendMessage(roomId, { msgtype: 'm.image', body, ...media, info })
+  const content = { msgtype: 'm.image', body, ...media, info }
+  const res = await client.sendMessage(roomId, content)
+  pushIfEncrypted(roomId, res.event_id, content)
   return { eventId: res.event_id, encrypted: 'file' in media }
 }
 

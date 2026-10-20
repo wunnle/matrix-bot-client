@@ -16,6 +16,7 @@ import { requiresHuman } from './approval-rules.mjs'
 import { detectLimitBlock } from './limit-block.mjs'
 import { createProcessSampler } from './process-usage.mjs'
 import { fetchPlanUsage, sameUsage, fetchCodexUsage, sameCodexUsage } from './plan-usage.mjs'
+import { encryptAttachment, decryptAttachment } from '../src/lib/attachmentCrypto.js'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
@@ -482,8 +483,72 @@ function escapeHtml(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+// Whether messages to this room are megolm-encrypted. Rust crypto's answer,
+// which also covers a room whose encryption it has pinned; room state is the
+// fallback should crypto ever be unavailable.
+async function roomIsEncrypted(roomId) {
+  try {
+    const crypto = client.getCrypto()
+    if (crypto) return await crypto.isEncryptionEnabledInRoom(roomId)
+  } catch {}
+  return client.getRoom(roomId)?.hasEncryptionStateEvent() ?? false
+}
+
+// Posts a local image into a room. In an encrypted room the file is encrypted
+// before upload (content.file), so matrix.org only ever holds ciphertext, and
+// the event itself goes out through this process's megolm session — the only
+// one this device has, which is why scripts/send-image.mjs hands encrypted
+// rooms to us instead of posting itself.
+async function sendImageFile(roomId, file, caption, mimetype) {
+  const data = fs.readFileSync(file)
+  const body = caption || path.basename(file)
+  const info = { mimetype, size: data.length }
+  let media
+  if (await roomIsEncrypted(roomId)) {
+    const sealed = await encryptAttachment(data)
+    const up = await client.uploadContent(Buffer.from(sealed.data), {
+      type: 'application/octet-stream', includeFilename: false, rawResponse: false,
+    })
+    media = { file: { ...sealed.file, url: up.content_uri } }
+  } else {
+    const up = await client.uploadContent(data, { name: path.basename(file), type: mimetype, rawResponse: false })
+    media = { url: up.content_uri }
+  }
+  const res = await client.sendMessage(roomId, { msgtype: 'm.image', body, ...media, info })
+  return { eventId: res.event_id, encrypted: 'file' in media }
+}
+
+// POST /send-image {roomId, file, caption, mimetype} from scripts/send-image.mjs.
+function handleSendImage(req, res) {
+  let raw = ''
+  req.on('data', (c) => { raw += c })
+  req.on('end', async () => {
+    const reply = (status, payload) => {
+      res.writeHead(status, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(payload))
+    }
+    let payload
+    try { payload = JSON.parse(raw) } catch { return reply(400, { error: 'malformed request' }) }
+    const { roomId, file, caption, mimetype } = payload ?? {}
+    if (typeof roomId !== 'string' || typeof file !== 'string' || typeof mimetype !== 'string' || !mimetype.startsWith('image/')) {
+      return reply(400, { error: 'roomId, file and an image mimetype are required' })
+    }
+    if (client.getRoom(roomId)?.getMyMembership() !== 'join') return reply(404, { error: `not in ${roomId}` })
+    if (!path.isAbsolute(file) || !fs.existsSync(file)) return reply(400, { error: `no such file: ${file}` })
+    try {
+      const sent = await sendImageFile(roomId, file, typeof caption === 'string' ? caption : '', mimetype)
+      log(`[${roomId}] sent image ${file}${sent.encrypted ? ' (encrypted)' : ''}`)
+      reply(200, sent)
+    } catch (e) {
+      log(`[${roomId}] could not send image ${file}: ${e.message}`)
+      reply(502, { error: e.message })
+    }
+  })
+}
+
 function startApprovalBroker() {
   const server = http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url.startsWith('/send-image')) return handleSendImage(req, res)
     if (req.method !== 'POST' || !req.url.startsWith('/approve')) {
       res.writeHead(404).end()
       return
@@ -1009,23 +1074,27 @@ const MEDIA_EXT = {
 // Downloads an m.image/m.file attachment and returns its local path.
 async function downloadAttachment(event) {
   const content = event.getContent()
-  // Encrypted attachments arrive as content.file with the AES keys inline and
-  // need a separate decrypt step; the Construct client uploads in the clear, so
-  // this is a diagnostic rather than a path we support.
-  if (content.file && !content.url) throw new Error('encrypted attachment (unsupported)')
-  if (!content.url) throw new Error('no media url')
+  // Encrypted rooms carry the attachment as content.file: the mxc holds only
+  // ciphertext, and the AES key, IV and hash ride inside the megolm-encrypted
+  // event. Decrypted here, so the agent sees the same file either way.
+  const sealed = !content.url && content.file?.url ? content.file : null
+  const mxc = content.url ?? sealed?.url
+  if (!mxc) throw new Error('no media url')
 
   // Media is authenticated on modern homeservers (MSC3916): the legacy
   // unauthenticated /_matrix/media/ route 404s, so the token must be sent.
-  const url = client.mxcUrlToHttp(content.url, null, null, null, false, true, true)
-  if (!url) throw new Error(`unusable media url: ${content.url}`)
+  const url = client.mxcUrlToHttp(mxc, null, null, null, false, true, true)
+  if (!url) throw new Error(`unusable media url: ${mxc}`)
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${client.getAccessToken()}` },
   })
   if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`)
-  const buf = Buffer.from(await res.arrayBuffer())
+  const raw = Buffer.from(await res.arrayBuffer())
+  const buf = sealed ? Buffer.from(await decryptAttachment(raw, sealed)) : raw
 
-  const mime = content.info?.mimetype ?? res.headers.get('content-type') ?? ''
+  // An encrypted upload's served content-type is octet-stream by design, so
+  // only the event's own mimetype says what it is.
+  const mime = content.info?.mimetype ?? (sealed ? '' : res.headers.get('content-type')) ?? ''
   // Trust the sender's filename for its extension only, never for the path —
   // a body of "../../x" would otherwise escape MEDIA_DIR.
   const ext = MEDIA_EXT[mime.split(';')[0].trim()] ?? path.extname(content.body ?? '') ?? ''

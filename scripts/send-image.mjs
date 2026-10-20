@@ -28,6 +28,33 @@ if (!mimetype) die(`Not an image extension this sends: ${ext || '(none)'}`)
 
 const homeserver = process.env.HOMESERVER ?? 'https://matrix.org'
 const auth = { authorization: `Bearer ${access_token}` }
+
+// An encrypted room needs the event megolm-encrypted, and only the running bot
+// holds this device's crypto store, so it does the upload and send (encrypting
+// the file too). There is deliberately no plaintext fallback: if the bot can't
+// be reached the image is not sent.
+const encryption = await withRetry(() => fetch(
+  `${homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.encryption/`,
+  { headers: auth },
+))
+if (encryption.ok) {
+  const port = Number(process.env.AGENT_APPROVAL_PORT ?? 8787)
+  let res
+  try {
+    res = await fetch(`http://127.0.0.1:${port}/send-image`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ roomId, file: path.resolve(file), caption, mimetype }),
+    })
+  } catch (e) {
+    die(`Encrypted room, and the bot is not reachable on 127.0.0.1:${port} (${e.message}); not sending in the clear.`)
+  }
+  if (!res.ok) die(`Bot could not send the image (${res.status}): ${await res.text()}`)
+  console.log(`Sent ${file} → ${roomId} (encrypted)`)
+  process.exit(0)
+}
+if (encryption.status !== 404) die(`Could not tell whether ${roomId} is encrypted (${encryption.status}); not sending.`)
+
 const data = fs.readFileSync(file)
 
 const upload = await withRetry(() => fetch(
@@ -37,9 +64,9 @@ const upload = await withRetry(() => fetch(
 if (!upload.ok) die(`Upload failed (${upload.status}): ${await upload.text()}`)
 const { content_uri } = await upload.json()
 
-// Unencrypted m.image. Agent rooms carry no m.room.encryption state; if that
-// ever changes this has to go through the bot's crypto store instead. The
-// txnId stays fixed across retries, so a retried send cannot post twice.
+// Unencrypted m.image — the room has no m.room.encryption state (encrypted
+// rooms went to the bot above). The txnId stays fixed across retries, so a
+// retried send cannot post twice.
 const txnId = `img-${Date.now()}`
 const send = await withRetry(() => fetch(
   `${homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/send/m.room.message/${txnId}`,

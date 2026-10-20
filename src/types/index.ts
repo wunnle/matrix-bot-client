@@ -1,3 +1,5 @@
+import type { EncryptedFile } from '../lib/attachmentCrypto.js'
+
 export interface RoomConfig {
   label?: string
   pills?: string[]
@@ -68,6 +70,9 @@ export interface Message {
   imageUrl?: string
   imageMxc?: string
   fileMxc?: string
+  // Set when the attachment is encrypted (content.file): imageMxc/fileMxc is
+  // then its ciphertext, and this holds the key to decrypt it.
+  mediaFile?: EncryptedFile
   fileName?: string
   fileMime?: string
   // Text sent with an image or file, in the same event.

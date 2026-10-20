@@ -1,6 +1,8 @@
 // Agent bot — each Matrix room is a persistent coding-agent session.
 // Send `!spawn [path]` in any room it's in to create a fresh agent room. If a
 // room already holds that repo, the new one gets its own git worktree.
+// `!spawn --encrypted` makes it end-to-end encrypted; `!encrypt` in an agent
+// room turns encryption on later (permanent, so it asks first).
 // Which agent runs a room is the provider's business; see providers/index.mjs.
 // Run: node --env-file=scripts/.env scripts/claude-code-bot.mjs
 // Stop with Ctrl+C.
@@ -235,6 +237,13 @@ client.on(sdk.RoomEvent.MyMembership, async (room, membership) => {
 // Rooms that have asked to end and are awaiting confirmation. Ending is not
 // reversible from chat, and !end sits next to !model on the pill row.
 const pendingEnds = new Set()
+// Rooms asked to turn on encryption, awaiting confirmation: it is permanent.
+const pendingEncrypts = new Set()
+
+// m.room.encryption content for rooms this bot encrypts — at spawn with
+// `!spawn --encrypted`, or later with `!encrypt`. Megolm, with the spec's
+// default rotation.
+const ENCRYPTION_CONTENT = { algorithm: 'm.megolm.v1.aes-sha2' }
 
 // One approval on screen per room, the rest waiting behind it. The bookkeeping
 // lives in approval-queue.mjs; posting the card is the part that belongs here.
@@ -977,7 +986,7 @@ async function removeWorktree(dir, branch) {
   return { removed: true, branchDeleted }
 }
 
-async function spawnRoom(cwd, model, provider, worktreeFrom = null) {
+async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted = false } = {}) {
   // The name is needed before the room exists: it names the worktree and its
   // branch, and the room's topic has to carry the path we actually bind to.
   const name = nextRoomName()
@@ -1026,14 +1035,18 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null) {
       users: { [USER_ID]: 100, ...(OWNER_ID ? { [OWNER_ID]: 100 } : {}) },
     },
     invite: OWNER_ID ? [OWNER_ID] : [],
-    // Deliberately NOT encrypted. With megolm the homeserver has no plaintext,
-    // so the push it hands the gateway carries no content.body and
-    // api/matrix-push.js drops it as a badge-only update — agent rooms never
-    // pushed. These are bot rooms on a homeserver we control, so plaintext is
-    // the right trade for working notifications.
-    // The cast's first icon, so the invite never shows a bare letter; the
-    // room's own pick needs its id, so it follows just below.
+    // Unencrypted unless asked (`!spawn --encrypted`). The homeserver is
+    // matrix.org, not one we run, so a plaintext room's every message and
+    // attachment sits readable there. Encryption used to cost notifications —
+    // matrix.org can't read a megolm event, so its push carries no text — but
+    // the bot now sends its own pushes for encrypted rooms
+    // (scripts/bot-push.mjs → api/_bot-push.js) and both ends encrypt
+    // attachments, so the trade is gone. Room state (name, topic, avatar,
+    // com.construct.* events) is never encrypted either way.
     initial_state: [
+      ...(encrypted ? [{ type: 'm.room.encryption', state_key: '', content: ENCRYPTION_CONTENT }] : []),
+      // The cast's first icon, so the invite never shows a bare letter; the
+      // room's own pick needs its id, so it follows just below.
       ...(avatarMxc[provider]?.length ? [{
         type: 'm.room.avatar',
         state_key: '',
@@ -1405,9 +1418,13 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   // an approval answer and can fall through to the turn path, where promptFor
   // downloads it and points the agent at the file.
 
-  // !spawn [path] [model] — both optional, model recognised by being a known name.
+  // !spawn [--encrypted] [path] [model] — all optional, model recognised by
+  // being a known name. --encrypted (or -e) makes the room end-to-end
+  // encrypted from its first event; see spawnRoom.
   if (body.startsWith('!spawn')) {
-    const parts = body.slice('!spawn'.length).trim().split(/\s+/).filter(Boolean)
+    let parts = body.slice('!spawn'.length).trim().split(/\s+/).filter(Boolean)
+    const encrypted = parts.some((p) => p === '--encrypted' || p === '-e')
+    parts = parts.filter((p) => p !== '--encrypted' && p !== '-e')
     // The model name identifies its backend, so naming one is also how a room
     // picks a provider — no extra argument needed.
     let { provider, model } = DEFAULT
@@ -1447,11 +1464,11 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
     pendingSpawns.delete(`${roomId}:${cwd}`)
     try {
-      const spawned = await spawnRoom(cwd, model, provider, sharing.length > 0 ? root : null)
+      const spawned = await spawnRoom(cwd, model, provider, sharing.length > 0 ? root : null, { encrypted })
       const where = spawned.branch
         ? `a worktree of ${path.basename(cwd)} on \`${spawned.branch}\``
         : path.basename(cwd)
-      await sendRoomText(roomId, `Spawned ${where} on ${modelLabel(model)} — check your invites.`)
+      await sendRoomText(roomId, `Spawned ${encrypted ? 'an encrypted room for ' : ''}${where} on ${modelLabel(model)} — check your invites.`)
       // A requested worktree that git refused still spawns, in the shared tree.
       if (sharing.length > 0 && root && !spawned.branch) {
         await sendRoomText(roomId,
@@ -1641,6 +1658,42 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     await sendRoomText(roomId, '↺ Fresh session. Directory and model are unchanged; I have no memory of this conversation now.'
       + (auto ? ' Auto mode is off again.' : ''))
     return
+  }
+
+  // !encrypt — turn on end-to-end encryption for this room. Confirmed, because
+  // Matrix offers no way back: once m.room.encryption is set it stays set.
+  if (body === '!encrypt') {
+    if (await roomIsEncrypted(roomId)) {
+      await sendRoomText(roomId, '🔒 This room is already end-to-end encrypted.')
+      return
+    }
+    pendingEncrypts.add(roomId)
+    await sendRoomText(roomId,
+      'Turn on end-to-end encryption here? It **cannot be turned off** again. ' +
+      'New messages and attachments become unreadable to matrix.org; ' +
+      'earlier messages, the room name, topic and other room state stay as they are.' +
+      '\n\n[[Confirm encrypt]] [[Cancel]]')
+    return
+  }
+
+  if (pendingEncrypts.has(roomId)) {
+    const reply = body.toLowerCase()
+    if (reply === 'confirm encrypt') {
+      pendingEncrypts.delete(roomId)
+      try {
+        await client.sendStateEvent(roomId, 'm.room.encryption', ENCRYPTION_CONTENT, '')
+        log(`Enabled encryption in ${roomId}`)
+        await sendRoomText(roomId, '🔒 Encryption is on. Messages from now on are end-to-end encrypted.')
+      } catch (e) {
+        await sendRoomText(roomId, `Could not turn on encryption: ${e.message}`)
+      }
+      return
+    }
+    if (reply === 'cancel') {
+      pendingEncrypts.delete(roomId)
+      await sendRoomText(roomId, 'Cancelled — encryption stays off.')
+      return
+    }
   }
 
   // !end — unbind the room and leave it. Confirmed because it cannot be undone

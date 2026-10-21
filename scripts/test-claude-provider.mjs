@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { claude, progressForToolUse, mainAgentBlocks } from './providers/claude.mjs'
+import { claude, progressForToolUse, mainAgentBlocks, createSubagentTracker } from './providers/claude.mjs'
 
 // Progress carries the agent's own description and file names, never raw
 // commands, patterns, queries or URLs.
@@ -52,6 +52,47 @@ assert.deepEqual(mainAgentBlocks(assistant(blocks)), blocks)
 assert.deepEqual(mainAgentBlocks(assistant(blocks, { parent_tool_use_id: 'task1' })), [])
 assert.deepEqual(mainAgentBlocks({ type: 'user', message: { content: [] } }), [])
 
+// Subagent cards follow the event shapes a real 2.1.306 stream carries.
+{
+  const snaps = []
+  const t = createSubagentTracker({ cwd: '/repo', onChange: (c) => snaps.push(c) })
+  const spawnCall = assistant([{ type: 'tool_use', id: 'A', name: 'Agent', input: { description: 'Survey the repo', prompt: 'secret plan', subagent_type: 'Explore', run_in_background: true } }])
+  assert.equal(t.handle(spawnCall), false, 'the main agent still sees its own call')
+  assert.equal(snaps.at(-1).status, 'running')
+  assert.equal(snaps.at(-1).description, 'Survey the repo')
+  assert.ok(!JSON.stringify(snaps).includes('secret plan'), 'the prompt never reaches the card')
+  assert.equal(t.handle({ type: 'system', subtype: 'task_started', tool_use_id: 'A', subagent_type: 'Explore', is_backgrounded: true }), true)
+  // The subagent's own calls are lines, with the same redaction as the main agent's.
+  assert.equal(t.handle(assistant([{ type: 'tool_use', id: 'x1', name: 'Bash', input: { command: 'TOKEN=s ls', description: 'List files' } }], { parent_tool_use_id: 'A' })), true)
+  assert.deepEqual(snaps.at(-1).lines, [{ emoji: '💻', tool: 'terminal', content: 'List files' }])
+  // A nested subagent's events land on the outer card.
+  t.handle(assistant([{ type: 'tool_use', id: 'N', name: 'Task', input: { description: 'Dig deeper' } }], { parent_tool_use_id: 'A' }))
+  t.handle(assistant([{ type: 'tool_use', id: 'x2', name: 'Read', input: { file_path: '/repo/src/a.ts' } }], { parent_tool_use_id: 'N' }))
+  assert.deepEqual(snaps.at(-1).lines.map((l) => l.content), ['List files', 'Dig deeper', 'src/a.ts'])
+  t.handle({ type: 'system', subtype: 'task_progress', tool_use_id: 'A', usage: { total_tokens: 1200, tool_uses: 3, duration_ms: 1793.6 } })
+  assert.equal(snaps.at(-1).durationMs, 1794, 'integers only: Matrix rejects floats')
+  t.handle({ type: 'system', subtype: 'task_notification', tool_use_id: 'A', status: 'completed', summary: ' 64 files ', usage: { total_tokens: 1500, tool_uses: 3, duration_ms: 3538 } })
+  assert.deepEqual(
+    (({ status, summary, tokens, toolUses, agentType, background }) => ({ status, summary, tokens, toolUses, agentType, background }))(snaps.at(-1)),
+    { status: 'completed', summary: '64 files', tokens: 1500, toolUses: 3, agentType: 'Explore', background: true },
+  )
+  // Events of subagents it never saw start are left alone; a nested task's own
+  // system events don't touch the outer card.
+  assert.equal(t.handle({ type: 'system', subtype: 'task_notification', tool_use_id: 'zzz', status: 'completed' }), false)
+  assert.equal(t.handle({ type: 'system', subtype: 'task_notification', tool_use_id: 'N', status: 'failed' }), false)
+  assert.equal(snaps.at(-1).status, 'completed')
+  // One still running when the process goes away is marked stopped; finished ones stay.
+  t.handle(assistant([{ type: 'tool_use', id: 'B', name: 'Task', input: { description: 'Second' } }]))
+  t.handle({ type: 'system', subtype: 'task_notification', tool_use_id: 'B', status: 'killed' })
+  assert.equal(snaps.at(-1).status, 'stopped', 'unknown statuses never read as success')
+  t.handle(assistant([{ type: 'tool_use', id: 'C', name: 'Task', input: {} }]))
+  const before = snaps.length
+  t.close()
+  assert.equal(snaps.length, before + 1)
+  assert.deepEqual([snaps.at(-1).id, snaps.at(-1).status, snaps.at(-1).description], ['C', 'stopped', 'Subagent'])
+  assert.ok(!/\.\d/.test(JSON.stringify(snaps)), 'no floats anywhere')
+}
+
 // End to end against a fake `claude` that streams the way the real one does.
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-claude-'))
 const fake = path.join(dir, 'claude')
@@ -59,6 +100,18 @@ fs.writeFileSync(fake, `#!/usr/bin/env node
 const mode = process.env.FAKE_CLAUDE_MODE
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n')
 if (mode === 'hang') { out({ type: 'system', subtype: 'init', session_id: 's-hang' }); setInterval(() => {}, 1000) }
+else if (mode === 'subagent') {
+  // Background subagent: the turn ends first, its report starts a second one.
+  const call = { type: 'tool_use', id: 'S', name: 'Agent', input: { description: 'Count files', subagent_type: 'general-purpose' } }
+  out({ type: 'assistant', parent_tool_use_id: null, message: { content: [call] } })
+  out({ type: 'system', subtype: 'task_started', tool_use_id: 'S', subagent_type: 'general-purpose', is_backgrounded: true })
+  out({ type: 'assistant', parent_tool_use_id: 'S', message: { content: [{ type: 'tool_use', id: 'k', name: 'Bash', input: { description: 'Count' } }] } })
+  out({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'text', text: 'Running in the background.' }] } })
+  out({ type: 'result', subtype: 'success', result: 'Running in the background.', is_error: false, session_id: 's2' })
+  out({ type: 'system', subtype: 'task_notification', tool_use_id: 'S', status: 'completed', summary: '64' })
+  out({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'text', text: '64' }] } })
+  out({ type: 'result', subtype: 'success', result: '64', is_error: false, session_id: 's2' })
+}
 else if (mode === 'crash') { process.stderr.write('boom\\n'); process.exit(3) }
 else if (mode === 'chat') {
   // Like the real CLI with stream-json input: a message waiting at a tool
@@ -150,6 +203,23 @@ const base = { prompt: 'hi', cwd: dir, model: 'm', sessionId: null, approval }
   const fail = () => { throw new Error('x') }
   const res = await claude.run({ ...base, roomId: '!throw', timeoutMs: 10000, onProgress: fail, onText: fail })
   assert.equal(res.text, 'Done.')
+}
+
+process.env.FAKE_CLAUDE_MODE = 'subagent'
+{
+  const seen = []
+  const res = await claude.run({
+    ...base, roomId: '!sub', timeoutMs: 10000,
+    onProgress: (p) => seen.push(`tool:${p.tool}`),
+    onText: (t) => seen.push(`text:${t}`),
+    onSubagent: (c) => seen.push(`card:${c.status}:${c.lines.length}`),
+  })
+  assert.deepEqual(res, { text: '64', isError: false })
+  assert.deepEqual(seen, [
+    'card:running:0', 'card:running:0', 'card:running:1',
+    'card:completed:1',
+    'text:Running in the background.',
+  ], 'the card replaces the agent line, and the subagent\'s Bash is on the card, not in the room')
 }
 
 process.env.FAKE_CLAUDE_MODE = 'chat'

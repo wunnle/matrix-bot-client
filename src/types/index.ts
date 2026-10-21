@@ -35,6 +35,23 @@ export interface ToolProgressLine {
   raw?: string
 }
 
+// A subagent an agent handed work to (com.construct.subagent), kept current by
+// edits as it runs. Lines are its tool calls, latest last, already redacted
+// the way the bot redacts tool progress.
+export interface SubagentCard {
+  id: string
+  description: string
+  agentType?: string
+  background?: boolean
+  status: 'running' | 'completed' | 'failed' | 'stopped'
+  lines: ToolProgressLine[]
+  toolUses: number
+  tokens?: number
+  durationMs?: number
+  startedAt?: number
+  summary?: string
+}
+
 // An m.location message. Accuracy is the radius in metres, when the sender gave one.
 export interface SharedLocation {
   lat: number
@@ -86,6 +103,7 @@ export interface Message {
   threads?: ConstructThread[]
   approval?: ConstructApproval
   toolProgress?: ToolProgressLine[]
+  subagent?: SubagentCard
   timestamp: number
   isOwnMessage: boolean
   // A third sender class beside you and the room's bot: another member making

@@ -149,6 +149,8 @@ try {
       // Tells the bot to render this as a diff rather than a plain block.
       lang: DIFF_TOOLS.has(toolName) ? 'diff' : undefined,
       cwd,
+      // Set only when a subagent made the call, so the card can say whose it is.
+      agentType: typeof payload.agent_type === 'string' ? payload.agent_type : undefined,
     }),
     signal: ctrl.signal,
   }).finally(() => clearTimeout(timer))

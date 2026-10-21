@@ -46,7 +46,7 @@ import { collectRoomMedia } from '../lib/roomMedia'
 import { HeaderUsageBar } from './PlanUsageMeter'
 import { usePlanUsage, useCodexUsage } from '../hooks/usePlanUsage'
 import { Marked } from 'marked'
-import type { Message, RoomConfig, ConstructThread, ConstructApproval, ConstructForm, ToolProgressLine, SharedLocation } from '../types'
+import type { Message, RoomConfig, ConstructThread, ConstructApproval, ConstructForm, ToolProgressLine, SharedLocation, SubagentCard } from '../types'
 import { useAgentRun, type AgentRun } from '../hooks/useAgentActivity'
 import { AgentActivityBar } from './AgentActivityBar'
 import MessageActionSheet from './MessageActionSheet'
@@ -250,6 +250,88 @@ function ThreadBlock({ thread }: { thread: ConstructThread }) {
   )
 }
 
+function formatDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
+}
+
+// Running shows the live dot instead; its entry is never drawn.
+const SUBAGENT_ICON: Record<SubagentCard['status'], string> = {
+  running: 'pending',
+  completed: 'check_circle',
+  failed: 'error',
+  stopped: 'stop_circle',
+}
+
+// A subagent the agent handed work to: what it's doing while it runs, its
+// report once it's done. Collapsed by default; the card is edited in place, so
+// this re-renders as the bot sends each snapshot.
+function SubagentBlock({ card }: { card: SubagentCard }) {
+  const [expanded, setExpanded] = React.useState(false)
+  const running = card.status === 'running'
+  // Snapshots come every few seconds at best; the clock shouldn't wait on them.
+  const [now, setNow] = React.useState(() => Date.now())
+  React.useEffect(() => {
+    if (!running || !card.startedAt) return
+    const t = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(t)
+  }, [running, card.startedAt])
+  const elapsed = running && card.startedAt ? Math.max(card.durationMs ?? 0, now - card.startedAt) : card.durationMs
+  const summaryHtml = React.useMemo(
+    () => (card.summary ? sanitizeHtml(threadMd.parse(card.summary, { async: false }) as string) : ''),
+    [card.summary]
+  )
+  const latest = card.lines[card.lines.length - 1]
+  const meta = [
+    card.toolUses > 0 && `${card.toolUses} ${card.toolUses === 1 ? 'tool' : 'tools'}`,
+    elapsed !== undefined && elapsed > 0 && formatDuration(elapsed),
+  ].filter(Boolean).join(' · ')
+  // Collapsed, the second line is what it's doing now, or how it ended.
+  const peek = running
+    ? latest && `${latest.tool}${latest.content ? ` · ${latest.content}` : ''}`
+    : card.summary?.split('\n').find((l) => l.trim())?.replace(/[*_`#>]/g, '').trim()
+  return (
+    <div className={`subagent-card subagent-card--${card.status}${expanded ? ' subagent-card--open' : ''}`}>
+      <button className="subagent-card-header" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
+        {running
+          ? <span className="tool-progress-live-dot subagent-card-live" aria-label="Running" />
+          : <span className="material-icons subagent-card-icon" aria-label={card.status}>{SUBAGENT_ICON[card.status]}</span>}
+        <span className="subagent-card-heading">
+          <span className="subagent-card-title">{card.description}</span>
+          {(card.agentType || meta) && (
+            <span className="subagent-card-meta">
+              {card.agentType && <span className="subagent-card-type">{card.agentType}</span>}
+              {meta}
+            </span>
+          )}
+          {!expanded && peek && <span className="subagent-card-peek">{peek}</span>}
+        </span>
+        <span className="material-icons subagent-card-chevron">chevron_right</span>
+      </button>
+      {expanded && (
+        <div className="subagent-card-body">
+          {card.lines.length > 0 && (
+            <div className="subagent-card-lines">
+              {card.toolUses > card.lines.length && (
+                <div className="subagent-card-earlier">{card.toolUses - card.lines.length} earlier</div>
+              )}
+              {card.lines.map((l, i) => (
+                <div key={i} className="tool-progress-line">
+                  <span className="tool-progress-emoji">{l.emoji}</span>
+                  <span className="tool-progress-tool">{l.tool}</span>
+                  {l.content !== undefined && <span className="tool-progress-content">{l.content}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          {summaryHtml
+            ? <div className="subagent-card-summary bot-text" dangerouslySetInnerHTML={{ __html: summaryHtml }} />
+            : !running && card.lines.length === 0 && <div className="subagent-card-earlier">No report.</div>}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function getRoomModel(roomId: string): string | null {
   return localStorage.getItem(`room-model:${roomId}`)
@@ -409,7 +491,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const lastActionMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i]
-      if (isBotToolProgress(m) || (m.interim && !m.isOwnMessage && !m.isPeerMessage)) continue
+      // A subagent card is progress too; one posted behind an approval card
+      // must not take its approval bar away.
+      if (isBotToolProgress(m) || ((m.interim || m.subagent) && !m.isOwnMessage && !m.isPeerMessage)) continue
       return m.isOwnMessage ? null : m
     }
     return null
@@ -2928,6 +3012,8 @@ function eventToMessage(
         }))
     : undefined
 
+  const subagent = parseSubagent(content?.['com.construct.subagent'])
+
   const source = typeof content?.['com.construct.source'] === 'string'
     ? String(content['com.construct.source'])
     : undefined
@@ -2970,6 +3056,7 @@ function eventToMessage(
     threads: threads && threads.length > 0 ? threads : undefined,
     approval,
     toolProgress: toolProgress && toolProgress.length > 0 ? toolProgress : undefined,
+    subagent,
     timestamp: event.getTs(),
     isOwnMessage,
     isPeerMessage,
@@ -2980,6 +3067,36 @@ function eventToMessage(
     source,
     machine,
     interim: content?.['com.construct.interim'] === true ? true : undefined,
+  }
+}
+
+const SUBAGENT_STATUSES = new Set(['running', 'completed', 'failed', 'stopped'])
+
+// com.construct.subagent, as the bot's subagent cards send it
+// (scripts/subagent-cards.mjs). Anything malformed is no card at all.
+function parseSubagent(value: unknown): SubagentCard | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const raw = value as Record<string, unknown>
+  if (typeof raw.id !== 'string' || typeof raw.description !== 'string') return undefined
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
+  const lines: ToolProgressLine[] = []
+  for (const item of Array.isArray(raw.lines) ? raw.lines : []) {
+    const l = item as Record<string, unknown> | null
+    if (!l || typeof l.emoji !== 'string' || typeof l.tool !== 'string') continue
+    lines.push({ emoji: l.emoji, tool: l.tool, content: typeof l.content === 'string' ? l.content : undefined })
+  }
+  return {
+    id: raw.id,
+    description: raw.description,
+    agentType: typeof raw.agentType === 'string' ? raw.agentType : undefined,
+    background: raw.background === true,
+    status: typeof raw.status === 'string' && SUBAGENT_STATUSES.has(raw.status) ? raw.status as SubagentCard['status'] : 'stopped',
+    lines,
+    toolUses: num(raw.toolUses) ?? lines.length,
+    tokens: num(raw.tokens),
+    durationMs: num(raw.durationMs),
+    startedAt: num(raw.startedAt),
+    summary: typeof raw.summary === 'string' && raw.summary.trim() ? raw.summary : undefined,
   }
 }
 
@@ -3447,12 +3564,14 @@ function MessageRowInner({
                             <>
                               <div className="message-pin-surface">
                                 <div
-                                  className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.machine ? 'bot-text-machine' : ''}`}
+                                  className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.machine && !msg.subagent ? 'bot-text-machine' : ''}${msg.subagent ? ' bot-text-card' : ''}`}
                                   onClick={cleanHtml ? onRichClick : undefined}
                                   onPointerDown={cleanHtml ? onRichPointerDown : undefined}
                                   title={msg.machine?.source ? `Machine message from ${msg.machine.source}` : undefined}
                                 >
-                                  {msg.threads
+                                  {msg.subagent
+                                    ? <SubagentBlock card={msg.subagent} />
+                                    : msg.threads
                                     ? <div className="msg-threads">{msg.threads.map((t, i) => <ThreadBlock key={i} thread={t} />)}</div>
                                     : msg.cards
                                     ? <div className="msg-cards">

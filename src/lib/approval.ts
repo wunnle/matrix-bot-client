@@ -4,6 +4,8 @@
  *
  *   🔐 Approve `Edit`? _(auto mode won't answer this one — <reason>)_
  *
+ * or, for a call a Claude subagent made, 🔐 Approve `Bash` from the Explore subagent?
+ *
  *   ```diff
  *   # edit /path/to/file.md
  *   …
@@ -24,13 +26,15 @@ export interface ApprovalCard {
   target?: string
   /** Why auto mode left this one to you, when that's why you're being asked. */
   reason?: string
+  /** The subagent type that made the call ("… from the Explore subagent?"), when not the main agent. */
+  agent?: string
 }
 
 export function parseApprovalCard(body: string): ApprovalCard | null {
-  const head = /^\s*🔐\s*Approve\s+`([^`]+)`/.exec(body)
+  const head = /^\s*🔐\s*Approve\s+`([^`]+)`(?: from the (\S+) subagent)?/.exec(body)
   if (!head) return null
   const reason = /(?:auto mode won't answer this one|flagged)\s*[—-]\s*([^)]+)\)/.exec(body)?.[1]?.trim()
-  return { tool: head[1], target: cardTarget(body), reason }
+  return { tool: head[1], target: cardTarget(body), reason, agent: head[2] }
 }
 
 function cardTarget(body: string): string | undefined {

@@ -31,7 +31,7 @@ export default function ApprovalBar({ card, approve, deny, always, session, auto
     setAnswered(label)
     onAnswer(label)
   }
-  const detail = [card.target, card.reason].filter(Boolean).join(' · ')
+  const detail = [card.agent && `${card.agent} subagent`, card.target, card.reason].filter(Boolean).join(' · ')
 
   return (
     <div className="approval-bar" role="group" aria-label={`Approve ${card.tool}?`}>

@@ -21,6 +21,8 @@ export type RoomAgentState =
 
 interface TimelineMessage extends RunMessage {
   body: string
+  // A subagent card (com.construct.subagent): progress, like a tool line.
+  subagent?: boolean
 }
 
 type Content = Record<string, unknown>
@@ -62,6 +64,7 @@ function timelineMessages(room: sdk.Room, userId: string): TimelineMessage[] {
       interim: content['com.construct.interim'] === true ? true : undefined,
       // Only its presence matters here; ChatView parses the kind and source.
       machine: content['com.construct.machine'] ? {} : undefined,
+      subagent: content['com.construct.subagent'] ? true : undefined,
       timestamp: event.getTs(),
       body: typeof content.body === 'string' ? content.body : '',
     })
@@ -76,7 +79,7 @@ export function roomAgentState(room: sdk.Room, userId: string, now: number): Roo
   let last: TimelineMessage | undefined
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]
-    if (!m.isOwnMessage && (m.toolProgress || m.interim)) continue
+    if (!m.isOwnMessage && (m.toolProgress || m.interim || m.subagent)) continue
     last = m
     break
   }

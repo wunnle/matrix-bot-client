@@ -20,6 +20,7 @@ import { createProcessSampler } from './process-usage.mjs'
 import { fetchPlanUsage, sameUsage, fetchCodexUsage, sameCodexUsage } from './plan-usage.mjs'
 import { encryptAttachment, decryptAttachment } from '../src/lib/attachmentCrypto.js'
 import { notifyEncrypted, wantsPush } from './bot-push.mjs'
+import { createCardPoster } from './subagent-cards.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
@@ -255,7 +256,7 @@ const approvals = createApprovalQueue({
   // on from a card covers what queued up behind that card too.
   autoAnswer: (roomId, request) => autoApprove(roomId, request),
   present: (roomId, request, abandon) => {
-    const { toolName, summary, full, lang, allowSession = false, vetoReason } = request
+    const { toolName, summary, full, lang, allowSession = false, vetoReason, agentType } = request
     // "Approve + auto" only while auto mode is off: when it is on, this card is
     // here because auto mode refused the call, and switching it on again would
     // not change that.
@@ -266,9 +267,11 @@ const approvals = createApprovalQueue({
     ].filter(Boolean).join(' ')
     // Anything that isn't a diff is a command or a bare argument dump; both read
     // better wrapped than scrolled.
+    // A subagent's call reads the same otherwise; say whose it is.
+    const from = agentType ? ` from the ${agentType} subagent` : ''
     const head = vetoReason
-      ? `🔐 Approve \`${toolName}\`? _(auto mode won't answer this one — ${vetoReason})_`
-      : `🔐 Approve \`${toolName}\`?`
+      ? `🔐 Approve \`${toolName}\`${from}? _(auto mode won't answer this one — ${vetoReason})_`
+      : `🔐 Approve \`${toolName}\`${from}?`
     const body = `${head}\n\n${fencedBlock(summary, lang ?? 'cmd')}\n\n${buttons}`
     // The card shows a clipped change; the rest rides along for Construct to
     // open in a dialog. Nobody should have to approve a change they can only
@@ -405,16 +408,19 @@ function roomForRequest({ roomId, sessionId }) {
 // Hermes tags its messages the same way as of 2026-09-06; until then it sent
 // the key nowhere, and this comment claimed otherwise, which is why the header
 // stayed blank in the Bender room for so long without anyone chasing it.
-function sendRoomText(roomId, text, extra = {}) {
+function withModel(roomId, content) {
   const model = sessions[roomId]?.model
-  const content = {
+  return model ? { ...content, 'com.construct.model': model } : content
+}
+
+function sendRoomText(roomId, text, extra = {}) {
+  const content = withModel(roomId, {
     msgtype: 'm.text',
     body: text,
     format: 'org.matrix.custom.html',
     formatted_body: markdownToHtml(text),
-    ...(model ? { 'com.construct.model': model } : {}),
     ...extra,
-  }
+  })
   return client.sendMessage(roomId, content).then((res) => {
     pushIfEncrypted(roomId, res?.event_id, content)
     return res
@@ -729,6 +735,18 @@ function runTurn(roomId, prompt) {
     turnPrompt = `${prompt}\n\n${RENAME_INSTRUCTION}`
   }
 
+  const cards = createCardPoster({
+    send: (content) => client.sendMessage(roomId, withModel(roomId, content)).then((res) => res.event_id),
+    edit: (eventId, content) => client.sendMessage(roomId, {
+      msgtype: content.msgtype,
+      body: `* ${content.body}`,
+      'm.new_content': withModel(roomId, content),
+      'm.relates_to': { rel_type: 'm.replace', event_id: eventId },
+      'com.construct.machine': content['com.construct.machine'],
+    }),
+    onError: (e) => log(`Could not post subagent card: ${e.message}`),
+  })
+
   return provider.run({
     roomId,
     prompt: turnPrompt,
@@ -759,6 +777,9 @@ function runTurn(roomId, prompt) {
       sendRoomText(roomId, text, { 'com.construct.interim': true })
         .catch((e) => log(`Could not post interim text: ${e.message}`))
     },
+    // A subagent's card, re-sent as it works; providers without subagents
+    // never call it.
+    onSubagent: (card) => { cards.update(card) },
     // A turn can block on a human answering an approval, so this must exceed
     // the approval timeout rather than race it.
     timeoutMs: APPROVAL_TIMEOUT_MS + 15 * 60 * 1000,
@@ -768,7 +789,8 @@ function runTurn(roomId, prompt) {
       sessions[roomId] = { ...entry, sessionId, model }
       saveSessions()
     },
-  })
+  // Cards land in their final state before the answer does.
+  }).finally(() => cards.drain())
 }
 
 // Creates a fresh agent room bound to `cwd` and invites the owner.

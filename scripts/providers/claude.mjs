@@ -148,6 +148,125 @@ export function mainAgentBlocks(event) {
   return Array.isArray(content) ? content : []
 }
 
+// A card holds the latest lines only; a long subagent run would otherwise grow
+// one Matrix event past what a phone wants to render, or the 64K event limit.
+const SUBAGENT_LINES = 30
+const SUMMARY_LIMIT = 4000
+
+const SUBAGENT_TOOLS = new Set(['Task', 'Agent'])
+
+// How task_notification statuses read on a card. Anything unrecognised is
+// treated as stopped rather than claiming it worked.
+const SUBAGENT_STATUS = { completed: 'completed', failed: 'failed', error: 'failed' }
+
+// Follows the subagents of one turn through the stream: the main agent's
+// Task/Agent call opens one, its own tool calls (parent_tool_use_id) become its
+// lines, and the CLI's task_* system events carry its type, live usage and final
+// report. `onChange(card)` gets a fresh snapshot every time one moves; the card
+// is what the room sees, so it holds the same safe lines the main agent's
+// progress does and never the subagent's prompt. Integers only — Matrix rejects
+// event content with floats in it.
+export function createSubagentTracker({ cwd = '', onChange } = {}) {
+  const cards = new Map()
+  // A subagent's own Task call: its events belong on the outer card.
+  const owner = new Map()
+  // Tool calls seen per card. The CLI's own count lags or leads it, so a card
+  // shows whichever is higher rather than adding the two.
+  const seen = new Map()
+
+  const emit = (card) => {
+    try { onChange?.({ ...card, lines: [...card.lines] }) } catch {}
+  }
+
+  const open = (block) => {
+    const description = typeof block.input?.description === 'string' ? oneLine(block.input.description) : 'Subagent'
+    const agentType = typeof block.input?.subagent_type === 'string' ? block.input.subagent_type : undefined
+    const card = {
+      id: block.id, description, agentType, background: block.input?.run_in_background === true,
+      status: 'running', lines: [], toolUses: 0, tokens: 0, durationMs: 0, startedAt: Date.now(),
+    }
+    cards.set(block.id, card)
+    emit(card)
+  }
+
+  const cardFor = (toolUseId) => cards.get(owner.get(toolUseId) ?? toolUseId)
+
+  const usage = (card, u) => {
+    if (!u || typeof u !== 'object') return
+    if (Number.isFinite(u.tool_uses)) card.toolUses = Math.max(card.toolUses, Math.round(u.tool_uses))
+    if (Number.isFinite(u.total_tokens)) card.tokens = Math.round(u.total_tokens)
+    if (Number.isFinite(u.duration_ms)) card.durationMs = Math.round(u.duration_ms)
+  }
+
+  // True when the event was a subagent's and nothing else should act on it.
+  const handle = (event) => {
+    if (!event || typeof event !== 'object') return false
+    if (event.type === 'assistant' && !event.parent_tool_use_id) {
+      for (const block of event.message?.content ?? []) {
+        if (block?.type === 'tool_use' && SUBAGENT_TOOLS.has(block.name) && block.id && !cards.has(block.id)) open(block)
+      }
+      return false
+    }
+    if (event.type === 'assistant' && event.parent_tool_use_id) {
+      const card = cardFor(event.parent_tool_use_id)
+      if (!card) return true
+      let moved = false
+      for (const block of event.message?.content ?? []) {
+        if (block?.type !== 'tool_use') continue
+        if (SUBAGENT_TOOLS.has(block.name) && block.id) owner.set(block.id, card.id)
+        const line = progressForToolUse(block, cwd)
+        if (!line) continue
+        const { id: _, ...rest } = line
+        card.lines.push(rest)
+        if (card.lines.length > SUBAGENT_LINES) card.lines.shift()
+        seen.set(card.id, (seen.get(card.id) ?? 0) + 1)
+        card.toolUses = Math.max(card.toolUses, seen.get(card.id))
+        moved = true
+      }
+      if (moved) emit(card)
+      return true
+    }
+    if (event.type !== 'system') return false
+    const card = event.tool_use_id ? cardFor(event.tool_use_id) : null
+    if (!card || card.id !== event.tool_use_id) return false
+    switch (event.subtype) {
+      case 'task_started':
+        if (typeof event.subagent_type === 'string') card.agentType = event.subagent_type
+        if (typeof event.is_backgrounded === 'boolean') card.background = event.is_backgrounded
+        emit(card)
+        return true
+      case 'task_progress':
+        usage(card, event.usage)
+        emit(card)
+        return true
+      case 'task_notification': {
+        usage(card, event.usage)
+        card.status = SUBAGENT_STATUS[event.status] ?? 'stopped'
+        if (typeof event.summary === 'string' && event.summary.trim()) {
+          const s = event.summary.trim()
+          card.summary = s.length > SUMMARY_LIMIT ? `${s.slice(0, SUMMARY_LIMIT - 1)}…` : s
+        }
+        emit(card)
+        return true
+      }
+      default:
+        return false
+    }
+  }
+
+  // The process is gone: whatever still says running never will finish.
+  const close = () => {
+    for (const card of cards.values()) {
+      if (card.status !== 'running') continue
+      card.status = 'stopped'
+      card.durationMs ||= Date.now() - card.startedAt
+      emit(card)
+    }
+  }
+
+  return { handle, close, isSubagentCall: (block) => block?.type === 'tool_use' && SUBAGENT_TOOLS.has(block.name) }
+}
+
 export const claude = {
   name: 'claude',
   models: MODELS,
@@ -176,7 +295,9 @@ export const claude = {
   // id comes back through `onSession` so the bot can persist it — the CLI only
   // reveals it once the turn ends, which is why it is a callback and not a
   // return value the caller could rely on mid-turn.
-  run({ roomId, prompt, cwd, model, sessionId, instructions = [], approval, onProgress, onText, timeoutMs, onSession }) {
+  // `onSubagent(card)`, when given, takes over reporting subagents: each one
+  // becomes a card that is re-sent as it moves, instead of a single progress line.
+  run({ roomId, prompt, cwd, model, sessionId, instructions = [], approval, onProgress, onText, onSubagent, timeoutMs, onSession }) {
     const args = [
       '-p',
       // stream-json in print mode refuses to run without --verbose.
@@ -230,6 +351,7 @@ export const claude = {
       let stderr = ''
       let timedOut = false
       const reported = new Set()
+      const subagents = onSubagent ? createSubagentTracker({ cwd, onChange: onSubagent }) : null
       // Text the agent wrote, held back until the turn shows it goes on. Only
       // then is it narration; the last block is the reply itself, which the
       // `result` event repeats and the caller posts as the turn's answer.
@@ -260,10 +382,16 @@ export const claude = {
           }
           return
         }
+        if (subagents?.handle(event)) return
         for (const block of mainAgentBlocks(event)) {
           if (block?.type === 'text' && block.text?.trim()) {
             flushText()
             pendingText = block.text.trim()
+            continue
+          }
+          // Its card says it, and keeps saying it as the subagent works.
+          if (subagents?.isSubagentCall(block)) {
+            flushText()
             continue
           }
           const progress = progressForToolUse(block, cwd)
@@ -301,6 +429,7 @@ export const claude = {
       child.on('error', (err) => finish({ error: err.message }))
       child.on('close', (code, signal) => {
         handleLine(partial)
+        subagents?.close()
         if (result) {
           // Held text that isn't the reply (an error result, say) is still
           // something the agent said; post it rather than lose it.

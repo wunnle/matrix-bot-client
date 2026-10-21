@@ -81,6 +81,25 @@ const MSG_CAP = 200 // max messages kept in state; old ones dropped from the fro
 // How long a room with nothing cached waits on the server before the spinner
 // gives way to a retry. /messages has no timeout of its own.
 const INITIAL_LOAD_TIMEOUT_MS = 8000
+const SCROLLBACK_RETRIES = 3
+
+// The SDK does not retry scrollback, so a single failed /messages, a 429 from
+// matrix.org or a request lost on a socket iOS killed while suspended, used to
+// end a room's history. Retry with the SDK's own policy: wait what a 429 asks
+// for, back off on network and server errors, give up on other 4xx.
+async function scrollbackWithRetry(client: sdk.MatrixClient, room: sdk.Room, limit: number): Promise<sdk.Room> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await client.scrollback(room, limit)
+    } catch (err) {
+      const e = err as { httpStatus?: number; errcode?: string; name?: string }
+      console.warn(`[scrollback] ${room.roomId} attempt ${attempt} failed:`, e.httpStatus ?? e.name, e.errcode ?? '')
+      const wait = attempt > SCROLLBACK_RETRIES ? -1 : sdk.calculateRetryBackoff(err, attempt, true)
+      if (wait < 0) throw err
+      await new Promise((r) => setTimeout(r, wait))
+    }
+  }
+}
 // Where the side panel is a column rather than a sheet; matches the CSS.
 const WIDE = '(min-width: 641px)'
 const SIDEBAR_KEY = 'room-sidebar-open'
@@ -745,7 +764,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       setLoadError(false)
       clearTimeout(giveUpTimer)
       giveUpTimer = setTimeout(() => { if (!disposed) setLoadError(true) }, INITIAL_LOAD_TIMEOUT_MS)
-      client.scrollback(room, 20)
+      scrollbackWithRetry(client, room, 20)
         .then(() => {
           if (disposed) return
           clearTimeout(giveUpTimer)
@@ -766,7 +785,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     // limited sync on resume. Show what we have now and fetch the rest behind
     // it, rather than holding the whole room on the network.
     const topUp = (room: sdk.Room) => {
-      client.scrollback(room, 20)
+      scrollbackWithRetry(client, room, 20)
         .then(() => {
           if (disposed) return
           if (room.oldState.paginationToken === null) setHasMore(false)
@@ -1363,7 +1382,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setLoadingMore(true)
     loadingMoreRef.current = true
     try {
-      const result = await client.scrollback(room, PAGE_SIZE)
+      const result = await scrollbackWithRetry(client, room, PAGE_SIZE)
       const allEvents = result.getLiveTimeline().getEvents()
       const msgs = eventsToMessages(allEvents, userId, result)
 
@@ -1377,7 +1396,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         setHasMore(false)
       }
     } catch {
-      setHasMore(false)
+      // Not the end of history, just a failed fetch: leave hasMore set so the
+      // next scroll to the top tries again.
       loadingMoreRef.current = false
     } finally {
       setLoadingMore(false)

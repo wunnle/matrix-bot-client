@@ -783,9 +783,22 @@ function runTurn(roomId, prompt) {
 //
 // The original agent-avatar.png is no longer handed out; rooms still wearing
 // it are moved onto the cast by the backfill, since its mxc is in `known`.
+//
+// Since 2026-10-20 Claude rooms wear Lego minifigs instead, when the Pi has
+// them: photos from Rebrickable's public catalogue, cropped to head and
+// shoulders by ~/.local/share/agent-avatars/build_pool.py. They live outside
+// the repo (they're Lego/fan photos), so a checkout without them keeps the
+// pixel cast. The backfill moves rooms off the pixel cast, since those mxcs
+// are in `known`.
+const MINIFIG_DIR = process.env.AGENT_AVATAR_DIR ?? path.join(os.homedir(), '.local', 'share', 'agent-avatars', 'minifigs')
+const pngsIn = (dir, re) => {
+  try { return fs.readdirSync(dir).filter((f) => re.test(f)).sort().map((f) => path.join(dir, f)) } catch { return [] }
+}
+const minifigs = pngsIn(MINIFIG_DIR, /\.png$/)
+// provider -> absolute paths of its cast, in a stable order.
 const AVATAR_FILES = {
-  claude: fs.readdirSync(import.meta.dirname).filter((f) => /^agent-avatar-[a-z]+-[a-z]+\.png$/.test(f)).sort(),
-  codex: ['agent-avatar-codex.png'],
+  claude: minifigs.length ? minifigs : pngsIn(import.meta.dirname, /^agent-avatar-[a-z]+-[a-z]+\.png$/),
+  codex: [path.join(import.meta.dirname, 'agent-avatar-codex.png')],
 }
 const AVATAR_CACHE = path.join(STORE_DIR, 'avatar.json')
 // provider -> mxc:// of each icon in its cast, in AVATAR_FILES order.
@@ -814,8 +827,9 @@ async function ensureAvatars() {
 
   for (const [provider, files] of Object.entries(AVATAR_FILES)) {
     avatarMxc[provider] = []
-    for (const name of files) {
-      const file = path.join(import.meta.dirname, name)
+    for (const file of files) {
+      // Cached by file name, as before the cast could live outside scripts/.
+      const name = path.basename(file)
       try {
         if (!fs.existsSync(file)) continue
         const size = fs.statSync(file).size

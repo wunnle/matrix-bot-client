@@ -571,21 +571,26 @@ async function roomIsEncrypted(roomId) {
 // the event itself goes out through this process's megolm session — the only
 // one this device has, which is why scripts/send-image.mjs hands encrypted
 // rooms to us instead of posting itself.
-async function sendImageFile(roomId, file, caption, mimetype) {
-  const data = fs.readFileSync(file)
-  const body = caption || path.basename(file)
-  const info = { mimetype, size: data.length }
-  let media
+// Uploads a file for a room: encrypted first in an encrypted room, so the
+// homeserver only ever holds ciphertext. Returns the content fields that point
+// at it, { file } or { url }.
+async function uploadMedia(roomId, data, name, mimetype) {
   if (await roomIsEncrypted(roomId)) {
     const sealed = await encryptAttachment(data)
     const up = await client.uploadContent(Buffer.from(sealed.data), {
       type: 'application/octet-stream', includeFilename: false, rawResponse: false,
     })
-    media = { file: { ...sealed.file, url: up.content_uri } }
-  } else {
-    const up = await client.uploadContent(data, { name: path.basename(file), type: mimetype, rawResponse: false })
-    media = { url: up.content_uri }
+    return { file: { ...sealed.file, url: up.content_uri } }
   }
+  const up = await client.uploadContent(data, { name, type: mimetype, rawResponse: false })
+  return { url: up.content_uri }
+}
+
+async function sendImageFile(roomId, file, caption, mimetype) {
+  const data = fs.readFileSync(file)
+  const body = caption || path.basename(file)
+  const info = { mimetype, size: data.length }
+  const media = await uploadMedia(roomId, data, path.basename(file), mimetype)
   const content = { msgtype: 'm.image', body, ...media, info }
   const res = await client.sendMessage(roomId, content)
   pushIfEncrypted(roomId, res.event_id, content)

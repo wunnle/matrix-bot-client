@@ -330,6 +330,12 @@ export const claude = {
           // instructions and tool names were re-sent on every reconnect —
           // ~10K tokens over one long session.
           ENABLE_CLAUDEAI_MCP_SERVERS: 'false',
+          // Claude's Artifact tools (publish an HTML page to claude.ai, its
+          // comments and data) are on in the interactive CLI but off by default
+          // in -p ("sdk_default_off" in the CLI); this is the CLI's own opt-in.
+          // Auto-open would try to launch a browser on the Pi after a publish.
+          CLAUDE_CODE_ARTIFACT: '1',
+          CLAUDE_CODE_ARTIFACT_AUTO_OPEN: '0',
         },
       })
       // Messages written but not yet echoed back as taken in.

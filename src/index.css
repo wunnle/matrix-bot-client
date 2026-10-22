@@ -3528,6 +3528,47 @@ a.msg-card-link:hover {
 }
 .room-editor-close:hover { background: var(--bg-hover); color: var(--text); }
 
+/* "What do you want to do?" before a new agent room (SpawnSheet). */
+.spawn-sheet-body { gap: 10px; }
+.spawn-sheet-label { font-size: 14px; font-weight: 500; color: var(--text); }
+.spawn-sheet-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 96px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, sans-serif;
+  outline: none;
+}
+.spawn-sheet-input:focus { border-color: var(--accent); }
+.spawn-sheet-input::placeholder { color: var(--text-muted); opacity: 0.7; }
+.spawn-sheet-hint { margin: 0; font-size: 12px; color: var(--text-muted); }
+.spawn-sheet-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px; }
+.spawn-sheet-skip {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.spawn-sheet-skip:hover { background: var(--bg-hover); color: var(--text); }
+.spawn-sheet-start {
+  height: 36px;
+  padding: 0 18px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.spawn-sheet-start:hover:not(:disabled) { background: var(--accent-hover); }
+.spawn-sheet-start:disabled { opacity: 0.35; }
+
 .room-editor-body {
   padding: 4px 20px 20px;
   display: flex;

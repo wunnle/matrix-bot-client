@@ -7,6 +7,7 @@ import type { AuthState } from '../types'
 import { fetchJoinedRooms, getCachedRooms, lastPreviewMessage, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, type RoomSummary } from '../lib/matrix'
 import { seedAgentPills, backfillAgentPills } from '../lib/roomMeta'
 import { findSpawnHostRoom, spawnAgentRoom } from '../lib/spawnAgent'
+import SpawnSheet from './SpawnSheet'
 import { createSpawnGate, type AgentProvider } from '../lib/spawnCommand'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { donateShareTargets, cacheRoomAvatars } from '../lib/liveActivity'
@@ -221,6 +222,8 @@ export default function RoomList({
   const [invitesBusy, setInvitesBusy] = useState<Record<string, boolean>>({})
   const [inviteError, setInviteError] = useState('')
   const [spawning, setSpawning] = useState<AgentProvider | null>(null)
+  // The tile asks what the room is for before spawning it.
+  const [askingSpawn, setAskingSpawn] = useState<AgentProvider | null>(null)
   const spawnGate = useRef(createSpawnGate())
 
   const invites = useMemo(() => rooms.filter(isInvite), [rooms])
@@ -557,7 +560,7 @@ export default function RoomList({
     }
   }
 
-  async function handleSpawn(provider: AgentProvider) {
+  async function handleSpawn(provider: AgentProvider, prompt: string | null = null) {
     if (!spawnGate.current.begin()) return
     setInviteError('')
     setSpawning(provider)
@@ -568,12 +571,17 @@ export default function RoomList({
         setInviteError('No room to spawn from — open an agent room first.')
         return
       }
-      const roomId = await spawnAgentRoom(client, host, provider)
-      // The invite's own name is what the bot chose (Bender-N); accepting here
-      // rather than leaving the ghost invite tile behind is the whole point of
-      // the button — one tap, one room.
+      const roomId = await spawnAgentRoom(client, host, provider, prompt)
+      // The invite's own name is what the bot chose (named from the prompt, or
+      // BenderDev-N); accepting here rather than leaving the ghost invite tile
+      // behind is the whole point of the button — one tap, one room.
       const name = client.getRoom(roomId)?.name ?? 'agent'
       await handleAcceptInvite(roomId, name)
+      // The prompt goes in as your own first message, so the agent starts on it
+      // and the room's history opens with what you asked.
+      if (prompt && client.getRoom(roomId)?.getMyMembership() === 'join') {
+        await client.sendMessage(roomId, { msgtype: 'm.text', body: prompt } as never)
+      }
     } catch (e) {
       setInviteError((e as Error).message ?? 'Could not spawn a room')
     } finally {
@@ -661,17 +669,28 @@ export default function RoomList({
                   provider="claude"
                   busy={spawning === 'claude'}
                   disabled={spawning !== null}
-                  onSpawn={handleSpawn}
+                  onSpawn={setAskingSpawn}
                 />
                 <SpawnTile
                   provider="codex"
                   busy={spawning === 'codex'}
                   disabled={spawning !== null}
-                  onSpawn={handleSpawn}
+                  onSpawn={setAskingSpawn}
                 />
               </>
             )}
           </section>
+        )}
+        {askingSpawn && (
+          <SpawnSheet
+            provider={askingSpawn}
+            onClose={() => setAskingSpawn(null)}
+            onStart={(prompt) => {
+              const provider = askingSpawn
+              setAskingSpawn(null)
+              void handleSpawn(provider, prompt)
+            }}
+          />
         )}
         <NotificationCenter
           notifications={notifications}

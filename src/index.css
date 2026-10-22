@@ -769,15 +769,48 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   background: var(--bg);
   padding-top: env(safe-area-inset-top);
 }
-/* …a column beside the chat on wider screens. */
+/* …a column beside the chat on wider screens, as wide as it was last dragged
+   (--room-sidebar-width, set by RoomSidebar). */
 @media (min-width: 641px) {
   .room-sidebar {
-    position: static;
+    position: relative;
     z-index: auto;
     flex: none;
-    width: 320px;
+    width: var(--room-sidebar-width, 320px);
     border-left: 1px solid var(--border);
   }
+}
+/* The drag handle: a strip over the left border, wide screens only. */
+.room-sidebar-resize { display: none; }
+@media (min-width: 641px) {
+  .room-sidebar-resize {
+    display: block;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -4px;
+    width: 8px;
+    z-index: 2;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .room-sidebar-resize::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 2px;
+    background: transparent;
+    transition: background 0.15s;
+  }
+  .room-sidebar-resize:hover::after,
+  .room-sidebar-resize:focus-visible::after,
+  .room-sidebar--resizing .room-sidebar-resize::after { background: var(--accent); }
+  .room-sidebar-resize:focus-visible { outline: none; }
+  /* A page under the pointer would swallow the drag. */
+  .room-sidebar--resizing .artifact-frame { pointer-events: none; }
+  .room-sidebar--resizing { user-select: none; }
 }
 .room-sidebar-header {
   display: flex;
@@ -807,7 +840,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-sidebar-tab--on { background: var(--bg); color: var(--text-strong); }
 /* A page needs more room than a list; the chat column gives it up. */
 @media (min-width: 641px) {
-  .room-sidebar.room-sidebar--wide { width: min(560px, 45vw); }
+  .room-sidebar.room-sidebar--wide { width: var(--room-sidebar-width, min(560px, 45vw)); }
 }
 .artifact-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .artifact-view-bar {

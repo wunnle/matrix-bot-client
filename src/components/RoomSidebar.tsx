@@ -1,4 +1,5 @@
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
+import type * as React from 'react'
 import { isEmptyRoomMedia, type RoomLink, type RoomMedia } from '../lib/roomMedia'
 import { mapsUrl, formatCoords } from '../lib/location'
 import ArtifactPreview from './ArtifactPreview'
@@ -18,6 +19,26 @@ const day = (ts: number) => new Date(ts).toLocaleDateString(undefined, { month: 
  * at a time, from the copy the bot keeps (claude.ai itself can't be framed).
  */
 export type SidebarTab = 'artifacts' | 'shared'
+
+// The panel's width on wide screens, dragged by its left edge and remembered.
+// A page and a list want different widths, so each keeps its own; unset, the
+// stylesheet's default applies.
+type WidthMode = 'list' | 'page'
+const WIDTH_KEY: Record<WidthMode, string> = { list: 'room-sidebar-width', page: 'room-sidebar-page-width' }
+const MIN_WIDTH = 260
+// The chat keeps at least this much of the row.
+const CHAT_MIN = 360
+
+function storedWidth(mode: WidthMode): number | undefined {
+  try {
+    const n = Number(localStorage.getItem(WIDTH_KEY[mode]))
+    return Number.isFinite(n) && n >= MIN_WIDTH ? n : undefined
+  } catch { return undefined }
+}
+
+function clampWidth(w: number): number {
+  return Math.round(Math.max(MIN_WIDTH, Math.min(w, window.innerWidth - CHAT_MIN)))
+}
 
 export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, onLoadMore, onJump, onOpenImage, onClose, tab, onTab, openArtifact, onOpenArtifact }: {
   media: RoomMedia
@@ -41,6 +62,60 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
   const shown = current === 'artifacts' && openArtifact !== null
     ? media.artifacts.find((a) => a.id === openArtifact) ?? media.artifacts[0]
     : null
+
+  const mode: WidthMode = shown ? 'page' : 'list'
+  const [widths, setWidths] = useState<Partial<Record<WidthMode, number>>>(() => ({ list: storedWidth('list'), page: storedWidth('page') }))
+  const [resizing, setResizing] = useState(false)
+  const asideRef = useRef<HTMLElement>(null)
+  const dragRef = useRef<{ x: number; width: number } | null>(null)
+  const setWidth = (w: number | undefined, persist: boolean) => {
+    setWidths((prev) => ({ ...prev, [mode]: w }))
+    if (!persist) return
+    try {
+      if (w === undefined) localStorage.removeItem(WIDTH_KEY[mode])
+      else localStorage.setItem(WIDTH_KEY[mode], String(w))
+    } catch { /* private mode: the width just isn't remembered */ }
+  }
+  const onResizeDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const aside = asideRef.current
+    if (!aside || e.button !== 0) return
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragRef.current = { x: e.clientX, width: aside.getBoundingClientRect().width }
+    setResizing(true)
+  }
+  const onResizeMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    // Dragging left widens: the panel's left edge is the one that moves.
+    if (drag) setWidth(clampWidth(drag.width + drag.x - e.clientX), false)
+  }
+  const onResizeUp = () => {
+    if (!dragRef.current) return
+    dragRef.current = null
+    setResizing(false)
+    setWidth(widths[mode], true)
+  }
+  const onResizeKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = e.shiftKey ? 64 : 16
+    const current = asideRef.current?.getBoundingClientRect().width ?? 320
+    if (e.key === 'ArrowLeft') { e.preventDefault(); setWidth(clampWidth(current + step), true) }
+    if (e.key === 'ArrowRight') { e.preventDefault(); setWidth(clampWidth(current - step), true) }
+  }
+
+  // On the phone the panel is a sheet: a swipe to the right puts it away.
+  // Not from inside a page, which keeps its own touches.
+  const swipeRef = useRef<{ x: number; y: number } | null>(null)
+  const onSwipeStart = (e: React.TouchEvent) => {
+    swipeRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+  }
+  const onSwipeEnd = (e: React.TouchEvent) => {
+    const start = swipeRef.current
+    swipeRef.current = null
+    if (!start || window.matchMedia('(min-width: 641px)').matches) return
+    const dx = e.changedTouches[0].clientX - start.x
+    const dy = Math.abs(e.changedTouches[0].clientY - start.y)
+    if (dx > 80 && dy < 60) onClose()
+  }
   // Links by site, sites in order of their newest link.
   const linkGroups = useMemo(() => {
     const groups = new Map<string, RoomLink[]>()
@@ -89,7 +164,28 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
   const empty = isEmptyRoomMedia({ ...media, artifacts: [] })
 
   return (
-    <aside className={`room-sidebar${shown ? ' room-sidebar--wide' : ''}`} aria-label="Shared in this room">
+    <aside
+      ref={asideRef}
+      className={`room-sidebar${shown ? ' room-sidebar--wide' : ''}${resizing ? ' room-sidebar--resizing' : ''}`}
+      style={widths[mode] ? ({ '--room-sidebar-width': `${widths[mode]}px` } as React.CSSProperties) : undefined}
+      aria-label="Shared in this room"
+      onTouchStart={onSwipeStart}
+      onTouchEnd={onSwipeEnd}
+    >
+      <div
+        className="room-sidebar-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize panel"
+        tabIndex={0}
+        title="Drag to resize · double-click to reset"
+        onPointerDown={onResizeDown}
+        onPointerMove={onResizeMove}
+        onPointerUp={onResizeUp}
+        onPointerCancel={onResizeUp}
+        onDoubleClick={() => setWidth(undefined, true)}
+        onKeyDown={onResizeKey}
+      />
       <div className="room-sidebar-header">
         {hasArtifacts ? (
           <div className="room-sidebar-tabs" role="tablist" aria-label="Side panel">

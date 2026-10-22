@@ -10,6 +10,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
 import * as http from 'node:http'
+import * as util from 'node:util'
 import { execFile } from 'node:child_process'
 import { providerFor, resolveModel, allModelAliases, DEFAULT_PROVIDER, PROVIDERS } from './providers/index.mjs'
 import { createApprovalQueue } from './approval-queue.mjs'
@@ -89,8 +90,21 @@ if (!HOMESERVER || !USER_ID || !PASSWORD) {
   process.exit(1)
 }
 
+// Also kept on disk: the user journal on this Pi stores nothing, so a failure
+// the bot catches and logs (an artifact upload, say) was otherwise invisible.
+// One rotation at LOG_MAX keeps it from growing without bound.
+const LOG_FILE = path.join(STORE_DIR, 'bot.log')
+const LOG_MAX = 5 * 1024 * 1024
+
 function log(...args) {
-  console.log(`[${new Date().toISOString().slice(11, 23)}][claude-bot]`, ...args)
+  const now = new Date()
+  console.log(`[${now.toISOString().slice(11, 23)}][claude-bot]`, ...args)
+  try {
+    if (fs.statSync(LOG_FILE).size > LOG_MAX) fs.renameSync(LOG_FILE, `${LOG_FILE}.1`)
+  } catch { /* no log yet */ }
+  try {
+    fs.appendFileSync(LOG_FILE, `${now.toISOString()} ${util.format(...args)}\n`)
+  } catch { /* a full disk must not take the bot down with it */ }
 }
 
 // roomId -> { sessionId, cwd, model, provider, … }. One agent session per room,

@@ -10,6 +10,24 @@ import type { EncryptedFile } from './attachmentCrypto.js'
 // claude.ai/artifact/{id} and claude.ai/code/artifact/{uuid}.
 const ARTIFACT_URL = /^https:\/\/claude\.ai\/(?:code\/)?artifact\/([\w-]+)/
 
+/**
+ * The room's artifact index (state, kept by the bot; scripts/artifact-cards.mjs):
+ * which event holds each artifact's card, newest first. Pointers only, since
+ * room state is unencrypted; the card has the rest.
+ */
+export const ARTIFACT_INDEX_EVENT = 'com.construct.artifacts'
+export interface ArtifactIndexEntry { id: string; eventId: string; updatedAt: number }
+
+export function parseArtifactIndex(content: unknown): ArtifactIndexEntry[] {
+  const list = (content as { artifacts?: unknown } | null)?.artifacts
+  if (!Array.isArray(list)) return []
+  return list.flatMap((raw) => {
+    const e = raw as Record<string, unknown> | null
+    if (!e || typeof e.id !== 'string' || typeof e.eventId !== 'string' || !e.eventId.startsWith('$')) return []
+    return [{ id: e.id, eventId: e.eventId, updatedAt: typeof e.updatedAt === 'number' ? e.updatedAt : 0 }]
+  })
+}
+
 /** The artifact's id when `url` is a claude.ai artifact link, else null. */
 export function artifactIdOf(url: string): string | null {
   return ARTIFACT_URL.exec(url)?.[1] ?? null

@@ -21,7 +21,7 @@ import { fetchPlanUsage, sameUsage, fetchCodexUsage, sameCodexUsage } from './pl
 import { encryptAttachment, decryptAttachment } from '../src/lib/attachmentCrypto.js'
 import { notifyEncrypted, wantsPush } from './bot-push.mjs'
 import { createCardPoster } from './subagent-cards.mjs'
-import { SNAPSHOT_MAX_BYTES, artifactContent, artifactEdit, createArtifactRegistry } from './artifact-cards.mjs'
+import { ARTIFACT_INDEX_EVENT, SNAPSHOT_MAX_BYTES, artifactContent, artifactEdit, artifactIndex, createArtifactRegistry } from './artifact-cards.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
@@ -456,6 +456,20 @@ const artifactRegistry = createArtifactRegistry(path.join(STORE_DIR, 'artifacts.
 // no card and post two.
 const artifactQueue = new Map()
 
+// Brings the room's artifact index (room state) in line with the registry.
+// Best effort: a room where the bot can't set state still has its cards, and
+// Construct still lists the ones in loaded history.
+async function syncArtifactIndex(roomId) {
+  const content = artifactIndex(artifactRegistry.entries(roomId))
+  const current = client.getRoom(roomId)?.currentState.getStateEvents(ARTIFACT_INDEX_EVENT, '')?.getContent()
+  if (JSON.stringify(current ?? null) === JSON.stringify(content)) return
+  try {
+    await client.sendStateEvent(roomId, ARTIFACT_INDEX_EVENT, content, '')
+  } catch (e) {
+    log(`[${roomId}] could not update the artifact index: ${e.message}`)
+  }
+}
+
 // The published page, uploaded beside its card so Construct can show it in-app.
 // Best effort: without it the card still opens the page on claude.ai.
 async function artifactSnapshot(roomId, file) {
@@ -480,14 +494,21 @@ function postArtifact(roomId, page) {
     const known = artifactRegistry.get(roomId, page.url)
     if (known) {
       await client.sendMessage(roomId, artifactEdit(known.eventId, content))
-      artifactRegistry.set(roomId, page.url, { ...known, version: page.version })
-      return
+      artifactRegistry.set(roomId, page.url, { ...known, version: page.version, updatedAt: Date.now() })
+    } else {
+      const res = await client.sendMessage(roomId, content)
+      artifactRegistry.set(roomId, page.url, { eventId: res.event_id, version: page.version, updatedAt: Date.now() })
     }
-    const res = await client.sendMessage(roomId, content)
-    artifactRegistry.set(roomId, page.url, { eventId: res.event_id, version: page.version })
+    await syncArtifactIndex(roomId)
   })
   artifactQueue.set(key, run.catch(() => {}))
   return run
+}
+
+// Rooms whose artifacts predate the index, or whose index fell behind while the
+// bot was down. Already synced, so the rooms' current state is known here.
+for (const roomId of artifactRegistry.rooms()) {
+  if (client.getRoom(roomId)?.getMyMembership() === 'join') void syncArtifactIndex(roomId)
 }
 
 // Claude Code answers in Markdown; Construct only renders rich text from

@@ -42,11 +42,30 @@ export function artifactEdit(eventId, content) {
   }
 }
 
+// Room state listing a room's artifacts, so Construct finds every card however
+// little history it has loaded. Room state is never encrypted, so it carries
+// pointers only: the artifact's id and the card's event. Title, description
+// and the copy (with its key, in an encrypted room) stay in the card.
+export const ARTIFACT_INDEX_EVENT = 'com.construct.artifacts'
+
+const ARTIFACT_ID = /^https:\/\/claude\.ai\/(?:code\/)?artifact\/([\w-]+)/
+
+// Newest first. Integers only, as everywhere in event content.
+export function artifactIndex(entries) {
+  const artifacts = Object.entries(entries ?? {})
+    .map(([url, e]) => ({ id: ARTIFACT_ID.exec(url)?.[1], eventId: e?.eventId, updatedAt: Math.round(e?.updatedAt ?? 0) }))
+    .filter((a) => a.id && typeof a.eventId === 'string')
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+  return { artifacts }
+}
+
 export function createArtifactRegistry(file) {
   let data = {}
   try { data = JSON.parse(fs.readFileSync(file, 'utf8')) } catch {}
   return {
     get: (roomId, url) => data[roomId]?.[url] ?? null,
+    entries: (roomId) => ({ ...data[roomId] }),
+    rooms: () => Object.keys(data),
     set(roomId, url, entry) {
       data[roomId] = { ...data[roomId], [url]: entry }
       const tmp = `${file}.tmp`

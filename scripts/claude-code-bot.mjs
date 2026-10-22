@@ -22,6 +22,7 @@ import { fetchPlanUsage, sameUsage, fetchCodexUsage, sameCodexUsage } from './pl
 import { encryptAttachment, decryptAttachment } from '../src/lib/attachmentCrypto.js'
 import { notifyEncrypted, wantsPush } from './bot-push.mjs'
 import { createCardPoster } from './subagent-cards.mjs'
+import { roomTitle } from './room-title.mjs'
 import { ARTIFACT_INDEX_EVENT, SNAPSHOT_MAX_BYTES, artifactContent, artifactEdit, artifactIndex, createArtifactRegistry } from './artifact-cards.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
@@ -1124,13 +1125,16 @@ async function removeWorktree(dir, branch) {
   return { removed: true, branchDeleted }
 }
 
-async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted = false } = {}) {
-  // The name is needed before the room exists: it names the worktree and its
+// `title`, a promise of a name or null, is what the room is called when the
+// spawn came with a prompt; the BenderDev-N slug still names its worktree and
+// branch, which want something stable and unique, not the work's description.
+async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted = false, title = null } = {}) {
+  // The slug is needed before the room exists: it names the worktree and its
   // branch, and the room's topic has to carry the path we actually bind to.
-  const name = nextRoomName()
+  const slug = nextRoomName()
   let branch = null
   if (worktreeFrom) {
-    const wt = await addWorktree(worktreeFrom, name)
+    const wt = await addWorktree(worktreeFrom, slug)
     if (wt) {
       // Preserve where in the repo the spawn pointed, so `!spawn repo/api`
       // lands in the worktree's api/ rather than at its root.
@@ -1139,6 +1143,8 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted 
       branch = wt.branch
     }
   }
+  // Generated while the worktree was cut; awaited only now.
+  const name = (await title) ?? slug
   const { room_id } = await client.createRoom({
     name,
     // ⚠️ Pinned. matrix.org started defaulting to room version 12 on 2026-09-22,
@@ -1203,7 +1209,7 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted 
   sessions[room_id] = { sessionId: null, cwd, model, provider, ...(branch ? { worktree: true, branch } : {}) }
   saveSessions()
   log(`Spawned ${room_id} → ${cwd} [${model}]${branch ? ` on ${branch}` : ''}`)
-  return { room_id, cwd, branch }
+  return { room_id, cwd, branch, name, slug }
 }
 
 const startTs = Date.now()
@@ -1435,7 +1441,9 @@ setInterval(refreshProcesses, 30000)
 // messages ten seconds apart are almost always one instruction and its
 // correction, and running them separately does the wrong thing first.
 // `firstPrompt`, when given, replaces the text of the first batch — it is how
-// !continue re-runs the prompt the quota block ate without the user retyping it.
+// !continue re-runs the prompt the quota block ate without the user retyping it,
+// and how `!spawn … -- <prompt>` starts a new room's first turn, where `first`
+// is null: no message of the user's sits in that room to mark as read.
 async function drainRoom(roomId, first, firstPrompt = null) {
   busy.add(roomId)
   // Turns can run for minutes; keep the typing indicator alive so the room doesn't look dead.
@@ -1447,12 +1455,12 @@ async function drainRoom(roomId, first, firstPrompt = null) {
   }, 25000)
 
   try {
-    let batch = [first]
+    let batch = first ? [first] : []
     let override = firstPrompt
-    while (batch.length) {
+    while (batch.length || override) {
       // The receipt is the "picked up" signal behind the second check. Receipts
       // are monotonic, so marking the newest event of the batch covers them all.
-      await client.sendReadReceipt(batch[batch.length - 1]).catch(() => {})
+      if (batch.length) await client.sendReadReceipt(batch[batch.length - 1]).catch(() => {})
       try {
         const parts = []
         if (override) { parts.push(override); batch = [] }
@@ -1558,11 +1566,22 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   // an approval answer and can fall through to the turn path, where promptFor
   // downloads it and points the agent at the file.
 
-  // !spawn [--encrypted] [path] [model] — all optional, model recognised by
-  // being a known name. --encrypted (or -e) makes the room end-to-end
-  // encrypted from its first event; see spawnRoom.
+  // !spawn [--encrypted] [path] [model] [-- <prompt>] — all optional, model
+  // recognised by being a known name. --encrypted (or -e) makes the room
+  // end-to-end encrypted from its first event; see spawnRoom. A prompt names the
+  // room for its work (room-title.mjs) and starts it: typed after a bare `--`,
+  // the bot posts it in the new room and runs the first turn itself; sent by
+  // Construct as com.construct.spawn.prompt, the app sends it there as the
+  // user's own first message once the room opens, so only the name is ours.
   if (body.startsWith('!spawn')) {
-    let parts = body.slice('!spawn'.length).trim().split(/\s+/).filter(Boolean)
+    const fromApp = event.getContent()?.['com.construct.spawn']?.prompt
+    const appPrompt = typeof fromApp === 'string' && fromApp.trim() ? fromApp.trim() : null
+    const sep = body.search(/\s--(?=\s|$)/)
+    const typedPrompt = sep >= 0 ? body.slice(sep).replace(/^\s--/, '').trim() || null : null
+    const prompt = appPrompt ?? typedPrompt
+    // Named while the worktree is cut, not after.
+    const title = prompt ? roomTitle(prompt, { log }) : null
+    let parts = (sep >= 0 ? body.slice(0, sep) : body).slice('!spawn'.length).trim().split(/\s+/).filter(Boolean)
     const encrypted = parts.some((p) => p === '--encrypted' || p === '-e')
     parts = parts.filter((p) => p !== '--encrypted' && p !== '-e')
     // The model name identifies its backend, so naming one is also how a room
@@ -1604,11 +1623,20 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
     pendingSpawns.delete(`${roomId}:${cwd}`)
     try {
-      const spawned = await spawnRoom(cwd, model, provider, sharing.length > 0 ? root : null, { encrypted })
+      const spawned = await spawnRoom(cwd, model, provider, sharing.length > 0 ? root : null, { encrypted, title })
       const where = spawned.branch
         ? `a worktree of ${path.basename(cwd)} on \`${spawned.branch}\``
         : path.basename(cwd)
-      await sendRoomText(roomId, `Spawned ${encrypted ? 'an encrypted room for ' : ''}${where} on ${modelLabel(model)} — check your invites.`)
+      const named = spawned.name !== spawned.slug ? ` "${spawned.name}"` : ''
+      await sendRoomText(roomId, `Spawned ${encrypted ? 'an encrypted room' : 'a room'}${named} for ${where} on ${modelLabel(model)} — check your invites.`)
+      // A typed prompt has nobody to deliver it but us: say what was asked, so
+      // the room's history starts with it, and start on it.
+      if (typedPrompt && !appPrompt) {
+        await sendRoomText(spawned.room_id, `Started from \`!spawn\`:\n\n${typedPrompt.split('\n').map((l) => `> ${l}`).join('\n')}`, {
+          'com.construct.machine': { kind: 'task', source: 'claude-spawn' },
+        }).catch((e) => log(`Could not post the spawn prompt: ${e.message}`))
+        void drainRoom(spawned.room_id, null, typedPrompt)
+      }
       // A requested worktree that git refused still spawns, in the shared tree.
       if (sharing.length > 0 && root && !spawned.branch) {
         await sendRoomText(roomId,

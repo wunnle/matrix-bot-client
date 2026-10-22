@@ -32,5 +32,7 @@ export default defineConfig([
       globals: globals.node,
     },
     rules: { 'no-undef': 'error' },
+    // Disable comments written for rules this block doesn't run are not stale.
+    linterOptions: { reportUnusedDisableDirectives: 'off' },
   },
 ])

@@ -49,6 +49,9 @@ export async function spawnAgentRoom(
   client: sdk.MatrixClient,
   hostRoomId: string,
   provider: AgentProvider = 'claude',
+  // Names the room. The bot only reads it for that; the caller sends it into
+  // the room as the first message once it is open (see RoomList's handleSpawn).
+  prompt: string | null = null,
 ): Promise<string> {
   // Subscribed before the send, not after: the bot can invite faster than the
   // send's own round trip returns, and an invite that lands first is missed.
@@ -62,7 +65,11 @@ export async function spawnAgentRoom(
   )
   const invited = waitForInvite(client, known)
   try {
-    await client.sendMessage(hostRoomId, { msgtype: 'm.text', body: spawnCommand(provider) } as never)
+    await client.sendMessage(hostRoomId, {
+      msgtype: 'm.text',
+      body: spawnCommand(provider),
+      ...(prompt ? { 'com.construct.spawn': { prompt } } : {}),
+    } as never)
   } catch (e) {
     invited.cancel()
     throw e

@@ -765,6 +765,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   z-index: 150;
   display: flex;
   flex-direction: column;
+  min-width: 0;
   background: var(--bg);
   padding-top: env(safe-area-inset-top);
 }
@@ -786,6 +787,83 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   flex-shrink: 0;
 }
 .room-sidebar-title { font-weight: 600; color: var(--text-strong); }
+/* Artifacts | Shared, when the room has artifacts. */
+.room-sidebar-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--bg-active);
+}
+.room-sidebar-tab {
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.room-sidebar-tab span { margin-left: 2px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.room-sidebar-tab:hover { color: var(--text); }
+.room-sidebar-tab--on { background: var(--bg); color: var(--text-strong); }
+/* A page needs more room than a list; the chat column gives it up. */
+@media (min-width: 641px) {
+  .room-sidebar.room-sidebar--wide { width: min(560px, 45vw); }
+}
+.artifact-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.artifact-view-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 8px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.artifact-view-back {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+.artifact-view-back:hover { background: var(--bg-hover); color: var(--text); }
+.artifact-view-heading { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.artifact-view-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.artifact-view-meta { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.artifact-view-open {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text);
+  text-decoration: none;
+}
+.artifact-view-open .material-icons { font-size: 14px; }
+.artifact-view-open:hover { background: var(--bg-hover); }
+/* The page's own background shows; a white page stays white in a dark app,
+   as it would on claude.ai. */
+.artifact-frame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: #fff;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.artifact-preview-note { padding: 16px 20px; font-size: 14px; color: var(--text-muted); line-height: 1.5; }
+.artifact-preview-loading { flex: 1; background: var(--bg-active); animation: live-pulse 1.4s ease-in-out infinite; }
 .room-sidebar-close {
   width: 32px;
   height: 32px;
@@ -830,6 +908,14 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   font-size: 14px;
   color: var(--text);
   text-decoration: none;
+}
+/* A row that opens in the panel is a button; it lays out like the links. */
+button.room-sidebar-link {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
 }
 /* The whole row is the link's hit area. */
 .room-sidebar-link::after { content: ''; position: absolute; inset: 0; border-radius: 10px; }
@@ -2981,7 +3067,62 @@ a.msg-file:hover { text-decoration: underline; }
   white-space: normal;
   width: 100%;
 }
-.message.other .message-pin-surface:has(.subagent-card) { width: 100%; }
+.message.other .message-pin-surface:has(.subagent-card, .artifact-card) { width: 100%; }
+/* A page an agent published to claude.ai (com.construct.artifact). */
+.artifact-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 480px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-active);
+  color: var(--text);
+  text-decoration: none;
+  transition: background 0.1s;
+}
+.artifact-card:hover { background: var(--bg-hover); }
+/* The whole card is a link; it must not read as underlined link text. */
+.bot-text a.artifact-card,
+.bot-text a.artifact-card:hover,
+.bot-text a.artifact-card * { color: inherit; text-decoration: none; }
+.bot-text a.artifact-card .artifact-card-description,
+.bot-text a.artifact-card .artifact-card-meta,
+.bot-text a.artifact-card .artifact-card-open { color: var(--text-muted); }
+.bot-text a.artifact-card .artifact-card-icon { color: var(--accent); }
+.artifact-card-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--accent);
+  font-size: 20px;
+}
+.artifact-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.artifact-card-title {
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.3;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.artifact-card-description {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.artifact-card-meta { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.artifact-card-open { flex: none; font-size: 16px; color: var(--text-muted); }
 .subagent-card {
   width: 100%;
   max-width: 480px;

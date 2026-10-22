@@ -21,6 +21,7 @@ import { fetchPlanUsage, sameUsage, fetchCodexUsage, sameCodexUsage } from './pl
 import { encryptAttachment, decryptAttachment } from '../src/lib/attachmentCrypto.js'
 import { notifyEncrypted, wantsPush } from './bot-push.mjs'
 import { createCardPoster } from './subagent-cards.mjs'
+import { SNAPSHOT_MAX_BYTES, artifactContent, artifactEdit, createArtifactRegistry } from './artifact-cards.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
@@ -450,6 +451,45 @@ function sendToolProgress(roomId, progress) {
   })
 }
 
+const artifactRegistry = createArtifactRegistry(path.join(STORE_DIR, 'artifacts.json'))
+// One card update at a time per page, so two quick republishes can't both find
+// no card and post two.
+const artifactQueue = new Map()
+
+// The published page, uploaded beside its card so Construct can show it in-app.
+// Best effort: without it the card still opens the page on claude.ai.
+async function artifactSnapshot(roomId, file) {
+  if (!file) return undefined
+  try {
+    const size = fs.statSync(file).size
+    if (size > SNAPSHOT_MAX_BYTES) return undefined
+    const media = await uploadMedia(roomId, fs.readFileSync(file), path.basename(file), 'text/html')
+    return { ...media, size }
+  } catch (e) {
+    log(`[${roomId}] no in-app copy of ${file}: ${e.message}`)
+    return undefined
+  }
+}
+
+// A page an agent published to claude.ai: a new card, or its existing card
+// edited to the new version.
+function postArtifact(roomId, page) {
+  const key = `${roomId} ${page.url}`
+  const run = (artifactQueue.get(key) ?? Promise.resolve()).then(async () => {
+    const content = withModel(roomId, artifactContent({ ...page, snapshot: await artifactSnapshot(roomId, page.file) }))
+    const known = artifactRegistry.get(roomId, page.url)
+    if (known) {
+      await client.sendMessage(roomId, artifactEdit(known.eventId, content))
+      artifactRegistry.set(roomId, page.url, { ...known, version: page.version })
+      return
+    }
+    const res = await client.sendMessage(roomId, content)
+    artifactRegistry.set(roomId, page.url, { eventId: res.event_id, version: page.version })
+  })
+  artifactQueue.set(key, run.catch(() => {}))
+  return run
+}
+
 // Claude Code answers in Markdown; Construct only renders rich text from
 // formatted_body (ChatView reads it when format is org.matrix.custom.html) and
 // otherwise prints the plain body verbatim, asterisks and all. The plain body
@@ -694,6 +734,19 @@ const LOCATION_INSTRUCTION =
   '`~/.hermes/scripts/places.py search "<place, city>" [--near LAT LON]`, and ' +
   'get the user\'s current position, if needed, from `~/.hermes/scripts/local_time.py`.'
 
+// The Artifact tool is on in every room (CLAUDE_CODE_ARTIFACT in
+// providers/claude.mjs); this is where it fits in a chat on a phone. Fixed
+// text, for the same reason as above.
+const ARTIFACT_INSTRUCTION =
+  'The user reads this room on a phone, where long replies are hard to use. ' +
+  'Whenever the answer is something to look at or come back to rather than a ' +
+  'short reply (a report, plan, comparison, research summary, table longer than ' +
+  'a screen, checklist, dashboard, mockup or diagram), publish it as an ' +
+  'Artifact and keep the chat reply to one or two lines and the link. Construct ' +
+  'posts a card for every page you publish and lists them all in the room\'s ' +
+  'sidebar, so the page is easy to find again. To change it later, publish the ' +
+  'same file again: the link stays and the card shows the new version.'
+
 // Construct turns a ```form block into a checklist with a Submit button
 // (src/lib/form.ts, extractFormBlock); the answer comes back as an ordinary
 // message. Hermes agents learn it from their construct-form skill.
@@ -726,6 +779,8 @@ function runTurn(roomId, prompt) {
   // Room policy, not provider policy: what the agent should be told about this
   // room. The adapter decides where these end up.
   const instructions = [QUICK_ANSWER_INSTRUCTION, liveActivityInstruction(roomId), LOCATION_INSTRUCTION, FORM_INSTRUCTION]
+  // Only Claude rooms have the tool; telling Codex about it would be a lie.
+  if (provider.name === 'claude') instructions.push(ARTIFACT_INSTRUCTION)
   // The rename nudge rides on the prompt, not the instructions: it drops out
   // after turn two, and changing the system prompt of a resumed session
   // throws away its cached prefix (and, on Opus 5.5 / Fable 5.1, its earlier
@@ -784,6 +839,9 @@ function runTurn(roomId, prompt) {
     // A subagent's card, re-sent as it works; providers without subagents
     // never call it.
     onSubagent: (card) => { cards.update(card) },
+    onArtifact: (page) => {
+      postArtifact(roomId, page).catch((e) => log(`Could not post artifact card: ${e.message}`))
+    },
     // A turn can block on a human answering an approval, so this must exceed
     // the approval timeout rather than race it.
     timeoutMs: APPROVAL_TIMEOUT_MS + 15 * 60 * 1000,

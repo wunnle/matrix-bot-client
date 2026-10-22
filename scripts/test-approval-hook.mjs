@@ -217,6 +217,32 @@ for (const [file, expected] of [
   if (got !== expected) { failed++; console.log(`FAIL  Write ${file}: want ${expected}, got ${got}`) }
 }
 
+// Artifacts publish to Sinan's own claude.ai, private by default: free, except
+// what is permanent, overwrites someone's newer save, grants the page powers,
+// or would publish a credential.
+for (const [input, expected, why] of [
+  [{ file_path: '/tmp/x/report.html' }, 'allow', 'plain publish'],
+  [{ action: 'publish', file_path: '/tmp/x/report.html', url: 'https://claude.ai/artifact/abc' }, 'allow', 'republish'],
+  [{ action: 'read', url: 'https://claude.ai/artifact/abc' }, 'allow', 'read'],
+  [{ action: 'list' }, 'allow', 'list'],
+  [{ action: 'quickstart', intent: 'other' }, 'allow', 'quickstart'],
+  [{ action: 'delete', url: 'https://claude.ai/artifact/abc' }, 'deny', 'delete is permanent'],
+  [{ file_path: '/tmp/x/report.html', force: true }, 'deny', 'force discards a newer version'],
+  [{ file_path: '/tmp/x/report.html', capabilities: { db: {} } }, 'deny', 'capabilities grant the page powers'],
+  [{ file_path: '/tmp/x/report.html', capabilities: {} }, 'allow', 'an empty capabilities object grants nothing'],
+  [{ file_path: '/home/wunnle/matrix-pwa/scripts/.env' }, 'deny', 'credential as the page'],
+  [{ file_path: '/tmp/x/a.html', files: { 'key.txt': '/home/wunnle/.ssh/id_ed25519' } }, 'deny', 'credential as a supporting file'],
+  [{ file_path: '/tmp/x/a.html', files: { 'k.txt': { from: '/home/wunnle/.npmrc' } } }, 'deny', 'credential via {from}'],
+  [{ url: 'https://claude.ai/artifact/abc', asset: true, file_paths: ['/tmp/a.png', '/home/wunnle/.codex/auth.json'] }, 'deny', 'credential among assets'],
+]) {
+  const got = ask('Artifact', input)
+  if (got !== expected) { failed++; console.log(`FAIL  Artifact ${why}: want ${expected}, got ${got}`) }
+}
+for (const tool of ['ArtifactComments', 'ArtifactData']) {
+  const got = ask(tool, { action: 'list', url: 'https://claude.ai/artifact/abc' })
+  if (got !== 'deny') { failed++; console.log(`FAIL  ${tool} should still ask, got ${got}`) }
+}
+
 // Replay: every tool call the bots actually made, to track the prompt rate.
 if (process.argv.includes('--replay')) {
   const dir = path.join(os.homedir(), '.claude/projects')

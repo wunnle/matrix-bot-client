@@ -98,6 +98,14 @@ const MESSAGES = {
       { title: 'Construct deploys', subtitle: 'vercel.com', description: 'A plain link card: the whole card is the link.', url: 'https://vercel.com' },
     ],
   }),
+  artifact: bot('📄 Claude Code Integration: https://claude.ai/artifact/CPN1WCF3uQZ1Qu7viFLkQ9', {
+    machine: { kind: 'notification', source: 'claude-artifact' },
+    artifact: { url: 'https://claude.ai/artifact/CPN1WCF3uQZ1Qu7viFLkQ9', title: 'Claude Code Integration', description: 'Status of the project bringing subagents and artifacts into agent rooms.', version: 2 },
+  }),
+  subagent: bot('🤖 agent: Survey room list rendering (Explore) — working', {
+    machine: { kind: 'notification', source: 'claude-subagent' },
+    subagent: { id: 't1', description: 'Survey room list rendering', agentType: 'Explore', status: 'running', lines: [{ emoji: '📖', tool: 'read', content: 'src/components/RoomList.tsx' }], toolUses: 7, durationMs: 42000 },
+  }),
   threads: bot('threads', {
     threads: [
       { title: 'Why the build failed', summary: 'A type error in RoomList.tsx after the merge.', body: 'The merge kept both `agent` fields.\n\n```\nsrc/components/RoomList.tsx:88 TS2300 Duplicate identifier\n```\n\nFixed by dropping the older one.' },
@@ -107,6 +115,11 @@ const MESSAGES = {
 }
 
 const SHARED = collectRoomMedia([
+  bot('📄 Claude Code Integration: https://claude.ai/artifact/CPN1WCF3uQZ1Qu7viFLkQ9', {
+    eventId: '$art1',
+    artifact: { url: 'https://claude.ai/artifact/CPN1WCF3uQZ1Qu7viFLkQ9', title: 'Claude Code Integration', description: 'Status of the project bringing subagents and artifacts into agent rooms.', version: 2 },
+  }),
+  bot('Draft is at https://claude.ai/artifact/Q3PlanDraft01', { formattedBody: 'Draft is at <a href="https://claude.ai/artifact/Q3PlanDraft01">Q3 plan</a>' }),
   bot('See https://interestingengineering.com/ai-robotics/xai-grok-bot-computer-agent and BEN-263.', {
     formattedBody: '<a href="https://interestingengineering.com/ai-robotics/xai-grok-bot-computer-agent">Grok Bot is xAI\'s new 24/7 coworker</a> and BEN-263.',
   }),
@@ -221,6 +234,15 @@ export default function DesignLibrary() {
         </Frame>
       </Section>
 
+      <Section title="Agent cards" note="A subagent at work, and a page an agent published to claude.ai.">
+        <Frame className="dl-chat">
+          <div className="messages-inner">
+            <Row msg={MESSAGES.subagent} />
+            <Row msg={MESSAGES.artifact} />
+          </div>
+        </Frame>
+      </Section>
+
       <Section title="More messages" note="Date divider, reactions, someone else in the room, a machine notification, a message that would not decrypt.">
         <Frame className="dl-chat">
           <div className="messages-inner">
@@ -298,6 +320,45 @@ export default function DesignLibrary() {
             onJump={noop}
             onOpenImage={noop}
             onClose={noop}
+            tab="shared"
+            onTab={noop}
+            openArtifact={null}
+            onOpenArtifact={noop}
+          />
+        </Frame>
+      </Section>
+
+      <Section title="Artifacts panel" note="Pages agents published to claude.ai: the list, and one opened (here without an in-app copy).">
+        <Frame className="dl-shared">
+          <RoomSidebar
+            media={SHARED}
+            mediaUrls={SHARED_URLS}
+            hasMore={false}
+            loadingMore={false}
+            onLoadMore={noop}
+            onJump={noop}
+            onOpenImage={noop}
+            onClose={noop}
+            tab="artifacts"
+            onTab={noop}
+            openArtifact={null}
+            onOpenArtifact={noop}
+          />
+        </Frame>
+        <Frame className="dl-shared">
+          <RoomSidebar
+            media={SHARED}
+            mediaUrls={SHARED_URLS}
+            hasMore={false}
+            loadingMore={false}
+            onLoadMore={noop}
+            onJump={noop}
+            onOpenImage={noop}
+            onClose={noop}
+            tab="artifacts"
+            onTab={noop}
+            openArtifact={undefined}
+            onOpenArtifact={noop}
           />
         </Frame>
       </Section>

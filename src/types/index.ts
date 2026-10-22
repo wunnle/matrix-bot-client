@@ -52,6 +52,18 @@ export interface SubagentCard {
   summary?: string
 }
 
+// A page an agent published to claude.ai with Claude's Artifact tool
+// (com.construct.artifact); a republish edits the same message.
+export interface ConstructArtifact {
+  url: string
+  title: string
+  description?: string
+  version?: number
+  // A copy of the page uploaded beside the card, shown in-app (claude.ai can't
+  // be framed): its mxc, and the key when the room is encrypted.
+  snapshot?: { mxc: string; file?: EncryptedFile }
+}
+
 // An m.location message. Accuracy is the radius in metres, when the sender gave one.
 export interface SharedLocation {
   lat: number
@@ -104,6 +116,7 @@ export interface Message {
   approval?: ConstructApproval
   toolProgress?: ToolProgressLine[]
   subagent?: SubagentCard
+  artifact?: ConstructArtifact
   timestamp: number
   isOwnMessage: boolean
   // A third sender class beside you and the room's bot: another member making

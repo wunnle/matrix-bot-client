@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { claude, progressForToolUse, mainAgentBlocks, createSubagentTracker } from './providers/claude.mjs'
+import { claude, progressForToolUse, mainAgentBlocks, createSubagentTracker, createArtifactWatcher } from './providers/claude.mjs'
 
 // Progress carries the agent's own description and file names, never raw
 // commands, patterns, queries or URLs.
@@ -51,6 +51,43 @@ assert.deepEqual(mainAgentBlocks(assistant(blocks)), blocks)
 // A subagent's own text and tool calls stay out of the room.
 assert.deepEqual(mainAgentBlocks(assistant(blocks, { parent_tool_use_id: 'task1' })), [])
 assert.deepEqual(mainAgentBlocks({ type: 'user', message: { content: [] } }), [])
+
+// Artifact publishes are reported once their result names the page.
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-watch-'))
+  fs.writeFileSync(path.join(tmp, 'page.html'), '<title>  Q3   Plan </title><p>hi</p>')
+  const pages = []
+  const watch = createArtifactWatcher({ cwd: tmp, onArtifact: (p) => pages.push(p) })
+  const call = (id, input, extra = {}) => watch(assistant([{ type: 'tool_use', id, name: 'Artifact', input }], extra))
+  const result = (id, text, extra = {}) => watch({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: text, ...extra }] } })
+  const published = (url, v) => `Published /x/page.html at ${url} (Version ${v}, version id 1-2) Icon: "chart".\n\nLive subscription: none`
+
+  call('a', { file_path: 'page.html', description: 'The plan.' })
+  assert.deepEqual(pages, [], 'nothing until the result arrives')
+  result('a', published('https://claude.ai/artifact/CPN1', 1))
+  assert.deepEqual(pages.at(-1), { url: 'https://claude.ai/artifact/CPN1', title: 'Q3 Plan', description: 'The plan.', version: 1, file: path.join(tmp, 'page.html') }, 'title from the page\'s own <title>, file resolved against the cwd')
+  // A result as content blocks, from a subagent, with an explicit title.
+  call('b', { file_path: '/nope/missing.html', title: 'Given title' }, { parent_tool_use_id: 'S' })
+  result('b', [{ type: 'text', text: published('https://claude.ai/code/artifact/0f-9a', 3) }])
+  assert.deepEqual([pages.at(-1).title, pages.at(-1).version, pages.at(-1).url], ['Given title', 3, 'https://claude.ai/code/artifact/0f-9a'])
+  // No <title> and no title: the file name.
+  call('c', { file_path: '/nope/weekly-report.html' })
+  result('c', published('https://claude.ai/artifact/W', 2))
+  assert.equal(pages.at(-1).title, 'weekly-report')
+  // With supporting files, or a Markdown page, the file alone isn't the page: no copy.
+  call('g', { file_path: '/x/index.html', files: { 'app.js': '/x/app.js' } }); result('g', published('https://claude.ai/artifact/M', 1))
+  call('h', { file_path: '/x/notes.md' }); result('h', published('https://claude.ai/artifact/N', 1))
+  assert.deepEqual(pages.slice(-2).map((p) => p.file), [undefined, undefined])
+  const before = pages.length
+  // Not pages: reads, asset uploads, failures, and results for other tools.
+  call('d', { action: 'read', url: 'https://claude.ai/artifact/X' }); result('d', 'https://claude.ai/artifact/X …')
+  call('e', { url: 'https://claude.ai/artifact/X', asset: true, file_path: '/a.png' }); result('e', published('https://claude.ai/artifact/X', 4))
+  call('f', { file_path: 'page.html' }); result('f', 'Publish refused: https://claude.ai/artifact/X is newer', { is_error: true })
+  result('zzz', published('https://claude.ai/artifact/Y', 1))
+  assert.equal(pages.length, before)
+  fs.rmSync(tmp, { recursive: true, force: true })
+}
+assert.deepEqual(progressForToolUse({ type: 'tool_use', id: 'p', name: 'Artifact', input: { file_path: '/x.html' } }), { id: 'p', emoji: '📄', tool: 'artifact', content: 'Publishing a page' })
 
 // Subagent cards follow the event shapes a real 2.1.306 stream carries.
 {

@@ -7,7 +7,7 @@
 //
 // Wired up via --settings; see APPROVAL_SETTINGS in claude-code-bot.mjs.
 import * as path from 'node:path'
-import { AUTO_ALLOW, PATH_SCOPED, SAFE_SKILLS, bashIsSafe, isSandboxPath, isSecretPath } from './approval-rules.mjs'
+import { AUTO_ALLOW, PATH_SCOPED, SAFE_SKILLS, artifactIsSafe, bashIsSafe, isSandboxPath, isSecretPath } from './approval-rules.mjs'
 
 const BROKER_URL = process.env.AGENT_APPROVAL_URL ?? 'http://127.0.0.1:8787/approve'
 
@@ -109,6 +109,10 @@ const cwd = payload.cwd ?? process.cwd()
 const readTarget = toolInput.file_path ?? toolInput.notebook_path ?? toolInput.path
 if (AUTO_ALLOW.has(toolName) && !isSecretPath(readTarget, cwd)) {
   decide('allow', 'Read-only tool.')
+}
+
+if (toolName === 'Artifact' && artifactIsSafe(toolInput, cwd)) {
+  decide('allow', 'Artifact publish to the user\'s own claude.ai, private by default.')
 }
 
 if (toolName === 'Skill' && SAFE_SKILLS.has(toolInput.skill)) {

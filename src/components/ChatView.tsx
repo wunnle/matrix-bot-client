@@ -54,6 +54,7 @@ import ApprovalBar from './ApprovalBar'
 import ModelMenu from './ModelMenu'
 import { approvalChoices, parseApprovalCard } from '../lib/approval'
 import { artifactIdOf, parseArtifact } from '../lib/artifact'
+import { useArtifactIndex } from '../hooks/useArtifactIndex'
 import { extractFormBlock, formAnswerBody, formResponseFromContent, FORM_RESPONSE_KEY } from '../lib/form'
 import { extractLocationBlocks, formatCoords, locationContent, locationFromContent, mapsUrl, mapTiles, MAP_ATTRIBUTION } from '../lib/location'
 import LocationPicker from './LocationPicker'
@@ -2163,7 +2164,18 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setShowSidebar(open)
     if (window.matchMedia(WIDE).matches) localStorage.setItem(SIDEBAR_KEY, open ? '1' : '0')
   }
-  const roomMedia = useMemo(() => (showSidebar ? collectRoomMedia(messages) : null), [showSidebar, messages])
+  const loadedMedia = useMemo(() => (showSidebar ? collectRoomMedia(messages) : null), [showSidebar, messages])
+  // Artifacts whose cards are further back than the loaded messages, found
+  // through the bot's index in room state; listed after the loaded ones, as
+  // they are older.
+  const loadedArtifactIds = useMemo(() => loadedMedia?.artifacts.map((a) => a.id) ?? [], [loadedMedia])
+  const indexedArtifacts = useArtifactIndex(client, roomId, showSidebar, loadedArtifactIds)
+  const roomMedia = useMemo(
+    () => (loadedMedia && indexedArtifacts.length
+      ? { ...loadedMedia, artifacts: [...loadedMedia.artifacts, ...indexedArtifacts] }
+      : loadedMedia),
+    [loadedMedia, indexedArtifacts],
+  )
   // Artifacts open on their own tab, newest first unless one was picked
   // (undefined: the newest; null: the list).
   const [openArtifact, setOpenArtifact] = useState<string | null | undefined>(undefined)

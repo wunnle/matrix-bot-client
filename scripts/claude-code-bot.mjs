@@ -744,6 +744,10 @@ function runTurn(roomId, prompt) {
       'm.relates_to': { rel_type: 'm.replace', event_id: eventId },
       'com.construct.machine': content['com.construct.machine'],
     }),
+    // A subagent done within seconds is a tool line like any other, and folds
+    // into the turn's activity chip with them.
+    onQuick: (card) => sendToolProgress(roomId, { emoji: '🤖', tool: 'agent', content: card.description })
+      .catch((e) => log(`Could not post tool progress: ${e.message}`)),
     onError: (e) => log(`Could not post subagent card: ${e.message}`),
   })
 

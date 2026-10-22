@@ -1960,8 +1960,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const dx = e.changedTouches[0].clientX - touchStartX.current
     const dy = Math.abs(e.changedTouches[0].clientY - touchStartY.current)
     // Right swipe from left edge: dx > 60px, not too vertical, started within 40px of left edge
-    if (dx > 60 && dy < 80 && touchStartX.current < 40) {
+    if (enableSwipeBack && dx > 60 && dy < 80 && touchStartX.current < 40) {
       onBack()
+    }
+    // Left swipe from the right edge opens the side panel (on Artifacts when
+    // the room has any). Phone only; a wide screen shows it as a column. No
+    // browser owns this edge the way it owns the left one, beyond Safari's
+    // rarely-used "forward", so it is on in the browser too.
+    if (dx < -60 && dy < 80 && touchStartX.current > window.innerWidth - 32 && !window.matchMedia(WIDE).matches) {
+      toggleSidebar(true)
     }
     touchStartX.current = null
     touchStartY.current = null
@@ -2149,14 +2156,16 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [showSidebar, setShowSidebar] = useState(
     () => window.matchMedia(WIDE).matches && localStorage.getItem(SIDEBAR_KEY) === '1',
   )
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('artifacts')
   const toggleSidebar = (open: boolean) => {
+    // Opening starts on Artifacts (the tab only exists when the room has any).
+    if (open) setSidebarTab('artifacts')
     setShowSidebar(open)
     if (window.matchMedia(WIDE).matches) localStorage.setItem(SIDEBAR_KEY, open ? '1' : '0')
   }
   const roomMedia = useMemo(() => (showSidebar ? collectRoomMedia(messages) : null), [showSidebar, messages])
   // Artifacts open on their own tab, newest first unless one was picked
   // (undefined: the newest; null: the list).
-  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('artifacts')
   const [openArtifact, setOpenArtifact] = useState<string | null | undefined>(undefined)
   const showArtifact = useCallback((url: string) => {
     setSidebarTab('artifacts')
@@ -2190,11 +2199,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       client.off(sdk.MatrixEventEvent.Decrypted, consider)
     }
   }, [client, roomId, showArtifact])
-  // Each room opens on its newest page: reset while rendering the new room,
-  // not in an effect after it.
+  // Each room opens on Artifacts and its newest page: reset while rendering the
+  // new room, not in an effect after it.
   const [artifactRoom, setArtifactRoom] = useState(roomId)
   if (artifactRoom !== roomId) {
     setArtifactRoom(roomId)
+    setSidebarTab('artifacts')
     setOpenArtifact(undefined)
   }
   const jumpToMessage = (eventId: string) => {
@@ -2219,8 +2229,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     <div className="chat-shell">
     <div
       className={`chat-view${pageShown ? ' chat-view--page' : ''}`}
-      onTouchStart={enableSwipeBack ? handleTouchStart : undefined}
-      onTouchEnd={enableSwipeBack ? handleTouchEnd : undefined}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}

@@ -77,6 +77,28 @@ export const PATH_SCOPED = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit'
 // grants nothing the skill's own calls would not have to earn separately.
 export const SAFE_SKILLS = new Set(['linear', 'next', 'room-rename', 'ship', 'newproject'])
 
+// Claude's Artifact tool publishes a page to Sinan's own claude.ai account,
+// private until he shares it, and rooms are told to use it freely; a tap per
+// publish would undo that. Still asked: delete (permanent, for everyone with
+// the link), `force` (throws away a newer version someone saved), a page that
+// asks for runtime capabilities (live data, devices, Claude calls), and any
+// file that looks like a credential. ArtifactComments and ArtifactData are not
+// covered: they write where other people read.
+const ARTIFACT_FREE_ACTIONS = new Set(['publish', 'read', 'list', 'open', 'quickstart', 'pin', 'unpin'])
+export function artifactIsSafe(input, cwd) {
+  const action = input?.action ?? 'publish'
+  if (!ARTIFACT_FREE_ACTIONS.has(action)) return false
+  if (input.force) return false
+  if (input.capabilities && Object.keys(input.capabilities).length > 0) return false
+  const sources = [input.file_path, ...(Array.isArray(input.file_paths) ? input.file_paths : [])]
+  const files = input.files
+  if (Array.isArray(files)) sources.push(...files.map((f) => f?.path))
+  else if (files && typeof files === 'object') {
+    for (const v of Object.values(files)) sources.push(typeof v === 'string' ? v : v?.from)
+  }
+  return !sources.some((s) => typeof s === 'string' && isSecretPath(s, cwd))
+}
+
 // Bash commands that only read state run without a prompt. Anything unrecognised
 // — or any sign of mutation (write redirects, sudo, command substitution, find
 // -delete/-exec) — falls through to the human approval broker.

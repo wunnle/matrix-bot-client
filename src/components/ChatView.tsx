@@ -41,18 +41,19 @@ import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
 import { useVisualViewportResize } from '../hooks/useVisualViewport'
 import RoomEditor from './RoomEditor'
-import RoomSidebar from './RoomSidebar'
+import RoomSidebar, { type SidebarTab } from './RoomSidebar'
 import { collectRoomMedia } from '../lib/roomMedia'
 import { HeaderUsageBar } from './PlanUsageMeter'
 import { usePlanUsage, useCodexUsage } from '../hooks/usePlanUsage'
 import { Marked } from 'marked'
-import type { Message, RoomConfig, ConstructThread, ConstructApproval, ConstructForm, ToolProgressLine, SharedLocation, SubagentCard } from '../types'
+import type { Message, RoomConfig, ConstructThread, ConstructApproval, ConstructForm, ToolProgressLine, SharedLocation, SubagentCard, ConstructArtifact } from '../types'
 import { useAgentRun, type AgentRun } from '../hooks/useAgentActivity'
 import { AgentActivityBar } from './AgentActivityBar'
 import MessageActionSheet from './MessageActionSheet'
 import ApprovalBar from './ApprovalBar'
 import ModelMenu from './ModelMenu'
 import { approvalChoices, parseApprovalCard } from '../lib/approval'
+import { artifactIdOf, parseArtifact } from '../lib/artifact'
 import { extractFormBlock, formAnswerBody, formResponseFromContent, FORM_RESPONSE_KEY } from '../lib/form'
 import { extractLocationBlocks, formatCoords, locationContent, locationFromContent, mapsUrl, mapTiles, MAP_ATTRIBUTION } from '../lib/location'
 import LocationPicker from './LocationPicker'
@@ -314,6 +315,38 @@ function SubagentBlock({ card }: { card: SubagentCard }) {
   )
 }
 
+// Opens an artifact in the room's side panel; provided by ChatView so the card,
+// deep inside memoised message rows, needs no prop threaded down to it.
+const ArtifactOpenContext = React.createContext<((url: string) => void) | null>(null)
+
+// A page an agent published to claude.ai. A tap opens it in the side panel
+// (from the copy the bot keeps); the link itself still goes to claude.ai, for
+// a long-press or a new tab.
+function ArtifactBlock({ artifact }: { artifact: ConstructArtifact }) {
+  const open = React.useContext(ArtifactOpenContext)
+  return (
+    <a
+      className="artifact-card"
+      href={artifact.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={open ? (e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey) return
+        e.preventDefault()
+        open(artifact.url)
+      } : undefined}
+    >
+      <span className="material-symbols-outlined artifact-card-icon" aria-hidden="true">article</span>
+      <span className="artifact-card-text">
+        <span className="artifact-card-title">{artifact.title}</span>
+        {artifact.description && <span className="artifact-card-description">{artifact.description}</span>}
+        <span className="artifact-card-meta">claude.ai{artifact.version && artifact.version > 1 ? ` · version ${artifact.version}` : ''}</span>
+      </span>
+      <span className="material-icons artifact-card-open" aria-hidden="true">open_in_new</span>
+    </a>
+  )
+}
+
 function getRoomModel(roomId: string): string | null {
   return localStorage.getItem(`room-model:${roomId}`)
 }
@@ -474,7 +507,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       const m = messages[i]
       // A subagent card is progress too; one posted behind an approval card
       // must not take its approval bar away.
-      if (isBotToolProgress(m) || ((m.interim || m.subagent) && !m.isOwnMessage && !m.isPeerMessage)) continue
+      if (isBotToolProgress(m) || ((m.interim || m.subagent || m.artifact) && !m.isOwnMessage && !m.isPeerMessage)) continue
       return m.isOwnMessage ? null : m
     }
     return null
@@ -2101,6 +2134,49 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     if (window.matchMedia(WIDE).matches) localStorage.setItem(SIDEBAR_KEY, open ? '1' : '0')
   }
   const roomMedia = useMemo(() => (showSidebar ? collectRoomMedia(messages) : null), [showSidebar, messages])
+  // Artifacts open on their own tab, newest first unless one was picked
+  // (undefined: the newest; null: the list).
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('artifacts')
+  const [openArtifact, setOpenArtifact] = useState<string | null | undefined>(undefined)
+  const showArtifact = useCallback((url: string) => {
+    setSidebarTab('artifacts')
+    setOpenArtifact(artifactIdOf(url) ?? undefined)
+    setShowSidebar(true)
+  }, [setSidebarTab, setOpenArtifact, setShowSidebar])
+  // A page published while the room is open comes up beside the chat on a wide
+  // screen. Not on the phone, where the panel would cover what's being read,
+  // and not for pages already there: only a card (or a republish's edit of
+  // one) that arrives now, in this room. Encrypted rooms only show the content
+  // once it decrypts, so that event counts too.
+  useEffect(() => {
+    const handled = new Set<string>()
+    const consider = (event: sdk.MatrixEvent) => {
+      if (event.getRoomId() !== roomId || Date.now() - event.getTs() > 60_000) return
+      const id = event.getId()
+      if (!id || handled.has(id)) return
+      const c = event.getContent()
+      const artifact = parseArtifact(c?.['com.construct.artifact'] ?? c?.['m.new_content']?.['com.construct.artifact'])
+      if (!artifact) return
+      handled.add(id)
+      if (window.matchMedia(WIDE).matches) showArtifact(artifact.url)
+    }
+    const onTimeline = (event: sdk.MatrixEvent, _room: sdk.Room | undefined, toStart: boolean | undefined) => {
+      if (!toStart) consider(event)
+    }
+    client.on(sdk.RoomEvent.Timeline, onTimeline)
+    client.on(sdk.MatrixEventEvent.Decrypted, consider)
+    return () => {
+      client.off(sdk.RoomEvent.Timeline, onTimeline)
+      client.off(sdk.MatrixEventEvent.Decrypted, consider)
+    }
+  }, [client, roomId, showArtifact])
+  // Each room opens on its newest page: reset while rendering the new room,
+  // not in an effect after it.
+  const [artifactRoom, setArtifactRoom] = useState(roomId)
+  if (artifactRoom !== roomId) {
+    setArtifactRoom(roomId)
+    setOpenArtifact(undefined)
+  }
   const jumpToMessage = (eventId: string) => {
     const row = messagesRef.current?.querySelector(`[data-event-id="${window.CSS.escape(eventId)}"]`)
     if (!row) { showToast('Not in the loaded part of the chat'); return }
@@ -2119,6 +2195,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // The chat and its side panel share a row, so the chat column narrows
   // rather than being covered. (The chat-view below keeps its old indent.)
   return (
+    <ArtifactOpenContext.Provider value={showArtifact}>
     <div className="chat-shell">
     <div
       className={`chat-view${pageShown ? ' chat-view--page' : ''}`}
@@ -2837,9 +2914,14 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         onJump={jumpToMessage}
         onOpenImage={openLightbox}
         onClose={() => toggleSidebar(false)}
+        tab={sidebarTab}
+        onTab={setSidebarTab}
+        openArtifact={openArtifact}
+        onOpenArtifact={setOpenArtifact}
       />
     )}
     </div>
+    </ArtifactOpenContext.Provider>
   )
 }
 
@@ -2993,6 +3075,7 @@ function eventToMessage(
     : undefined
 
   const subagent = parseSubagent(content?.['com.construct.subagent'])
+  const artifact = parseArtifact(content?.['com.construct.artifact'])
 
   const source = typeof content?.['com.construct.source'] === 'string'
     ? String(content['com.construct.source'])
@@ -3037,6 +3120,7 @@ function eventToMessage(
     approval,
     toolProgress: toolProgress && toolProgress.length > 0 ? toolProgress : undefined,
     subagent,
+    artifact,
     timestamp: event.getTs(),
     isOwnMessage,
     isPeerMessage,
@@ -3544,13 +3628,15 @@ function MessageRowInner({
                             <>
                               <div className="message-pin-surface">
                                 <div
-                                  className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.machine && !msg.subagent ? 'bot-text-machine' : ''}${msg.subagent ? ' bot-text-card' : ''}`}
+                                  className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.machine && !msg.subagent && !msg.artifact ? 'bot-text-machine' : ''}${msg.subagent || msg.artifact ? ' bot-text-card' : ''}`}
                                   onClick={cleanHtml ? onRichClick : undefined}
                                   onPointerDown={cleanHtml ? onRichPointerDown : undefined}
                                   title={msg.machine?.source ? `Machine message from ${msg.machine.source}` : undefined}
                                 >
                                   {msg.subagent
                                     ? <SubagentBlock card={msg.subagent} />
+                                    : msg.artifact
+                                    ? <ArtifactBlock artifact={msg.artifact} />
                                     : msg.threads
                                     ? <div className="msg-threads">{msg.threads.map((t, i) => <ThreadBlock key={i} thread={t} />)}</div>
                                     : msg.cards

@@ -16,6 +16,7 @@
 // final answer is being written becomes a turn of its own in the same process,
 // with its own `result`. So a turn is over only once a `result` arrives with
 // every message written also echoed — until then stdin stays open.
+import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { spawn } from 'node:child_process'
 
@@ -126,6 +127,12 @@ export function progressForToolUse(block, cwd = '') {
   if (known) {
     const detail = detailFor(block.name, block.input, cwd)
     return { id: block.id, ...known, ...(detail ? { content: detail } : {}) }
+  }
+  if (block.name === 'Artifact') {
+    const action = block.input?.action ?? 'publish'
+    const content = action === 'publish' ? (block.input?.asset ? 'Uploading to a page' : 'Publishing a page')
+      : action === 'read' ? 'Reading a page' : action === 'list' ? 'Listing pages' : 'Using artifacts'
+    return { id: block.id, emoji: '📄', tool: 'artifact', content }
   }
   if (block.name === 'Skill') {
     // A skill name is ours, not user data, and "Using a skill" says nothing.
@@ -267,6 +274,70 @@ export function createSubagentTracker({ cwd = '', onChange } = {}) {
   return { handle, close, isSubagentCall: (block) => block?.type === 'tool_use' && SUBAGENT_TOOLS.has(block.name) }
 }
 
+const ARTIFACT_URL = /https:\/\/claude\.ai\/(?:code\/)?artifact\/[\w-]+/
+const ARTIFACT_VERSION = /\(Version (\d+)/
+
+// What a published page calls itself: its <title>, which the Artifact tool
+// also reads from the first 8KB.
+function pageTitle(filePath, cwd) {
+  try {
+    const full = path.isAbsolute(filePath) ? filePath : path.join(cwd || '', filePath)
+    const fd = fs.openSync(full, 'r')
+    const buf = Buffer.alloc(8192)
+    const n = fs.readSync(fd, buf, 0, buf.length, 0)
+    fs.closeSync(fd)
+    const m = /<title[^>]*>([^<]{1,200})<\/title>/i.exec(buf.toString('utf8', 0, n))
+    return m ? m[1].replace(/\s+/g, ' ').trim() || null : null
+  } catch {
+    return null
+  }
+}
+
+const resultText = (content) => typeof content === 'string'
+  ? content
+  : Array.isArray(content) ? content.map((c) => (typeof c?.text === 'string' ? c.text : '')).join('\n') : ''
+
+// Pairs each Artifact publish call (the agent's or a subagent's) with the
+// result that names its claude.ai URL, and reports the page once that result
+// arrives: `onArtifact({ url, title, description, version, file? })`. Asset uploads,
+// reads, lists and the rest are not pages and say nothing.
+export function createArtifactWatcher({ cwd = '', onArtifact } = {}) {
+  const calls = new Map()
+  return (event) => {
+    if (event?.type === 'assistant') {
+      for (const block of event.message?.content ?? []) {
+        if (block?.type !== 'tool_use' || block.name !== 'Artifact' || !block.id) continue
+        const input = block.input ?? {}
+        if ((input.action ?? 'publish') !== 'publish' || input.asset) continue
+        calls.set(block.id, input)
+      }
+      return
+    }
+    if (event?.type !== 'user' || !calls.size) return
+    const content = event.message?.content
+    for (const block of Array.isArray(content) ? content : []) {
+      if (block?.type !== 'tool_result' || !calls.has(block.tool_use_id)) continue
+      const input = calls.get(block.tool_use_id)
+      calls.delete(block.tool_use_id)
+      if (block.is_error) continue
+      const text = resultText(block.content)
+      const url = ARTIFACT_URL.exec(text)?.[0]
+      if (!url) continue
+      const title = (typeof input.title === 'string' && input.title.trim())
+        || (typeof input.file_path === 'string' && (pageTitle(input.file_path, cwd) ?? path.basename(input.file_path).replace(/\.[^.]+$/, '')))
+        || 'Artifact'
+      const version = Number(ARTIFACT_VERSION.exec(text)?.[1]) || undefined
+      const description = typeof input.description === 'string' && input.description.trim() ? input.description.trim() : undefined
+      // The page as published, for a copy Construct can show in-app. Only a
+      // single .html page is the whole thing; one with supporting files isn't.
+      const file = typeof input.file_path === 'string' && /\.html?$/i.test(input.file_path) && !input.files && !input.type_url
+        ? (path.isAbsolute(input.file_path) ? input.file_path : path.join(cwd || '', input.file_path))
+        : undefined
+      try { onArtifact?.({ url, title: oneLine(title), description, version, ...(file ? { file } : {}) }) } catch {}
+    }
+  }
+}
+
 export const claude = {
   name: 'claude',
   models: MODELS,
@@ -297,7 +368,8 @@ export const claude = {
   // return value the caller could rely on mid-turn.
   // `onSubagent(card)`, when given, takes over reporting subagents: each one
   // becomes a card that is re-sent as it moves, instead of a single progress line.
-  run({ roomId, prompt, cwd, model, sessionId, instructions = [], approval, onProgress, onText, onSubagent, timeoutMs, onSession }) {
+  // `onArtifact(page)` hears of every page published to claude.ai in the turn.
+  run({ roomId, prompt, cwd, model, sessionId, instructions = [], approval, onProgress, onText, onSubagent, onArtifact, timeoutMs, onSession }) {
     const args = [
       '-p',
       // stream-json in print mode refuses to run without --verbose.
@@ -358,6 +430,7 @@ export const claude = {
       let timedOut = false
       const reported = new Set()
       const subagents = onSubagent ? createSubagentTracker({ cwd, onChange: onSubagent }) : null
+      const artifacts = onArtifact ? createArtifactWatcher({ cwd, onArtifact }) : null
       // Text the agent wrote, held back until the turn shows it goes on. Only
       // then is it narration; the last block is the reply itself, which the
       // `result` event repeats and the caller posts as the turn's answer.
@@ -388,6 +461,8 @@ export const claude = {
           }
           return
         }
+        // Before the subagent tracker, which keeps a subagent's events to itself.
+        artifacts?.(event)
         if (subagents?.handle(event)) return
         for (const block of mainAgentBlocks(event)) {
           if (block?.type === 'text' && block.text?.trim()) {

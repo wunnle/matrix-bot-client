@@ -1,9 +1,11 @@
-import type { Message, SharedLocation } from '../types'
+import type { ConstructArtifact, Message, SharedLocation } from '../types'
 import { parseActions, splitMarkdownCode } from './actions'
+import { artifactIdOf } from './artifact'
 
 /**
- * What a room's side panel lists: the links, images, files, places, Obsidian
- * notes and Linear issues / GitHub PRs in its loaded messages, newest first,
+ * What a room's side panel lists: the claude.ai artifacts, links, images,
+ * files, places, Obsidian notes and Linear issues / GitHub PRs in its loaded
+ * messages, newest first,
  * each pointing back at the message it came from.
  */
 
@@ -14,7 +16,21 @@ export interface RoomRef { kind: 'linear' | 'github'; label: string; url: string
 /** A vault note: `path` is its file path in the vault, without ".md". */
 export interface RoomNote { path: string; title: string; folder?: string; url: string; eventId: string; timestamp: number }
 
+/** A claude.ai artifact, once per page however often it was posted or republished. */
+export interface RoomArtifact {
+  /** The artifact's claude.ai id: one entry per page. */
+  id: string
+  url: string
+  title?: string
+  description?: string
+  version?: number
+  snapshot?: ConstructArtifact['snapshot']
+  eventId: string
+  timestamp: number
+}
+
 export interface RoomMedia {
+  artifacts: RoomArtifact[]
   links: RoomLink[]
   images: RoomMediaItem[]
   files: RoomMediaItem[]
@@ -105,6 +121,7 @@ function messageWikilinks(body: string): string[] {
 }
 
 export function collectRoomMedia(messages: Message[], linearWorkspace = LINEAR_WORKSPACE): RoomMedia {
+  const artifacts = new Map<string, RoomArtifact>()
   const links = new Map<string, RoomLink>()
   const refs = new Map<string, RoomRef>()
   const notes = new Map<string, RoomNote>()
@@ -128,6 +145,26 @@ export function collectRoomMedia(messages: Message[], linearWorkspace = LINEAR_W
       refs.delete(ref.label)
       refs.set(ref.label, { ...ref, title: ref.title ?? prev?.title, ...at })
     }
+    // Keyed by the artifact's id, so /artifact/X and /code/artifact/X links and
+    // the bot's card all land on one entry; what a card says beats a bare link.
+    const addArtifact = (id: string, a: Omit<RoomArtifact, 'id' | 'eventId' | 'timestamp'>) => {
+      const prev = artifacts.get(id)
+      artifacts.delete(id)
+      artifacts.set(id, {
+        id,
+        url: prev?.url ?? a.url,
+        title: a.title ?? prev?.title,
+        description: a.description ?? prev?.description,
+        version: Math.max(a.version ?? 0, prev?.version ?? 0) || undefined,
+        // The newest copy; a later bare link to the page doesn't lose it.
+        snapshot: a.snapshot ?? prev?.snapshot,
+        ...at,
+      })
+    }
+    if (m.artifact) {
+      const id = artifactIdOf(m.artifact.url)
+      if (id) addArtifact(id, m.artifact)
+    }
     const addNote = (path: string, url?: string) => {
       const slash = path.lastIndexOf('/')
       notes.delete(path)
@@ -150,6 +187,12 @@ export function collectRoomMedia(messages: Message[], linearWorkspace = LINEAR_W
         }
         const host = hostOf(url)
         if (!host) continue
+        const artifactId = artifactIdOf(url)
+        if (artifactId) {
+          // A link's text is a title only when it isn't the URL itself.
+          if (!m.artifact) addArtifact(artifactId, { url, title })
+          continue
+        }
         const linear = LINEAR_URL.exec(url)
         if (linear) { addRef({ kind: 'linear', label: linear[1].toUpperCase(), url, title }); continue }
         const gh = GITHUB_REF.exec(url)
@@ -176,6 +219,7 @@ export function collectRoomMedia(messages: Message[], linearWorkspace = LINEAR_W
   }
 
   return {
+    artifacts: [...artifacts.values()].reverse(),
     links: [...links.values()].reverse(),
     images: images.reverse(),
     files: files.reverse(),
@@ -186,6 +230,6 @@ export function collectRoomMedia(messages: Message[], linearWorkspace = LINEAR_W
 }
 
 export function isEmptyRoomMedia(media: RoomMedia): boolean {
-  return !media.links.length && !media.images.length && !media.files.length
+  return !media.artifacts.length && !media.links.length && !media.images.length && !media.files.length
     && !media.places.length && !media.refs.length && !media.notes.length
 }

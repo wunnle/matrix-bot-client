@@ -20,4 +20,17 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  // The bot and the Vercel functions run untyped Node, where nothing else
+  // notices a name that doesn't exist: a call to a removed helper sat in the
+  // bot, threw on every artifact, and was caught quietly. Just that check here;
+  // `npm test` runs it (lint:node, scripts/lint-node.mjs).
+  {
+    files: ['scripts/**/*.{js,mjs,cjs}', 'api/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: globals.node,
+    },
+    rules: { 'no-undef': 'error' },
+  },
 ])

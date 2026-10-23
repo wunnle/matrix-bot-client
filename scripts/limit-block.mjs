@@ -9,6 +9,12 @@
 // blocked), so these can stay loose without catching ordinary prose.
 const BLOCKED_RE = /(usage limit reached|session limit|rate[- ]limit|quota exceeded|limit .*\bresets?\b)/i
 
+// A task paused for recovery is not evidence of provider-wide quota exhaustion.
+export function isQuotaBlockedState(content) {
+  if (!content?.blocked) return false
+  return content.kind === 'quota' || (!content.kind && BLOCKED_RE.test(content.reason ?? ''))
+}
+
 // The CLI's machine-readable form: "Claude AI usage limit reached|1760000000".
 const EPOCH_RE = /limit reached\|(\d{9,13})/i
 

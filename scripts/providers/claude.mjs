@@ -369,7 +369,7 @@ export const claude = {
   // `onSubagent(card)`, when given, takes over reporting subagents: each one
   // becomes a card that is re-sent as it moves, instead of a single progress line.
   // `onArtifact(page)` hears of every page published to claude.ai in the turn.
-  run({ roomId, prompt, cwd, model, sessionId, instructions = [], approval, onProgress, onText, onSubagent, onArtifact, timeoutMs, onSession }) {
+  run({ roomId, prompt, cwd, model, sessionId, instructions = [], family, approval, onProgress, onText, onSubagent, onArtifact, timeoutMs, onSession }) {
     const args = [
       '-p',
       // stream-json in print mode refuses to run without --verbose.
@@ -380,6 +380,7 @@ export const claude = {
       // The PreToolUse hook is the real gate; see claude-approval-hook.mjs.
       '--settings', APPROVAL_SETTINGS,
     ]
+    if (family) args.push('--mcp-config', JSON.stringify({mcpServers:{agent_rooms:{command:process.execPath,args:[path.join(import.meta.dirname, '..', 'agent-family-mcp.mjs')]}}}))
     if (sessionId) args.push('--resume', sessionId)
     // One combined flag: repeating --append-system-prompt only keeps the last.
     if (instructions.length) args.push('--append-system-prompt', instructions.join('\n\n'))
@@ -392,6 +393,7 @@ export const claude = {
         // address so an overridden port stays consistent.
         env: {
           ...process.env,
+          ...(family ? {AGENT_FAMILY_URL:family.url, AGENT_FAMILY_TOKEN:family.token} : {}),
           AGENT_APPROVAL_URL: approval.url,
           AGENT_APPROVAL_TIMEOUT_MS: String(approval.timeoutMs),
           // Which room to ask. Cannot be derived from the session id during a

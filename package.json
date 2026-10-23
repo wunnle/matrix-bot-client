@@ -1,7 +1,7 @@
 {
   "name": "construct",
   "private": true,
-  "version": "1.0.467",
+  "version": "1.0.468",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,7 @@
     "sync:ios:remote": "npm run build && CAP_SERVER_URL=https://construct.kafagoz.com npx cap sync ios",
     "lint": "eslint .",
     "lint:node": "node scripts/lint-node.mjs",
-    "test": "npm run lint:node && node scripts/test-approval-hook.mjs && node scripts/test-codex-approval.mjs && node scripts/test-approval-queue.mjs && node scripts/test-auto-mode.mjs && node scripts/test-activities.mjs && node scripts/test-widgets.mjs && node scripts/test-claude-provider.mjs && node scripts/test-subagent-cards.mjs && node scripts/test-artifact-cards.mjs && node scripts/test-room-title.mjs && node scripts/test-watchlist-store.mjs && node scripts/test-watchlist-lookup.mjs && node scripts/test-process-usage.mjs && node scripts/test-usage-tabs.mjs && node scripts/test-attachment-crypto.mjs && node scripts/test-push-format.mjs",
+    "test": "npm run lint:node && node scripts/test-agent-family.mjs && node scripts/test-agent-outcome-order.mjs && node scripts/test-agent-family-transport.mjs && node scripts/test-agent-tree.mjs && node scripts/test-approval-hook.mjs && node scripts/test-codex-approval.mjs && node scripts/test-approval-queue.mjs && node scripts/test-auto-mode.mjs && node scripts/test-activities.mjs && node scripts/test-widgets.mjs && node scripts/test-claude-provider.mjs && node scripts/test-subagent-cards.mjs && node scripts/test-artifact-cards.mjs && node scripts/test-room-title.mjs && node scripts/test-watchlist-store.mjs && node scripts/test-watchlist-lookup.mjs && node scripts/test-process-usage.mjs && node scripts/test-usage-tabs.mjs && node scripts/test-attachment-crypto.mjs && node scripts/test-push-format.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

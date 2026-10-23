@@ -489,7 +489,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-rows {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   padding: 4px 12px 12px;
 }
 .room-rows-title {
@@ -506,9 +506,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   align-items: center;
   gap: 12px;
   width: 100%;
-  /* The avatar fills the row's left edge, flush top and bottom. */
-  padding: 0 8px 0 0;
-  border-radius: 12px;
+  padding: 8px;
+  border-radius: 16px;
   text-align: left;
   transition: background 0.1s;
 }
@@ -521,7 +520,6 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-row.active .room-row-avatar:not(:has(img)) { background: rgba(255, 255, 255, 0.08); }
 .room-row-avatar {
   flex: none;
-  align-self: flex-start;
   width: 40px;
   height: 40px;
   border-radius: 11px;
@@ -539,8 +537,8 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 15px;
-  line-height: 19px;
+  font-size: 14px;
+  line-height: 18px;
   font-weight: 500;
   color: var(--text-strong);
 }

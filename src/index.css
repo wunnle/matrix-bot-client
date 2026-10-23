@@ -522,24 +522,25 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-row-avatar {
   flex: none;
   align-self: flex-start;
-  width: 46px;
-  height: 46px;
-  border-radius: 12px;
-  font-size: 17px;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  font-size: 16px;
   /* Not a drag handle here: a touch on it should scroll the list. */
   touch-action: auto;
 }
-.room-row-avatar img { border-radius: 12px; }
+.room-row-avatar img { border-radius: 11px; }
 .room-row .room-card-badge { top: auto; bottom: -2px; right: -5px; width: 18px; height: 18px; }
 .room-row .room-card-badge .material-symbols-outlined { font-size: 12px; }
 .room-row .room-card-badge-spinner { width: 9px; height: 9px; }
 .room-row .room-card-badge--unread { width: 11px; height: 11px; bottom: -2px; right: -2px; }
-.room-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 3px 0; }
+.room-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 1px 0; }
 .room-row-name {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: 15px;
+  line-height: 19px;
   font-weight: 500;
   color: var(--text-strong);
 }
@@ -549,6 +550,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: 13px;
+  line-height: 17px;
   color: var(--text-muted);
 }
 .room-row--unread .room-row-preview { color: var(--text); }

@@ -1,5 +1,5 @@
 // A name for a room spawned with a prompt (!spawn … -- <prompt>, or the app's
-// "What do you want to do?"), so it is named for its work from the start
+// "What are we building?"), so it is named for its work from the start
 // instead of BenderDev-N until the agent renames it. Same rules as the
 // room-rename skill: about two words, at most 24 characters, the task not the
 // tooling. The room is created under the prompt's first words and renamed when

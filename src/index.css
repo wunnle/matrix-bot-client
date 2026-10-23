@@ -489,7 +489,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-rows {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
   padding: 4px 12px 12px;
 }
 .room-rows-title {
@@ -506,8 +506,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 8px;
-  border-radius: 14px;
+  /* The avatar fills the row's left edge, flush top and bottom. */
+  padding: 0 8px 0 0;
+  border-radius: 12px;
   text-align: left;
   transition: background 0.1s;
 }
@@ -520,19 +521,20 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-row.active .room-row-avatar:not(:has(img)) { background: rgba(255, 255, 255, 0.08); }
 .room-row-avatar {
   flex: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  font-size: 15px;
+  align-self: flex-start;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  font-size: 17px;
   /* Not a drag handle here: a touch on it should scroll the list. */
   touch-action: auto;
 }
-.room-row-avatar img { border-radius: 10px; }
-.room-row .room-card-badge { top: auto; bottom: -4px; right: -4px; width: 18px; height: 18px; }
+.room-row-avatar img { border-radius: 12px; }
+.room-row .room-card-badge { top: auto; bottom: -2px; right: -5px; width: 18px; height: 18px; }
 .room-row .room-card-badge .material-symbols-outlined { font-size: 12px; }
 .room-row .room-card-badge-spinner { width: 9px; height: 9px; }
 .room-row .room-card-badge--unread { width: 11px; height: 11px; bottom: -2px; right: -2px; }
-.room-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.room-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 3px 0; }
 .room-row-name {
   overflow: hidden;
   white-space: nowrap;

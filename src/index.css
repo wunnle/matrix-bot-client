@@ -3434,7 +3434,12 @@ a.msg-card-link:hover {
 
 .room-editor-overlay {
   position: fixed;
-  inset: 0;
+  /* Track the visual viewport like .layout does, so a sheet whose input is
+     focused sits above the keyboard instead of behind it. */
+  top: var(--vv-top, 0px);
+  left: 0;
+  right: 0;
+  height: var(--vv-height, var(--app-height, 100dvh));
   background: rgba(0, 0, 0, 0.6);
   z-index: 100;
   display: flex;
@@ -3461,7 +3466,7 @@ a.msg-card-link:hover {
   border-radius: 20px 20px 0 0;
   width: 100%;
   max-width: 560px;
-  max-height: calc(var(--app-height, 100vh) * 0.8);
+  max-height: calc(var(--vv-height, var(--app-height, 100vh)) * 0.8);
   display: flex;
   flex-direction: column;
   padding-bottom: env(safe-area-inset-bottom);
@@ -3531,7 +3536,9 @@ a.msg-card-link:hover {
 .room-editor-close:hover { background: var(--bg-hover); color: var(--text); }
 
 /* "What are we building?" before a new agent room (SpawnSheet). */
-.spawn-sheet { padding: 0 20px calc(20px + env(safe-area-inset-bottom)); }
+/* --vv-safe-bottom is zeroed while the native keyboard is open: the sheet then
+   sits on the keyboard, not the home indicator. */
+.spawn-sheet { padding: 0 20px calc(20px + var(--vv-safe-bottom, env(safe-area-inset-bottom))); }
 .spawn-sheet-top {
   display: flex;
   align-items: center;

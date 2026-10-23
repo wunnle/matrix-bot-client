@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { AgentProvider } from '../lib/spawnCommand'
+import { sheetHost } from '../lib/roomView'
 
 const MOD_KEY = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl'
 
@@ -20,7 +22,8 @@ export default function SpawnSheet({ provider, onStart, onClose }: {
   const trimmed = prompt.trim()
   const start = () => { if (trimmed) onStart(trimmed) }
 
-  return (
+  // Portalled so it sits over the tab bar too (into #root, not <body>: see sheetHost).
+  return createPortal(
     <div
       className="room-editor-overlay spawn-sheet-overlay"
       onClick={onClose}
@@ -59,6 +62,7 @@ export default function SpawnSheet({ provider, onStart, onClose }: {
         </div>
         <button type="button" className="spawn-sheet-skip" onClick={() => onStart(null)}>or just open an empty room</button>
       </div>
-    </div>
+    </div>,
+    sheetHost(),
   )
 }

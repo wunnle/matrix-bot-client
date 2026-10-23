@@ -22,7 +22,7 @@ import { fetchPlanUsage, sameUsage, fetchCodexUsage, sameCodexUsage } from './pl
 import { encryptAttachment, decryptAttachment } from '../src/lib/attachmentCrypto.js'
 import { notifyEncrypted, wantsPush } from './bot-push.mjs'
 import { createCardPoster } from './subagent-cards.mjs'
-import { roomTitle } from './room-title.mjs'
+import { roomTitle, fallbackTitle } from './room-title.mjs'
 import { ARTIFACT_INDEX_EVENT, SNAPSHOT_MAX_BYTES, artifactContent, artifactEdit, artifactIndex, createArtifactRegistry } from './artifact-cards.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
@@ -1125,10 +1125,12 @@ async function removeWorktree(dir, branch) {
   return { removed: true, branchDeleted }
 }
 
-// `title`, a promise of a name or null, is what the room is called when the
-// spawn came with a prompt; the BenderDev-N slug still names its worktree and
-// branch, which want something stable and unique, not the work's description.
-async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted = false, title = null } = {}) {
+// When the spawn came with a prompt, `name` (its first words) names the room at
+// creation and `title`, a promise of Haiku's name for it, renames it once it
+// lands. Haiku takes ~6 s through the CLI, which used to hold up the whole
+// spawn. The BenderDev-N slug still names the worktree and branch, which want
+// something stable and unique, not the work's description.
+async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted = false, name: firstName = null, title = null } = {}) {
   // The slug is needed before the room exists: it names the worktree and its
   // branch, and the room's topic has to carry the path we actually bind to.
   const slug = nextRoomName()
@@ -1143,8 +1145,7 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted 
       branch = wt.branch
     }
   }
-  // Generated while the worktree was cut; awaited only now.
-  const name = (await title) ?? slug
+  const name = firstName ?? slug
   const { room_id } = await client.createRoom({
     name,
     // ⚠️ Pinned. matrix.org started defaulting to room version 12 on 2026-09-22,
@@ -1199,10 +1200,16 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted 
       { type: MODELS_EVENT, state_key: '', content: modelsContent(provider) },
     ],
   })
+  // Neither is awaited: the invite is already out, and the room is usable with
+  // the cast's first icon and the prompt's first words until these land.
   const face = avatarFor(provider, room_id)
   if (face && face !== avatarMxc[provider][0]) {
-    await client.sendStateEvent(room_id, 'm.room.avatar', { url: face }, '')
+    void client.sendStateEvent(room_id, 'm.room.avatar', { url: face }, '')
       .catch((e) => log(`Could not set avatar on ${room_id}: ${e.message}`))
+  }
+  if (title) {
+    void title.then((better) => (better && better !== name ? client.setRoomName(room_id, better) : null))
+      .catch((e) => log(`Could not rename ${room_id}: ${e.message}`))
   }
   // `worktree` marks the cwd as ours to clean up on !end. A room bound to a
   // directory the user chose must never have it removed.
@@ -1579,7 +1586,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     const sep = body.search(/\s--(?=\s|$)/)
     const typedPrompt = sep >= 0 ? body.slice(sep).replace(/^\s--/, '').trim() || null : null
     const prompt = appPrompt ?? typedPrompt
-    // Named while the worktree is cut, not after.
+    // Started now, applied as a rename whenever it lands; see spawnRoom.
     const title = prompt ? roomTitle(prompt, { log }) : null
     let parts = (sep >= 0 ? body.slice(0, sep) : body).slice('!spawn'.length).trim().split(/\s+/).filter(Boolean)
     const encrypted = parts.some((p) => p === '--encrypted' || p === '-e')
@@ -1623,7 +1630,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
     pendingSpawns.delete(`${roomId}:${cwd}`)
     try {
-      const spawned = await spawnRoom(cwd, model, provider, sharing.length > 0 ? root : null, { encrypted, title })
+      const spawned = await spawnRoom(cwd, model, provider, sharing.length > 0 ? root : null, { encrypted, name: prompt ? fallbackTitle(prompt) : null, title })
       const where = spawned.branch
         ? `a worktree of ${path.basename(cwd)} on \`${spawned.branch}\``
         : path.basename(cwd)

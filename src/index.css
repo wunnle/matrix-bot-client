@@ -3529,60 +3529,129 @@ a.msg-card-link:hover {
 .room-editor-close:hover { background: var(--bg-hover); color: var(--text); }
 
 /* "What do you want to do?" before a new agent room (SpawnSheet). */
-.spawn-sheet-body { gap: 10px; }
-.spawn-sheet-label { font-size: 14px; font-weight: 500; color: var(--text); }
-.spawn-sheet-input {
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 96px;
-  resize: vertical;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--text);
-  font: 15px/1.45 system-ui, -apple-system, sans-serif;
-  outline: none;
+.spawn-sheet { padding: 0 20px calc(20px + env(safe-area-inset-bottom)); }
+.spawn-sheet-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px -6px 6px 0;
 }
-.spawn-sheet-input:focus { border-color: var(--accent); }
-.spawn-sheet-input::placeholder { color: var(--text-muted); opacity: 0.7; }
-.spawn-sheet-hint { margin: 0; font-size: 12px; color: var(--text-muted); }
-.spawn-sheet-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px; }
-.spawn-sheet-skip {
-  height: 36px;
-  padding: 0 12px;
-  border-radius: 9px;
-  font-size: 14px;
+.spawn-sheet-eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text-muted);
 }
-.spawn-sheet-skip:hover { background: var(--bg-hover); color: var(--text); }
+.spawn-sheet-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.spawn-sheet-close .material-symbols-outlined { font-size: 20px; }
+.spawn-sheet-close:hover { background: var(--bg-hover); color: var(--text); }
+.spawn-sheet-title {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--text-strong);
+}
+.spawn-sheet-composer {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-input);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.spawn-sheet-composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-dim); }
+.spawn-sheet-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 84px;
+  max-height: 40vh;
+  field-sizing: content;
+  resize: none;
+  padding: 14px 16px 4px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, sans-serif;
+  outline: none;
+}
+.spawn-sheet-input::placeholder { color: var(--text-muted); }
+.spawn-sheet-composer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 8px 16px;
+}
+.spawn-sheet-keys {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.spawn-sheet-keys kbd {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: 11px/18px system-ui, -apple-system, sans-serif;
+  text-align: center;
+}
+/* No keyboard shortcut to advertise on a touch screen. */
+@media (hover: none) { .spawn-sheet-keys { visibility: hidden; } }
+.spawn-sheet-skip {
+  align-self: center;
+  margin-top: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+.spawn-sheet-skip:hover { color: var(--text); }
 .spawn-sheet-start {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   height: 36px;
-  padding: 0 18px;
-  border-radius: 9px;
+  padding: 0 12px 0 16px;
+  border-radius: 10px;
   background: var(--accent);
   color: #fff;
   font-size: 14px;
-  font-weight: 600;
-  transition: background 0.15s;
+  font-weight: 550;
+  transition: background 0.15s, opacity 0.15s;
 }
+.spawn-sheet-start .material-symbols-outlined { font-size: 18px; }
 .spawn-sheet-start:hover:not(:disabled) { background: var(--accent-hover); }
-.spawn-sheet-start:disabled { opacity: 0.35; }
+.spawn-sheet-start:disabled { opacity: 0.4; cursor: default; }
 /* On desktop the tiles live in the sidebar, so a bottom sheet over the chat
    pane opened far from the click with a drag handle nothing can drag. There it
    is a centered dialog over the whole window instead. */
 @media (min-width: 641px) {
   .spawn-sheet-overlay { left: 0; align-items: center; padding: 24px; }
   .spawn-sheet {
-    max-width: 480px;
+    max-width: 520px;
+    padding: 14px 24px 22px;
     border-top: 1px solid var(--border);
-    border-radius: 16px;
-    padding-bottom: 0;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    border-radius: 20px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
     animation: spawnSheetIn 0.16s ease-out;
   }
   .spawn-sheet::before { display: none; }
-  .spawn-sheet .room-editor-header { padding-top: 18px; }
+  .spawn-sheet-overlay { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
 }
 @keyframes spawnSheetIn {
   from { opacity: 0; transform: scale(0.97); }

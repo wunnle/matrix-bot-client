@@ -545,8 +545,10 @@ export default function RoomList({
       await acceptInvite(roomId)
       // Agent rooms ship with a standard command set. Seeded here rather than
       // by the bot, which cannot write pills — they live in this user's account
-      // data. Non-fatal: a failure here should not block opening the room.
-      await seedAgentPills(getClient(), roomId).catch(() => {})
+      // data. Not awaited: it polls for the room's state and makes two round
+      // trips, which held up opening the room, and ChatView picks the pills up
+      // from the account-data event whenever they land.
+      void seedAgentPills(getClient(), roomId).catch(() => {})
       // Promote it locally rather than waiting for MyMembership: opening the
       // room unmounts this list, so the event can land with no listener
       // attached and the card would still read "invite" on the way back.

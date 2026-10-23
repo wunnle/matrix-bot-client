@@ -3561,11 +3561,7 @@ a.msg-card-link:hover {
   letter-spacing: -0.015em;
   line-height: 1.25;
   color: var(--text-strong);
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
-.spawn-sheet-brick { width: 26px; height: 22px; flex-shrink: 0; fill: var(--accent); }
 .spawn-sheet-composer {
   margin-top: 16px;
   border: 1px solid var(--border);

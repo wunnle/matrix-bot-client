@@ -33,14 +33,7 @@ export default function SpawnSheet({ provider, onStart, onClose }: {
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
-        <label id="spawn-prompt-title" className="spawn-sheet-title" htmlFor="spawn-prompt">
-          <svg className="spawn-sheet-brick" viewBox="0 0 24 20" aria-hidden="true">
-            <rect x="3" y="0.5" width="7.5" height="5" rx="1.2" />
-            <rect x="13.5" y="0.5" width="7.5" height="5" rx="1.2" />
-            <rect x="1" y="5" width="22" height="14" rx="2.5" />
-          </svg>
-          What are we building?
-        </label>
+        <label id="spawn-prompt-title" className="spawn-sheet-title" htmlFor="spawn-prompt">What are we building?</label>
         {/* A composer, not a form: the send button lives inside the field. */}
         <div className="spawn-sheet-composer">
           <textarea

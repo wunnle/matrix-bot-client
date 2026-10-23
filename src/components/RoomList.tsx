@@ -537,7 +537,8 @@ export default function RoomList({
     }
   }, [clientReady, auth.userId])
 
-  async function handleAcceptInvite(roomId: string, name: string) {
+  /** Resolves to whether the join went through; failures show inline. */
+  async function handleAcceptInvite(roomId: string, name: string): Promise<boolean> {
     setInviteError('')
     setInvitesBusy((p) => ({ ...p, [roomId]: true }))
     try {
@@ -553,8 +554,10 @@ export default function RoomList({
         r.roomId === roomId ? { ...r, membership: 'join' as const, invitedBy: undefined } : r
       )))
       onSelectRoom(roomId, name)
+      return true
     } catch (e) {
       setInviteError((e as Error).message ?? 'Could not join room')
+      return false
     } finally {
       setInvitesBusy((p) => ({ ...p, [roomId]: false }))
     }
@@ -576,10 +579,12 @@ export default function RoomList({
       // BenderDev-N); accepting here rather than leaving the ghost invite tile
       // behind is the whole point of the button — one tap, one room.
       const name = client.getRoom(roomId)?.name ?? 'agent'
-      await handleAcceptInvite(roomId, name)
+      const joined = await handleAcceptInvite(roomId, name)
       // The prompt goes in as your own first message, so the agent starts on it
-      // and the room's history opens with what you asked.
-      if (prompt && client.getRoom(roomId)?.getMyMembership() === 'join') {
+      // and the room's history opens with what you asked. Gated on the join
+      // call, not getMyMembership(): sync hasn't caught up when joinRoom
+      // resolves, so that still read "invite" and the prompt was dropped.
+      if (prompt && joined) {
         await client.sendMessage(roomId, { msgtype: 'm.text', body: prompt } as never)
       }
     } catch (e) {

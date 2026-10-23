@@ -19,7 +19,11 @@ export default function SpawnSheet({ provider, onStart, onClose }: {
   const start = () => { if (trimmed) onStart(trimmed) }
 
   return (
-    <div className="room-editor-overlay" onClick={onClose}>
+    <div
+      className="room-editor-overlay spawn-sheet-overlay"
+      onClick={onClose}
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
+    >
       <div className="room-editor spawn-sheet" role="dialog" aria-label={`New ${label} room`} onClick={(e) => e.stopPropagation()}>
         <div className="room-editor-header">
           <span className="room-editor-title">New {label} room</span>

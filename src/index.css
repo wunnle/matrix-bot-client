@@ -3568,6 +3568,26 @@ a.msg-card-link:hover {
 }
 .spawn-sheet-start:hover:not(:disabled) { background: var(--accent-hover); }
 .spawn-sheet-start:disabled { opacity: 0.35; }
+/* On desktop the tiles live in the sidebar, so a bottom sheet over the chat
+   pane opened far from the click with a drag handle nothing can drag. There it
+   is a centered dialog over the whole window instead. */
+@media (min-width: 641px) {
+  .spawn-sheet-overlay { left: 0; align-items: center; padding: 24px; }
+  .spawn-sheet {
+    max-width: 480px;
+    border-top: 1px solid var(--border);
+    border-radius: 16px;
+    padding-bottom: 0;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    animation: spawnSheetIn 0.16s ease-out;
+  }
+  .spawn-sheet::before { display: none; }
+  .spawn-sheet .room-editor-header { padding-top: 18px; }
+}
+@keyframes spawnSheetIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
 
 .room-editor-body {
   padding: 4px 20px 20px;

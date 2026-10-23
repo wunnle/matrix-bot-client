@@ -10,6 +10,7 @@ import ApprovalBar from '../components/ApprovalBar'
 import { AgentActivityBar } from '../components/AgentActivityBar'
 import RoomSidebar from '../components/RoomSidebar'
 import { AgentRoomRow, InviteTile, SortableRoomCard, SpawnTile } from '../components/RoomList'
+import { agentTree } from '../lib/agentTree'
 import { AVATAR_BG, CANDIDATES, SHADES, SPRITES, spriteSvg } from './sprites'
 import './design.css'
 
@@ -146,6 +147,14 @@ const AGENTS: { room: RoomSummary; avatar: string; agent?: RoomAgentState; activ
   { room: room('Usage Limit', { lastMessage: 'Paused until 14:00' }), avatar: avatar('rocket', 'brick'), agent: { kind: 'blocked' } },
   { room: room('Jev Experiments'), avatar: avatar('invader') },
 ]
+// Child agents of "Grok Bot Lessons", one with a child of its own.
+AGENTS.splice(2, 0,
+  { room: room('Lesson Notes', { lastMessage: 'Report sent to parent', parentAgentRoomId: '!Grok Bot Lessons' }), avatar: avatar('crown') },
+  { room: room('Lesson Tests', { lastMessage: 'All 12 pass', parentAgentRoomId: '!Grok Bot Lessons' }), avatar: avatar('squid', 'amber') },
+  { room: room('Flaky Test', { lastMessage: 'Retrying the timeout case', parentAgentRoomId: '!Lesson Tests' }), avatar: avatar('saucer') },
+)
+const AGENT_ROWS = agentTree(AGENTS.map((a) => a.room))
+const agentSample = (roomId: string) => AGENTS.find((a) => a.room.roomId === roomId)!
 
 function Section({ title, note, children, wide }: { title: string; note?: string; children: ReactNode; wide?: boolean }) {
   return (
@@ -212,9 +221,10 @@ export default function DesignLibrary() {
           </DndContext>
           <section className="room-rows">
             <h2 className="room-rows-title">Agents</h2>
-            {AGENTS.map((a) => (
-              <AgentRoomRow key={a.room.roomId} room={a.room} isActive={!!a.active} avatar={a.avatar} hasNotification={false} agent={a.agent} onSelect={noop} />
-            ))}
+            {AGENT_ROWS.map((r) => {
+              const a = agentSample(r.roomId)
+              return <AgentRoomRow key={r.roomId} room={r} isActive={!!a.active} avatar={a.avatar} hasNotification={false} agent={a.agent} onSelect={noop} />
+            })}
             <SpawnTile provider="claude" busy={false} disabled={false} onSpawn={noop} />
             <SpawnTile provider="codex" busy={false} disabled={false} onSpawn={noop} />
           </section>

@@ -59,6 +59,9 @@ export interface RoomSummary {
   parentAgentRoomId?: string
   parentAgentName?: string
   agentTreeDepth?: number
+  agentTreeLast?: boolean
+  agentTreeHasChildren?: boolean
+  agentTreeRails?: boolean[]
   unreadCount: number
   avatarMxc?: string
   // Absent in caches written before invites were supported — treat as 'join'.

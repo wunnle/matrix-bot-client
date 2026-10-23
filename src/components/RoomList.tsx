@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
@@ -80,20 +80,31 @@ export const AgentRoomRow = memo(function AgentRoomRow({ room, isActive, avatar,
 }) {
   const unread = room.unreadCount > 0 || hasNotification
   const status = agent && agentStatusLabel(agent)
+  const depth = room.agentTreeDepth ?? 0
   return (
     <button
       className={`room-row${isActive ? ' active' : ''}${unread ? ' room-row--unread' : ''}`}
-      style={room.agentTreeDepth ? {marginLeft: Math.min(room.agentTreeDepth, 3) * 18, borderLeft:'2px solid var(--border, #444)'} : undefined}
+      style={depth ? { '--tree-depth': depth } as CSSProperties : undefined}
       onClick={() => onSelect(room.roomId, room.name)}
       aria-description={status ?? (unread ? 'Unread' : undefined)}
     >
+      {/* Tree lines: a child agent hangs off a line from its parent's avatar,
+          which turns into the last child's. Lines of ancestors further up pass
+          straight through. */}
+      {room.agentTreeRails?.map((on, level) => on && (
+        <span key={level} className="room-row-rail" style={{ '--tree-level': depth - level } as CSSProperties} aria-hidden />
+      ))}
+      {depth > 0 && !room.agentTreeLast && (
+        <span className="room-row-rail" style={{ '--tree-level': 1 } as CSSProperties} aria-hidden />
+      )}
+      {depth > 0 && <span className="room-row-elbow" aria-hidden />}
+      {room.agentTreeHasChildren && <span className="room-row-stem" aria-hidden />}
       <div className="room-card-avatar room-row-avatar">
         {avatar ? <img src={avatar} alt="" /> : <span>{roomInitial(room.name)}</span>}
         <RoomCardBadge agent={agent} unread={unread} />
       </div>
       <div className="room-row-text">
-        <div className="room-row-name">{room.parentAgentRoomId ? '↳ ' : ''}{room.name}</div>
-        {room.parentAgentRoomId && <div className="room-row-preview">Started by {room.parentAgentName ?? 'parent agent'}</div>}
+        <div className="room-row-name">{room.name}</div>
         <div className="room-row-preview">{status ?? previewLine(room.lastMessage)}</div>
       </div>
     </button>

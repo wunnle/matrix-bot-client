@@ -103,6 +103,11 @@ const toolInput = payload.tool_input ?? {}
 const sessionId = payload.session_id
 const cwd = payload.cwd ?? process.cwd()
 
+// Harness-owned, turn-scoped tools enforce lineage/capacity/worktree boundaries server-side.
+if (process.env.AGENT_FAMILY_TOKEN && ['mcp__agent_rooms__spawn_agent', 'mcp__agent_rooms__list_agents', 'mcp__agent_rooms__message_agent'].includes(toolName)) {
+  decide('allow', 'Independent agent coordination authorized by the room policy.')
+}
+
 // Read-only tools are allowed outright, except when what they read is a
 // credential. Reading changes nothing locally, which is why these are on the
 // list; but reading is how a secret leaves, and WebFetch is on the same list.

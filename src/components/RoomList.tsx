@@ -8,6 +8,7 @@ import { fetchJoinedRooms, getCachedRooms, lastPreviewMessage, cacheRooms, getCl
 import { seedAgentPills, backfillAgentPills } from '../lib/roomMeta'
 import { findSpawnHostRoom, spawnAgentRoom } from '../lib/spawnAgent'
 import SpawnSheet from './SpawnSheet'
+import { agentTree } from '../lib/agentTree'
 import { createSpawnGate, type AgentProvider } from '../lib/spawnCommand'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { donateShareTargets, cacheRoomAvatars } from '../lib/liveActivity'
@@ -82,6 +83,7 @@ export const AgentRoomRow = memo(function AgentRoomRow({ room, isActive, avatar,
   return (
     <button
       className={`room-row${isActive ? ' active' : ''}${unread ? ' room-row--unread' : ''}`}
+      style={room.agentTreeDepth ? {marginLeft: Math.min(room.agentTreeDepth, 3) * 18, borderLeft:'2px solid var(--border, #444)'} : undefined}
       onClick={() => onSelect(room.roomId, room.name)}
       aria-description={status ?? (unread ? 'Unread' : undefined)}
     >
@@ -90,7 +92,8 @@ export const AgentRoomRow = memo(function AgentRoomRow({ room, isActive, avatar,
         <RoomCardBadge agent={agent} unread={unread} />
       </div>
       <div className="room-row-text">
-        <div className="room-row-name">{room.name}</div>
+        <div className="room-row-name">{room.parentAgentRoomId ? '↳ ' : ''}{room.name}</div>
+        {room.parentAgentRoomId && <div className="room-row-preview">Started by {room.parentAgentName ?? 'parent agent'}</div>}
         <div className="room-row-preview">{status ?? previewLine(room.lastMessage)}</div>
       </div>
     </button>
@@ -233,7 +236,7 @@ export default function RoomList({
   // are chat rows below them, most recently active first.
   const tileRooms = useMemo(() => joinedRooms.filter((r) => !r.agent), [joinedRooms])
   const agentRooms = useMemo(
-    () => joinedRooms.filter((r) => r.agent).sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0)),
+    () => agentTree(joinedRooms.filter((r) => r.agent).sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0))),
     [joinedRooms],
   )
   const agentStates = useRoomAgentStates(clientReady, joinedRoomIds, auth.userId)
@@ -366,6 +369,10 @@ export default function RoomList({
     const onEvent = (event: sdk.MatrixEvent, room: sdk.Room | undefined) => {
       if (!room) return
       const type = event.getType()
+      if (type === 'com.construct.agent.lineage') {
+        setRooms(prev => prev.map(r => r.roomId === room.roomId ? toRoomSummary(room, auth.userId) : r))
+        return
+      }
       if (type !== 'm.room.message' && type !== 'm.room.encrypted') return
       const newCount = room.roomId === activeRoomIdRef.current ? 0 : getRoomUnreadCount(room, auth.userId)
       const last = lastPreviewMessage(room)

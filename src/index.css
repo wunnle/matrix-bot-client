@@ -502,14 +502,51 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   color: var(--text-muted);
 }
 .room-row {
+  --tree-indent: 36px;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 100%;
+  width: calc(100% - var(--tree-depth, 0) * var(--tree-indent));
+  margin-left: calc(var(--tree-depth, 0) * var(--tree-indent));
   padding: 8px;
   border-radius: 16px;
   text-align: left;
   transition: background 0.1s;
+}
+/* Child agent tree lines. A row's avatar centre sits 28px in (8px padding +
+   half the 40px avatar), so a parent's line runs down x = 28px of its row,
+   which is one indent left of that inside its child's row. Every segment
+   reaches 4px up into the gap above, so the pieces meet. */
+.room-row-rail,
+.room-row-elbow,
+.room-row-stem {
+  position: absolute;
+  pointer-events: none;
+  border: 0 solid var(--text-faint);
+}
+.room-row-rail {
+  top: -4px;
+  bottom: 0;
+  left: calc(27px - var(--tree-level) * var(--tree-indent));
+  border-left-width: 2px;
+}
+/* Turns from the parent's line into this row's avatar, ending at its centre. */
+.room-row-elbow {
+  top: -4px;
+  height: 33px;
+  left: calc(27px - var(--tree-indent));
+  width: calc(var(--tree-indent) - 19px);
+  border-left-width: 2px;
+  border-bottom-width: 2px;
+  border-bottom-left-radius: 12px;
+}
+/* Leaves a parent's avatar from its bottom centre. */
+.room-row-stem {
+  top: 48px;
+  bottom: 0;
+  left: 27px;
+  border-left-width: 2px;
 }
 @media (hover: hover) {
   .room-row:hover { background: var(--bg-hover); }

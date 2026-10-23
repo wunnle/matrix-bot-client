@@ -295,31 +295,209 @@ const SECRET_BASENAMES = new Set([
   '.npmrc', '.netrc', '.pgpass',
 ])
 const SECRET_PATTERNS = [
-  /(^|\/)\.env(\.[^/]*)?$/,          // .env, .env.local
+  // .env, .env.local — but not the committed templates, which hold no values.
+  /(^|\/)\.env(\.(?!(example|sample|template)$)[^/]*)?$/,
   // The directory itself counts, not just a file inside it: `grep -r token
   // ~/.ssh` names no file and leaked every key past a `\.ssh/` pattern.
+  // Unanchored on purpose, so `$OTHER/.ssh` and another user's home count too.
   /(^|\/)\.ssh(\/|$)/,
   /(^|\/)\.gnupg(\/|$)/,
-  /(^|\/)\.aws\/credentials$/,
+  /(^|\/)\.aws(\/|$)/,
+  /(^|\/)\.config\/gh(\/|$)/,
+  // Hermes keeps its .env and every profile's keys under here.
+  /(^|\/)\.hermes(\/|$)/,
+  // The bot's Matrix session, in every checkout and worktree.
+  /(^|\/)\.claude-bot-store(\/|$)/,
+  // ~/.vercel-bender-token and any sibling token file.
+  new RegExp(`^${HOME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/\\.vercel[^/]*(/|$)`),
+  // Another process's environment — the bot's holds its tokens.
+  /^\/proc\/[^/]+\/environ$/,
   /(^|\/)id_(rsa|dsa|ecdsa|ed25519)$/,
 ]
+
+// `~`, `$HOME` and `${HOME}` all mean the same directory to the shell.
+function expandHome(p) {
+  return String(p).replace(/^(~|\$HOME|\$\{HOME\})(?=\/|$)/, HOME)
+}
+
+// The shell expands `{a,b}` before anything looks at the disk, so
+// `~/.s{s,}h/id_rsa` is `~/.ssh/id_rsa` by the time `cat` sees it. Past a few
+// groups the alternatives are not worth enumerating: each group becomes a `*`
+// and the glob check below judges it.
+function expandBraces(word) {
+  const groups = [...word.matchAll(/\{([^{}]*)\}/g)].filter((m) => m[1].includes(','))
+  if (!groups.length) return [word]
+  if (groups.length > 4) return [word.replace(/\{[^{}]*\}/g, '*')]
+  const m = groups[0]
+  return m[1].split(',').flatMap((alt) => expandBraces(word.slice(0, m.index) + alt + word.slice(m.index + m[0].length)))
+}
+
+// A shell glob as a regex. `*`, `?` and `**` do not match a leading dot, as in
+// bash — otherwise every `cat *` in a worktree would count as reading its .env.
+const GLOB_CHARS = /[*?[]/
+function globToRegex(glob) {
+  let re = ''
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i]
+    const noDot = i === 0 || glob[i - 1] === '/' ? '(?!\\.)' : ''
+    if (c === '*' && glob[i + 1] === '*') {
+      i++
+      if (glob[i + 1] === '/') { i++; re += '(?:(?!\\.)[^/]*/)*' } else re += '(?:(?!\\.)[^/]*/?)*'
+    } else if (c === '*') re += `${noDot}[^/]*`
+    else if (c === '?') re += `${noDot}[^/]`
+    else if (c === '[' && glob.indexOf(']', i + 2) !== -1) {
+      const end = glob.indexOf(']', i + 2)
+      re += `${noDot}[${glob.slice(i + 1, end).replace(/^!/, '^').replace(/\\/g, '\\\\')}]`
+      i = end
+    } else re += c.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+  }
+  try { return new RegExp(`^${re}$`) } catch { return null }
+}
+// A glob cannot be matched against the disk without I/O, so it is matched
+// against where the secrets are: the fixed ones in $HOME, and the ones that can
+// sit in any directory, placed under the glob's own literal prefix.
+const HOME_SECRET_PROBES = ['.hermes/.env', '.hermes/profiles/p/.env', '.ssh/id_rsa', '.ssh/id_ed25519',
+  '.gnupg/k', '.aws/credentials', '.config/gh/hosts.yml', '.netrc', '.vercel-bender-token',
+  '.codex/auth.json', '.claude/.credentials.json', '.npmrc', '.pgpass'].map((p) => `${HOME}/${p}`)
+const LOCAL_SECRET_PROBES = ['.env', '.env.local', 'x/.env', '.claude-bot-store/s.json',
+  'scripts/.claude-bot-store/s.json', 'x/scripts/.claude-bot-store/s.json', '.session.json',
+  '.credentials.json', '.npmrc', '.netrc']
+function globMayBeSecret(glob) {
+  const dir = glob.slice(0, glob.search(GLOB_CHARS)).replace(/[^/]*$/, '')
+  const probes = [...HOME_SECRET_PROBES, ...LOCAL_SECRET_PROBES.map((p) => dir + p)]
+  // Every secret probe and every secret directory above one, so `~/.s?h/x`
+  // counts by the directory it reaches into even though no probe is named x.
+  const targets = new Set()
+  for (const p of probes) {
+    for (let at = p.length; at > 0; at = p.lastIndexOf('/', at - 1)) {
+      const candidate = p.slice(0, at)
+      if (literalIsSecret(candidate)) targets.add(candidate)
+    }
+  }
+  const segs = glob.split('/')
+  for (let k = 2; k <= segs.length; k++) {
+    const re = globToRegex(segs.slice(0, k).join('/'))
+    // A glob too odd to translate is a glob nobody can vouch for.
+    if (!re) return true
+    for (const t of targets) if (re.test(t)) return true
+  }
+  return false
+}
+
+function literalIsSecret(resolved) {
+  if (SECRET_BASENAMES.has(path.basename(resolved))) return true
+  return SECRET_PATTERNS.some((re) => re.test(resolved))
+}
 
 // True when `target` names one of them. Resolved first, so `../../.ssh/id_rsa`
 // and a bare `.env` are judged the same way as an absolute path.
 export function isSecretPath(target, cwd) {
   if (!target) return false
-  const resolved = path.resolve(cwd ?? '.', String(target).replace(/^~(?=\/|$)/, HOME))
-  if (SECRET_BASENAMES.has(path.basename(resolved))) return true
-  return SECRET_PATTERNS.some((re) => re.test(resolved))
+  return expandBraces(expandHome(target)).some((one) => {
+    const resolved = path.resolve(cwd ?? '.', expandHome(one))
+    return literalIsSecret(resolved) || (GLOB_CHARS.test(resolved) && globMayBeSecret(resolved))
+  })
+}
+
+// True for $HOME and every directory above it. Nothing there is a secret by
+// itself, but a recursive search from one walks into all of them.
+export function containsHomeSecrets(target, cwd) {
+  const resolved = path.resolve(cwd ?? '.', expandHome(target))
+  return resolved === HOME || HOME.startsWith(resolved === '/' ? '/' : `${resolved}/`)
+}
+
+// Symlinks need the filesystem, so the caller lends its realpath and the rules
+// stay pure. Only literal paths are followed; a glob has no single target.
+export function linksToSecret(targets, cwd, realpath) {
+  return targets.some((t) => {
+    if (!t || GLOB_CHARS.test(t)) return false
+    let real
+    try { real = realpath(path.resolve(cwd ?? '.', expandHome(t))) } catch { return false }
+    return isSecretPath(real, '/')
+  })
+}
+
+// The words of a command the way the program will receive them: quotes and
+// backslashes removed, not the quoted text dropped. Dropping it — what
+// unquoted() does, rightly, for operators — let `cat "/home/x/.ssh/id_rsa"`
+// through. The part after any `=` or `:` is a word too, for `--file=~/.netrc`,
+// `KEY=~/.ssh/x` and `git show HEAD:.env`.
+export function commandWords(command) {
+  const s = String(command ?? '')
+  const words = []
+  let cur = ''
+  let started = false
+  let quote = null
+  const push = () => { if (started) words.push(cur); cur = ''; started = false }
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    if (quote) {
+      if (c === quote) quote = null
+      else if (c === '\\' && quote === '"' && i + 1 < s.length) cur += s[++i]
+      else cur += c
+      continue
+    }
+    if (c === '"' || c === "'") { quote = c; started = true; continue }
+    if (c === '\\' && i + 1 < s.length) { cur += s[++i]; started = true; continue }
+    if (/[\s|;&<>()`]/.test(c)) { push(); continue }
+    cur += c
+    started = true
+  }
+  push()
+  return words.flatMap((w) => [w, ...[...w.matchAll(/[=:]/g)].map((m) => w.slice(m.index + 1))]).filter(Boolean)
+}
+
+// Searches that read every file under the paths they are given.
+const RECURSIVE_READERS = new Set(['rg', 'ag', 'ack'])
+const GREP_BINS = new Set(['grep', 'egrep', 'fgrep'])
+function recursesFromHome(words, effCwd) {
+  const at = words.findIndex((w) => {
+    const base = w.split('/').pop()
+    return RECURSIVE_READERS.has(base) || (GREP_BINS.has(base)
+      && words.some((f) => /^-[a-zA-Z]*[rR][a-zA-Z]*$|^--(dereference-)?recursive$|^--directories=recurse$/.test(f)))
+  })
+  if (at === -1) return false
+  const args = words.slice(at + 1).filter((w) => !w.startsWith('-'))
+  // With only a pattern, the search starts where the command runs.
+  if (args.length < 2 && containsHomeSecrets('.', effCwd)) return true
+  return args.some((a) => containsHomeSecrets(a, effCwd))
 }
 
 // True when any word of a command names a secret. Deliberately blunt: it does
 // not try to work out which argument is a path, because `grep -r foo ~/.ssh`
 // and `cat ~/.codex/auth.json` both leak and neither is worth modelling
-// precisely. A false positive costs one prompt.
+// precisely. A false positive costs one prompt. A `cd` moves where later
+// relative words resolve, so `cd ~/.config && cat gh/hosts.yml` counts.
 export function commandTouchesSecret(command, cwd) {
-  const bare = unquoted(String(command ?? '')).replace(/[|;&<>()]/g, ' ')
-  return bare.split(/\s+/).filter(Boolean).some((token) => isSecretPath(token, cwd))
+  let effCwd = cwd ?? '.'
+  return splitSegments(stripHeredocs(String(command ?? ''))).some((seg) => {
+    const all = commandWords(seg)
+    // Before the keywords come off: a `for f in ~/.ssh/*` header names no
+    // program, but its words are what the loop body reads.
+    if (all.some((w) => isSecretPath(w, effCwd))) return true
+    const words = stripKeywords(all)
+    if (words[0] === 'cd' && words.length <= 2) {
+      effCwd = path.resolve(effCwd, expandHome(words[1] ?? '~'))
+      return false
+    }
+    return recursesFromHome(words, effCwd)
+  })
+}
+
+// Read-only tools whose target is a secret, judged on every field that names
+// a path: a Glob's pattern is joined onto its directory, a Grep's file filter
+// likewise, and a Grep rooted at $HOME or above walks into all of them.
+export function toolReadsSecret(toolName, input, cwd) {
+  const dir = cwd ?? '.'
+  const i = input ?? {}
+  if (toolName === 'Glob' || toolName === 'Grep') {
+    const root = path.resolve(dir, expandHome(i.path ?? '.'))
+    if (isSecretPath(root, dir)) return true
+    const filter = toolName === 'Glob' ? i.pattern : i.glob
+    if (filter && isSecretPath(path.resolve(root, expandHome(filter)), dir)) return true
+    return toolName === 'Grep' && containsHomeSecrets(root, dir)
+  }
+  return isSecretPath(i.file_path ?? i.notebook_path ?? i.path, dir)
 }
 
 // True for paths the agent may write without asking: its own directory, the
@@ -619,11 +797,16 @@ function segmentHead(seg) {
 
 // Why this call still needs a human despite auto mode, or null if it does not.
 // The string is shown in the room, so it reads as a reason and not a code.
-export function requiresHuman({ toolName, summary, cwd } = {}) {
+export function requiresHuman({ toolName, summary, cwd, input } = {}) {
   const dir = cwd ?? '.'
   // Credentials first, and for every tool: a secret leaving is the one mistake
-  // that cannot be undone by throwing the worktree away.
-  if (commandTouchesSecret(summary ?? '', dir)) return 'it touches a credential file'
+  // that cannot be undone by throwing the worktree away. The read tools are
+  // judged on their input where the caller sends it, since a Glob's summary
+  // does not carry its pattern.
+  if (AUTO_ALLOW.has(toolName) && input && toolReadsSecret(toolName, input, dir)) return 'it reads a secret file'
+  if (commandTouchesSecret(summary ?? '', dir)) {
+    return PATH_SCOPED.has(toolName) ? 'it writes to a secret file' : 'it reads a secret file'
+  }
 
   // A write reaching here already failed the sandbox check in the hook, so the
   // target is outside the room's worktree and scratch space by definition.

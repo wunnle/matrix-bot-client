@@ -6,8 +6,12 @@
 // broker, which posts it to the room and blocks until the human answers.
 //
 // Wired up via --settings; see APPROVAL_SETTINGS in claude-code-bot.mjs.
+import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { AUTO_ALLOW, PATH_SCOPED, SAFE_SKILLS, artifactIsSafe, bashIsSafe, isSandboxPath, isSecretPath } from './approval-rules.mjs'
+import {
+  AUTO_ALLOW, PATH_SCOPED, SAFE_SKILLS, artifactIsSafe, bashIsSafe, commandWords, isSandboxPath,
+  linksToSecret, stripHeredocs, toolReadsSecret,
+} from './approval-rules.mjs'
 
 const BROKER_URL = process.env.AGENT_APPROVAL_URL ?? 'http://127.0.0.1:8787/approve'
 
@@ -108,11 +112,15 @@ if (process.env.AGENT_FAMILY_TOKEN && ['mcp__agent_rooms__spawn_agent', 'mcp__ag
   decide('allow', 'Independent agent coordination authorized by the room policy.')
 }
 
+// The rules are pure; following a symlink is the one read of the disk they
+// need, so it is lent from here. A missing path simply has no link to follow.
+const realpath = (p) => fs.realpathSync(p)
+
 // Read-only tools are allowed outright, except when what they read is a
 // credential. Reading changes nothing locally, which is why these are on the
 // list; but reading is how a secret leaves, and WebFetch is on the same list.
-const readTarget = toolInput.file_path ?? toolInput.notebook_path ?? toolInput.path
-if (AUTO_ALLOW.has(toolName) && !isSecretPath(readTarget, cwd)) {
+const readTargets = [toolInput.file_path, toolInput.notebook_path, toolInput.path]
+if (AUTO_ALLOW.has(toolName) && !toolReadsSecret(toolName, toolInput, cwd) && !linksToSecret(readTargets, cwd, realpath)) {
   decide('allow', 'Read-only tool.')
 }
 
@@ -131,7 +139,8 @@ if (PATH_SCOPED.has(toolName)) {
   }
 }
 
-if (toolName === 'Bash' && bashIsSafe(toolInput.command, cwd)) {
+if (toolName === 'Bash' && bashIsSafe(toolInput.command, cwd)
+  && !linksToSecret(commandWords(stripHeredocs(toolInput.command ?? '')), cwd, realpath)) {
   decide('allow', 'Bash command on the allowlist.')
 }
 
@@ -158,6 +167,9 @@ try {
       // Tells the bot to render this as a diff rather than a plain block.
       lang: DIFF_TOOLS.has(toolName) ? 'diff' : undefined,
       cwd,
+      // A read tool only reaches here for reading a secret; auto mode needs
+      // its input to see that, because a Glob's summary omits the pattern.
+      input: AUTO_ALLOW.has(toolName) ? toolInput : undefined,
       // Set only when a subagent made the call, so the card can say whose it is.
       agentType: typeof payload.agent_type === 'string' ? payload.agent_type : undefined,
     }),

@@ -40,7 +40,8 @@ const CASES = [
   // Destruction pointed outside the sandbox roots.
   ['Bash', 'rm -rf ~/matrix-pwa/src', 'human'],
   ['Bash', 'mv ~/.hermes/rooms.yaml /tmp/x', 'human'],
-  ['Bash', 'cp ~/.hermes/rooms.yaml /tmp/x', 'auto'],   // reads out, writes in
+  ['Bash', 'cp /etc/hostname /tmp/x', 'auto'],   // reads out, writes in
+  ['Bash', 'cp ~/.hermes/rooms.yaml /tmp/x', 'human'],  // …unless what it reads is a secret
   ['Bash', 'chmod +x /usr/local/bin/thing', 'human'],
   ['Bash', 'echo hi > /etc/motd', 'human'],
 
@@ -48,6 +49,11 @@ const CASES = [
   ['Bash', 'cat ~/.hermes/.env', 'human'],
   ['Bash', 'grep -r token ~/.ssh', 'human'],
   ['Read', '/home/wunnle/.claude/.credentials.json', 'human'],
+  ['Read', '/home/wunnle/.config/gh/hosts.yml', 'human'],
+  ['Bash', 'cat "/home/wunnle/.vercel-bender-token"', 'human'],
+  // The Codex shape: the command, then the directory it runs in.
+  ['Bash', `cat ~/.hermes/.env\n# in ${WORKTREE}`, 'human'],
+  ['Bash', 'cat scripts/.claude-bot-store/.session.json', 'human'],
 
   // Writes reaching here already failed the sandbox check in the hook.
   ['Write', '# write /home/wunnle/matrix-pwa/src/App.tsx\n+x', 'human'],
@@ -71,5 +77,16 @@ for (const [tool, summary, expected, cwd = WORKTREE] of CASES) {
     console.log(`FAIL  want ${expected}, got ${got}  ${tool}: ${label}`)
   }
 }
-console.log(failed ? `\n${failed} failed` : `\nall ${CASES.length} passed`)
+// The read tools carry their input, because a Glob's summary has no pattern in
+// it; the reason is what the card shows.
+for (const [tool, input, expected] of [
+  ['Glob', { pattern: '~/.ssh/*' }, 'it reads a secret file'],
+  ['Grep', { pattern: 'token', path: os.homedir() }, 'it reads a secret file'],
+  ['Read', { file_path: '/home/wunnle/.hermes/.env' }, 'it reads a secret file'],
+]) {
+  const got = requiresHuman({ toolName: tool, summary: JSON.stringify(input), cwd: WORKTREE, input })
+  if (got === expected) console.log(`ok    human ${tool}: ${JSON.stringify(input)} — ${got}`)
+  else { failed++; console.log(`FAIL  want "${expected}", got "${got}"  ${tool}: ${JSON.stringify(input)}`) }
+}
+console.log(failed ? `\n${failed} failed` : `\nall ${CASES.length + 3} passed`)
 process.exit(failed ? 1 : 0)

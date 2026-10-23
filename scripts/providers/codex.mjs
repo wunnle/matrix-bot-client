@@ -10,7 +10,8 @@
 // that. What this file does guarantee is that a dead connection fails the turn
 // loudly rather than hanging it.
 import { spawn } from 'node:child_process'
-import { bashIsSafe } from '../approval-rules.mjs'
+import * as fs from 'node:fs'
+import { bashIsSafe, commandWords, linksToSecret, stripHeredocs } from '../approval-rules.mjs'
 
 // Seeded from `model/list` on this build; refreshed from the server once
 // connected, so a new model appears without a code change. Static seed because
@@ -151,7 +152,10 @@ export function unsupportedResponse(method) {
 export function autoAllowed(method, params) {
   if (method !== 'item/commandExecution/requestApproval' && method !== 'execCommandApproval') return false
   if (!params?.command) return false
-  return bashIsSafe(unwrapShell(params.command), params.cwd ?? process.cwd())
+  const command = unwrapShell(params.command)
+  const cwd = params.cwd ?? process.cwd()
+  return bashIsSafe(command, cwd)
+    && !linksToSecret(commandWords(stripHeredocs(command ?? '')), cwd, (p) => fs.realpathSync(p))
 }
 
 // The body of the approval message. A command speaks for itself; a file change
@@ -370,6 +374,9 @@ export class AppServer {
       const answer = await turn.ask({
         toolName: APPROVAL_LABELS[msg.method] ?? msg.method,
         summary: describeApproval(msg.method, msg.params, turn),
+        // So auto mode resolves relative paths where the command runs, not
+        // where the bot happens to have been started.
+        cwd: msg.params?.cwd,
         lang: turn?.fileChanges.get(msg.params?.itemId)?.length ? 'diff' : undefined,
         // Only worth offering where the backend can remember it.
         allowSession: true,

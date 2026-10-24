@@ -1,4 +1,5 @@
 import type { EncryptedFile } from '../lib/attachmentCrypto.js'
+import type { ConstructBrowserPage } from '../lib/browser'
 
 export interface RoomConfig {
   label?: string
@@ -117,6 +118,8 @@ export interface Message {
   toolProgress?: ToolProgressLine[]
   subagent?: SubagentCard
   artifact?: ConstructArtifact
+  // A page an agent opened in the sidebar's Browser tab (com.construct.browser).
+  browser?: ConstructBrowserPage
   timestamp: number
   isOwnMessage: boolean
   // A third sender class beside you and the room's bot: another member making

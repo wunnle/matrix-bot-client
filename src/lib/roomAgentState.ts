@@ -65,8 +65,8 @@ function timelineMessages(room: sdk.Room, userId: string): TimelineMessage[] {
       interim: content['com.construct.interim'] === true ? true : undefined,
       // Only its presence matters here; ChatView parses the kind and source.
       machine: content['com.construct.machine'] ? {} : undefined,
-      // An artifact card is a record of the run, like a subagent card.
-      subagent: content['com.construct.subagent'] || content['com.construct.artifact'] ? true : undefined,
+      // An artifact or browser card is a record of the run, like a subagent card.
+      subagent: content['com.construct.subagent'] || content['com.construct.artifact'] || content['com.construct.browser'] ? true : undefined,
       timestamp: event.getTs(),
       body: typeof content.body === 'string' ? content.body : '',
     })

@@ -3,6 +3,7 @@ import type * as React from 'react'
 import { isEmptyRoomMedia, type RoomLink, type RoomMedia } from '../lib/roomMedia'
 import { mapsUrl, formatCoords } from '../lib/location'
 import ArtifactPreview from './ArtifactPreview'
+import BrowserPanel from './BrowserPanel'
 
 // Brand marks (Simple Icons), drawn in the text colour.
 const LINEAR_PATH = 'M2.886 4.18A11.982 11.982 0 0 1 11.99 0C18.624 0 24 5.376 24 12.009c0 3.64-1.62 6.903-4.18 9.105L2.887 4.18ZM1.817 5.626l16.556 16.556c-.524.33-1.075.62-1.65.866L.951 7.277c.247-.575.537-1.126.866-1.65ZM.322 9.163l14.515 14.515c-.71.172-1.443.282-2.195.322L0 11.358a12 12 0 0 1 .322-2.195Zm-.17 4.862 9.823 9.824a12.02 12.02 0 0 1-9.824-9.824Z'
@@ -17,8 +18,9 @@ const day = (ts: number) => new Date(ts).toLocaleDateString(undefined, { month: 
  * phone. A row opens its thing; "In chat" under it finds the message it came from.
  * When agents published pages to claude.ai, an Artifacts tab shows them, one
  * at a time, from the copy the bot keeps (claude.ai itself can't be framed).
+ * The Browser tab opens any page beside the chat (BrowserPanel).
  */
-export type SidebarTab = 'artifacts' | 'shared'
+export type SidebarTab = 'artifacts' | 'browser' | 'shared'
 
 // The panel's width on wide screens, dragged by its left edge and remembered.
 // A page and a list want different widths, so each keeps its own; unset, the
@@ -40,7 +42,7 @@ function clampWidth(w: number): number {
   return Math.round(Math.max(MIN_WIDTH, Math.min(w, window.innerWidth - CHAT_MIN)))
 }
 
-export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, onLoadMore, onJump, onOpenImage, onClose, tab, onTab, openArtifact, onOpenArtifact }: {
+export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, onLoadMore, onJump, onOpenImage, onClose, tab, onTab, openArtifact, onOpenArtifact, browserUrl, onBrowserUrl }: {
   media: RoomMedia
   /** Resolved image/file URLs by event id. */
   mediaUrls: Record<string, string>
@@ -55,15 +57,18 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
   /** The artifact shown, by id; null for the list, undefined for the newest. */
   openArtifact: string | null | undefined
   onOpenArtifact: (id: string | null) => void
+  /** The Browser tab's page; null when none is open. */
+  browserUrl: string | null
+  onBrowserUrl: (url: string | null) => void
 }) {
-  // No artifacts, no tab: the panel is what it always was.
+  // No artifacts, no Artifacts tab.
   const hasArtifacts = media.artifacts.length > 0
-  const current = hasArtifacts && tab === 'artifacts' ? 'artifacts' : 'shared'
+  const current: SidebarTab = tab === 'browser' ? 'browser' : hasArtifacts && tab === 'artifacts' ? 'artifacts' : 'shared'
   const shown = current === 'artifacts' && openArtifact !== null
     ? media.artifacts.find((a) => a.id === openArtifact) ?? media.artifacts[0]
     : null
 
-  const mode: WidthMode = shown ? 'page' : 'list'
+  const mode: WidthMode = shown || current === 'browser' ? 'page' : 'list'
   const [widths, setWidths] = useState<Partial<Record<WidthMode, number>>>(() => ({ list: storedWidth('list'), page: storedWidth('page') }))
   const [resizing, setResizing] = useState(false)
   const asideRef = useRef<HTMLElement>(null)
@@ -166,7 +171,7 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
   return (
     <aside
       ref={asideRef}
-      className={`room-sidebar${shown ? ' room-sidebar--wide' : ''}${resizing ? ' room-sidebar--resizing' : ''}`}
+      className={`room-sidebar${mode === 'page' ? ' room-sidebar--wide' : ''}${resizing ? ' room-sidebar--resizing' : ''}`}
       style={widths[mode] ? ({ '--room-sidebar-width': `${widths[mode]}px` } as React.CSSProperties) : undefined}
       aria-label="Shared in this room"
       onTouchStart={onSwipeStart}
@@ -187,8 +192,8 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
         onKeyDown={onResizeKey}
       />
       <div className="room-sidebar-header">
-        {hasArtifacts ? (
-          <div className="room-sidebar-tabs" role="tablist" aria-label="Side panel">
+        <div className="room-sidebar-tabs" role="tablist" aria-label="Side panel">
+          {hasArtifacts && (
             <button
               type="button" role="tab" aria-selected={current === 'artifacts'}
               className={`room-sidebar-tab${current === 'artifacts' ? ' room-sidebar-tab--on' : ''}`}
@@ -196,21 +201,28 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
             >
               Artifacts <span>{media.artifacts.length}</span>
             </button>
-            <button
-              type="button" role="tab" aria-selected={current === 'shared'}
-              className={`room-sidebar-tab${current === 'shared' ? ' room-sidebar-tab--on' : ''}`}
-              onClick={() => onTab('shared')}
-            >
-              Shared
-            </button>
-          </div>
-        ) : (
-          <span className="room-sidebar-title">Shared</span>
-        )}
+          )}
+          <button
+            type="button" role="tab" aria-selected={current === 'browser'}
+            className={`room-sidebar-tab${current === 'browser' ? ' room-sidebar-tab--on' : ''}`}
+            onClick={() => onTab('browser')}
+          >
+            Browser
+          </button>
+          <button
+            type="button" role="tab" aria-selected={current === 'shared'}
+            className={`room-sidebar-tab${current === 'shared' ? ' room-sidebar-tab--on' : ''}`}
+            onClick={() => onTab('shared')}
+          >
+            Shared
+          </button>
+        </div>
         <button type="button" className="room-sidebar-close" aria-label="Close" onClick={onClose}>✕</button>
       </div>
 
-      {shown ? (
+      {current === 'browser' ? (
+        <BrowserPanel url={browserUrl} onUrl={onBrowserUrl} />
+      ) : shown ? (
         <div className="artifact-view">
           <div className="artifact-view-bar">
             <button type="button" className="artifact-view-back" aria-label="All artifacts" onClick={() => onOpenArtifact(null)}>

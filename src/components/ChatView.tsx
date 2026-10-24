@@ -54,6 +54,7 @@ import ApprovalBar from './ApprovalBar'
 import ModelMenu from './ModelMenu'
 import { approvalChoices, parseApprovalCard } from '../lib/approval'
 import { artifactIdOf, parseArtifact } from '../lib/artifact'
+import { parseBrowserPage, storedPage, storePage } from '../lib/browser'
 import { useArtifactIndex } from '../hooks/useArtifactIndex'
 import { extractFormBlock, formAnswerBody, formResponseFromContent, FORM_RESPONSE_KEY } from '../lib/form'
 import { extractLocationBlocks, formatCoords, locationContent, locationFromContent, mapsUrl, mapTiles, MAP_ATTRIBUTION } from '../lib/location'
@@ -348,6 +349,36 @@ function ArtifactBlock({ artifact }: { artifact: ConstructArtifact }) {
   )
 }
 
+// Opens a page in the side panel's Browser tab; provided like the one above.
+const BrowserOpenContext = React.createContext<((url: string) => void) | null>(null)
+
+// A page an agent opened beside the chat (construct-browse). A tap shows it in
+// the Browser tab again; the link itself still goes to the page.
+function BrowserBlock({ page }: { page: NonNullable<Message['browser']> }) {
+  const open = React.useContext(BrowserOpenContext)
+  const host = new URL(page.url).host
+  return (
+    <a
+      className="artifact-card"
+      href={page.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={open ? (e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey) return
+        e.preventDefault()
+        open(page.url)
+      } : undefined}
+    >
+      <span className="material-symbols-outlined artifact-card-icon" aria-hidden="true">language</span>
+      <span className="artifact-card-text">
+        <span className="artifact-card-title">{page.title ?? host}</span>
+        <span className="artifact-card-meta">{page.title ? `${host} · ` : ''}Open beside the chat</span>
+      </span>
+      <span className="material-icons artifact-card-open" aria-hidden="true">chevron_right</span>
+    </a>
+  )
+}
+
 function getRoomModel(roomId: string): string | null {
   return localStorage.getItem(`room-model:${roomId}`)
 }
@@ -508,7 +539,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       const m = messages[i]
       // A subagent card is progress too; one posted behind an approval card
       // must not take its approval bar away.
-      if (isBotToolProgress(m) || ((m.interim || m.subagent || m.artifact) && !m.isOwnMessage && !m.isPeerMessage)) continue
+      if (isBotToolProgress(m) || ((m.interim || m.subagent || m.artifact || m.browser) && !m.isOwnMessage && !m.isPeerMessage)) continue
       return m.isOwnMessage ? null : m
     }
     return null
@@ -2164,6 +2195,23 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setOpenArtifact(artifactIdOf(url) ?? undefined)
     setShowSidebar(true)
   }, [setSidebarTab, setOpenArtifact, setShowSidebar])
+  // The Browser tab's page: the last one open in this room on this device,
+  // else the newest an agent sent in the loaded messages.
+  const [browserPage, setBrowserPage] = useState<string | null>(() => storedPage(roomId))
+  const latestSentPage = useMemo(() => {
+    if (!showSidebar) return null
+    for (let i = messages.length - 1; i >= 0; i--) if (messages[i].browser) return messages[i].browser!.url
+    return null
+  }, [showSidebar, messages])
+  const changeBrowserPage = useCallback((url: string | null) => {
+    setBrowserPage(url)
+    storePage(roomId, url)
+  }, [roomId])
+  const showBrowser = useCallback((url: string) => {
+    setSidebarTab('browser')
+    changeBrowserPage(url)
+    setShowSidebar(true)
+  }, [setSidebarTab, changeBrowserPage, setShowSidebar])
   // A page published while the room is open comes up beside the chat on a wide
   // screen. Not on the phone, where the panel would cover what's being read,
   // and not for pages already there: only a card (or a republish's edit of
@@ -2177,9 +2225,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       if (!id || handled.has(id)) return
       const c = event.getContent()
       const artifact = parseArtifact(c?.['com.construct.artifact'] ?? c?.['m.new_content']?.['com.construct.artifact'])
-      if (!artifact) return
+      const page = parseBrowserPage(c?.['com.construct.browser'])
+      if (!artifact && !page) return
       handled.add(id)
-      if (window.matchMedia(WIDE).matches) showArtifact(artifact.url)
+      if (!window.matchMedia(WIDE).matches) return
+      if (artifact) showArtifact(artifact.url)
+      else if (page) showBrowser(page.url)
     }
     const onTimeline = (event: sdk.MatrixEvent, _room: sdk.Room | undefined, toStart: boolean | undefined) => {
       if (!toStart) consider(event)
@@ -2190,7 +2241,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       client.off(sdk.RoomEvent.Timeline, onTimeline)
       client.off(sdk.MatrixEventEvent.Decrypted, consider)
     }
-  }, [client, roomId, showArtifact])
+  }, [client, roomId, showArtifact, showBrowser])
   // Each room opens on Artifacts and its newest page: reset while rendering the
   // new room, not in an effect after it.
   const [artifactRoom, setArtifactRoom] = useState(roomId)
@@ -2198,6 +2249,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setArtifactRoom(roomId)
     setSidebarTab('artifacts')
     setOpenArtifact(undefined)
+    setBrowserPage(storedPage(roomId))
   }
   const jumpToMessage = (eventId: string) => {
     const row = messagesRef.current?.querySelector(`[data-event-id="${window.CSS.escape(eventId)}"]`)
@@ -2218,6 +2270,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // rather than being covered. (The chat-view below keeps its old indent.)
   return (
     <ArtifactOpenContext.Provider value={showArtifact}>
+    <BrowserOpenContext.Provider value={showBrowser}>
     <div className="chat-shell">
     <div
       className={`chat-view${pageShown ? ' chat-view--page' : ''}`}
@@ -2928,6 +2981,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     </div>
     {roomMedia && (
       <RoomSidebar
+        // Per room, so the Browser tab's history doesn't carry over.
+        key={roomId}
         media={roomMedia}
         mediaUrls={imageUrls}
         hasMore={hasMore}
@@ -2940,9 +2995,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         onTab={setSidebarTab}
         openArtifact={openArtifact}
         onOpenArtifact={setOpenArtifact}
+        browserUrl={browserPage ?? latestSentPage}
+        onBrowserUrl={changeBrowserPage}
       />
     )}
     </div>
+    </BrowserOpenContext.Provider>
     </ArtifactOpenContext.Provider>
   )
 }
@@ -3098,6 +3156,7 @@ function eventToMessage(
 
   const subagent = parseSubagent(content?.['com.construct.subagent'])
   const artifact = parseArtifact(content?.['com.construct.artifact'])
+  const browser = parseBrowserPage(content?.['com.construct.browser'])
 
   const source = typeof content?.['com.construct.source'] === 'string'
     ? String(content['com.construct.source'])
@@ -3143,6 +3202,7 @@ function eventToMessage(
     toolProgress: toolProgress && toolProgress.length > 0 ? toolProgress : undefined,
     subagent,
     artifact,
+    browser,
     timestamp: event.getTs(),
     isOwnMessage,
     isPeerMessage,
@@ -3650,7 +3710,7 @@ function MessageRowInner({
                             <>
                               <div className="message-pin-surface">
                                 <div
-                                  className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.machine && !msg.subagent && !msg.artifact ? 'bot-text-machine' : ''}${msg.subagent || msg.artifact ? ' bot-text-card' : ''}`}
+                                  className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.machine && !msg.subagent && !msg.artifact && !msg.browser ? 'bot-text-machine' : ''}${msg.subagent || msg.artifact || msg.browser ? ' bot-text-card' : ''}`}
                                   onClick={cleanHtml ? onRichClick : undefined}
                                   onPointerDown={cleanHtml ? onRichPointerDown : undefined}
                                   title={msg.machine?.source ? `Machine message from ${msg.machine.source}` : undefined}
@@ -3659,6 +3719,8 @@ function MessageRowInner({
                                     ? <SubagentBlock card={msg.subagent} />
                                     : msg.artifact
                                     ? <ArtifactBlock artifact={msg.artifact} />
+                                    : msg.browser
+                                    ? <BrowserBlock page={msg.browser} />
                                     : msg.threads
                                     ? <div className="msg-threads">{msg.threads.map((t, i) => <ThreadBlock key={i} thread={t} />)}</div>
                                     : msg.cards

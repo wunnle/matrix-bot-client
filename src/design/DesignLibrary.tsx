@@ -324,6 +324,8 @@ export default function DesignLibrary() {
             onTab={noop}
             openArtifact={null}
             onOpenArtifact={noop}
+            browserUrl={null}
+            onBrowserUrl={noop}
           />
         </Frame>
       </Section>
@@ -343,6 +345,8 @@ export default function DesignLibrary() {
             onTab={noop}
             openArtifact={null}
             onOpenArtifact={noop}
+            browserUrl={null}
+            onBrowserUrl={noop}
           />
         </Frame>
         <Frame className="dl-shared">
@@ -359,8 +363,33 @@ export default function DesignLibrary() {
             onTab={noop}
             openArtifact={undefined}
             onOpenArtifact={noop}
+            browserUrl={null}
+            onBrowserUrl={noop}
           />
         </Frame>
+      </Section>
+
+      <Section title="Browser panel" note="A page beside the chat: empty, and a localhost address, which is the viewing device rather than the Pi.">
+        {[null, 'http://localhost:5173/'].map((url) => (
+          <Frame key={url ?? 'empty'} className="dl-shared">
+            <RoomSidebar
+              media={SHARED}
+              mediaUrls={SHARED_URLS}
+              hasMore={false}
+              loadingMore={false}
+              onLoadMore={noop}
+              onJump={noop}
+              onOpenImage={noop}
+              onClose={noop}
+              tab="browser"
+              onTab={noop}
+              openArtifact={null}
+              onOpenArtifact={noop}
+              browserUrl={url}
+              onBrowserUrl={noop}
+            />
+          </Frame>
+        ))}
       </Section>
     </div>
   )

@@ -820,7 +820,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   flex-shrink: 0;
 }
 .room-sidebar-title { font-weight: 600; color: var(--text-strong); }
-/* Artifacts | Shared, when the room has artifacts. */
+/* Artifacts (when the room has any) | Browser | Shared. */
 .room-sidebar-tabs {
   display: flex;
   gap: 2px;
@@ -897,6 +897,73 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 }
 .artifact-preview-note { padding: 16px 20px; font-size: 14px; color: var(--text-muted); line-height: 1.5; }
 .artifact-preview-loading { flex: 1; background: var(--bg-active); animation: live-pulse 1.4s ease-in-out infinite; }
+/* The Browser tab: back, reload, the address, open outside. */
+.browser-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px 8px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.browser-bar-btn {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+.browser-bar-btn .material-icons { font-size: 20px; }
+.browser-bar-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.browser-bar-btn:disabled { opacity: 0.4; }
+.browser-address {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  margin: 0 4px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-active);
+  color: var(--text);
+  /* 16px keeps iOS from zooming in on focus. */
+  font-size: 16px;
+  text-overflow: ellipsis;
+}
+@media (min-width: 641px) { .browser-address { font-size: 13px; } }
+.browser-address:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+.browser-note { padding: 16px 20px; font-size: 14px; color: var(--text-muted); line-height: 1.5; }
+.browser-note p { margin: 0 0 10px; }
+.browser-note strong { color: var(--text-strong); font-weight: 600; }
+.browser-note code { font-size: 13px; }
+.browser-outside {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.browser-outside .material-icons { font-size: 15px; }
+.browser-outside:hover { background: var(--bg-hover); }
+/* A page that hasn't finished loading may be one that refused the frame. */
+.browser-slow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.browser-slow span { flex: 1; min-width: 0; }
+.browser-slow .browser-outside { flex: none; padding: 5px 10px; font-size: 12px; }
 .room-sidebar-close {
   width: 32px;
   height: 32px;

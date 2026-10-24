@@ -73,6 +73,9 @@ const CASES = [
   ['construct-activity start --id deploy --title "Deploy ready" --action "Ship=ship it"', 'allow'],
   ['construct-activity end --id deploy --tone success', 'allow'],
   ['/tmp/construct-activity start --id x --title y', 'deny'],             // not the PATH one
+  ['construct-browse https://example.com --title Docs', 'allow'],
+  ['construct-preview 5173 --title "Dev server"', 'allow'],
+  ['construct-preview off 5173', 'allow'],
   // 2e — Python environments inside the sandbox, mirroring npm install.
   ['python3 -m venv .venv', 'allow'],
   ['.venv/bin/pip install -q -r requirements.txt', 'allow'],

@@ -204,7 +204,10 @@ const PREAPPROVED_BINS = new Set(['linear', 'obsidian'])
 // whole point of it, and a prompt asking whether to notify him would itself
 // notify him. Its reach is his own phone and a message into a room he owns; the
 // server caps it at three activities and rate-limits updates.
-const HELPER_BINS = new Set(['wait-for', 'page-grep', 'page', 'linear-gql', 'construct-activity'])
+// `construct-browse` posts a page card into the agent's own room, and
+// `construct-preview` puts a local port on Sinan's private tailnet with
+// `tailscale serve` (never Funnel, so never the public internet) and opens it.
+const HELPER_BINS = new Set(['wait-for', 'page-grep', 'page', 'linear-gql', 'construct-activity', 'construct-browse', 'construct-preview'])
 function isHelperBin(token) {
   return !token.includes('/') && HELPER_BINS.has(token)
 }

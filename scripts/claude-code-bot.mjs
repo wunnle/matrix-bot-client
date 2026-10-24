@@ -24,6 +24,7 @@ import { notifyEncrypted, wantsPush } from './bot-push.mjs'
 import { createCardPoster } from './subagent-cards.mjs'
 import { roomTitle } from './room-title.mjs'
 import { ARTIFACT_INDEX_EVENT, SNAPSHOT_MAX_BYTES, artifactContent, artifactEdit, artifactIndex, createArtifactRegistry } from './artifact-cards.mjs'
+import { browserContent, browserUrl } from './browser-cards.mjs'
 
 const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
@@ -661,9 +662,37 @@ function handleSendImage(req, res) {
   })
 }
 
+// construct-browse: a page an agent opens in the room sidebar's Browser tab.
+// The bot sends it so encrypted rooms get it encrypted, as with images.
+function handleBrowse(req, res) {
+  let raw = ''
+  req.on('data', (c) => { raw += c })
+  req.on('end', async () => {
+    const reply = (status, payload) => {
+      res.writeHead(status, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(payload))
+    }
+    let payload
+    try { payload = JSON.parse(raw) } catch { return reply(400, { error: 'malformed request' }) }
+    const { roomId, title } = payload ?? {}
+    const url = browserUrl(payload?.url)
+    if (typeof roomId !== 'string' || !url) return reply(400, { error: 'roomId and an http(s) url are required' })
+    if (client.getRoom(roomId)?.getMyMembership() !== 'join') return reply(404, { error: `not in ${roomId}` })
+    try {
+      const sent = await client.sendMessage(roomId, browserContent({ url, title: typeof title === 'string' ? title.trim().slice(0, 200) : '' }))
+      log(`[${roomId}] opened ${url} in the browser tab`)
+      reply(200, { eventId: sent.event_id })
+    } catch (e) {
+      log(`[${roomId}] could not open ${url}: ${e.message}`)
+      reply(502, { error: e.message })
+    }
+  })
+}
+
 function startApprovalBroker() {
   const server = http.createServer((req, res) => {
     if (req.method === 'POST' && req.url.startsWith('/send-image')) return handleSendImage(req, res)
+    if (req.method === 'POST' && req.url.startsWith('/browse')) return handleBrowse(req, res)
     if (req.method !== 'POST' || !req.url.startsWith('/approve')) {
       res.writeHead(404).end()
       return
@@ -802,6 +831,18 @@ const FORM_INSTRUCTION =
   '[[quick answers]] instead. Do not add quick answers to a message that has ' +
   'a form.'
 
+// The sidebar's Browser tab (src/components/BrowserPanel.tsx). Fixed text with
+// the room id spelled out, for the same reasons as the Live Activity one.
+const browserInstruction = (roomId) =>
+  'You can open a web page beside the chat, in the Browser tab of the room\'s ' +
+  `side panel: \`construct-browse <url> [--title T] --room ${roomId}\`. Use it to ` +
+  'show the user what you are working on: a deployed preview, docs, a page you ' +
+  'found. The user\'s phone or Mac shows it, not this machine, so localhost URLs ' +
+  'do not work there; for a dev server running here use `construct-preview ' +
+  '<port> --room ' + roomId + '`, which serves it on the private tailnet over ' +
+  'HTTPS and opens it (run `construct-preview --help` first). Some sites refuse ' +
+  'to be embedded; the tab then offers to open them in a browser.'
+
 // Runs one turn through the room's provider, resuming its session if it has one.
 // Everything provider-specific — how a turn is invoked, how instructions are
 // injected, how the resumable id comes back — lives behind the adapter.
@@ -819,7 +860,7 @@ function runTurn(roomId, prompt) {
 
   // Room policy, not provider policy: what the agent should be told about this
   // room. The adapter decides where these end up.
-  const instructions = [QUICK_ANSWER_INSTRUCTION, liveActivityInstruction(roomId), LOCATION_INSTRUCTION, FORM_INSTRUCTION]
+  const instructions = [QUICK_ANSWER_INSTRUCTION, liveActivityInstruction(roomId), LOCATION_INSTRUCTION, FORM_INSTRUCTION, browserInstruction(roomId)]
   // Only Claude rooms have the tool; telling Codex about it would be a lie.
   if (provider.name === 'claude') instructions.push(ARTIFACT_INSTRUCTION)
   // The rename nudge rides on the prompt, not the instructions: it drops out

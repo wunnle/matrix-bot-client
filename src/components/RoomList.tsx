@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
@@ -8,6 +8,7 @@ import { fetchJoinedRooms, getCachedRooms, lastPreviewMessage, cacheRooms, getCl
 import { seedAgentPills, backfillAgentPills } from '../lib/roomMeta'
 import { findSpawnHostRoom, spawnAgentRoom } from '../lib/spawnAgent'
 import SpawnSheet from './SpawnSheet'
+import { agentTree } from '../lib/agentTree'
 import { createSpawnGate, type AgentProvider } from '../lib/spawnCommand'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { donateShareTargets, cacheRoomAvatars } from '../lib/liveActivity'
@@ -79,12 +80,25 @@ export const AgentRoomRow = memo(function AgentRoomRow({ room, isActive, avatar,
 }) {
   const unread = room.unreadCount > 0 || hasNotification
   const status = agent && agentStatusLabel(agent)
+  const depth = room.agentTreeDepth ?? 0
   return (
     <button
       className={`room-row${isActive ? ' active' : ''}${unread ? ' room-row--unread' : ''}`}
+      style={depth ? { '--tree-depth': depth } as CSSProperties : undefined}
       onClick={() => onSelect(room.roomId, room.name)}
       aria-description={status ?? (unread ? 'Unread' : undefined)}
     >
+      {/* Tree lines: a child agent hangs off a line from its parent's avatar,
+          which turns into the last child's. Lines of ancestors further up pass
+          straight through. */}
+      {room.agentTreeRails?.map((on, level) => on && (
+        <span key={level} className="room-row-rail" style={{ '--tree-level': depth - level } as CSSProperties} aria-hidden />
+      ))}
+      {depth > 0 && !room.agentTreeLast && (
+        <span className="room-row-rail" style={{ '--tree-level': 1 } as CSSProperties} aria-hidden />
+      )}
+      {depth > 0 && <span className="room-row-elbow" aria-hidden />}
+      {room.agentTreeHasChildren && <span className="room-row-stem" aria-hidden />}
       <div className="room-card-avatar room-row-avatar">
         {avatar ? <img src={avatar} alt="" /> : <span>{roomInitial(room.name)}</span>}
         <RoomCardBadge agent={agent} unread={unread} />
@@ -233,7 +247,7 @@ export default function RoomList({
   // are chat rows below them, most recently active first.
   const tileRooms = useMemo(() => joinedRooms.filter((r) => !r.agent), [joinedRooms])
   const agentRooms = useMemo(
-    () => joinedRooms.filter((r) => r.agent).sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0)),
+    () => agentTree(joinedRooms.filter((r) => r.agent).sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0))),
     [joinedRooms],
   )
   const agentStates = useRoomAgentStates(clientReady, joinedRoomIds, auth.userId)
@@ -366,6 +380,10 @@ export default function RoomList({
     const onEvent = (event: sdk.MatrixEvent, room: sdk.Room | undefined) => {
       if (!room) return
       const type = event.getType()
+      if (type === 'com.construct.agent.lineage') {
+        setRooms(prev => prev.map(r => r.roomId === room.roomId ? toRoomSummary(room, auth.userId) : r))
+        return
+      }
       if (type !== 'm.room.message' && type !== 'm.room.encrypted') return
       const newCount = room.roomId === activeRoomIdRef.current ? 0 : getRoomUnreadCount(room, auth.userId)
       const last = lastPreviewMessage(room)
@@ -537,15 +555,18 @@ export default function RoomList({
     }
   }, [clientReady, auth.userId])
 
-  async function handleAcceptInvite(roomId: string, name: string) {
+  /** Resolves to whether the join went through; failures show inline. */
+  async function handleAcceptInvite(roomId: string, name: string): Promise<boolean> {
     setInviteError('')
     setInvitesBusy((p) => ({ ...p, [roomId]: true }))
     try {
       await acceptInvite(roomId)
       // Agent rooms ship with a standard command set. Seeded here rather than
       // by the bot, which cannot write pills — they live in this user's account
-      // data. Non-fatal: a failure here should not block opening the room.
-      await seedAgentPills(getClient(), roomId).catch(() => {})
+      // data. Not awaited: it polls for the room's state and makes two round
+      // trips, which held up opening the room, and ChatView picks the pills up
+      // from the account-data event whenever they land.
+      void seedAgentPills(getClient(), roomId).catch(() => {})
       // Promote it locally rather than waiting for MyMembership: opening the
       // room unmounts this list, so the event can land with no listener
       // attached and the card would still read "invite" on the way back.
@@ -553,8 +574,10 @@ export default function RoomList({
         r.roomId === roomId ? { ...r, membership: 'join' as const, invitedBy: undefined } : r
       )))
       onSelectRoom(roomId, name)
+      return true
     } catch (e) {
       setInviteError((e as Error).message ?? 'Could not join room')
+      return false
     } finally {
       setInvitesBusy((p) => ({ ...p, [roomId]: false }))
     }
@@ -576,10 +599,12 @@ export default function RoomList({
       // BenderDev-N); accepting here rather than leaving the ghost invite tile
       // behind is the whole point of the button — one tap, one room.
       const name = client.getRoom(roomId)?.name ?? 'agent'
-      await handleAcceptInvite(roomId, name)
+      const joined = await handleAcceptInvite(roomId, name)
       // The prompt goes in as your own first message, so the agent starts on it
-      // and the room's history opens with what you asked.
-      if (prompt && client.getRoom(roomId)?.getMyMembership() === 'join') {
+      // and the room's history opens with what you asked. Gated on the join
+      // call, not getMyMembership(): sync hasn't caught up when joinRoom
+      // resolves, so that still read "invite" and the prompt was dropped.
+      if (prompt && joined) {
         await client.sendMessage(roomId, { msgtype: 'm.text', body: prompt } as never)
       }
     } catch (e) {

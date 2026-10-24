@@ -489,7 +489,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-rows {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   padding: 4px 12px 12px;
 }
 .room-rows-title {
@@ -502,14 +502,51 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   color: var(--text-muted);
 }
 .room-row {
+  --tree-indent: 36px;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 100%;
+  width: calc(100% - var(--tree-depth, 0) * var(--tree-indent));
+  margin-left: calc(var(--tree-depth, 0) * var(--tree-indent));
   padding: 8px;
-  border-radius: 14px;
+  border-radius: 16px;
   text-align: left;
   transition: background 0.1s;
+}
+/* Child agent tree lines. A row's avatar centre sits 28px in (8px padding +
+   half the 40px avatar), so a parent's line runs down x = 28px of its row,
+   which is one indent left of that inside its child's row. Every segment
+   reaches 4px up into the gap above, so the pieces meet. */
+.room-row-rail,
+.room-row-elbow,
+.room-row-stem {
+  position: absolute;
+  pointer-events: none;
+  border: 0 solid var(--text-faint);
+}
+.room-row-rail {
+  top: -4px;
+  bottom: 0;
+  left: calc(27px - var(--tree-level) * var(--tree-indent));
+  border-left-width: 2px;
+}
+/* Turns from the parent's line into this row's avatar, ending at its centre. */
+.room-row-elbow {
+  top: -4px;
+  height: 33px;
+  left: calc(27px - var(--tree-indent));
+  width: calc(var(--tree-indent) - 19px);
+  border-left-width: 2px;
+  border-bottom-width: 2px;
+  border-bottom-left-radius: 12px;
+}
+/* Leaves a parent's avatar from its bottom centre. */
+.room-row-stem {
+  top: 48px;
+  bottom: 0;
+  left: 27px;
+  border-left-width: 2px;
 }
 @media (hover: hover) {
   .room-row:hover { background: var(--bg-hover); }
@@ -520,24 +557,25 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
 .room-row.active .room-row-avatar:not(:has(img)) { background: rgba(255, 255, 255, 0.08); }
 .room-row-avatar {
   flex: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  font-size: 15px;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  font-size: 16px;
   /* Not a drag handle here: a touch on it should scroll the list. */
   touch-action: auto;
 }
-.room-row-avatar img { border-radius: 10px; }
-.room-row .room-card-badge { top: auto; bottom: -4px; right: -4px; width: 18px; height: 18px; }
+.room-row-avatar img { border-radius: 11px; }
+.room-row .room-card-badge { top: auto; bottom: -2px; right: -5px; width: 18px; height: 18px; }
 .room-row .room-card-badge .material-symbols-outlined { font-size: 12px; }
 .room-row .room-card-badge-spinner { width: 9px; height: 9px; }
 .room-row .room-card-badge--unread { width: 11px; height: 11px; bottom: -2px; right: -2px; }
-.room-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.room-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 1px 0; }
 .room-row-name {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 15px;
+  font-size: 14px;
+  line-height: 18px;
   font-weight: 500;
   color: var(--text-strong);
 }
@@ -547,6 +585,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: 13px;
+  line-height: 17px;
   color: var(--text-muted);
 }
 .room-row--unread .room-row-preview { color: var(--text); }
@@ -1030,6 +1069,20 @@ button.room-sidebar-link {
 .room-sidebar-meta-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
 .room-sidebar-meta-text::after { content: '·'; margin: 0 6px; }
 .room-sidebar-ref-icon { flex: none; width: 16px; height: 16px; fill: var(--text-muted); }
+/* Linear rows: the key before the title, the state as a dot, a project's
+   progress as a ring in its status colour. */
+.room-sidebar-key { margin-right: 6px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.room-sidebar-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 50%;
+  vertical-align: 0;
+}
+.room-sidebar-row--closed .room-sidebar-link { color: var(--text-muted); }
+.room-sidebar-ring { flex: none; width: 16px; height: 16px; fill: none; stroke-width: 2.5; stroke-linecap: round; }
+.room-sidebar-ring-track { stroke: var(--border); }
 .room-sidebar-note-icon { flex: none; width: 16px; font-size: 18px; color: var(--text-muted); }
 /* Above the stretched link, so it alone jumps to the message. */
 .room-sidebar-jump {
@@ -3499,7 +3552,12 @@ a.msg-card-link:hover {
 
 .room-editor-overlay {
   position: fixed;
-  inset: 0;
+  /* Track the visual viewport like .layout does, so a sheet whose input is
+     focused sits above the keyboard instead of behind it. */
+  top: var(--vv-top, 0px);
+  left: 0;
+  right: 0;
+  height: var(--vv-height, var(--app-height, 100dvh));
   background: rgba(0, 0, 0, 0.6);
   z-index: 100;
   display: flex;
@@ -3526,7 +3584,7 @@ a.msg-card-link:hover {
   border-radius: 20px 20px 0 0;
   width: 100%;
   max-width: 560px;
-  max-height: calc(var(--app-height, 100vh) * 0.8);
+  max-height: calc(var(--vv-height, var(--app-height, 100vh)) * 0.8);
   display: flex;
   flex-direction: column;
   padding-bottom: env(safe-area-inset-bottom);
@@ -3595,46 +3653,137 @@ a.msg-card-link:hover {
 }
 .room-editor-close:hover { background: var(--bg-hover); color: var(--text); }
 
-/* "What do you want to do?" before a new agent room (SpawnSheet). */
-.spawn-sheet-body { gap: 10px; }
-.spawn-sheet-label { font-size: 14px; font-weight: 500; color: var(--text); }
-.spawn-sheet-input {
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 96px;
-  resize: vertical;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--text);
-  font: 15px/1.45 system-ui, -apple-system, sans-serif;
-  outline: none;
+/* "What are we building?" before a new agent room (SpawnSheet). */
+/* --vv-safe-bottom is zeroed while the native keyboard is open: the sheet then
+   sits on the keyboard, not the home indicator. */
+.spawn-sheet { padding: 0 20px calc(20px + var(--vv-safe-bottom, env(safe-area-inset-bottom))); }
+.spawn-sheet-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px -6px 6px 0;
 }
-.spawn-sheet-input:focus { border-color: var(--accent); }
-.spawn-sheet-input::placeholder { color: var(--text-muted); opacity: 0.7; }
-.spawn-sheet-hint { margin: 0; font-size: 12px; color: var(--text-muted); }
-.spawn-sheet-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px; }
-.spawn-sheet-skip {
-  height: 36px;
-  padding: 0 12px;
-  border-radius: 9px;
-  font-size: 14px;
+.spawn-sheet-eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text-muted);
 }
-.spawn-sheet-skip:hover { background: var(--bg-hover); color: var(--text); }
+.spawn-sheet-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.spawn-sheet-close .material-symbols-outlined { font-size: 20px; }
+.spawn-sheet-close:hover { background: var(--bg-hover); color: var(--text); }
+.spawn-sheet-title {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--text-strong);
+}
+.spawn-sheet-composer {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-input);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.spawn-sheet-composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-dim); }
+.spawn-sheet-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 84px;
+  max-height: 40vh;
+  field-sizing: content;
+  resize: none;
+  padding: 14px 16px 4px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, sans-serif;
+  outline: none;
+}
+.spawn-sheet-input::placeholder { color: var(--text-muted); }
+.spawn-sheet-composer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 8px 16px;
+}
+.spawn-sheet-keys {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.spawn-sheet-keys kbd {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: 11px/18px system-ui, -apple-system, sans-serif;
+  text-align: center;
+}
+/* No keyboard shortcut to advertise on a touch screen. */
+@media (hover: none) { .spawn-sheet-keys { visibility: hidden; } }
+.spawn-sheet-skip {
+  align-self: center;
+  margin-top: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+.spawn-sheet-skip:hover { color: var(--text); }
 .spawn-sheet-start {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   height: 36px;
-  padding: 0 18px;
-  border-radius: 9px;
+  padding: 0 12px 0 16px;
+  border-radius: 10px;
   background: var(--accent);
   color: #fff;
   font-size: 14px;
-  font-weight: 600;
-  transition: background 0.15s;
+  font-weight: 550;
+  transition: background 0.15s, opacity 0.15s;
 }
+.spawn-sheet-start .material-symbols-outlined { font-size: 18px; }
 .spawn-sheet-start:hover:not(:disabled) { background: var(--accent-hover); }
-.spawn-sheet-start:disabled { opacity: 0.35; }
+.spawn-sheet-start:disabled { opacity: 0.4; cursor: default; }
+/* On desktop the tiles live in the sidebar, so a bottom sheet over the chat
+   pane opened far from the click with a drag handle nothing can drag. There it
+   is a centered dialog over the whole window instead. */
+@media (min-width: 641px) {
+  .spawn-sheet-overlay { left: 0; align-items: center; padding: 24px; }
+  .spawn-sheet {
+    max-width: 520px;
+    padding: 14px 24px 22px;
+    border-top: 1px solid var(--border);
+    border-radius: 20px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+    animation: spawnSheetIn 0.16s ease-out;
+  }
+  .spawn-sheet::before { display: none; }
+  .spawn-sheet-overlay { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+}
+@keyframes spawnSheetIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
 
 .room-editor-body {
   padding: 4px 20px 20px;

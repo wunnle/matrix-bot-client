@@ -56,6 +56,12 @@ export interface RoomSummary {
   lastTs?: number
   /** A Claude Code / Codex agent room: listed as a chat row, not an app tile. */
   agent?: boolean
+  parentAgentRoomId?: string
+  parentAgentName?: string
+  agentTreeDepth?: number
+  agentTreeLast?: boolean
+  agentTreeHasChildren?: boolean
+  agentTreeRails?: boolean[]
   unreadCount: number
   avatarMxc?: string
   // Absent in caches written before invites were supported — treat as 'join'.
@@ -169,6 +175,7 @@ export function toRoomSummary(room: sdk.Room, userId: string): RoomSummary {
   return {
     roomId: room.roomId,
     name: room.name,
+    parentAgentRoomId: room.currentState.getStateEvents('com.construct.agent.lineage', '')?.getContent()?.parent_room_id ?? undefined,
     lastMessage: last?.body,
     lastTs: last?.ts,
     agent: room.currentState.getStateEvents('m.room.create', '')?.getContent()?.type === AGENT_ROOM_TYPE,

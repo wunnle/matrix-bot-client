@@ -1,9 +1,9 @@
 // A name for a room spawned with a prompt (!spawn … -- <prompt>, or the app's
-// "What do you want to do?"), so it is named for its work from the start
+// "What are we building?"), so it is named for its work from the start
 // instead of BenderDev-N until the agent renames it. Same rules as the
 // room-rename skill: about two words, at most 24 characters, the task not the
-// tooling. Haiku names it in a few seconds; the spawn cuts its worktree in the
-// meantime, and a slow or failed call falls back to the prompt's first words.
+// tooling. The room is created under the prompt's first words and renamed when
+// Haiku answers (~6 s); a slow or failed call just leaves the first words.
 import { spawn } from 'node:child_process'
 
 const MAX = 24

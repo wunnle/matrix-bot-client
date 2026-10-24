@@ -963,6 +963,20 @@ button.room-sidebar-link {
 .room-sidebar-meta-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
 .room-sidebar-meta-text::after { content: '·'; margin: 0 6px; }
 .room-sidebar-ref-icon { flex: none; width: 16px; height: 16px; fill: var(--text-muted); }
+/* Linear rows: the key before the title, the state as a dot, a project's
+   progress as a ring in its status colour. */
+.room-sidebar-key { margin-right: 6px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.room-sidebar-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 50%;
+  vertical-align: 0;
+}
+.room-sidebar-row--closed .room-sidebar-link { color: var(--text-muted); }
+.room-sidebar-ring { flex: none; width: 16px; height: 16px; fill: none; stroke-width: 2.5; stroke-linecap: round; }
+.room-sidebar-ring-track { stroke: var(--border); }
 .room-sidebar-note-icon { flex: none; width: 16px; font-size: 18px; color: var(--text-muted); }
 /* Above the stretched link, so it alone jumps to the message. */
 .room-sidebar-jump {

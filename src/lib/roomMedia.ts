@@ -4,7 +4,7 @@ import { artifactIdOf } from './artifact'
 
 /**
  * What a room's side panel lists: the claude.ai artifacts, links, images,
- * files, places, Obsidian notes and Linear issues / GitHub PRs in its loaded
+ * files, places, Obsidian notes, Linear issues and projects and GitHub PRs in its loaded
  * messages, newest first,
  * each pointing back at the message it came from.
  */
@@ -13,6 +13,8 @@ export interface RoomLink { url: string; title?: string; host: string; eventId: 
 export interface RoomMediaItem { eventId: string; name: string; timestamp: number }
 export interface RoomPlace { location: SharedLocation; eventId: string; timestamp: number }
 export interface RoomRef { kind: 'linear' | 'github'; label: string; url: string; title?: string; eventId: string; timestamp: number }
+/** A Linear project link: `slug` is the 12-hex slugId its URL ends with. */
+export interface RoomProject { slug: string; name: string; url: string; eventId: string; timestamp: number }
 /** A vault note: `path` is its file path in the vault, without ".md". */
 export interface RoomNote { path: string; title: string; folder?: string; url: string; eventId: string; timestamp: number }
 
@@ -36,6 +38,7 @@ export interface RoomMedia {
   files: RoomMediaItem[]
   places: RoomPlace[]
   refs: RoomRef[]
+  projects: RoomProject[]
   notes: RoomNote[]
 }
 
@@ -45,6 +48,8 @@ const LINEAR_TEAMS = ['BEN']
 const LINEAR_WORKSPACE = 'wunnle'
 const LINEAR_KEY = new RegExp(`\\b((?:${LINEAR_TEAMS.join('|')})-\\d{1,5})\\b`, 'g')
 const LINEAR_URL = /^https:\/\/linear\.app\/[^/]+\/issue\/([A-Z][A-Z0-9]*-\d+)/i
+// linear.app/wunnle/project/claude-code-integration-8915c40f6ab7[/overview]
+const LINEAR_PROJECT_URL = /^https:\/\/linear\.app\/[^/]+\/project\/(?:([a-z0-9-]*)-)?([0-9a-f]{12})(?=[/?#]|$)/i
 const GITHUB_REF = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/(pull|issues)\/(\d+)/
 
 // Sinan's one vault (~/Documents/Obsidian), which obsidian:// links name.
@@ -124,6 +129,7 @@ export function collectRoomMedia(messages: Message[], linearWorkspace = LINEAR_W
   const artifacts = new Map<string, RoomArtifact>()
   const links = new Map<string, RoomLink>()
   const refs = new Map<string, RoomRef>()
+  const projects = new Map<string, RoomProject>()
   const notes = new Map<string, RoomNote>()
   const images: RoomMediaItem[] = []
   const files: RoomMediaItem[] = []
@@ -195,6 +201,17 @@ export function collectRoomMedia(messages: Message[], linearWorkspace = LINEAR_W
         }
         const linear = LINEAR_URL.exec(url)
         if (linear) { addRef({ kind: 'linear', label: linear[1].toUpperCase(), url, title }); continue }
+        const project = LINEAR_PROJECT_URL.exec(url)
+        if (project) {
+          const [, words, slug] = project
+          const prev = projects.get(slug)
+          projects.delete(slug)
+          // The URL's words stand in for the name until a link text or Linear gives one.
+          const fromUrl = words ? words.charAt(0).toUpperCase() + words.slice(1).replace(/-/g, ' ') : 'Linear project'
+          const name = title && title !== url ? title : prev?.name ?? fromUrl
+          projects.set(slug, { slug, name, url: prev?.url ?? url, ...at })
+          continue
+        }
         const gh = GITHUB_REF.exec(url)
         if (gh) {
           const [base, owner, repo, , num] = gh
@@ -225,11 +242,12 @@ export function collectRoomMedia(messages: Message[], linearWorkspace = LINEAR_W
     files: files.reverse(),
     places: places.reverse(),
     refs: [...refs.values()].reverse(),
+    projects: [...projects.values()].reverse(),
     notes: [...notes.values()].reverse(),
   }
 }
 
 export function isEmptyRoomMedia(media: RoomMedia): boolean {
   return !media.artifacts.length && !media.links.length && !media.images.length && !media.files.length
-    && !media.places.length && !media.refs.length && !media.notes.length
+    && !media.places.length && !media.refs.length && !media.projects.length && !media.notes.length
 }

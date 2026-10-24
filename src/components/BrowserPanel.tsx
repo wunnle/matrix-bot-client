@@ -42,7 +42,12 @@ export default function BrowserPanel({ url, onUrl }: {
     })
     return () => { live = false }
   }, [current])
-  const view: View = reach === 'local' || reach === 'insecure' ? reach
+  // localhost is the viewing device, which is right for a dev server on the
+  // Mac itself; whether the browser lets an https app frame it varies, so it
+  // is the user's call ("Try anyway"), remembered for that address only.
+  const [triedLocal, setTriedLocal] = useState<string | null>(null)
+  const view: View = reach === 'local' && triedLocal === current ? 'frame'
+    : reach === 'local' || reach === 'insecure' ? reach
     : reach !== 'web' ? 'frame'
     : refusal?.url !== current ? 'checking'
     : refusal.refused ? 'refused' : 'frame'
@@ -121,7 +126,11 @@ export default function BrowserPanel({ url, onUrl }: {
       ) : view === 'local' ? (
         <div className="browser-note">
           <p><strong>localhost is this device.</strong> Pages running on the Pi need its tailnet address; ask the agent to open it with <code>construct-preview</code>.</p>
-          {outside}
+          <p>If the page runs on this device, it may still show here.</p>
+          <div className="browser-note-actions">
+            <button type="button" className="browser-outside" onClick={() => setTriedLocal(current)}>Try anyway</button>
+            {outside}
+          </div>
         </div>
       ) : view === 'insecure' ? (
         <div className="browser-note">

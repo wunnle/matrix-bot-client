@@ -989,6 +989,7 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   color: var(--text);
 }
 .browser-outside .material-icons { font-size: 15px; }
+.browser-note-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .browser-outside:hover { background: var(--bg-hover); }
 /* A page that hasn't finished loading may be one that refused the frame. */
 .browser-slow {

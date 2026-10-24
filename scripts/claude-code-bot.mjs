@@ -927,7 +927,12 @@ function runTurn(roomId, prompt) {
 // the repo (they're Lego/fan photos), so a checkout without them keeps the
 // pixel cast. The backfill moves rooms off the pixel cast, since those mxcs
 // are in `known`.
-const MINIFIG_DIR = process.env.AGENT_AVATAR_DIR ?? path.join(os.homedir(), '.local', 'share', 'agent-avatars', 'minifigs')
+//
+// Since 2026-10-25 the cast is avatars-dark/ from wunnle/minifig-avatars,
+// fetched to minifigs-dark/: drawn for dark backgrounds, with transparent
+// backgrounds that are kept as they are. The photo crops in minifigs/ are
+// retired the same way, through `known`.
+const MINIFIG_DIR = process.env.AGENT_AVATAR_DIR ?? path.join(os.homedir(), '.local', 'share', 'agent-avatars', 'minifigs-dark')
 const pngsIn = (dir, re) => {
   try { return fs.readdirSync(dir).filter((f) => re.test(f)).sort().map((f) => path.join(dir, f)) } catch { return [] }
 }

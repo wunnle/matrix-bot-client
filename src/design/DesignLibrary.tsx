@@ -5,6 +5,7 @@ import type { Message } from '../types'
 import type { RoomSummary } from '../lib/matrix'
 import type { RoomAgentState } from '../lib/roomAgentState'
 import { collectRoomMedia } from '../lib/roomMedia'
+import type { LinearInfo } from '../lib/linearInfo'
 import { MessageRow, type MessageRowProps } from '../components/ChatView'
 import ApprovalBar from '../components/ApprovalBar'
 import { AgentActivityBar } from '../components/AgentActivityBar'
@@ -132,8 +133,23 @@ const SHARED = collectRoomMedia([
   MESSAGES.place,
   bot('Saved to obsidian://open?vault=Obsidian&file=Bender%2FFunctionalities%2FGH%20Wrapper'),
   bot('This builds on [[Bender/Functionalities/Hermes Gateway]] and [[Daily Notes/2026-10-20|today]].'),
+  bot('Filed BEN-336 in https://linear.app/wunnle/project/claude-code-integration-8915c40f6ab7; it waits on BEN-335 and BEN-999. BEN-311 shipped.'),
 ])
 const SHARED_URLS = { $img1: avatar('rocket'), $img2: avatar('squid'), $file1: '#' }
+const hoursAgo = (h: number) => new Date(NOW - h * 3600_000).toISOString()
+// What /api/linear answers for SHARED; BEN-999 is left out, so its row looks as it does without data.
+const LINEAR_SAMPLE: LinearInfo = {
+  issues: {
+    'BEN-336': { title: 'Sidebar: Linear issues and projects with live metadata', state: { name: 'In Progress', color: '#f2c94c', type: 'started' }, priority: 2, priorityLabel: 'High', assignee: 'Bender', project: '8915c40f6ab7', updatedAt: hoursAgo(0.2) },
+    'BEN-335': { title: 'Sidebar: a Browser tab to open pages beside the chat', state: { name: 'In Review', color: '#26b5ce', type: 'started' }, assignee: 'Bender', project: '8915c40f6ab7', updatedAt: hoursAgo(3) },
+    'BEN-311': { title: 'End-to-end encrypted agent rooms', state: { name: 'Done', color: '#5e6ad2', type: 'completed' }, priority: 2, priorityLabel: 'High', assignee: 'Bender', project: 'dd7fa7cb6ef3', updatedAt: hoursAgo(96) },
+    'BEN-263': { title: 'Train a custom wake word for the Voice PE', state: { name: 'Backlog', color: '#bec2c8', type: 'backlog' }, priority: 4, priorityLabel: 'Low', assignee: 'Sinan', updatedAt: hoursAgo(24 * 40) },
+  },
+  projects: {
+    '8915c40f6ab7': { name: 'Claude Code integration', url: 'https://linear.app/wunnle/project/claude-code-integration-8915c40f6ab7', status: { name: 'In Progress', color: '#f2c94c', type: 'started' }, progress: 61, lead: 'Sinan' },
+    'dd7fa7cb6ef3': { name: 'Colonist Copilot', url: 'https://linear.app/wunnle/project/colonist-copilot-dd7fa7cb6ef3', status: { name: 'Planned', color: '#d7d8db', type: 'planned' }, progress: 50, targetDate: '2026-11-15' },
+  },
+}
 
 const room = (name: string, extra: Partial<RoomSummary> = {}): RoomSummary =>
   ({ roomId: `!${name}`, name, unreadCount: 0, membership: 'join', ...extra })
@@ -319,7 +335,7 @@ export default function DesignLibrary() {
         </Frame>
       </Section>
 
-      <Section title="Shared panel" note="Links, images, files, places, Linear issues and PRs from the loaded messages.">
+      <Section title="Shared panel" note="Links, images, files, places, Linear issues and projects and PRs from the loaded messages: with Linear's details, and without them (no key, or Linear down).">
         <Frame className="dl-shared">
           <RoomSidebar
             media={SHARED}
@@ -334,6 +350,24 @@ export default function DesignLibrary() {
             onTab={noop}
             openArtifact={null}
             onOpenArtifact={noop}
+            linearSample={LINEAR_SAMPLE}
+          />
+        </Frame>
+        <Frame className="dl-shared">
+          <RoomSidebar
+            media={SHARED}
+            mediaUrls={SHARED_URLS}
+            hasMore
+            loadingMore={false}
+            onLoadMore={noop}
+            onJump={noop}
+            onOpenImage={noop}
+            onClose={noop}
+            tab="shared"
+            onTab={noop}
+            openArtifact={null}
+            onOpenArtifact={noop}
+            linearSample={{ issues: {}, projects: {} }}
           />
         </Frame>
       </Section>
@@ -350,6 +384,7 @@ export default function DesignLibrary() {
             onOpenImage={noop}
             onClose={noop}
             tab="artifacts"
+            linearSample={LINEAR_SAMPLE}
             onTab={noop}
             openArtifact={null}
             onOpenArtifact={noop}
@@ -366,6 +401,7 @@ export default function DesignLibrary() {
             onOpenImage={noop}
             onClose={noop}
             tab="artifacts"
+            linearSample={LINEAR_SAMPLE}
             onTab={noop}
             openArtifact={undefined}
             onOpenArtifact={noop}

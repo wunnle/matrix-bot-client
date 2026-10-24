@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react'
 import type * as React from 'react'
-import { isEmptyRoomMedia, type RoomLink, type RoomMedia } from '../lib/roomMedia'
+import { isEmptyRoomMedia, type RoomLink, type RoomMedia, type RoomProject } from '../lib/roomMedia'
+import { useLinearInfo, type LinearInfo, type LinearState } from '../lib/linearInfo'
 import { mapsUrl, formatCoords } from '../lib/location'
 import ArtifactPreview from './ArtifactPreview'
 
@@ -9,6 +10,38 @@ const LINEAR_PATH = 'M2.886 4.18A11.982 11.982 0 0 1 11.99 0C18.624 0 24 5.376 2
 const GITHUB_PATH = 'M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'
 
 const day = (ts: number) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+// A date-only yyyy-mm-dd is that day wherever you are, not UTC midnight.
+const targetDay = (date: string) => day(new Date(`${date}T12:00:00`).getTime())
+
+// Short, as Linear writes it: a phone row has room for little else.
+function ago(iso: string): string {
+  const mins = Math.round((Date.now() - Date.parse(iso)) / 60000)
+  if (!Number.isFinite(mins)) return ''
+  if (mins < 1) return 'now'
+  if (mins < 60) return `${mins}m`
+  if (mins < 24 * 60) return `${Math.round(mins / 60)}h`
+  if (mins < 30 * 24 * 60) return `${Math.round(mins / (24 * 60))}d`
+  return day(Date.parse(iso))
+}
+
+// Linear's own state colours, when they are colours.
+const stateColor = (s?: LinearState) => (s?.color && /^#[0-9a-f]{3,8}$/i.test(s.color) ? s.color : 'var(--text-muted)')
+
+/** A project's progress as Linear draws it: a ring in its status colour. */
+function ProgressRing({ percent, color }: { percent: number; color: string }) {
+  const r = 6.5
+  const c = 2 * Math.PI * r
+  return (
+    <svg className="room-sidebar-ring" viewBox="0 0 16 16" role="img" aria-label={`Linear project, ${percent}% done`}>
+      <circle cx="8" cy="8" r={r} className="room-sidebar-ring-track" />
+      <circle
+        cx="8" cy="8" r={r} stroke={color}
+        strokeDasharray={`${(c * Math.min(100, Math.max(0, percent))) / 100} ${c}`}
+        transform="rotate(-90 8 8)"
+      />
+    </svg>
+  )
+}
 
 /**
  * A room's side panel: what was shared in it (issues and PRs, Obsidian notes,
@@ -40,7 +73,7 @@ function clampWidth(w: number): number {
   return Math.round(Math.max(MIN_WIDTH, Math.min(w, window.innerWidth - CHAT_MIN)))
 }
 
-export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, onLoadMore, onJump, onOpenImage, onClose, tab, onTab, openArtifact, onOpenArtifact }: {
+export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, onLoadMore, onJump, onOpenImage, onClose, tab, onTab, openArtifact, onOpenArtifact, linearSample }: {
   media: RoomMedia
   /** Resolved image/file URLs by event id. */
   mediaUrls: Record<string, string>
@@ -55,6 +88,8 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
   /** The artifact shown, by id; null for the list, undefined for the newest. */
   openArtifact: string | null | undefined
   onOpenArtifact: (id: string | null) => void
+  /** Linear details to show instead of fetching them (the design page). */
+  linearSample?: LinearInfo
 }) {
   // No artifacts, no tab: the panel is what it always was.
   const hasArtifacts = media.artifacts.length > 0
@@ -123,19 +158,34 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
     return [...groups.entries()]
   }, [media.links])
 
+  const linear = useLinearInfo(media, linearSample)
+  // Linked projects, then the projects of the issues mentioned, each at its
+  // newest issue's message (refs run newest first).
+  const projects = useMemo(() => {
+    const out = new Map<string, RoomProject>(media.projects.map((p) => [p.slug, p]))
+    for (const r of media.refs) {
+      const slug = r.kind === 'linear' ? linear.issues[r.label]?.project : undefined
+      const info = slug ? linear.projects[slug] : undefined
+      if (!slug || !info || out.has(slug)) continue
+      out.set(slug, { slug, name: info.name, url: info.url, eventId: r.eventId, timestamp: r.timestamp })
+    }
+    return [...out.values()]
+  }, [media.projects, media.refs, linear])
+
   // The link stretches over the whole row (see .room-sidebar-link::after);
   // "In chat" sits above it, so it is the one spot that does something else.
-  const row = (key: string, eventId: string, { href, onOpen, title, sub, icon, download, hover }: {
+  const row = (key: string, eventId: string, { href, onOpen, title, sub, icon, download, hover, className }: {
     href?: string
     /** Opens it here in the panel instead of following a link. */
     onOpen?: () => void
-    title: string
-    sub?: string
+    title: ReactNode
+    sub?: ReactNode
     icon?: ReactNode
     download?: string
     hover?: string
+    className?: string
   }) => (
-    <div key={key} className="room-sidebar-row">
+    <div key={key} className={`room-sidebar-row${className ? ` ${className}` : ''}`}>
       {icon}
       <div className="room-sidebar-row-text">
         {onOpen ? (
@@ -246,19 +296,61 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
       <div className="room-sidebar-body">
         {empty && <p className="room-sidebar-empty">Nothing shared in the loaded messages yet.</p>}
 
-        {media.refs.length > 0 && (
+        {(media.refs.length > 0 || projects.length > 0) && (
           <section className="room-sidebar-section">
-            <h3>Issues &amp; PRs <span>{media.refs.length}</span></h3>
-            {media.refs.map((r) => row(r.label, r.eventId, {
-              href: r.url,
-              title: r.label,
-              sub: r.title && r.title !== r.label ? r.title : day(r.timestamp),
-              icon: (
-                <svg className="room-sidebar-ref-icon" viewBox="0 0 24 24" role="img" aria-label={r.kind === 'linear' ? 'Linear' : 'GitHub'}>
-                  <path d={r.kind === 'linear' ? LINEAR_PATH : GITHUB_PATH} />
-                </svg>
-              ),
-            }))}
+            <h3>Issues &amp; PRs <span>{media.refs.length + projects.length}</span></h3>
+            {projects.length > 0 && (
+              <div className="room-sidebar-group">
+                <div className="room-sidebar-host">Projects</div>
+                {projects.map((p) => {
+                  const info = linear.projects[p.slug]
+                  return row(`project:${p.slug}`, p.eventId, {
+                    href: info?.url ?? p.url,
+                    title: info?.name ?? p.name,
+                    sub: info
+                      ? [info.status.name, info.progress !== undefined && `${info.progress}%`, info.targetDate ? `Target ${targetDay(info.targetDate)}` : info.lead]
+                          .filter(Boolean).join(' · ')
+                      : day(p.timestamp),
+                    icon: <ProgressRing percent={info?.progress ?? 0} color={stateColor(info?.status)} />,
+                  })
+                })}
+              </div>
+            )}
+            <div className="room-sidebar-group">
+              {projects.length > 0 && media.refs.length > 0 && (
+                <div className="room-sidebar-host">{media.refs.some((r) => r.kind === 'github') ? 'Issues & PRs' : 'Issues'}</div>
+              )}
+              {media.refs.map((r) => {
+                const issue = r.kind === 'linear' ? linear.issues[r.label] : undefined
+                const icon = (
+                  <svg className="room-sidebar-ref-icon" viewBox="0 0 24 24" role="img" aria-label={r.kind === 'linear' ? 'Linear' : 'GitHub'}>
+                    <path d={r.kind === 'linear' ? LINEAR_PATH : GITHUB_PATH} />
+                  </svg>
+                )
+                if (!issue) {
+                  return row(r.label, r.eventId, {
+                    href: r.url,
+                    title: r.label,
+                    sub: r.title && r.title !== r.label ? r.title : day(r.timestamp),
+                    icon,
+                  })
+                }
+                const closed = issue.state.type === 'completed' || issue.state.type === 'canceled'
+                return row(r.label, r.eventId, {
+                  href: r.url,
+                  title: <><span className="room-sidebar-key">{r.label}</span>{issue.title}</>,
+                  hover: `${r.label} ${issue.title}`,
+                  sub: (
+                    <>
+                      <span className="room-sidebar-dot" style={{ background: stateColor(issue.state) }} />
+                      {[issue.state.name, issue.priorityLabel, issue.assignee, ago(issue.updatedAt)].filter(Boolean).join(' · ')}
+                    </>
+                  ),
+                  icon,
+                  className: closed ? 'room-sidebar-row--closed' : undefined,
+                })
+              })}
+            </div>
           </section>
         )}
 

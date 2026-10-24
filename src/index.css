@@ -1084,6 +1084,33 @@ button.room-sidebar-link {
 .room-sidebar-row--closed .room-sidebar-link { color: var(--text-muted); }
 .room-sidebar-ring { flex: none; width: 16px; height: 16px; fill: none; stroke-width: 2.5; stroke-linecap: round; }
 .room-sidebar-ring-track { stroke: var(--border); }
+/* A project's issues hang off a line from its ring, as child agents do in the
+   room list. The icons' centres sit 16px in (8px padding + half of 16px); a
+   child is one indent in, so its parent's line runs at 16px minus the indent. */
+.room-sidebar-tree { --tree-indent: 24px; }
+.room-sidebar-row--parent::before,
+.room-sidebar-row--child::before,
+.room-sidebar-row--child:not(.room-sidebar-row--last)::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  border: 0 solid var(--text-faint);
+}
+/* Leaves the ring from its bottom. */
+.room-sidebar-row--parent::before { top: calc(50% + 11px); bottom: 0; left: 15px; border-left-width: 2px; }
+.room-sidebar-row--child { margin-left: var(--tree-indent); }
+/* Turns from the parent's line into this row's icon. */
+.room-sidebar-row--child::before {
+  top: 0;
+  height: 50%;
+  left: calc(15px - var(--tree-indent));
+  width: calc(var(--tree-indent) - 11px);
+  border-left-width: 2px;
+  border-bottom-width: 2px;
+  border-bottom-left-radius: 8px;
+}
+/* Carries the line on past this row to the next sibling. */
+.room-sidebar-row--child:not(.room-sidebar-row--last)::after { top: 0; bottom: 0; left: calc(15px - var(--tree-indent)); border-left-width: 2px; }
 .room-sidebar-note-icon { flex: none; width: 16px; font-size: 18px; color: var(--text-muted); }
 /* Above the stretched link, so it alone jumps to the message. */
 .room-sidebar-jump {

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react'
 import type * as React from 'react'
-import { isEmptyRoomMedia, type RoomLink, type RoomMedia, type RoomProject } from '../lib/roomMedia'
+import { isEmptyRoomMedia, type RoomLink, type RoomMedia, type RoomProject, type RoomRef } from '../lib/roomMedia'
 import { useLinearInfo, type LinearInfo, type LinearState } from '../lib/linearInfo'
 import { mapsUrl, formatCoords } from '../lib/location'
 import ArtifactPreview from './ArtifactPreview'
@@ -164,17 +164,25 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
   }, [media.links])
 
   const linear = useLinearInfo(media, linearSample)
-  // Linked projects, then the projects of the issues mentioned, each at its
-  // newest issue's message (refs run newest first).
-  const projects = useMemo(() => {
-    const out = new Map<string, RoomProject>(media.projects.map((p) => [p.slug, p]))
+  // Issues under their projects, as agents hang under their parents in the
+  // room list: each project (linked, or known from an issue's details) with its
+  // issues, then the issues without one and the PRs, newest first throughout.
+  const refTree = useMemo(() => {
+    const groups = new Map<string, { project: RoomProject; refs: RoomRef[]; at: number }>(
+      media.projects.map((p) => [p.slug, { project: p, refs: [], at: p.timestamp }]),
+    )
+    const loose: { refs: RoomRef[]; at: number }[] = []
     for (const r of media.refs) {
       const slug = r.kind === 'linear' ? linear.issues[r.label]?.project : undefined
       const info = slug ? linear.projects[slug] : undefined
-      if (!slug || !info || out.has(slug)) continue
-      out.set(slug, { slug, name: info.name, url: info.url, eventId: r.eventId, timestamp: r.timestamp })
+      if (!slug || !info) { loose.push({ refs: [r], at: r.timestamp }); continue }
+      const group = groups.get(slug)
+        ?? { project: { slug, name: info.name, url: info.url, eventId: r.eventId, timestamp: r.timestamp }, refs: [], at: 0 }
+      group.refs.push(r)
+      group.at = Math.max(group.at, r.timestamp)
+      groups.set(slug, group)
     }
-    return [...out.values()]
+    return [...groups.values(), ...loose].sort((a, b) => b.at - a.at) as { project?: RoomProject; refs: RoomRef[]; at: number }[]
   }, [media.projects, media.refs, linear])
 
   // The link stretches over the whole row (see .room-sidebar-link::after);
@@ -215,6 +223,51 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
       </div>
     </div>
   )
+  const projectRow = (p: RoomProject, hasIssues: boolean) => {
+    const info = linear.projects[p.slug]
+    return row(`project:${p.slug}`, p.eventId, {
+      href: info?.url ?? p.url,
+      title: info?.name ?? p.name,
+      sub: info
+        ? [info.status.name, info.progress !== undefined && `${info.progress}%`, info.targetDate ? `Target ${targetDay(info.targetDate)}` : info.lead]
+            .filter(Boolean).join(' · ')
+        : day(p.timestamp),
+      icon: <ProgressRing percent={info?.progress ?? 0} color={stateColor(info?.status)} />,
+      className: hasIssues ? 'room-sidebar-row--parent' : undefined,
+    })
+  }
+  const refRow = (r: RoomRef, treeClass?: string) => {
+    const issue = r.kind === 'linear' ? linear.issues[r.label] : undefined
+    const icon = (
+      <svg className="room-sidebar-ref-icon" viewBox="0 0 24 24" role="img" aria-label={r.kind === 'linear' ? 'Linear' : 'GitHub'}>
+        <path d={r.kind === 'linear' ? LINEAR_PATH : GITHUB_PATH} />
+      </svg>
+    )
+    if (!issue) {
+      return row(r.label, r.eventId, {
+        href: r.url,
+        title: r.label,
+        sub: r.title && r.title !== r.label ? r.title : day(r.timestamp),
+        icon,
+        className: treeClass,
+      })
+    }
+    const closed = issue.state.type === 'completed' || issue.state.type === 'canceled'
+    return row(r.label, r.eventId, {
+      href: r.url,
+      title: <><span className="room-sidebar-key">{r.label}</span>{issue.title}</>,
+      hover: `${r.label} ${issue.title}`,
+      sub: (
+        <>
+          <span className="room-sidebar-dot" style={{ background: stateColor(issue.state) }} />
+          {[issue.state.name, issue.priorityLabel, issue.assignee, ago(issue.updatedAt)].filter(Boolean).join(' · ')}
+        </>
+      ),
+      icon,
+      className: [treeClass, closed && 'room-sidebar-row--closed'].filter(Boolean).join(' ') || undefined,
+    })
+  }
+
   // Artifacts have their own tab; the Shared one is empty without the rest.
   const empty = isEmptyRoomMedia({ ...media, artifacts: [] })
 
@@ -308,61 +361,15 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
       <div className="room-sidebar-body">
         {empty && <p className="room-sidebar-empty">Nothing shared in the loaded messages yet.</p>}
 
-        {(media.refs.length > 0 || projects.length > 0) && (
+        {refTree.length > 0 && (
           <section className="room-sidebar-section">
-            <h3>Issues &amp; PRs <span>{media.refs.length + projects.length}</span></h3>
-            {projects.length > 0 && (
-              <div className="room-sidebar-group">
-                <div className="room-sidebar-host">Projects</div>
-                {projects.map((p) => {
-                  const info = linear.projects[p.slug]
-                  return row(`project:${p.slug}`, p.eventId, {
-                    href: info?.url ?? p.url,
-                    title: info?.name ?? p.name,
-                    sub: info
-                      ? [info.status.name, info.progress !== undefined && `${info.progress}%`, info.targetDate ? `Target ${targetDay(info.targetDate)}` : info.lead]
-                          .filter(Boolean).join(' · ')
-                      : day(p.timestamp),
-                    icon: <ProgressRing percent={info?.progress ?? 0} color={stateColor(info?.status)} />,
-                  })
-                })}
+            <h3>Issues &amp; PRs <span>{media.refs.length + refTree.filter((e) => e.project).length}</span></h3>
+            {refTree.map((e) => e.project ? (
+              <div key={`project:${e.project.slug}`} className="room-sidebar-tree">
+                {projectRow(e.project, e.refs.length > 0)}
+                {e.refs.map((r, i) => refRow(r, i === e.refs.length - 1 ? 'room-sidebar-row--child room-sidebar-row--last' : 'room-sidebar-row--child'))}
               </div>
-            )}
-            <div className="room-sidebar-group">
-              {projects.length > 0 && media.refs.length > 0 && (
-                <div className="room-sidebar-host">{media.refs.some((r) => r.kind === 'github') ? 'Issues & PRs' : 'Issues'}</div>
-              )}
-              {media.refs.map((r) => {
-                const issue = r.kind === 'linear' ? linear.issues[r.label] : undefined
-                const icon = (
-                  <svg className="room-sidebar-ref-icon" viewBox="0 0 24 24" role="img" aria-label={r.kind === 'linear' ? 'Linear' : 'GitHub'}>
-                    <path d={r.kind === 'linear' ? LINEAR_PATH : GITHUB_PATH} />
-                  </svg>
-                )
-                if (!issue) {
-                  return row(r.label, r.eventId, {
-                    href: r.url,
-                    title: r.label,
-                    sub: r.title && r.title !== r.label ? r.title : day(r.timestamp),
-                    icon,
-                  })
-                }
-                const closed = issue.state.type === 'completed' || issue.state.type === 'canceled'
-                return row(r.label, r.eventId, {
-                  href: r.url,
-                  title: <><span className="room-sidebar-key">{r.label}</span>{issue.title}</>,
-                  hover: `${r.label} ${issue.title}`,
-                  sub: (
-                    <>
-                      <span className="room-sidebar-dot" style={{ background: stateColor(issue.state) }} />
-                      {[issue.state.name, issue.priorityLabel, issue.assignee, ago(issue.updatedAt)].filter(Boolean).join(' · ')}
-                    </>
-                  ),
-                  icon,
-                  className: closed ? 'room-sidebar-row--closed' : undefined,
-                })
-              })}
-            </div>
+            ) : refRow(e.refs[0]))}
           </section>
         )}
 

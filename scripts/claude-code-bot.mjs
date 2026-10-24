@@ -26,6 +26,7 @@ import { encryptAttachment, decryptAttachment } from '../src/lib/attachmentCrypt
 import { notifyEncrypted, wantsPush } from './bot-push.mjs'
 import { createCardPoster } from './subagent-cards.mjs'
 import { roomTitle, fallbackTitle } from './room-title.mjs'
+import { LINEAR_INDEX_EVENT, issueKeys, withMentions } from './linear-index.mjs'
 import { ARTIFACT_INDEX_EVENT, SNAPSHOT_MAX_BYTES, artifactContent, artifactEdit, artifactIndex, createArtifactRegistry } from './artifact-cards.mjs'
 import { browserContent, browserUrl } from './browser-cards.mjs'
 
@@ -524,6 +525,31 @@ function postArtifact(roomId, page) {
   })
   artifactQueue.set(key, run.catch(() => {}))
   return run
+}
+
+// The room's Linear index (room state), as last written here: a write's echo
+// can lag behind the next mention, so that one builds on this, not on sync.
+const linearIndexes = new Map()
+const linearWrites = new Map() // roomId -> timer
+const LINEAR_WRITE_DELAY_MS = 3000
+
+// Mentions batch up for a few seconds, so a turn that names five issues in
+// five messages writes the state once. Best effort, like the artifact index.
+function noteLinearMentions(roomId, keys, eventId, ts) {
+  const base = linearIndexes.get(roomId)
+    ?? client.getRoom(roomId)?.currentState.getStateEvents(LINEAR_INDEX_EVENT, '')?.getContent()
+  const next = withMentions(base, keys, eventId, ts)
+  if (!next) return
+  linearIndexes.set(roomId, next)
+  if (linearWrites.has(roomId)) return
+  linearWrites.set(roomId, setTimeout(async () => {
+    linearWrites.delete(roomId)
+    try {
+      await client.sendStateEvent(roomId, LINEAR_INDEX_EVENT, linearIndexes.get(roomId), '')
+    } catch (e) {
+      log(`[${roomId}] could not update the Linear index: ${e.message}`)
+    }
+  }, LINEAR_WRITE_DELAY_MS))
 }
 
 // Rooms whose artifacts predate the index, or whose index fell behind while the
@@ -1644,24 +1670,44 @@ async function drainRoom(roomId, first, firstPrompt = null) {
   }
 }
 
+// Resolves once an encrypted event has been decrypted (or failed to be).
+async function whenDecrypted(event) {
+  if (event.getType() !== 'm.room.encrypted' && !event.isBeingDecrypted?.()) return
+  await new Promise((resolve) => {
+    const onDec = (e) => {
+      if (e.getId() === event.getId()) {
+        client.off(sdk.MatrixEventEvent.Decrypted, onDec)
+        resolve()
+      }
+    }
+    client.on(sdk.MatrixEventEvent.Decrypted, onDec)
+    if (event.getType() !== 'm.room.encrypted') { client.off(sdk.MatrixEventEvent.Decrypted, onDec); resolve() }
+  })
+}
+
+// Every live message, the agent's own included, feeds the room's Linear index.
+client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
+  if (toStartOfTimeline || !room || event.getTs() < startTs) return
+  await whenDecrypted(event)
+  if (event.isDecryptionFailure() || event.getType() !== 'm.room.message') return
+  const content = event.getContent()
+  const edit = content?.['m.relates_to']?.rel_type === 'm.replace'
+  const shown = edit ? content['m.new_content'] : content
+  // Tool progress lines (`linear get BEN-12`) are not the room talking about an
+  // issue, and Construct's sidebar skips them too.
+  if (!shown || shown['com.construct.tool_progress']) return
+  const text = [shown.body, shown.formatted_body].filter((s) => typeof s === 'string').join('\n')
+  // An edit counts as its original, which is the message the sidebar jumps to.
+  const target = edit ? content['m.relates_to'].event_id : event.getId()
+  if (target) noteLinearMentions(room.roomId, issueKeys(text), target, event.getTs())
+})
+
 client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   if (toStartOfTimeline) return                          // skip history
   if (event.getTs() < startTs) return                   // skip messages before bot started
   if (event.getSender() === USER_ID) return             // ignore own messages
 
-  // Wait for decryption if needed
-  if (event.getType() === 'm.room.encrypted' || event.isBeingDecrypted?.()) {
-    await new Promise((resolve) => {
-      const onDec = (e) => {
-        if (e.getId() === event.getId()) {
-          client.off(sdk.MatrixEventEvent.Decrypted, onDec)
-          resolve()
-        }
-      }
-      client.on(sdk.MatrixEventEvent.Decrypted, onDec)
-      if (event.getType() !== 'm.room.encrypted') { client.off(sdk.MatrixEventEvent.Decrypted, onDec); resolve() }
-    })
-  }
+  await whenDecrypted(event)
 
   if (event.isDecryptionFailure()) {
     log(`Decrypt failure in ${room?.roomId}: ${event.decryptionFailureReason}`)

@@ -56,6 +56,7 @@ import { approvalChoices, parseApprovalCard } from '../lib/approval'
 import { artifactIdOf, parseArtifact } from '../lib/artifact'
 import { parseBrowserPage, storedPage, storePage } from '../lib/browser'
 import { useArtifactIndex } from '../hooks/useArtifactIndex'
+import { useLinearIndex } from '../hooks/useLinearIndex'
 import { extractFormBlock, formAnswerBody, formResponseFromContent, FORM_RESPONSE_KEY } from '../lib/form'
 import { extractLocationBlocks, formatCoords, locationContent, locationFromContent, mapsUrl, mapTiles, MAP_ATTRIBUTION } from '../lib/location'
 import LocationPicker from './LocationPicker'
@@ -2201,11 +2202,14 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // they are older.
   const loadedArtifactIds = useMemo(() => loadedMedia?.artifacts.map((a) => a.id) ?? [], [loadedMedia])
   const indexedArtifacts = useArtifactIndex(client, roomId, showSidebar, loadedArtifactIds)
+  // Linear issues named before the loaded messages, likewise from room state.
+  const loadedRefLabels = useMemo(() => loadedMedia?.refs.map((r) => r.label) ?? [], [loadedMedia])
+  const indexedIssues = useLinearIndex(client, roomId, showSidebar, loadedRefLabels)
   const roomMedia = useMemo(
-    () => (loadedMedia && indexedArtifacts.length
-      ? { ...loadedMedia, artifacts: [...loadedMedia.artifacts, ...indexedArtifacts] }
+    () => (loadedMedia && (indexedArtifacts.length || indexedIssues.length)
+      ? { ...loadedMedia, artifacts: [...loadedMedia.artifacts, ...indexedArtifacts], refs: [...loadedMedia.refs, ...indexedIssues] }
       : loadedMedia),
-    [loadedMedia, indexedArtifacts],
+    [loadedMedia, indexedArtifacts, indexedIssues],
   )
   // Artifacts open on their own tab, newest first unless one was picked
   // (undefined: the newest; null: the list).

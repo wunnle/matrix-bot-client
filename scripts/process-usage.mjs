@@ -61,7 +61,7 @@ function configuredRooms(home, profile) {
   return [...read(path.join(base, 'rooms.yaml')).matchAll(/^  ["']?(![^\s"']+)["']?:\s*$/gm)].map(m => m[1])
 }
 
-export function createProcessSampler({ procRoot = '/proc', home = path.join(os.homedir(), '.hermes'), hz } = {}) {
+export function createProcessSampler({ procRoot = '/proc', home = path.join(os.homedir(), '.hermes'), hz, intervalMs = 30000 } = {}) {
   hz ??= Number(execFileSync('getconf', ['CLK_TCK'], { encoding: 'utf8' }).trim())
   let previous = new Map()
   let previousAt = 0
@@ -129,7 +129,7 @@ export function createProcessSampler({ procRoot = '/proc', home = path.join(os.h
     previous = new Map(processes.map(p => [p.pid, p]))
     previousAt = now
     const memory = read(path.join(procRoot, 'meminfo'))
-    return { version: 1, fetched_at: now, intervalMs: 30000, host: { name: os.hostname(), cpuCores: os.cpus().length,
+    return { version: 1, fetched_at: now, intervalMs, host: { name: os.hostname(), cpuCores: os.cpus().length,
       totalBytes: kb(memory, 'MemTotal'), availableBytes: kb(memory, 'MemAvailable'),
       swapTotalBytes: kb(memory, 'SwapTotal'), swapFreeBytes: kb(memory, 'SwapFree') }, groups }
   }

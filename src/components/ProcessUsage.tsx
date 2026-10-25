@@ -53,6 +53,10 @@ export function ProcessUsageReading({ reading, now }: { reading: ProcessSnapshot
   if (!reading) return <section className="settings-section"><h2 className="settings-section-title">Host & agents</h2><p className="settings-empty">Waiting for the host’s first process reading…</p></section>
   const { host, groups } = reading
   const age = Math.max(0, Math.floor((now - reading.fetched_at) / 60000))
+  // The host says how often it samples; older readings were every 30 seconds.
+  const interval = Number.isFinite(reading.intervalMs) && reading.intervalMs > 0 ? reading.intervalMs : 30000
+  const stale = now - reading.fetched_at > Math.max(120000, 2 * interval)
+  const every = interval >= 60000 ? `${Math.round(interval / 60000)} minute${interval >= 120000 ? 's' : ''}` : `${Math.round(interval / 1000)} seconds`
   return <>
     <h2 className="usage-provider">Host & agents</h2>
     <section className="settings-section usage-card">
@@ -61,7 +65,7 @@ export function ProcessUsageReading({ reading, now }: { reading: ProcessSnapshot
       <div className="usage-row"><span>Swap used / total</span><span>{memory(host.swapTotalBytes - host.swapFreeBytes)} / {memory(host.swapTotalBytes)}</span></div>
       <div className="usage-row"><span>CPU cores</span><span>{host.cpuCores}</span></div>
     </section>
-    <p className={now - reading.fetched_at > 120000 ? 'usage-stale' : 'usage-footnote'}>{age ? `Sampled ${age} min ago` : 'Sampled just now'} · refreshes every 30 seconds.{now - reading.fetched_at > 120000 ? ' Readings are stale.' : ''}</p>
+    <p className={stale ? 'usage-stale' : 'usage-footnote'}>{age ? `Sampled ${age} min ago` : 'Sampled just now'} · refreshes every {every}.{stale ? ' Readings are stale.' : ''}</p>
     {groups.map(g => <Group key={g.id} group={g} />)}
     <p className="usage-footnote">PSS apportions shared memory; RSS includes shared pages in each process. Each process belongs to one group only. Peak RSS is per process, not a simultaneous group peak. CPU is measured between samples; process lifetime is not agent activity.</p>
   </>

@@ -1497,13 +1497,26 @@ const USAGE_SOURCES = [
   },
 ].map((s) => ({ ...s, last: null, publishedAt: 0 }))
 
+// When the room last had a message. Not getLastActiveTimestamp(): that counts
+// state events, so the room the usage went to became the newest and got every
+// reading after it, until its timeline was nothing but readings and Construct
+// could no longer scroll back to the chat.
+function lastMessageTs(room) {
+  const events = room.getLiveTimeline().getEvents()
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].getType() === 'm.room.message') return events[i].getTs()
+  }
+  return 0
+}
+
 function usageRoom() {
   return client.getRooms()
     // Members are lazy-loaded, so an unknown owner is not a missing one; only
     // a room the owner has visibly left is useless to them.
     .filter((r) => r.getMyMembership() === 'join' && isAgentRoom(r.roomId) &&
       !['leave', 'ban'].includes(r.getMember(OWNER_ID)?.membership))
-    .sort((a, b) => b.getLastActiveTimestamp() - a.getLastActiveTimestamp())[0] ?? null
+    .map((r) => ({ r, ts: lastMessageTs(r) }))
+    .sort((a, b) => b.ts - a.ts)[0]?.r ?? null
 }
 
 async function refreshUsage({ force = false } = {}) {
@@ -1532,7 +1545,11 @@ refreshUsage({ force: true })
 setInterval(() => refreshUsage({ force: true }), USAGE_POLL_MS)
 
 // Process readings are independent of provider quota checks/authentication.
-const sampleProcesses = createProcessSampler()
+// Each is ~20 KB of room state, and state lands in the room's timeline, so
+// they go out every few minutes rather than every few seconds; CPU is
+// averaged over the whole gap.
+const PROCESS_POLL_MS = 5 * 60 * 1000
+const sampleProcesses = createProcessSampler({ intervalMs: PROCESS_POLL_MS })
 let processPollBusy = false
 let processVerified = false
 async function refreshProcesses() {
@@ -1558,7 +1575,7 @@ async function refreshProcesses() {
   finally { processPollBusy = false }
 }
 refreshProcesses()
-setInterval(refreshProcesses, 30000)
+setInterval(refreshProcesses, PROCESS_POLL_MS)
 
 // Runs `first`, then whatever piled up while it ran, until the room is idle.
 // Queued messages are coalesced into one prompt instead of one turn each: two

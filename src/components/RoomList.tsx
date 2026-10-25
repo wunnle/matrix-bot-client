@@ -232,7 +232,9 @@ export default function RoomList({
   // leaving the list with no sync/membership listeners for the whole session.
   const [clientReady, setClientReady] = useState(false)
   const [error, setError] = useState('')
-  const [roomAvatars, setRoomAvatars] = useState<Record<string, string>>({})
+  // roomId -> the resolved URL and the mxc it came from, so a room whose avatar
+  // changes while the app is open is re-resolved instead of keeping its old face.
+  const [roomAvatars, setRoomAvatars] = useState<Record<string, { mxc: string; url: string }>>({})
   const [invitesBusy, setInvitesBusy] = useState<Record<string, boolean>>({})
   const [inviteError, setInviteError] = useState('')
   const [spawning, setSpawning] = useState<AgentProvider | null>(null)
@@ -349,18 +351,20 @@ export default function RoomList({
     if (rooms.length === 0) return
     let client: ReturnType<typeof getClient>
     try { client = getClient() } catch { return }
-    const unresolved = rooms.filter(r => r.avatarMxc && !roomAvatars[r.roomId])
+    const unresolved = rooms.filter(r => r.avatarMxc && roomAvatars[r.roomId]?.mxc !== r.avatarMxc)
     if (unresolved.length === 0) return
     Promise.all(unresolved.map(async r => {
-      const url = await resolveMediaUrl(client, r.avatarMxc!, 80, 80, 'crop')
-      return { roomId: r.roomId, url }
+      const mxc = r.avatarMxc!
+      const url = await resolveMediaUrl(client, mxc, 80, 80, 'crop')
+      return { roomId: r.roomId, mxc, url }
     })).then(results => {
-      const updates: Record<string, string> = {}
-      results.forEach(r => { if (r.url) updates[r.roomId] = r.url })
+      const updates: Record<string, { mxc: string; url: string }> = {}
+      results.forEach(r => { if (r.url) updates[r.roomId] = { mxc: r.mxc, url: r.url } })
       if (Object.keys(updates).length > 0) {
         setRoomAvatars(prev => ({ ...prev, ...updates }))
         const existing = JSON.parse(localStorage.getItem('room_avatars') || '{}')
-        localStorage.setItem('room_avatars', JSON.stringify({ ...existing, ...updates }))
+        const urls = Object.fromEntries(Object.entries(updates).map(([id, a]) => [id, a.url]))
+        localStorage.setItem('room_avatars', JSON.stringify({ ...existing, ...urls }))
       }
     })
   }, [rooms, clientReady])
@@ -380,7 +384,7 @@ export default function RoomList({
     const onEvent = (event: sdk.MatrixEvent, room: sdk.Room | undefined) => {
       if (!room) return
       const type = event.getType()
-      if (type === 'com.construct.agent.lineage') {
+      if (type === 'com.construct.agent.lineage' || type === 'm.room.avatar') {
         setRooms(prev => prev.map(r => r.roomId === room.roomId ? toRoomSummary(room, auth.userId) : r))
         return
       }
@@ -653,7 +657,7 @@ export default function RoomList({
                   key={room.roomId}
                   room={room}
                   isActive={room.roomId === activeRoomId}
-                  avatar={roomAvatars[room.roomId]}
+                  avatar={roomAvatars[room.roomId]?.url}
                   hasNotification={notifications.some(n => n.roomId === room.roomId)}
                   agent={agentStates[room.roomId]}
                   onSelect={onSelectRoom}
@@ -680,7 +684,7 @@ export default function RoomList({
                 key={room.roomId}
                 room={room}
                 isActive={room.roomId === activeRoomId}
-                avatar={roomAvatars[room.roomId]}
+                avatar={roomAvatars[room.roomId]?.url}
                 hasNotification={notifications.some(n => n.roomId === room.roomId)}
                 agent={agentStates[room.roomId]}
                 onSelect={onSelectRoom}

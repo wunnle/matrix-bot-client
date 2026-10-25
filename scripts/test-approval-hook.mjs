@@ -76,6 +76,11 @@ const CASES = [
   ['construct-browse https://example.com --title Docs', 'allow'],
   ['construct-preview 5173 --title "Dev server"', 'allow'],
   ['construct-preview off 5173', 'allow'],
+  // With -- it starts a command, which is judged on its own.
+  ['construct-preview 5173 --title "Dev" -- npm run build', 'allow'],
+  ['construct-preview 5173 -- npm run deploy', 'deny'],
+  ['construct-preview 5173 -- rm -rf ~/projects', 'deny'],
+  ['construct-preview 5173 --', 'deny'],
   // 2e — Python environments inside the sandbox, mirroring npm install.
   ['python3 -m venv .venv', 'allow'],
   ['.venv/bin/pip install -q -r requirements.txt', 'allow'],

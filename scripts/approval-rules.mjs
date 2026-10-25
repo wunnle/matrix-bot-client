@@ -211,6 +211,15 @@ const HELPER_BINS = new Set(['wait-for', 'page-grep', 'page', 'linear-gql', 'con
 function isHelperBin(token) {
   return !token.includes('/') && HELPER_BINS.has(token)
 }
+// `construct-preview <port> … -- <command>` also starts the dev server, as a
+// user service: it is a wrapper then, and what it runs is judged on its own
+// (`construct-preview 5173 -- rm -rf ~` must be judged on `rm`). Returns the
+// command after `--`, or the tokens unchanged when there is none.
+function previewCommand(tokens) {
+  if (tokens[0] !== 'construct-preview') return tokens
+  const i = tokens.indexOf('--')
+  return i < 0 ? tokens : tokens.slice(i + 1)
+}
 // Helper scripts an agent may run unprompted: the CLIs reached the long way
 // round (`node /path/to/linear.js …`), and the ones a skill tells it to call.
 //
@@ -497,6 +506,11 @@ export function bashIsSafe(command, cwd) {
     }
     // Unwrap to the program that really runs. Bail on flags (env -i, -S …)
     // rather than trying to model each wrapper's option grammar.
+    if (previewCommand(tokens) !== tokens) {
+      tokens = previewCommand(tokens)
+      if (!tokens.length) return false
+      base = tokens[0].split('/').pop()
+    }
     while (WRAPPERS.has(base) || DURATION_WRAPPERS.has(base)) {
       const skip = DURATION_WRAPPERS.has(base) ? 2 : 1
       tokens = tokens.slice(skip)
@@ -609,6 +623,8 @@ function segmentHead(seg) {
   let tokens = stripKeywords(unquoted(seg).trim().split(/\s+/).filter(Boolean))
   while (tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens = tokens.slice(1)
   if (!tokens.length) return null
+  tokens = previewCommand(tokens)
+  if (!tokens.length) return { base: null, tokens }
   let base = tokens[0].split('/').pop()
   while (WRAPPERS.has(base) || DURATION_WRAPPERS.has(base)) {
     tokens = tokens.slice(DURATION_WRAPPERS.has(base) ? 2 : 1)

@@ -844,10 +844,13 @@ const browserInstruction = (roomId) =>
   `side panel: \`construct-browse <url> [--title T] --room ${roomId}\`. Use it to ` +
   'show the user what you are working on: a deployed preview, docs, a page you ' +
   'found. The user\'s phone or Mac shows it, not this machine, so localhost URLs ' +
-  'do not work there; for a dev server running here use `construct-preview ' +
-  '<port> --room ' + roomId + '`, which serves it on the private tailnet over ' +
-  'HTTPS and opens it (run `construct-preview --help` first). Some sites refuse ' +
-  'to be embedded; the tab then offers to open them in a browser.'
+  'do not work there. For a dev server, use `construct-preview <port> --room ' +
+  roomId + ' -- <command that starts it>`: it runs the server as a user service ' +
+  'that outlives this session, serves it on the private tailnet over HTTPS and ' +
+  'opens it, and if the server refuses the tailnet host name it says what to ' +
+  'allow (run `construct-preview --help` first; `construct-preview off <port>` ' +
+  'when done). Some sites refuse to be embedded; the tab then offers to open ' +
+  'them in a browser.'
 
 // Runs one turn through the room's provider, resuming its session if it has one.
 // Everything provider-specific — how a turn is invoked, how instructions are

@@ -57,6 +57,9 @@ const CASES = [
   ['Bash', 'env sudo ls', 'human'],
   ['Bash', 'timeout 30 ssh host ls', 'human'],
   ['Bash', 'env -i rm -rf /', 'human'],
+  ['Bash', 'construct-preview 5173 -- git push', 'human'],
+  ['Bash', 'construct-preview 5173 -- sudo npm run dev', 'human'],
+  ['Bash', 'construct-preview 5173 -- npm run dev', 'auto'],
 ]
 
 let failed = 0

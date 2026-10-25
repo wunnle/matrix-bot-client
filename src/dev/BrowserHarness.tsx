@@ -69,6 +69,7 @@ export default function BrowserHarness() {
           onOpenArtifact={() => {}}
           browserUrl={url}
           onBrowserUrl={setUrl}
+          roomId="!harness:example.org"
         />
       )}
     </div>

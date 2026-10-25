@@ -75,7 +75,7 @@ function clampWidth(w: number): number {
   return Math.round(Math.max(MIN_WIDTH, Math.min(w, window.innerWidth - CHAT_MIN)))
 }
 
-export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, onLoadMore, onJump, onOpenImage, onClose, tab, onTab, openArtifact, onOpenArtifact, browserUrl, onBrowserUrl, linearSample }: {
+export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, onLoadMore, onJump, onOpenImage, onClose, tab, onTab, openArtifact, onOpenArtifact, browserUrl, onBrowserUrl, roomId, linearSample }: {
   media: RoomMedia
   /** Resolved image/file URLs by event id. */
   mediaUrls: Record<string, string>
@@ -95,6 +95,8 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
   onBrowserUrl: (url: string | null) => void
   /** Linear details to show instead of fetching them (the design page). */
   linearSample?: LinearInfo
+  /** Keeps the Browser tab's history for this room on this device. */
+  roomId?: string
 }) {
   // No artifacts, no Artifacts tab.
   const hasArtifacts = media.artifacts.length > 0
@@ -324,7 +326,7 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
       </div>
 
       {current === 'browser' ? (
-        <BrowserPanel url={browserUrl} onUrl={onBrowserUrl} />
+        <BrowserPanel url={browserUrl} onUrl={onBrowserUrl} roomId={roomId} />
       ) : shown ? (
         <div className="artifact-view">
           <div className="artifact-view-bar">

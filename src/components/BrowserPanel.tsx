@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type * as React from 'react'
-import { addressToUrl, checkFrameable, openOutside, reachOf } from '../lib/browser'
+import { addressToUrl, checkFrameable, openOutside, reachOf, storedHistory, storeHistory } from '../lib/browser'
+import type { BrowserHistory } from '../lib/browser'
 
 // How long a page may take before the bar offers to open it outside. A
 // refused frame often looks like a page that never finishes.
@@ -13,18 +14,24 @@ type View = 'checking' | 'frame' | 'refused' | 'local' | 'insecure'
  * the pages opened here (a cross-origin page's own links can't be followed),
  * and anything that can't be framed gets a button to open it outside instead.
  * `url` is the page to show; a new one, typed or sent by an agent, goes on top
- * of the history.
+ * of the history. With a `roomId` the history is kept per room on this device,
+ * so it outlives the panel; History lists it.
  */
-export default function BrowserPanel({ url, onUrl }: {
+export default function BrowserPanel({ url, onUrl, roomId }: {
   url: string | null
   onUrl: (url: string | null) => void
+  roomId?: string
 }) {
-  const [history, setHistory] = useState<{ stack: string[]; at: number }>(() => ({ stack: url ? [url] : [], at: url ? 0 : -1 }))
+  const [history, setHistory] = useState<BrowserHistory>(() => (roomId ? storedHistory(roomId) : { stack: [], at: -1 }))
   const current = history.stack[history.at] ?? null
   // A page arriving from outside (an agent's card, another room's memory).
   if (url && url !== current) {
     setHistory((h) => ({ stack: [...h.stack.slice(0, h.at + 1), url], at: h.at + 1 }))
   }
+  useEffect(() => { if (roomId) storeHistory(roomId, history) }, [roomId, history])
+  const [listing, setListing] = useState(false)
+  // Newest first, each page once.
+  const visited = [...new Set([...history.stack].reverse())]
 
   // What's being typed; while not editing, the bar shows the page's address.
   const [draft, setDraft] = useState('')
@@ -71,6 +78,7 @@ export default function BrowserPanel({ url, onUrl }: {
     const next = addressToUrl(draft)
     if (!next) return
     setEditing(false)
+    setListing(false)
     inputRef.current?.blur()
     if (next === current) setReloads((n) => n + 1)
     else onUrl(next)
@@ -79,7 +87,15 @@ export default function BrowserPanel({ url, onUrl }: {
     if (history.at < 1) return
     const prev = history.stack[history.at - 1]
     setHistory((h) => ({ ...h, at: h.at - 1 }))
+    setListing(false)
     onUrl(prev)
+  }
+  const pick = (page: string) => {
+    setListing(false)
+    if (page === current) return
+    // Opening a page from History is a new visit, like typing it.
+    setHistory((h) => ({ stack: [...h.stack.slice(0, h.at + 1), page], at: h.at + 1 }))
+    onUrl(page)
   }
 
   const outside = current && (
@@ -113,12 +129,38 @@ export default function BrowserPanel({ url, onUrl }: {
           onBlur={() => setEditing(false)}
           onChange={(e) => setDraft(e.target.value)}
         />
+        <button
+          type="button"
+          className={`browser-bar-btn${listing ? ' browser-bar-btn--on' : ''}`}
+          aria-label="History"
+          title="History"
+          aria-pressed={listing}
+          disabled={!visited.length}
+          onClick={() => setListing((l) => !l)}
+        >
+          <span className="material-icons">history</span>
+        </button>
         <button type="button" className="browser-bar-btn" aria-label="Open in browser" title="Open in browser" disabled={!current} onClick={() => current && void openOutside(current)}>
           <span className="material-icons">open_in_new</span>
         </button>
       </form>
 
-      {!current ? (
+      {listing ? (
+        <ul className="browser-history" aria-label="History">
+          {visited.map((page) => {
+            const u = new URL(page)
+            const rest = `${u.pathname === '/' ? '' : u.pathname}${u.search}${u.hash}`
+            return (
+              <li key={page}>
+                <button type="button" className={`browser-history-row${page === current ? ' browser-history-row--on' : ''}`} onClick={() => pick(page)}>
+                  <span className="browser-history-host">{u.host}</span>
+                  {rest && <span className="browser-history-path">{rest}</span>}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      ) : !current ? (
         <div className="browser-note">
           <p>Open a page beside the chat: type an address above.</p>
           <p>Agents open pages here too, like a dev server or a deployed preview of what they're working on.</p>

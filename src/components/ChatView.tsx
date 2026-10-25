@@ -80,6 +80,8 @@ interface Props {
 }
 
 const PAGE_SIZE = 30
+// Scrollback pages in a row that add nothing visible before the fill gives up.
+const MAX_EMPTY_FILLS = 60
 const RENDER_LIMIT = 60 // kept for isActive reset logic only
 const MSG_CAP = 200 // max messages kept in state; old ones dropped from the front
 // How long a room with nothing cached waits on the server before the spinner
@@ -1558,18 +1560,26 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // fires one. Agent rooms get there easily: a whole tool run folds into one
   // chip, so a page of events can draw a few rows and leave the screen empty
   // above them with no way to pull the history in. Keep fetching until the
-  // list overflows or the history runs out. A page that adds nothing visible
-  // stops it, so a room of hidden events can't loop.
+  // list overflows or the history runs out. Pages of hidden events (a stretch
+  // of usage state, say) are walked past, but only so many in a row, so a room
+  // of nothing else can't loop.
   const fillRowsRef = useRef(-1)
+  const emptyFillsRef = useRef(0)
   useEffect(() => {
     if (!isActive || initializing || loadingMore || !hasMore) return
     const container = messagesRef.current
     if (!container || container.clientHeight === 0) return
     if (container.scrollHeight > container.clientHeight + 80) {
       fillRowsRef.current = -1
+      emptyFillsRef.current = 0
       return
     }
-    if (fillRowsRef.current === visibleMessages.length) return
+    if (fillRowsRef.current === visibleMessages.length) {
+      if (emptyFillsRef.current >= MAX_EMPTY_FILLS) return
+      emptyFillsRef.current++
+    } else {
+      emptyFillsRef.current = 0
+    }
     fillRowsRef.current = visibleMessages.length
     void loadMore(true)
   }, [isActive, initializing, loadingMore, hasMore, visibleMessages, loadMore])

@@ -3021,6 +3021,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         onOpenArtifact={setOpenArtifact}
         browserUrl={browserPage ?? latestSentPage}
         onBrowserUrl={changeBrowserPage}
+        roomId={roomId}
       />
     )}
     </div>

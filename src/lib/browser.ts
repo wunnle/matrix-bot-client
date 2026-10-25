@@ -116,3 +116,36 @@ export function storePage(roomId: string, url: string | null): void {
     else localStorage.removeItem(pageKey(roomId))
   } catch { /* private mode: the page just isn't remembered */ }
 }
+
+/**
+ * The pages opened in a room's Browser tab, oldest first, and which one is
+ * showing. Kept on this device so Back and History survive switching tabs,
+ * closing the panel and leaving the room.
+ */
+export interface BrowserHistory {
+  stack: string[]
+  at: number
+}
+
+const HISTORY_MAX = 50
+const historyKey = (roomId: string) => `room-browser-history:${roomId}`
+
+export function storedHistory(roomId: string): BrowserHistory {
+  try {
+    const raw = JSON.parse(localStorage.getItem(historyKey(roomId)) ?? 'null') as Partial<BrowserHistory> | null
+    const stack = Array.isArray(raw?.stack) ? raw.stack.filter((u): u is string => typeof u === 'string' && !!webUrl(u)) : []
+    if (stack.length) {
+      const at = typeof raw?.at === 'number' && raw.at >= 0 && raw.at < stack.length ? raw.at : stack.length - 1
+      return { stack, at }
+    }
+  } catch { /* unreadable: start over */ }
+  // Rooms from before the history was kept still have their last page.
+  const page = storedPage(roomId)
+  return page ? { stack: [page], at: 0 } : { stack: [], at: -1 }
+}
+
+export function storeHistory(roomId: string, history: BrowserHistory): void {
+  const drop = Math.max(0, history.stack.length - HISTORY_MAX)
+  const kept = { stack: history.stack.slice(drop), at: Math.max(-1, history.at - drop) }
+  try { localStorage.setItem(historyKey(roomId), JSON.stringify(kept)) } catch { /* private mode */ }
+}

@@ -18,6 +18,7 @@ import { execFile } from 'node:child_process'
 import { providerFor, resolveModel, allModelAliases, DEFAULT_PROVIDER, PROVIDERS } from './providers/index.mjs'
 import { createApprovalQueue } from './approval-queue.mjs'
 import { createQuestionQueue } from './question-queue.mjs'
+import { parseTrusted, inviteAllowed, mayPrompt, mayAnswer, isOwnAgentRoom } from './sender-policy.mjs'
 import { requiresHuman } from './approval-rules.mjs'
 import { detectLimitBlock, isQuotaBlockedState } from './limit-block.mjs'
 import { createProcessSampler } from './process-usage.mjs'
@@ -44,6 +45,9 @@ const PASSWORD = process.env.PASSWORD_C ?? process.env.PASSWORD_B
 // Who gets invited to spawned rooms. Deliberately NOT USER_ID — that is a bot
 // account in this .env, not the human, so spawned rooms would invite a bot.
 const OWNER_ID = process.env.AGENT_OWNER_ID ?? '@wunnle:matrix.org'
+// Who may invite the bot and prompt agent rooms: the owner, plus any user ids
+// in AGENT_TRUSTED_SENDERS. Approvals stay owner-only. See sender-policy.mjs.
+const SENDERS = { owner: OWNER_ID, trusted: parseTrusted(process.env.AGENT_TRUSTED_SENDERS) }
 // cwd for rooms that were not spawned with an explicit path.
 const DEFAULT_CWD = process.env.AGENT_CWD ?? path.join(os.homedir(), 'matrix-pwa')
 
@@ -83,7 +87,7 @@ async function publishModels(roomId, provider) {
 // state on the server. Mirrors isAgentRoom in src/lib/roomMeta.ts.
 function isAgentRoom(roomId) {
   const create = client.getRoom(roomId)?.currentState?.getStateEvents('m.room.create', '')
-  return create?.getContent()?.type === AGENT_ROOM_TYPE
+  return isOwnAgentRoom(create, { botId: USER_ID, roomType: AGENT_ROOM_TYPE })
 }
 
 // Loopback only — the broker decides what the agent may do, so it must not be
@@ -245,10 +249,16 @@ client.getRooms().filter((r) => r.getMyMembership() === 'join').forEach((r) => {
   log(`  ${r.roomId}  ${r.name}${s ? `  [${s.cwd} · ${s.model ?? DEFAULT_MODEL}]` : ''}`)
 })
 
-// Auto-accept invites
+// Accept invites from the owner and trusted senders; decline everyone else's.
 client.on(sdk.RoomEvent.MyMembership, async (room, membership) => {
   if (membership === 'invite') {
-    log(`Invited to ${room.roomId} (${room.name}), joining…`)
+    const inviter = room.getMember(USER_ID)?.events?.member?.getSender()
+    if (!inviteAllowed(inviter, SENDERS)) {
+      log(`Declining invite to ${room.roomId} from ${inviter ?? 'an unknown inviter'}`)
+      await client.leave(room.roomId).catch((e) => log(`Decline failed for ${room.roomId}: ${e.message}`))
+      return
+    }
+    log(`Invited to ${room.roomId} (${room.name}) by ${inviter}, joining…`)
     try {
       await client.joinRoom(room.roomId)
       log(`Joined ${room.roomId}`)
@@ -1895,6 +1905,16 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   // fall back to the marker baked into m.room.create.
   if (!sessions[roomId] && !isAgentRoom(roomId)) return
 
+  // An agent turn can read any file on this machine without asking, so only
+  // the owner and trusted senders reach it. Confirmations and approval answers
+  // decide what the agent may do, and are the owner's alone.
+  const sender = event.getSender()
+  if (!mayPrompt(sender, SENDERS)) {
+    log(`Ignoring message from ${sender} (not the owner or a trusted sender)`)
+    return
+  }
+  const fromOwner = mayAnswer(sender, SENDERS)
+
   // !auto [on|off|<duration>] — approve this room's own tool calls for a while.
   // Owner-only by the `!` guard above, per-room, and off unless asked for: a
   // loosening that applied everywhere, or outlived the job it was for, is the
@@ -2036,7 +2056,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     return
   }
 
-  if (pendingEncrypts.has(roomId)) {
+  if (pendingEncrypts.has(roomId) && fromOwner) {
     const reply = body.toLowerCase()
     if (reply === 'confirm encrypt') {
       pendingEncrypts.delete(roomId)
@@ -2074,7 +2094,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     return
   }
 
-  if (pendingEnds.has(roomId)) {
+  if (pendingEnds.has(roomId) && fromOwner) {
     const reply = body.toLowerCase()
     if (reply === 'confirm end') {
       pendingEnds.delete(roomId)
@@ -2114,16 +2134,19 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   // The acknowledgements are machine-flagged: you just gave the answer, so
   // echoing it back must not toast, push to the phone or count as unread.
   // The toast you answered from shows its own checkmark instead.
+  //
+  // A trusted sender's message is never an answer: `answer` stays null so it
+  // matches nothing below and goes on to steer or queue like any prompt.
   const ack = { 'com.construct.machine': { kind: 'ack', source: 'approval' } }
-  if (questions.answer(roomId, body)) {
+  if (fromOwner && questions.answer(roomId, body)) {
     await sendRoomText(roomId, '✅ Answered — continuing.', ack)
     return
   }
-  if (questions.has(roomId)) {
+  if (fromOwner && questions.has(roomId)) {
     await sendRoomText(roomId, 'That is not one of the available answers — choose an option above.')
     return
   }
-  const answer = body.toLowerCase()
+  const answer = fromOwner ? body.toLowerCase() : null
   if (answer === 'approve' || answer === 'yes' || answer === 'y') {
     if (settleApproval(roomId, 'allow', 'Approved in chat.')) {
       await sendRoomText(roomId, '✅ Approved — continuing.', ack)
@@ -2140,9 +2163,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   }
   // Auto mode goes on before the approval settles: settling brings up the next
   // queued call, and that one should already find auto mode answering.
-  // Owner-only, like !auto itself — it carries the same power, just without
-  // the `!` that would have put it behind the command guard above.
-  const fromOwner = !OWNER_ID || event.getSender() === OWNER_ID
+  // Owner-only, like every answer here.
   // Already on, the card never offered this (auto mode refused the call), so a
   // typed one is just an approval — not a reason to restart the clock.
   if (answer === APPROVE_AND_AUTO.toLowerCase() && autoMode(roomId)) {

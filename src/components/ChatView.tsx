@@ -55,7 +55,7 @@ import ModelMenu from './ModelMenu'
 import { approvalChoices, parseApprovalCard } from '../lib/approval'
 import { artifactIdOf, parseArtifact } from '../lib/artifact'
 import { parseBrowserPage, storedPage, storePage } from '../lib/browser'
-import { useArtifactIndex } from '../hooks/useArtifactIndex'
+import { useArtifactIndex, useArtifactsUpdatedAt } from '../hooks/useArtifactIndex'
 import { useLinearIndex } from '../hooks/useLinearIndex'
 import { extractFormBlock, formAnswerBody, formResponseFromContent, FORM_RESPONSE_KEY } from '../lib/form'
 import { extractLocationBlocks, formatCoords, locationContent, locationFromContent, mapsUrl, mapTiles, MAP_ATTRIBUTION } from '../lib/location'
@@ -109,6 +109,18 @@ async function scrollbackWithRetry(client: sdk.MatrixClient, room: sdk.Room, lim
 // Where the side panel is a column rather than a sheet; matches the CSS.
 const WIDE = '(min-width: 641px)'
 const SIDEBAR_KEY = 'room-sidebar-open'
+const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
+// The newest artifact time the panel was open for, per room.
+const SEEN_KEY = 'room-sidebar-seen:'
+function storedSeen(roomId: string): number | null {
+  try {
+    const v = localStorage.getItem(SEEN_KEY + roomId)
+    return v === null ? null : Number(v) || 0
+  } catch { return null }
+}
+function storeSeen(roomId: string, at: number) {
+  try { localStorage.setItem(SEEN_KEY + roomId, String(at)) } catch { /* private mode: no dot memory */ }
+}
 
 // Our swipe-back gesture is only useful where nothing else owns the edge
 // swipe. In a regular browser (iOS Safari, most Android browsers) the
@@ -2199,6 +2211,21 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [showSidebar, setShowSidebar] = useState(
     () => window.matchMedia(WIDE).matches && localStorage.getItem(SIDEBAR_KEY) === '1',
   )
+  // It slides in when opened and out when closed, staying mounted until it is
+  // gone ('out'). Not when it was already open on arrival, and not at all with
+  // reduced motion. The timer ends it if the animation never runs (a hidden tab).
+  const [sidebarMotion, setSidebarMotion] = useState<'in' | 'out' | null>(null)
+  const [sidebarWasShown, setSidebarWasShown] = useState(showSidebar)
+  if (sidebarWasShown !== showSidebar) {
+    setSidebarWasShown(showSidebar)
+    setSidebarMotion(window.matchMedia(REDUCED_MOTION).matches ? null : showSidebar ? 'in' : 'out')
+  }
+  useEffect(() => {
+    if (!sidebarMotion) return
+    const timer = setTimeout(() => setSidebarMotion(null), 500)
+    return () => clearTimeout(timer)
+  }, [sidebarMotion])
+  const sidebarMounted = showSidebar || sidebarMotion === 'out'
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('artifacts')
   const toggleSidebar = (open: boolean) => {
     // Opening starts on Artifacts (the tab only exists when the room has any).
@@ -2206,15 +2233,33 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setShowSidebar(open)
     if (window.matchMedia(WIDE).matches) localStorage.setItem(SIDEBAR_KEY, open ? '1' : '0')
   }
-  const loadedMedia = useMemo(() => (showSidebar ? collectRoomMedia(messages) : null), [showSidebar, messages])
+  const loadedMedia = useMemo(() => (sidebarMounted ? collectRoomMedia(messages) : null), [sidebarMounted, messages])
   // Artifacts whose cards are further back than the loaded messages, found
   // through the bot's index in room state; listed after the loaded ones, as
   // they are older.
   const loadedArtifactIds = useMemo(() => loadedMedia?.artifacts.map((a) => a.id) ?? [], [loadedMedia])
-  const indexedArtifacts = useArtifactIndex(client, roomId, showSidebar, loadedArtifactIds)
+  const indexedArtifacts = useArtifactIndex(client, roomId, sidebarMounted, loadedArtifactIds)
   // Linear issues named before the loaded messages, likewise from room state.
   const loadedRefLabels = useMemo(() => loadedMedia?.refs.map((r) => r.label) ?? [], [loadedMedia])
-  const indexedIssues = useLinearIndex(client, roomId, showSidebar, loadedRefLabels)
+  const indexedIssues = useLinearIndex(client, roomId, sidebarMounted, loadedRefLabels)
+  // A dot on the header's button for an artifact published or republished
+  // since the panel was last open in this room, on this device. A room seen
+  // for the first time starts with everything in it counted as seen.
+  const indexedArtifactsAt = useArtifactsUpdatedAt(client, roomId)
+  const latestArtifactAt = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].artifact) return Math.max(indexedArtifactsAt, messages[i].timestamp)
+    }
+    return indexedArtifactsAt
+  }, [messages, indexedArtifactsAt])
+  const [artifactsSeenAt, setArtifactsSeenAt] = useState(() => storedSeen(roomId))
+  if ((artifactsSeenAt === null || showSidebar) && latestArtifactAt > (artifactsSeenAt ?? -1)) {
+    setArtifactsSeenAt(latestArtifactAt)
+  }
+  useEffect(() => {
+    if (artifactsSeenAt !== null) storeSeen(roomId, artifactsSeenAt)
+  }, [roomId, artifactsSeenAt])
+  const unseenArtifacts = !showSidebar && artifactsSeenAt !== null && latestArtifactAt > artifactsSeenAt
   const roomMedia = useMemo(
     () => (loadedMedia && (indexedArtifacts.length || indexedIssues.length)
       ? { ...loadedMedia, artifacts: [...loadedMedia.artifacts, ...indexedArtifacts], refs: [...loadedMedia.refs, ...indexedIssues] }
@@ -2233,10 +2278,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // else the newest an agent sent in the loaded messages.
   const [browserPage, setBrowserPage] = useState<string | null>(() => storedPage(roomId))
   const latestSentPage = useMemo(() => {
-    if (!showSidebar) return null
+    if (!sidebarMounted) return null
     for (let i = messages.length - 1; i >= 0; i--) if (messages[i].browser) return messages[i].browser!.url
     return null
-  }, [showSidebar, messages])
+  }, [sidebarMounted, messages])
   const changeBrowserPage = useCallback((url: string | null) => {
     setBrowserPage(url)
     storePage(roomId, url)
@@ -2284,6 +2329,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setSidebarTab('artifacts')
     setOpenArtifact(undefined)
     setBrowserPage(storedPage(roomId))
+    setArtifactsSeenAt(storedSeen(roomId))
   }
   const jumpToMessage = (eventId: string) => {
     const row = messagesRef.current?.querySelector(`[data-event-id="${window.CSS.escape(eventId)}"]`)
@@ -2404,13 +2450,13 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           )}
           <button
             type="button"
-            className={`header-sidebar${showSidebar ? ' header-sidebar--open' : ''}`}
+            className={`header-sidebar${showSidebar ? ' header-sidebar--open' : ''}${unseenArtifacts ? ' header-sidebar--unseen' : ''}`}
             aria-pressed={showSidebar}
-            aria-label={showSidebar ? 'Hide shared links and media' : 'Show shared links and media'}
-            title="Links and media"
+            aria-label={showSidebar ? 'Hide side panel' : unseenArtifacts ? 'Show side panel, new artifacts' : 'Show side panel'}
+            title={unseenArtifacts ? 'Side panel · new artifacts' : 'Side panel'}
             onClick={() => toggleSidebar(!showSidebar)}
           >
-            <span className="material-symbols-outlined" aria-hidden>view_sidebar</span>
+            <span className="material-symbols-outlined" aria-hidden>side_navigation</span>
           </button>
           {viewKind && <RoomViewToggle showPage={showPage} onChange={setShowPage} />}
         </div>
@@ -3025,6 +3071,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         onJump={jumpToMessage}
         onOpenImage={openLightbox}
         onClose={() => toggleSidebar(false)}
+        motion={sidebarMotion}
+        onMotionEnd={() => setSidebarMotion(null)}
         tab={sidebarTab}
         onTab={setSidebarTab}
         openArtifact={openArtifact}

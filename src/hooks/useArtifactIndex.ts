@@ -45,20 +45,7 @@ async function loadCard(client: sdk.MatrixClient, roomId: string, entry: Artifac
 export function useArtifactIndex(client: sdk.MatrixClient, roomId: string, enabled: boolean, loaded: string[]): RoomArtifact[] {
   // Bumped when fetched cards land in the cache.
   const [fetched, setFetched] = useState(0)
-
-  // The index event, kept current: the SDK hands back the same event object
-  // until the bot replaces it, which is what tells React it changed.
-  const subscribe = useCallback((onChange: () => void) => {
-    const onState = (event: sdk.MatrixEvent) => {
-      if (event.getRoomId() === roomId && event.getType() === ARTIFACT_INDEX_EVENT) onChange()
-    }
-    client.on(sdk.RoomStateEvent.Events, onState)
-    return () => { client.off(sdk.RoomStateEvent.Events, onState) }
-  }, [client, roomId])
-  const indexEvent = useSyncExternalStore(
-    subscribe,
-    () => client.getRoom(roomId)?.currentState.getStateEvents(ARTIFACT_INDEX_EVENT, '') ?? null,
-  )
+  const indexEvent = useIndexEvent(client, roomId)
 
   const loadedKey = loaded.join(' ')
   const missing = useMemo(() => {
@@ -86,5 +73,31 @@ export function useArtifactIndex(client: sdk.MatrixClient, roomId: string, enabl
     // `fetched` is the cache's version: new cards are read when it moves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [missing, fetched],
+  )
+}
+
+// The index event, kept current: the SDK hands back the same event object
+// until the bot replaces it, which is what tells React it changed.
+function useIndexEvent(client: sdk.MatrixClient, roomId: string): sdk.MatrixEvent | null {
+  const subscribe = useCallback((onChange: () => void) => {
+    const onState = (event: sdk.MatrixEvent) => {
+      if (event.getRoomId() === roomId && event.getType() === ARTIFACT_INDEX_EVENT) onChange()
+    }
+    client.on(sdk.RoomStateEvent.Events, onState)
+    return () => { client.off(sdk.RoomStateEvent.Events, onState) }
+  }, [client, roomId])
+  return useSyncExternalStore(
+    subscribe,
+    () => client.getRoom(roomId)?.currentState.getStateEvents(ARTIFACT_INDEX_EVENT, '') ?? null,
+  )
+}
+
+/** When an artifact in the room was last published or republished, by the
+ * index; 0 when it has none. Read with the panel closed, for the header's dot. */
+export function useArtifactsUpdatedAt(client: sdk.MatrixClient, roomId: string): number {
+  const indexEvent = useIndexEvent(client, roomId)
+  return useMemo(
+    () => parseArtifactIndex(indexEvent?.getContent()).reduce((max, e) => Math.max(max, e.updatedAt), 0),
+    [indexEvent],
   )
 }

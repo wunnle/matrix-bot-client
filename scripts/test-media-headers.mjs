@@ -1,14 +1,18 @@
 // The media proxy (api/media.js) serves untrusted matrix.org uploads from our
-// own origin, so only non-scriptable media may render inline; everything else
-// must download, and every response is nosniff + CSP-sandboxed.
+// own origin, so only raster images may render inline; everything else must
+// download, and every response is nosniff + CSP-sandboxed. It only serves
+// links signed by api/_media-sig.js.
 // Run: node scripts/test-media-headers.mjs
 import assert from 'node:assert/strict'
 
 process.env.MATRIX_ACCESS_TOKEN = 'owner-token'
+process.env.INTENT_SECRET = 'test-secret'
 const { default: handler } = await import('../api/media.js')
+const { mediaSig, signedMediaUrl } = await import('../api/_media-sig.js')
 
 let upstreamHeaders = {}
-globalThis.fetch = async () => ({
+let fetched = 0
+globalThis.fetch = async () => (fetched++, {
   ok: true,
   status: 200,
   headers: new Headers(upstreamHeaders),
@@ -28,10 +32,10 @@ function fakeRes() {
   }
 }
 
-async function get(headers, mxc = 'mxc://matrix.org/abc123') {
+async function get(headers, mxc = 'mxc://matrix.org/abc123', ...sig) {
   upstreamHeaders = headers
   const res = fakeRes()
-  await handler({ query: { mxc } }, res)
+  await handler({ query: { mxc, sig: sig.length ? sig[0] : mediaSig(mxc) } }, res)
   return res
 }
 
@@ -86,11 +90,11 @@ function assertHardened(res) {
   assert.equal(res.headers['content-type'], 'application/octet-stream')
 }
 
-// Video and audio stay inline.
+// Only avatars use the proxy, so video and audio download too.
 for (const type of ['video/mp4', 'audio/ogg']) {
   const res = await get({ 'content-type': type })
-  assert.equal(res.headers['content-type'], type)
-  assert.equal(res.headers['content-disposition'], undefined)
+  assert.equal(res.headers['content-type'], 'application/octet-stream')
+  assert.equal(res.headers['content-disposition'], 'attachment')
 }
 
 // Error responses carry the headers too.
@@ -98,6 +102,39 @@ for (const type of ['video/mp4', 'audio/ogg']) {
   const res = await get({}, 'not-an-mxc')
   assert.equal(res.statusCode, 400)
   assertHardened(res)
+}
+
+// Unsigned, wrongly signed, or signed for another file: 403, matrix.org untouched.
+{
+  const before = fetched
+  for (const sig of [undefined, '', 'x', mediaSig('mxc://matrix.org/other'), ['a', 'b']]) {
+    const res = await get({ 'content-type': 'image/png' }, 'mxc://matrix.org/abc123', sig)
+    assert.equal(res.statusCode, 403, `sig ${JSON.stringify(sig)}`)
+    assertHardened(res)
+  }
+  assert.equal(fetched, before)
+}
+
+// The push icon link round-trips through the handler.
+{
+  const url = new URL(signedMediaUrl('mxc://matrix.org/abc123'))
+  assert.equal(url.origin + url.pathname, 'https://construct.kafagoz.com/api/media')
+  upstreamHeaders = { 'content-type': 'image/jpeg' }
+  const res = fakeRes()
+  await handler({ query: Object.fromEntries(url.searchParams) }, res)
+  assert.equal(res.statusCode, 200)
+  assert.equal(res.headers['content-type'], 'image/jpeg')
+  assert.equal(signedMediaUrl(null), null)
+}
+
+// No secret configured: nothing is signed and nothing verifies.
+{
+  const sig = mediaSig('mxc://matrix.org/abc123')
+  delete process.env.INTENT_SECRET
+  assert.equal(signedMediaUrl('mxc://matrix.org/abc123'), null)
+  const res = await get({ 'content-type': 'image/png' }, 'mxc://matrix.org/abc123', sig)
+  assert.equal(res.statusCode, 403)
+  process.env.INTENT_SECRET = 'test-secret'
 }
 
 console.log('media headers: ok')

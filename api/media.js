@@ -1,17 +1,21 @@
 /**
  * Proxy Matrix media URLs with auth token.
- * Usage: /api/media?mxc=mxc://matrix.org/abc123
+ * Usage: /api/media?mxc=mxc://matrix.org/abc123&sig=<signature>
  *
- * The access token is only ever sent to MATRIX_HOMESERVER, never to the
+ * Only links this deployment signed are served (see _media-sig.js), so the
+ * route isn't an open proxy onto matrix.org with the owner's token. The access
+ * token is only ever sent to MATRIX_HOMESERVER, never to the
  * server named in the mxc URI, and only allowlisted media servers are
  * proxied at all.
  *
  * Anyone can upload to matrix.org, so the bytes are untrusted and must never
  * render as a page on this origin (where localStorage holds the Matrix token).
- * Only non-scriptable media types are served inline; everything else, SVG
- * included, goes out as an octet-stream download. Every response is also
+ * Only raster images are served inline (the one use is avatars); everything
+ * else, SVG included, goes out as an octet-stream download. Every response is also
  * nosniff and CSP-sandboxed in case a browser renders it anyway.
  */
+import { validMediaSig } from "./_media-sig.js";
+
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
 const ALLOWED_SERVERS = new Set(
   (process.env.MEDIA_ALLOWED_SERVERS || "matrix.org")
@@ -25,7 +29,7 @@ export function inlineType(contentType) {
   const type = (contentType || "").split(";")[0].trim().toLowerCase();
   if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(type)) return null;
   if (type === "image/svg+xml") return null;
-  return /^(image|video|audio)\//.test(type) ? type : null;
+  return type.startsWith("image/") ? type : null;
 }
 
 /** The filename from an upstream Content-Disposition, or null. */
@@ -56,8 +60,8 @@ export default async function handler(req, res) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'");
 
-  const { mxc } = req.query;
-  if (!mxc || !mxc.startsWith("mxc://")) {
+  const { mxc, sig } = req.query;
+  if (typeof mxc !== "string" || !mxc.startsWith("mxc://")) {
     return res.status(400).json({ error: "invalid mxc" });
   }
 
@@ -69,6 +73,9 @@ export default async function handler(req, res) {
   }
   if (!ALLOWED_SERVERS.has(server.toLowerCase())) {
     return res.status(403).json({ error: "media server not allowed" });
+  }
+  if (!validMediaSig(mxc, sig)) {
+    return res.status(403).json({ error: "bad signature" });
   }
 
   const url = `${HOMESERVER}/_matrix/client/v1/media/download/${encodeURIComponent(server)}/${encodeURIComponent(mediaId)}`;

@@ -93,7 +93,9 @@ const CASES = [
   ['cd ~/.hermes && mkdir x', 'deny'],
   ['cd ~/.hermes && cp rooms.yaml rooms.yaml.bak', 'deny'],
   // 2g — cp is judged on its destination; the sources are reads.
-  ['cp /home/wunnle/.hermes/rooms.yaml /tmp/x', 'allow'],
+  ['cp /etc/hostname /tmp/x', 'allow'],
+  // …except where the source is a secret: copying it out is reading it.
+  ['cp /home/wunnle/.hermes/rooms.yaml /tmp/x', 'deny'],
   ['cp notes.md /etc/notes.md', 'deny'],
   ['cp onearg', 'deny'],
   // 3 — writes into sandbox roots.
@@ -118,6 +120,65 @@ const CASES = [
   // A path that merely mentions the word is not a credential.
   ['cat src/lib/environment.ts', 'allow'],
   ['grep -rn env src/', 'allow'],
+  // Every secret location, by every reader.
+  ['cat ~/.hermes/.env', 'deny'],
+  ['tail -n 5 ~/.hermes/profiles/colonist/.env', 'deny'],
+  ['jq . ~/.hermes/auth.json', 'deny'],
+  ['cat ~/.aws/config', 'deny'],
+  ['sed -n 1,5p ~/.config/gh/hosts.yml', 'deny'],
+  ['cat ~/.netrc', 'deny'],
+  ['cat ~/.vercel-bender-token', 'deny'],
+  ['head -c 20 ~/.vercel-other-token', 'deny'],
+  ['cat ~/.gnupg/pubring.kbx', 'deny'],
+  ['rg access_token scripts/.claude-bot-store', 'deny'],
+  ['cat ~/matrix-pwa/scripts/.claude-bot-store/sessions.json', 'deny'],
+  ['cat ~/matrix-pwa/scripts/.claude-bot-store/*', 'deny'],
+  ['grep -r foo ~/matrix-pwa/scripts/.claude-bot-store/', 'deny'],
+  // …but its log is free: it is how the bot is debugged.
+  ['tail -50 /home/wunnle/matrix-pwa/scripts/.claude-bot-store/bot.log', 'allow'],
+  ['L=~/matrix-pwa/scripts/.claude-bot-store/bot.log; grep -n spawn $L | tail -5', 'allow'],
+  ['cat /proc/1234/environ', 'deny'],
+  // Spellings that used to slip past: quotes were dropped rather than removed,
+  // and `cd` did not move where relative words resolve.
+  ['cat "/home/wunnle/.ssh/id_rsa"', 'deny'],
+  ["cat '.env'", 'deny'],
+  ['cat .e""nv', 'deny'],
+  ['cat ~/.s\\sh/id_rsa', 'deny'],
+  ['cd ~/.config && cat gh/hosts.yml', 'deny'],
+  ['cd ~ && cat .netrc', 'deny'],
+  ['cat $HOME/.config/gh/hosts.yml', 'deny'],
+  ['cat "${HOME}/.aws/credentials"', 'deny'],
+  ['cat ~/matrix-pwa/../.hermes/.env', 'deny'],
+  ['grep --file=~/.netrc x', 'deny'],
+  ['git show HEAD:.env', 'deny'],
+  ['F=~/.ssh/id_rsa; cat $F', 'deny'],
+  ['for f in ~/.ssh/*; do cat $f; done', 'deny'],
+  // Globs and braces, which the shell expands before the reader runs.
+  ['cat ~/.ss?/id_rsa', 'deny'],
+  ['cat ~/.s{s,}h/id_rsa', 'deny'],
+  ['cat ~/.[h]ermes/.env', 'deny'],
+  ['cat .e*', 'deny'],
+  ['cat scripts/.claude-bot-*/x', 'deny'],
+  // A recursive search from $HOME or above walks into all of them.
+  ['grep -r KEY ~', 'deny'],
+  ['grep -rn KEY $HOME', 'deny'],
+  ['rg token /home', 'deny'],
+  ['cd ~ && rg token', 'deny'],
+  // Still free: templates, globs that cannot reach a dotfile, and listings.
+  ['cat .env.example', 'allow'],
+  ['cat scripts/.env.example', 'allow'],
+  ['cat *.md', 'allow'],
+  ['wc -l scripts/*.mjs', 'allow'],
+  ['grep -rn foo .', 'allow'],
+  ['rg foo src', 'allow'],
+  ['ls -la ~', 'allow'],
+  ['jq .scripts package.json', 'allow'],
+  ["jq '.[0]' x.json", 'allow'],
+  // Quoted programs full of brackets and slashes are not paths.
+  ['jq -r \'.[] | select(.errorCount>0) | "\\(.filePath|split("/")|.[-2:]|join("/"))"\' out.json', 'allow'],
+  ["sed -n 's#</body>#<script>x()</script>#p' index.html", 'allow'],
+  ['cat ~/.claude-bot-worktrees/matrix-pwa-BenderDev-6/package.json', 'allow'],
+  ["git commit -q -F - <<'MSG'\nGate reads of ~/.hermes/.env\nMSG", 'allow'],   // a heredoc body is not a read
 
   // Skill helper scripts, matched by absolute path.
   // The rules resolve these against $HOME, so the cases must too.
@@ -206,14 +267,55 @@ for (const [tool, input, expected, why] of [
   ['Read', { file_path: '/home/wunnle/.ssh/id_ed25519' }, 'deny', 'ssh key'],
   ['Read', { file_path: '/home/wunnle/.npmrc' }, 'deny', 'npm token'],
   ['Grep', { pattern: 'KEY', path: '/home/wunnle/.openclaw/.env' }, 'deny', 'grep leaks contents too'],
+  ['Read', { file_path: '/home/wunnle/.hermes/.env' }, 'deny', 'hermes .env'],
+  ['Read', { file_path: '/home/wunnle/.hermes/profiles/colonist/config.yaml' }, 'deny', 'hermes profile'],
+  ['Read', { file_path: '~/.aws/config' }, 'deny', 'aws, via ~'],
+  ['Read', { file_path: '/home/wunnle/.config/gh/hosts.yml' }, 'deny', 'gh token'],
+  ['Read', { file_path: '/home/wunnle/.netrc' }, 'deny', 'netrc'],
+  ['Read', { file_path: '/home/wunnle/.vercel-bender-token' }, 'deny', 'vercel token'],
+  ['Read', { file_path: path.join(WORKTREE, 'scripts/.claude-bot-store/.session.json') }, 'deny', 'bot session in a worktree'],
+  ['Read', { file_path: 'scripts/.claude-bot-store/sessions.json' }, 'deny', 'bot store, relative'],
+  ['Read', { file_path: '../../matrix-pwa/.env.local' }, 'deny', 'relative with ..'],
+  ['Read', { file_path: '/home/wunnle/matrix-pwa/../.ssh/id_rsa' }, 'deny', '.. in an absolute path'],
+  ['Glob', { pattern: '~/.ssh/*' }, 'deny', 'glob pattern into a secret dir'],
+  ['Glob', { pattern: '*', path: '/home/wunnle/.hermes' }, 'deny', 'glob rooted in a secret dir'],
+  ['Glob', { pattern: '**/.env', path: WORKTREE }, 'deny', 'glob for .env files'],
+  ['Glob', { pattern: '.hermes/**/*', path: '/home/wunnle' }, 'deny', 'glob reaching in from $HOME'],
+  ['Grep', { pattern: 'TOKEN', glob: '.env*' }, 'deny', 'grep filtered to .env files'],
+  ['Grep', { pattern: 'token', path: '/home/wunnle/.hermes' }, 'deny', 'grep in hermes'],
+  ['Grep', { pattern: 'token', path: '/home/wunnle' }, 'deny', 'recursive grep from $HOME'],
   // The ordinary read path must be untouched, or the room becomes unusable.
   ['Read', { file_path: path.join(WORKTREE, 'package.json') }, 'allow', 'ordinary file'],
+  ['Read', { file_path: path.join(WORKTREE, 'scripts/approval-rules.mjs') }, 'allow', 'source inside a worktree'],
+  ['Read', { file_path: 'scripts/approval-rules.mjs' }, 'allow', 'relative source inside a worktree'],
+  ['Read', { file_path: path.join(WORKTREE, '.env.example') }, 'allow', 'template, not a secret'],
+  ['Read', { file_path: '/home/wunnle/matrix-pwa/scripts/.claude-bot-store/bot.log' }, 'allow', 'bot log'],
+  ['Glob', { pattern: '**/*.mjs' }, 'allow', 'ordinary glob'],
+  ['Glob', { pattern: '**/*', path: WORKTREE }, 'allow', 'glob everything, which skips dotfiles'],
+  ['Grep', { pattern: 'foo', path: 'src' }, 'allow', 'ordinary grep'],
+  ['Grep', { pattern: 'env', glob: '*.ts' }, 'allow', 'ordinary grep filter'],
   ['Read', { file_path: path.join(WORKTREE, 'src/lib/environment.ts') }, 'allow', 'env in the name is not a .env'],
   ['Read', { file_path: '/etc/hostname' }, 'allow', 'reads outside the tree stay free'],
 ]) {
   const got = ask(tool, input)
   if (got !== expected) { failed++; console.log(`FAIL  ${tool} ${why}: want ${expected}, got ${got}`) }
 }
+
+// A symlink to a secret is that secret. Needs one to exist to point at.
+const linkTarget = path.join(os.homedir(), '.hermes')
+if (fs.existsSync(linkTarget)) {
+  const link = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'secret-link-')), 'innocent')
+  fs.symlinkSync(linkTarget, link)
+  for (const [tool, input, why] of [
+    ['Read', { file_path: link }, 'Read through a symlink'],
+    ['Grep', { pattern: 'x', path: link }, 'Grep through a symlink'],
+    ['Bash', { command: `cat ${link}` }, 'cat through a symlink'],
+  ]) {
+    const got = ask(tool, input)
+    if (got !== 'deny') { failed++; console.log(`FAIL  ${why}: want deny, got ${got}`) }
+  }
+  fs.rmSync(path.dirname(link), { recursive: true })
+} else console.log('skipped symlink cases: no ~/.hermes to link to')
 
 // Writes are path-scoped, not tool-scoped.
 for (const [file, expected] of [

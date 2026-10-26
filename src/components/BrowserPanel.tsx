@@ -148,7 +148,11 @@ export default function BrowserPanel({ url, onUrl }: {
         <>
           {slow && (
             <div className="browser-slow">
-              <span>Still loading. Some sites don't allow being shown here.</span>
+              <span>{reach === 'tailnet'
+                // A blank tailnet page has been this device off the tailnet, or
+                // not resolving ts.net names, more than the server itself.
+                ? 'Still loading. Is Tailscale connected on this device, with Use Tailscale DNS on?'
+                : 'Still loading. Some sites don\'t allow being shown here.'}</span>
               {outside}
             </div>
           )}

@@ -16,6 +16,11 @@
 // its output goes to ~/.cache/construct-preview/<port>.log. Running it again
 // restarts the service. `off` stops the service and the tailnet address.
 //
+// Previews get forgotten, so each one ends itself: after --ttl (8h unless
+// given; `none` to keep it), the timer construct-preview-expire-<port> runs
+// `off`. A dev server that exits takes its tailnet address with it, so the
+// tab shows an error rather than a 502 from serve.
+//
 // The address is https://<this machine>.<tailnet>.ts.net:<port + 10000>/ (or
 // port − 10000 above 55535). Not the dev server's own port: serve listens on
 // the tailnet addresses, which a dev server counts as its port being taken. A
@@ -33,12 +38,13 @@ import { promisify } from 'node:util'
 
 const run = promisify(execFile)
 const HELP = `Usage:
-  construct-preview <port> [--title T] [--room !id] [-- <command…>]
+  construct-preview <port> [--title T] [--room !id] [--ttl 8h] [-- <command…>]
       Serve localhost:<port> on the tailnet (HTTPS, tailnet only, at port
       <port>+10000) and open it beside the chat.
       With -- <command…>, first start the dev server as the
       user service construct-preview-<port>, which outlives this session.
       e.g. construct-preview 5173 -- npm run dev -- --port 5173 --strictPort
+      --ttl: stop it all after this long (30m, 2h…; default 8h; none to keep)
   construct-preview off <port>   stop the service and the tailnet address
   construct-preview list         what is served, and the services running
 
@@ -56,6 +62,7 @@ if (!args.length || args.includes('--help') || args.includes('-h')) {
 }
 const LOG_DIR = path.join(os.homedir(), '.cache', 'construct-preview')
 const unitFor = (port) => `construct-preview-${port}`
+const expiryFor = (port) => `construct-preview-expire-${port}`
 const logFor = (port) => path.join(LOG_DIR, `${port}.log`)
 // The tailnet port for a dev server's port; see the top of the file.
 const tailnetPort = (port) => (port <= 55535 ? port + 10000 : port - 10000)
@@ -63,13 +70,16 @@ const tailnetPort = (port) => (port <= 55535 ? port + 10000 : port - 10000)
 if (args[0] === 'list') {
   const { stdout } = await tailscale(['serve', 'status'])
   console.log(stdout.trim() || 'Nothing is being served.')
-  const units = await systemctl(['list-units', 'construct-preview-*', '--all', '--no-legend', '--plain'])
+  const units = await systemctl(['list-units', 'construct-preview-[0-9]*', '--all', '--no-legend', '--plain'])
   console.log(units.trim() ? `\nServices:\n${units.trim()}\nLogs: ${LOG_DIR}/<port>.log` : '\nNo construct-preview services.')
+  const timers = await systemctl(['list-timers', 'construct-preview-expire-*', '--all', '--no-legend'])
+  if (timers.trim()) console.log(`\nStops by itself (next, left, …, unit):\n${timers.trim()}`)
   process.exit(0)
 }
 
 if (args[0] === 'off') {
   const port = portArg(args[1])
+  await stopExpiry(port)
   const served = await tailscale(['serve', `--https=${tailnetPort(port)}`, 'off'], { tolerant: true })
   const stopped = await stopService(port)
   console.log([
@@ -81,6 +91,9 @@ if (args[0] === 'off') {
 
 const port = portArg(args[0])
 const rest = args.slice(1)
+const ttlAt = rest.indexOf('--ttl')
+const ttl = ttlAt < 0 ? '8h' : rest.splice(ttlAt, 2)[1]
+if (!/^(none|\d+[smh])$/.test(ttl ?? '')) die(`--ttl takes a duration like 30m or 8h, or none (got ${ttl ?? 'nothing'}).`)
 if (command && !command.length) die('Nothing after --: give the command that starts the dev server.')
 
 // Check Tailscale before starting anything, so a missing prerequisite doesn't
@@ -94,6 +107,7 @@ if (!status.CertDomains?.length) {
     'Ask Sinan to enable "HTTPS Certificates" in the Tailscale admin console (DNS page).')
 }
 
+await stopExpiry(port)
 if (command) await startService(port, command)
 
 // Something has to be answering locally, or the tab shows a 502. Vite and
@@ -130,7 +144,14 @@ try {
 } catch (e) {
   die(e.stderr?.trim() || e.message)
 }
-if (command) console.log(`The server runs as ${unitFor(port)}; stop it with: construct-preview off ${port}`)
+if (command) console.log(`The server runs as ${unitFor(port)}.`)
+if (ttl === 'none') console.log(`It stays until: construct-preview off ${port}`)
+else {
+  await startExpiry(port, ttl)
+  console.log(`It all stops by itself in ${ttl}, or now with: construct-preview off ${port}`)
+}
+// The agent can't see the tab; the Pi is on the tailnet, so it can look.
+console.log(`See what Sinan sees: page shot ${url} --width 390 --height 844`)
 
 async function startService(port, command) {
   await stopService(port)
@@ -142,12 +163,42 @@ async function startService(port, command) {
       `--working-directory=${process.cwd()}`,
       `--setenv=PATH=${process.env.PATH}`, `--setenv=PORT=${port}`,
       '-p', `StandardOutput=append:${logFor(port)}`, '-p', `StandardError=append:${logFor(port)}`,
+      // However it stops, the tailnet address goes too ("-": it may be gone already).
+      '-p', `ExecStopPost=-${tailscaleBin()} serve --https=${tailnetPort(port)} off`,
       '--', ...command,
     ], { timeout: 20_000 })
   } catch (e) {
     die(`Couldn't start ${unitFor(port)}: ${(e.stderr || e.message).trim()}`)
   }
   console.log(`Started ${command.join(' ')} as ${unitFor(port)} (log: ${logFor(port)})`)
+}
+
+// The timer that runs `off` once the preview's time is up.
+async function startExpiry(port, ttl) {
+  try {
+    await run('systemd-run', [
+      '--user', '--collect', '--quiet', `--unit=${expiryFor(port)}`,
+      `--on-active=${ttl}`, '--timer-property=AccuracySec=1s',
+      `--setenv=PATH=${process.env.PATH}`,
+      process.execPath, import.meta.filename, 'off', String(port),
+    ], { timeout: 20_000 })
+  } catch (e) {
+    console.error(`Couldn't set the ${ttl} limit (${(e.stderr || e.message).trim()}); stop it with construct-preview off ${port}.`)
+  }
+}
+
+async function stopExpiry(port) {
+  await systemctl(['stop', `${expiryFor(port)}.timer`])
+  await systemctl(['reset-failed', `${expiryFor(port)}.timer`, `${expiryFor(port)}.service`])
+}
+
+// systemd wants an absolute path for ExecStopPost.
+function tailscaleBin() {
+  for (const dir of (process.env.PATH ?? '').split(':')) {
+    const p = path.join(dir, 'tailscale')
+    if (dir && fs.existsSync(p)) return p
+  }
+  return '/usr/bin/tailscale'
 }
 
 // True when there was a service to stop.

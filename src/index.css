@@ -798,8 +798,9 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
   position: relative;
 }
 
-/* The chat and its side panel, side by side. */
-.chat-shell { display: flex; height: 100%; min-height: 0; }
+/* The chat and its side panel, side by side. Clipped (not a scroll container,
+   so scrollIntoView can't shift it) for the panel sliding in from beyond it. */
+.chat-shell { display: flex; height: 100%; min-height: 0; position: relative; overflow: clip; }
 .chat-shell > .chat-view { flex: 1; min-width: 0; }
 
 /* What was shared in the room. A sheet over everything on the phone… */
@@ -823,6 +824,22 @@ button { cursor: pointer; border: none; font: inherit; background: none; color: 
     width: var(--room-sidebar-width, 320px);
     border-left: 1px solid var(--border);
   }
+}
+/* Opening and closing slide it in from the right and back out, the way the
+   phone's swipes move it. On a wide screen the chat takes its new width at
+   once, so its text rewraps a single time rather than on every frame: opening,
+   the panel slides into the space the chat gave up; closing, it leaves the row
+   and slides away over the chat, which has already widened beneath it. Only a
+   transform moves, so dragging the width (never transitioned) stays immediate. */
+.room-sidebar--in { animation: room-sidebar-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.room-sidebar--out { animation: room-sidebar-out 200ms cubic-bezier(0.4, 0, 1, 1) forwards; pointer-events: none; }
+@keyframes room-sidebar-in { from { transform: translateX(100%); } }
+@keyframes room-sidebar-out { to { transform: translateX(100%); } }
+@media (min-width: 641px) {
+  .room-sidebar--out { position: absolute; inset: 0 0 0 auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .room-sidebar--in, .room-sidebar--out { animation: none; }
 }
 /* The drag handle: a strip over the left border, wide screens only. */
 .room-sidebar-resize { display: none; }
@@ -1183,6 +1200,19 @@ button.room-sidebar-link {
 .header-sidebar .material-symbols-outlined { font-size: 20px; }
 .header-sidebar:hover { background: var(--bg-active); color: var(--text); }
 .header-sidebar--open { color: var(--text-strong); background: var(--bg-active); }
+/* An artifact arrived since the panel was last open here. */
+.header-sidebar--unseen { position: relative; }
+.header-sidebar--unseen::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
+}
 
 .drop-overlay {
   position: absolute;
@@ -1560,11 +1590,12 @@ button.room-sidebar-link {
   gap: 4px;
 }
 
+/* The column is --chat-desktop-width of text where the chat has room for it,
+   and keeps the phone's gutter where it doesn't (a side panel open beside it,
+   a narrow window), as the composer below does, instead of meeting the edges. */
 @media (min-width: 641px) {
   .messages-inner {
-    max-width: var(--chat-desktop-width);
-    padding-left: 0;
-    padding-right: 0;
+    max-width: calc(var(--chat-desktop-width) + 32px);
   }
 }
 

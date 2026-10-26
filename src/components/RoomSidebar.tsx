@@ -75,7 +75,7 @@ function clampWidth(w: number): number {
   return Math.round(Math.max(MIN_WIDTH, Math.min(w, window.innerWidth - CHAT_MIN)))
 }
 
-export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, onLoadMore, onJump, onOpenImage, onClose, tab, onTab, openArtifact, onOpenArtifact, browserUrl, onBrowserUrl, roomId, linearSample }: {
+export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, onLoadMore, onJump, onOpenImage, onClose, motion, onMotionEnd, tab, onTab, openArtifact, onOpenArtifact, browserUrl, onBrowserUrl, roomId, linearSample }: {
   media: RoomMedia
   /** Resolved image/file URLs by event id. */
   mediaUrls: Record<string, string>
@@ -85,6 +85,9 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
   onJump: (eventId: string) => void
   onOpenImage: (url: string, alt: string) => void
   onClose: () => void
+  /** Sliding in, or out on its way to being unmounted. */
+  motion?: 'in' | 'out' | null
+  onMotionEnd?: () => void
   tab: SidebarTab
   onTab: (tab: SidebarTab) => void
   /** The artifact shown, by id; null for the list, undefined for the newest. */
@@ -276,11 +279,14 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
   return (
     <aside
       ref={asideRef}
-      className={`room-sidebar${mode === 'page' ? ' room-sidebar--wide' : ''}${resizing ? ' room-sidebar--resizing' : ''}`}
+      className={`room-sidebar${mode === 'page' ? ' room-sidebar--wide' : ''}${resizing ? ' room-sidebar--resizing' : ''}${motion ? ` room-sidebar--${motion}` : ''}`}
       style={widths[mode] ? ({ '--room-sidebar-width': `${widths[mode]}px` } as React.CSSProperties) : undefined}
       aria-label="Shared in this room"
+      aria-hidden={motion === 'out' || undefined}
       onTouchStart={onSwipeStart}
       onTouchEnd={onSwipeEnd}
+      // Its own slide only, not one bubbling up from inside.
+      onAnimationEnd={(e) => { if (e.target === e.currentTarget) onMotionEnd?.() }}
     >
       <div
         className="room-sidebar-resize"

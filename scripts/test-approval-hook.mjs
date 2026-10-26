@@ -123,7 +123,12 @@ const CASES = [
   ['head -c 20 ~/.vercel-other-token', 'deny'],
   ['cat ~/.gnupg/pubring.kbx', 'deny'],
   ['rg access_token scripts/.claude-bot-store', 'deny'],
-  ['tail -50 /home/wunnle/matrix-pwa/scripts/.claude-bot-store/bot.log', 'deny'],
+  ['cat ~/matrix-pwa/scripts/.claude-bot-store/sessions.json', 'deny'],
+  ['cat ~/matrix-pwa/scripts/.claude-bot-store/*', 'deny'],
+  ['grep -r foo ~/matrix-pwa/scripts/.claude-bot-store/', 'deny'],
+  // …but its log is free: it is how the bot is debugged.
+  ['tail -50 /home/wunnle/matrix-pwa/scripts/.claude-bot-store/bot.log', 'allow'],
+  ['L=~/matrix-pwa/scripts/.claude-bot-store/bot.log; grep -n spawn $L | tail -5', 'allow'],
   ['cat /proc/1234/environ', 'deny'],
   // Spellings that used to slip past: quotes were dropped rather than removed,
   // and `cd` did not move where relative words resolve.
@@ -161,6 +166,9 @@ const CASES = [
   ['ls -la ~', 'allow'],
   ['jq .scripts package.json', 'allow'],
   ["jq '.[0]' x.json", 'allow'],
+  // Quoted programs full of brackets and slashes are not paths.
+  ['jq -r \'.[] | select(.errorCount>0) | "\\(.filePath|split("/")|.[-2:]|join("/"))"\' out.json', 'allow'],
+  ["sed -n 's#</body>#<script>x()</script>#p' index.html", 'allow'],
   ['cat ~/.claude-bot-worktrees/matrix-pwa-BenderDev-6/package.json', 'allow'],
   ["git commit -q -F - <<'MSG'\nGate reads of ~/.hermes/.env\nMSG", 'allow'],   // a heredoc body is not a read
 
@@ -273,6 +281,7 @@ for (const [tool, input, expected, why] of [
   ['Read', { file_path: path.join(WORKTREE, 'scripts/approval-rules.mjs') }, 'allow', 'source inside a worktree'],
   ['Read', { file_path: 'scripts/approval-rules.mjs' }, 'allow', 'relative source inside a worktree'],
   ['Read', { file_path: path.join(WORKTREE, '.env.example') }, 'allow', 'template, not a secret'],
+  ['Read', { file_path: '/home/wunnle/matrix-pwa/scripts/.claude-bot-store/bot.log' }, 'allow', 'bot log'],
   ['Glob', { pattern: '**/*.mjs' }, 'allow', 'ordinary glob'],
   ['Glob', { pattern: '**/*', path: WORKTREE }, 'allow', 'glob everything, which skips dotfiles'],
   ['Grep', { pattern: 'foo', path: 'src' }, 'allow', 'ordinary grep'],

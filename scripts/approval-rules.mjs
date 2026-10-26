@@ -306,8 +306,12 @@ const SECRET_PATTERNS = [
   /(^|\/)\.config\/gh(\/|$)/,
   // Hermes keeps its .env and every profile's keys under here.
   /(^|\/)\.hermes(\/|$)/,
-  // The bot's Matrix session, in every checkout and worktree.
-  /(^|\/)\.claude-bot-store(\/|$)/,
+  // The bot's Matrix session, in every checkout and worktree. Its bot.log is
+  // the one file left out: it is the only log on this Pi, agents debugging the
+  // bot read it constantly, and a scan found no tokens in it — what it records
+  // was already posted in a room. The directory itself still counts, so a
+  // recursive search of it asks.
+  /(^|\/)\.claude-bot-store(\/(?!bot\.log$)|$)/,
   // ~/.vercel-bender-token and any sibling token file.
   new RegExp(`^${HOME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/\\.vercel[^/]*(/|$)`),
   // Another process's environment — the bot's holds its tokens.
@@ -377,8 +381,11 @@ function globMayBeSecret(glob) {
   const segs = glob.split('/')
   for (let k = 2; k <= segs.length; k++) {
     const re = globToRegex(segs.slice(0, k).join('/'))
-    // A glob too odd to translate is a glob nobody can vouch for.
-    if (!re) return true
+    // A word that will not translate is almost always a quoted jq or JS
+    // program, not a path — and a bracket the shell cannot parse matches no
+    // file either, so the word reaches the reader literally, where the literal
+    // check above has already judged it.
+    if (!re) return false
     for (const t of targets) if (re.test(t)) return true
   }
   return false

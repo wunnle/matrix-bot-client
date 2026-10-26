@@ -874,9 +874,11 @@ const browserInstruction = (roomId) =>
   roomId + ' -- <command that starts it>`: it runs the server as a user service ' +
   'that outlives this session, serves it on the private tailnet over HTTPS and ' +
   'opens it, and if the server refuses the tailnet host name it says what to ' +
-  'allow (run `construct-preview --help` first; `construct-preview off <port>` ' +
-  'when done). Some sites refuse to be embedded; the tab then offers to open ' +
-  'them in a browser.'
+  'allow (run `construct-preview --help` first). It stops itself after 8 hours ' +
+  '(--ttl to change); run `construct-preview off <port>` when done. Before ' +
+  'telling the user to look, check it renders yourself with the `page shot` ' +
+  'command it prints, and read the screenshot. Some sites refuse to be ' +
+  'embedded; the tab then offers to open them in a browser.'
 
 // Runs one turn through the room's provider, resuming its session if it has one.
 // Everything provider-specific — how a turn is invoked, how instructions are

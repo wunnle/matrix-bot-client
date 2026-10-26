@@ -14,17 +14,13 @@
 import webpush from "web-push";
 import { apnsSend, apnsConfigured, isEnvMismatch } from "./_apns.js";
 import { recordNotify, activeClients, seenEventBefore } from "./live-activity.js";
+import { signedMediaUrl } from "./_media-sig.js";
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN;
 // The claudebot/codexbot account (scripts/claude-code-bot.mjs). It speaks in
 // every agent room under one display name, so its pushes are titled by room.
 export const AGENT_BOT_IDS = new Set(["@bender-2:matrix.org"]);
-
-function mxcToProxyUrl(mxc) {
-  if (!mxc) return null;
-  return `https://construct.kafagoz.com/api/media?mxc=${encodeURIComponent(mxc)}`;
-}
 
 // Room avatars are resolved live from the homeserver — the account's own token
 // is a member of every room it receives pushes for. Cached in-memory so warm
@@ -285,7 +281,7 @@ export async function deliver(notification, { dedupeKey = notification.event_id,
   );
 
   // Shared by the APNs payload (service extension) and the Web Push icon.
-  const avatarUrl = mxcToProxyUrl(await avatarPromise);
+  const avatarUrl = signedMediaUrl(await avatarPromise);
 
   await Promise.all(
     devices.map(async (device) => {

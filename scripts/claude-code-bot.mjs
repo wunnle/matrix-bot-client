@@ -817,6 +817,16 @@ const QUICK_ANSWER_INSTRUCTION =
   'characters, e.g. [[Plan the wake word training (BEN-263)]]; Construct shows ' +
   'those as a lettered A, B, C list.'
 
+// A tapped [[!end]] posts `!end` as the owner, which runs the bot's own end
+// flow (confirm, then remove a clean worktree or keep a branch with commits).
+// Fixed text, for the same reason as the Live Activity one below.
+const END_INSTRUCTION =
+  'Offer [[!end]] among the quick answers only when nothing is left in this ' +
+  'room: the work is merged or deployed, it was a question with no code ' +
+  'changes, or the user says they are done. Never while changes are ' +
+  'uncommitted or unmerged, since work in a worktree is live nowhere until ' +
+  'it is merged.'
+
 // The Live Activity channel: a lock-screen card with buttons, for moments worth
 // reaching the phone for. Part of the fixed instructions, so adding it changed
 // every existing session's system prompt once, at the deploy that introduced it.
@@ -907,7 +917,7 @@ function runTurn(roomId, prompt) {
 
   // Room policy, not provider policy: what the agent should be told about this
   // room. The adapter decides where these end up.
-  const instructions = [QUICK_ANSWER_INSTRUCTION, liveActivityInstruction(roomId), LOCATION_INSTRUCTION, FORM_INSTRUCTION, browserInstruction(roomId)]
+  const instructions = [QUICK_ANSWER_INSTRUCTION, END_INSTRUCTION, liveActivityInstruction(roomId), LOCATION_INSTRUCTION, FORM_INSTRUCTION, browserInstruction(roomId)]
   // Only Claude rooms have the tool; telling Codex about it would be a lie.
   if (provider.name === 'claude') instructions.push(ARTIFACT_INSTRUCTION, FAMILY_INSTRUCTION)
   // The rename nudge rides on the prompt, not the instructions: it drops out

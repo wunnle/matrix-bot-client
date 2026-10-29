@@ -1,7 +1,14 @@
 import * as sdk from 'matrix-js-sdk'
 import type { AuthState } from '../types'
 import { loadAuth } from './auth'
-import { AGENT_ROOM_TYPE } from './roomMeta'
+import { AGENT_ROOM_TYPE, seedAgentPills } from './roomMeta'
+import { isBotAgentInvite } from './agentInvite'
+
+// The Claude Code bot, whose agent-room invites are accepted without asking.
+// Pinned rather than inferred from rooms already joined: one manual Accept of a
+// look-alike room would otherwise make its creator trusted from then on.
+// Keep in sync with USER_ID_B in the bot's environment.
+const AGENT_BOT_ID: string = import.meta.env.VITE_AGENT_BOT_ID ?? '@bender-2:matrix.org'
 
 let client: sdk.MatrixClient | null = null
 let initPromise: Promise<RoomSummary[]> | null = null
@@ -74,8 +81,47 @@ export function isInvite(room: RoomSummary): boolean {
   return room.membership === 'invite'
 }
 
+// Joins in flight. The spawn tile accepts the invite it waited for while the
+// auto-accept below is already joining it; both get the one request.
+const joining = new Map<string, Promise<unknown>>()
+
 export async function acceptInvite(roomId: string): Promise<void> {
-  await getClient().joinRoom(roomId)
+  let join = joining.get(roomId)
+  if (!join) {
+    join = getClient().joinRoom(roomId).finally(() => joining.delete(roomId))
+    joining.set(roomId, join)
+  }
+  await join
+}
+
+/**
+ * Joins agent rooms the bot invites us to, so a spawned room (from `!spawn`,
+ * the home-screen tile, or another agent's agent_rooms tools) is just there.
+ * Checked on every sync, which covers invites pending at startup and ones
+ * arriving live, and catches an invite whose stripped state lands late.
+ */
+function autoAcceptAgentInvites(c: sdk.MatrixClient, userId: string) {
+  // Once per app start: a failed join leaves the invite for the manual Accept
+  // instead of being retried on every sync.
+  const tried = new Set<string>()
+  c.on(sdk.ClientEvent.Sync, (state: string) => {
+    if (state !== 'PREPARED' && state !== 'SYNCING') return
+    for (const room of c.getRooms()) {
+      if (room.getMyMembership() !== 'invite' || tried.has(room.roomId)) continue
+      // An invite carries the create event in its stripped state, sender included.
+      const create = room.currentState.getStateEvents('m.room.create', '')
+      const trusted = isBotAgentInvite({
+        createType: create?.getContent()?.type,
+        createSender: create?.getSender(),
+        inviter: room.currentState.getStateEvents('m.room.member', userId)?.getSender(),
+      }, { botId: AGENT_BOT_ID, roomType: AGENT_ROOM_TYPE })
+      if (!trusted) continue
+      tried.add(room.roomId)
+      acceptInvite(room.roomId)
+        .then(() => seedAgentPills(c, room.roomId))
+        .catch((e) => console.warn(`Auto-accepting ${room.roomId} failed:`, e))
+    }
+  })
 }
 
 export async function declineInvite(roomId: string): Promise<void> {
@@ -280,6 +326,7 @@ async function doInit(auth: AuthState): Promise<RoomSummary[]> {
     }
 
     c.on(sdk.ClientEvent.Sync, onSync)
+    autoAcceptAgentInvites(c, auth.userId)
     c.startClient({ lazyLoadMembers: true })
   })
 }

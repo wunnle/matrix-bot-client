@@ -12,7 +12,7 @@ import * as os from 'node:os'
 import * as http from 'node:http'
 import * as util from 'node:util'
 import { randomBytes } from 'node:crypto'
-import { createAgentFamily, FAMILY_EVENT, FAMILY_INSTRUCTION } from './agent-family.mjs'
+import { createAgentFamily, createParentWaker, FAMILY_EVENT, FAMILY_INSTRUCTION } from './agent-family.mjs'
 import { createFamilyHandler } from './agent-family-http.mjs'
 import { execFile } from 'node:child_process'
 import { providerFor, resolveModel, allModelAliases, DEFAULT_PROVIDER, PROVIDERS } from './providers/index.mjs'
@@ -912,6 +912,9 @@ function runTurn(roomId, prompt) {
   // Counted here rather than after the turn so a turn that crashes still moves
   // the count along; the nudge is best-effort and must not stick.
   entry.turns = (entry.turns ?? 0) + 1
+  // Cleared when the drain ends; still set on startup means the last process
+  // died mid-turn, and the room is told so (see resumeInterruptedTurns).
+  entry.turnRunning = true
   sessions[roomId] = entry
   saveSessions()
 
@@ -1354,6 +1357,7 @@ const agentFamily = createAgentFamily({
   publish: (id, content) => client.sendStateEvent(id, FAMILY_EVENT, content, ''),
   notify: (id, text, txnId) => sendRoomText(id, text, {'com.construct.machine': {kind:'agent-report',source:'agent-family'}}, txnId),
   isBlocked: provider => familyBlockedProviders.has(provider),
+  wake: id => parentWaker.schedule(id),
   pause: async (id, reason = 'Provider usage limit reached; use Continue after it resets') => {
     await setBlocked(id, {reason, kind:'paused'})
   },
@@ -1371,6 +1375,13 @@ const agentFamily = createAgentFamily({
     }
     void drainRoom(id, null, prompt)
   },
+})
+// A parent waiting on the user keeps its reports for whatever turn comes next.
+const parentWaker = createParentWaker({
+  sessions, save: saveSessions,
+  isBusy: id => busy.has(id),
+  isBlocked: id => approvals.has(id) || questions.has(id) || blockedRooms.has(id) || familyBlockedProviders.has(sessions[id]?.provider),
+  start: (id, prompt) => void drainRoom(id, null, prompt),
 })
 const handleAgentFamily = createFamilyHandler(familyCapabilities, agentFamily)
 
@@ -1647,6 +1658,8 @@ async function drainRoom(roomId, first, firstPrompt = null) {
         if (sessions[roomId]?.parentRoomId) { sessions[roomId].pendingPrompt = prompt; saveSessions() }
         await agentFamily.working(roomId)
         const consumedReports = [...(sessions[roomId]?.agentReports ?? [])]
+        // This turn carries every report so far, so a pending wake has nothing left to say.
+        if (sessions[roomId]?.agentWakePending) { delete sessions[roomId].agentWakePending; saveSessions() }
         const res = await runTurn(roomId, prompt)
         refreshUsage()
         if (!stopped.has(roomId)) {
@@ -1700,6 +1713,9 @@ async function drainRoom(roomId, first, firstPrompt = null) {
         return
       }
       batch = queued.get(roomId)?.splice(0) ?? []
+      // Child reports that landed during the turn wake it here, so the room
+      // never runs two turns at once.
+      if (!batch.length) override = parentWaker.take(roomId)
     }
   } finally {
     // All synchronous, and before any await: a message landing after `busy` is
@@ -1708,6 +1724,7 @@ async function drainRoom(roomId, first, firstPrompt = null) {
     clearInterval(keepAlive)
     queued.delete(roomId)
     busy.delete(roomId)
+    if (sessions[roomId]?.turnRunning) { delete sessions[roomId].turnRunning; saveSessions() }
     await client.sendTyping(roomId, false).catch(() => {})
   }
 }
@@ -2340,9 +2357,41 @@ function loadBlockedState() {
   }
 }
 loadBlockedState()
-await agentFamily.recover().catch(e => log(`Agent recovery deferred: ${e.message}`))
+
+// Rooms the last process died in mid-turn — usually the deploy flow restarting
+// this service from inside one of them. Their final message never went out, so
+// each is told and given a turn to finish. A child that already reported is
+// left alone: its parent has the answer, and a second report would repeat it.
+// Read before recovery, which would otherwise pause the children among them.
+const RESTART_PROMPT = '(Machine notice, not a user message.) The bot service restarted while your previous turn was running, so that turn was cut off and its final message never reached the user. Check where you got to, finish anything left, and send your report.'
+const RESUME_STAGGER_MS = 5000
+const interrupted = Object.keys(sessions).filter((id) => {
+  const s = sessions[id]
+  if (!s.turnRunning) return false
+  if (s.parentRoomId && s.agentStatus !== 'working') return false
+  return client.getRoom(id)?.getMyMembership() === 'join' && !blockedRooms.has(id) && !familyBlockedProviders.has(s.provider)
+})
+for (const s of Object.values(sessions)) delete s.turnRunning
+saveSessions()
+await agentFamily.recover({ resuming: new Set(interrupted) }).catch(e => log(`Agent recovery deferred: ${e.message}`))
 
 startApprovalBroker()
+
+// Staggered, so a restart that cut off several rooms does not start them all
+// at once. A parent whose wake was still debouncing gets it again; a resumed
+// room's turn already carries its reports.
+function resumeInterruptedTurns() {
+  const wakes = Object.keys(sessions).filter(id => sessions[id].agentWakePending && !interrupted.includes(id))
+  const jobs = [...interrupted.map(id => [id, RESTART_PROMPT]), ...wakes.map(id => [id, null])]
+  jobs.forEach(([id, prompt], i) => setTimeout(() => {
+    if (!prompt) return parentWaker.schedule(id)
+    // A message got in first; its turn picks the session up instead.
+    if (busy.has(id)) return log(`Not resuming ${id}: a new turn is already running`)
+    log(`Resuming the turn a restart cut off in ${id}`)
+    void drainRoom(id, null, prompt)
+  }, RESUME_STAGGER_MS * (i + 1)))
+}
+resumeInterruptedTurns()
 
 log(`Listening… default cwd: ${DEFAULT_CWD}, model: ${DEFAULT_MODEL}.`)
 log('Send "!spawn [path] [model]" to create an agent room; "!model [name]" inside one to switch.')

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createAgentFamily } from './agent-family.mjs'
+import { createAgentFamily, createParentWaker, WAKE_PROMPT } from './agent-family.mjs'
 import { isQuotaBlockedState } from './limit-block.mjs'
 assert.equal(isQuotaBlockedState({blocked:true,kind:'paused',reason:'interrupted restart'}),false)
 assert.equal(isQuotaBlockedState({blocked:true,kind:'quota',reason:'limit'}),true)
@@ -69,4 +69,41 @@ brokenPublication = false
 await repair.spawn('parent',{task_key:'repair',title:'Repair',prompt:'Investigate'})
 assert.equal(roomCreates,1)
 assert.equal(childStarts,1)
-console.log('agent-family: persistent lineage, idempotency, quota pause, authorization, recovery and reports OK')
+// Finished children wake the parent; progress and user stops do not.
+const wakeSessions = {lead:{}, a:{parentRoomId:'lead',agentTitle:'A'}, b:{parentRoomId:'lead',agentTitle:'B'}}
+const woken = []
+const waking = createAgentFamily({sessions:wakeSessions,save(){},spawn(){},start(){},publish:async()=>{},notify:async()=>{},wake:id=>woken.push(id)})
+await waking.working('a')
+await waking.report('a','stopped','Stopped by the user.')
+assert.deepEqual(woken,[],'working updates and stops never wake the parent')
+assert.equal(wakeSessions.lead.agentWakePending,undefined)
+await waking.report('a','done','A finished')
+await waking.report('b','failed','B broke')
+assert.deepEqual(woken,['lead','lead'])
+assert.equal(wakeSessions.lead.agentWakePending,true,'pending wake is persisted with the report')
+const flaky = createAgentFamily({sessions:wakeSessions,save(){},spawn(){},start(){},publish:async()=>{},notify:async()=>{throw Error('offline')},wake:id=>woken.push(id)})
+await assert.rejects(()=>flaky.report('b','blocked','Quota'),/offline/)
+assert.equal(woken.length,3,'a failed notice still wakes the parent')
+// A room the bot is resuming after a restart is not paused by recovery.
+const resumed = {lead:{}, mid:{parentRoomId:'lead',agentStatus:'working'}, idle:{parentRoomId:'lead',agentStatus:'working'}}
+const resumePauses = []
+await createAgentFamily({sessions:resumed,save(){},spawn(){},start(){},publish:async()=>{},notify:async()=>{},pause:async id=>resumePauses.push(id)}).recover({resuming:new Set(['mid'])})
+assert.deepEqual(resumePauses,['idle'])
+assert.equal(resumed.mid.agentStatus,'working')
+// The waker batches close reports, never starts a busy room, and skips a room blocked on the user.
+const tick = ms => new Promise(r => setTimeout(r, ms))
+const ws = {p:{agentWakePending:true}, q:{agentWakePending:true}, r:{agentWakePending:true}}
+const busyRooms = new Set(['q']); const blockedRooms = new Set(['r']); const wakeStarts = []
+const waker = createParentWaker({sessions:ws,save(){},delayMs:20,isBusy:id=>busyRooms.has(id),isBlocked:id=>blockedRooms.has(id),start:(id,prompt)=>wakeStarts.push({id,prompt})})
+waker.schedule('p'); await tick(5); waker.schedule('p')
+waker.schedule('q'); waker.schedule('r')
+assert.equal(waker.take('q'),null,'a debouncing wake waits for its timer')
+await tick(40)
+assert.deepEqual(wakeStarts.map(s=>s.id),['p'],'two close reports start one turn; busy and blocked rooms are not started')
+assert.equal(wakeStarts[0].prompt,WAKE_PROMPT)
+assert.equal(waker.take('q'),WAKE_PROMPT,'a busy parent runs the wake as its next turn')
+assert.equal(ws.r.agentWakePending,undefined,'a parent blocked on the user keeps its reports for its next turn')
+ws.p.agentWakePending = false
+waker.schedule('p'); await tick(40)
+assert.equal(wakeStarts.length,1,'a turn that already carried the reports cancels the wake')
+console.log('agent-family: persistent lineage, idempotency, quota pause, authorization, recovery, reports and parent wakes OK')

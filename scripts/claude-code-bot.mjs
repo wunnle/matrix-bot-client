@@ -271,6 +271,8 @@ client.on(sdk.RoomEvent.MyMembership, async (room, membership) => {
 // Rooms that have asked to end and are awaiting confirmation. Ending is not
 // reversible from chat, and !end sits next to !model on the pill row.
 const pendingEnds = new Set()
+// Parent rooms asked to end their finished workers: room id → worker room ids.
+const pendingWorkerEnds = new Map()
 // Rooms asked to turn on encryption, awaiting confirmation: it is permanent.
 const pendingEncrypts = new Set()
 
@@ -825,7 +827,9 @@ const END_INSTRUCTION =
   'room: the work is merged or deployed, it was a question with no code ' +
   'changes, or the user says they are done. Never while changes are ' +
   'uncommitted or unmerged, since work in a worktree is live nowhere until ' +
-  'it is merged.'
+  'it is merged. If you started worker rooms, offer [[!end workers]] once ' +
+  'you have integrated their work or no longer need it, and offer [[!end]] ' +
+  'for this room only after that.'
 
 // The Live Activity channel: a lock-screen card with buttons, for moments worth
 // reaching the phone for. Part of the fixed instructions, so adding it changed
@@ -1235,6 +1239,38 @@ async function removeWorktree(dir, branch) {
     }
   }
   return { removed: true, branchDeleted }
+}
+
+// Statuses a worker room can be ended in from its parent with `!end workers`.
+const WORKER_ENDABLE = ['done', 'failed', 'stopped']
+
+// Forgets the session, cleans up its worktree, says goodbye and leaves. Shared
+// by !end and !end workers; returns what happened to the worktree, so a parent
+// ending several workers can list where each one's work went.
+async function endRoom(roomId, goodbye) {
+  const ended = sessions[roomId]
+  delete sessions[roomId]
+  saveSessions()
+  log(`Ended ${roomId}`)
+  // Only a worktree this bot cut is removable, and only when clean. Dirty
+  // ones are left on disk with their path named — the room is going away,
+  // so this message is the last chance to say where the work went.
+  let leftover = ''
+  if (ended?.worktree) {
+    const { removed, reason, branchDeleted } = await removeWorktree(ended.cwd, ended.branch)
+    if (!removed) {
+      leftover = `kept the worktree — ${reason}: \`${ended.cwd}\` on \`${ended.branch}\``
+    } else {
+      leftover = branchDeleted
+        ? 'removed the worktree; nothing unmerged, so the branch went too'
+        : `removed the worktree; branch \`${ended.branch}\` kept — it has unmerged commits`
+    }
+  }
+  // Say goodbye before leaving, or the message lands in a room we have left.
+  const detail = leftover ? `\n\n${leftover[0].toUpperCase()}${leftover.slice(1)}.` : ''
+  await sendRoomText(roomId, `${goodbye}${detail}`).catch(() => {})
+  await client.leave(roomId).catch((e) => log(`Leave failed for ${roomId}: ${e.message}`))
+  return leftover
 }
 
 // A quick name creates the room immediately; an optional title promise can rename it later.
@@ -2116,36 +2152,62 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       await sendRoomText(roomId, 'A turn is still running — try again once it finishes.')
       return
     }
+    pendingWorkerEnds.delete(roomId)
     pendingEnds.add(roomId)
     await sendRoomText(roomId, 'End this room? I will leave and forget the session. The transcript stays on disk.\n\n[[Confirm end]] [[Cancel]]')
     return
+  }
+
+  // !end workers — close this room's finished worker rooms from here, so the
+  // parent can offer it as a button once it has integrated their work. Rooms
+  // still working or blocked are named and left alone.
+  if (body === '!end workers') {
+    const children = Object.entries(sessions).filter(([, s]) => s.parentRoomId === roomId)
+    const finished = children.filter(([id, s]) => WORKER_ENDABLE.includes(s.agentStatus) && !busy.has(id))
+    const running = children.filter(([id]) => !finished.some(([f]) => f === id))
+    const names = (list) => list.map(([id, s]) => `- ${s.agentTitle ?? id}`).join('\n')
+    const still = running.length ? `\n\nStill running, left open:\n${names(running)}` : ''
+    if (!finished.length) {
+      await sendRoomText(roomId, `No finished worker rooms to end.${still}`)
+      return
+    }
+    pendingEnds.delete(roomId)
+    pendingWorkerEnds.set(roomId, finished.map(([id]) => id))
+    await sendRoomText(roomId, `End ${finished.length} finished worker room${finished.length === 1 ? '' : 's'}?\n${names(finished)}${still}\n\n[[End them]] [[Keep them]]`)
+    return
+  }
+
+  if (pendingWorkerEnds.has(roomId) && fromOwner) {
+    const reply = body.toLowerCase()
+    if (reply === 'end them') {
+      const ids = pendingWorkerEnds.get(roomId)
+      pendingWorkerEnds.delete(roomId)
+      const lines = []
+      for (const id of ids) {
+        const s = sessions[id]
+        // Re-checked: a worker can be messaged back to work between the ask and the tap.
+        if (!s || busy.has(id) || !WORKER_ENDABLE.includes(s.agentStatus)) {
+          lines.push(`- ${s?.agentTitle ?? id}: left open, it is working again`)
+          continue
+        }
+        const leftover = await endRoom(id, '👋 Ended from the parent room.')
+        lines.push(`- ${s.agentTitle ?? id}${leftover ? `: ${leftover}` : ''}`)
+      }
+      await sendRoomText(roomId, `Ended the worker rooms:\n${lines.join('\n')}`)
+      return
+    }
+    if (reply === 'keep them') {
+      pendingWorkerEnds.delete(roomId)
+      await sendRoomText(roomId, 'Kept them — the worker rooms stay open.')
+      return
+    }
   }
 
   if (pendingEnds.has(roomId) && fromOwner) {
     const reply = body.toLowerCase()
     if (reply === 'confirm end') {
       pendingEnds.delete(roomId)
-      const ended = sessions[roomId]
-      delete sessions[roomId]
-      saveSessions()
-      log(`Ended ${roomId}`)
-      // Only a worktree this bot cut is removable, and only when clean. Dirty
-      // ones are left on disk with their path named — the room is going away,
-      // so this message is the last chance to say where the work went.
-      let leftover = ''
-      if (ended?.worktree) {
-        const { removed, reason, branchDeleted } = await removeWorktree(ended.cwd, ended.branch)
-        if (!removed) {
-          leftover = `\n\nKept the worktree — ${reason}: \`${ended.cwd}\` on \`${ended.branch}\`.`
-        } else {
-          leftover = branchDeleted
-            ? '\n\nRemoved the worktree; nothing was committed, so the branch went too.'
-            : `\n\nRemoved the worktree; branch \`${ended.branch}\` kept — it has commits.`
-        }
-      }
-      // Say goodbye before leaving, or the message lands in a room we have left.
-      await sendRoomText(roomId, `👋 Ended. Spawn a new room when you need me again.${leftover}`).catch(() => {})
-      await client.leave(roomId).catch((e) => log(`Leave failed for ${roomId}: ${e.message}`))
+      await endRoom(roomId, '👋 Ended. Spawn a new room when you need me again.')
       return
     }
     if (reply === 'cancel') {

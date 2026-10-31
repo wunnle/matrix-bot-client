@@ -6,8 +6,9 @@
 // The hook is run as a subprocess, the way Claude Code runs it, with the broker
 // pointed at a dead port so "would have asked a human" is observable: anything
 // the rules do not allow outright comes back denied instead of hanging.
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import * as fs from 'node:fs'
+import * as http from 'node:http'
 import * as os from 'node:os'
 import * as path from 'node:path'
 
@@ -406,6 +407,37 @@ if (process.argv.includes('--replay')) {
   }
   console.log(`\nreplay: ${prompted}/${total} calls would prompt (${Math.round((prompted / total) * 100)}%)`)
   for (const e of examples) console.log('  ?', e)
+}
+
+// The broker holds the request open until a human answers, so the hook must
+// wait as long as its own timeout says — fetch used to give up at five minutes
+// whatever that was. APPROVAL_HOOK_SLOW_MS=310000 proves the long case; the
+// default only proves the plumbing.
+async function viaBroker(delayMs, timeoutMs) {
+  const server = http.createServer((req, res) => {
+    req.resume()
+    setTimeout(() => res.end('{"decision":"allow","reason":"answered"}'), delayMs)
+  })
+  server.headersTimeout = 0
+  server.requestTimeout = 0
+  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  const out = await new Promise((resolve) => {
+    const child = execFile('node', [HOOK], {
+      env: { ...process.env, AGENT_APPROVAL_URL: `http://127.0.0.1:${server.address().port}/approve`, AGENT_APPROVAL_TIMEOUT_MS: String(timeoutMs) },
+    }, (_err, stdout) => resolve(stdout))
+    child.stdin.end(JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git push' }, cwd: WORKTREE, session_id: 'test' }))
+  })
+  server.close()
+  return JSON.parse(out).hookSpecificOutput.permissionDecision
+}
+const slow = Number(process.env.APPROVAL_HOOK_SLOW_MS ?? 300)
+for (const [delay, timeout, expected, why] of [
+  [slow, slow + 5000, 'allow', `broker answers after ${Math.round(slow / 1000)}s`],
+  [3000, 500, 'deny', 'broker slower than the hook timeout'],
+]) {
+  const got = await viaBroker(delay, timeout)
+  if (got !== expected) { failed++; console.log(`FAIL  ${why}: want ${expected}, got ${got}`) }
+  else console.log(`ok    ${why}: ${got}`)
 }
 
 process.exit(failed ? 1 : 0)

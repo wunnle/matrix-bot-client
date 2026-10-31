@@ -732,8 +732,70 @@ function handleBrowse(req, res) {
   })
 }
 
+// Scheduled jobs (systemd timers such as scripts/agent-review) start turns here
+// with no message to answer. Each job owns one room, found by its key and
+// spawned on first use, and every run starts a fresh session so a weekly job
+// does not drag last week's context along; replies in between continue it.
+// The broker is loopback-only, but this one runs a turn with no human asking,
+// so it also wants the token in SCHEDULE_TOKEN_FILE.
+const SCHEDULE_TOKEN_FILE = path.join(STORE_DIR, 'schedule.token')
+function scheduleToken() {
+  try { return fs.readFileSync(SCHEDULE_TOKEN_FILE, 'utf8').trim() } catch {}
+  const token = randomBytes(32).toString('hex')
+  fs.writeFileSync(SCHEDULE_TOKEN_FILE, token, { mode: 0o600 })
+  return token
+}
+
+function handleScheduledTurn(req, res) {
+  let raw = ''
+  req.on('data', (c) => { raw += c })
+  req.on('end', async () => {
+    const reply = (status, payload) => {
+      res.writeHead(status, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(payload))
+    }
+    if (req.headers.authorization !== `Bearer ${scheduleToken()}`) return reply(403, { error: 'bad schedule token' })
+    let payload
+    try { payload = JSON.parse(raw) } catch { return reply(400, { error: 'malformed request' }) }
+    const { key, name, prompt, notice } = payload ?? {}
+    if (typeof key !== 'string' || !/^[a-z0-9-]{1,40}$/.test(key) || typeof prompt !== 'string' || !prompt.trim()) {
+      return reply(400, { error: 'a key ([a-z0-9-]) and a prompt are required' })
+    }
+    try {
+      let roomId = Object.keys(sessions).find((id) =>
+        sessions[id].scheduledKey === key && client.getRoom(id)?.getMyMembership() === 'join')
+      if (!roomId) {
+        // Encrypted: these jobs quote private conversations back into the room.
+        const room = await spawnRoom(DEFAULT_CWD, DEFAULT_MODEL, DEFAULT.provider, null,
+          { encrypted: true, name: typeof name === 'string' && name.trim() ? name.trim().slice(0, 60) : key })
+        roomId = room.room_id
+        sessions[roomId].scheduledKey = key
+        saveSessions()
+      }
+      if (busy.has(roomId) || approvals.has(roomId) || questions.has(roomId) || blockedRooms.has(roomId)) {
+        log(`[${roomId}] scheduled ${key} skipped: the room is busy`)
+        return reply(409, { error: 'room is busy', roomId })
+      }
+      const { auto, ...kept } = sessions[roomId]
+      sessions[roomId] = { ...kept, sessionId: null }
+      saveSessions()
+      if (typeof notice === 'string' && notice.trim()) {
+        await sendRoomText(roomId, notice.trim(), { 'com.construct.machine': { kind: 'scheduled', source: key } })
+      }
+      log(`[${roomId}] scheduled turn: ${key}`)
+      void drainRoom(roomId, null, prompt)
+      reply(202, { roomId })
+    } catch (e) {
+      log(`Scheduled ${key} failed: ${e.message}`)
+      reply(502, { error: e.message })
+    }
+  })
+}
+
 function startApprovalBroker() {
+  scheduleToken()
   const server = http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url === '/scheduled-turn') return handleScheduledTurn(req, res)
     if (req.method === 'POST' && req.url === '/agent-family') return handleAgentFamily(req, res)
     if (req.method === 'POST' && req.url.startsWith('/send-image')) return handleSendImage(req, res)
     if (req.method === 'POST' && req.url.startsWith('/browse')) return handleBrowse(req, res)

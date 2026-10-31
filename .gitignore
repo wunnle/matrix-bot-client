@@ -15,6 +15,8 @@ scripts/.env
 scripts/.pingpong-store-*
 scripts/.echo-bot-store
 scripts/.claude-bot-store
+# Weekly agent review: findings files and the decisions log
+.agent-review
 scripts/.late-joiner-*
 scripts/.multimsg-store-*
 scripts/.resume-store-*

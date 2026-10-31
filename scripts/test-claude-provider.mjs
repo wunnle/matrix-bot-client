@@ -164,6 +164,18 @@ else if (mode === 'chat') {
     for (let i = inbox.length - 1; i >= 0; i--) {
       if (!inbox[i].includes('late')) { replay(); texts.push(...inbox.splice(i, 1)) }
     }
+    // "bg" starts background work that reports back 450ms later with a turn
+    // of the CLI's own, as a Bash run in the background does.
+    if (texts.includes('bg')) {
+      out({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'b1' }] })
+      setTimeout(() => {
+        out({ type: 'system', subtype: 'task_notification', task_id: 'b1', status: 'completed' })
+        out({ type: 'system', subtype: 'background_tasks_changed', tasks: [] })
+        out({ type: 'system', subtype: 'init', session_id: 's-chat' })
+        out({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'text', text: 'bg done' }] } })
+        out({ type: 'result', subtype: 'success', result: 'bg done', is_error: false, session_id: 's-chat' })
+      }, 450)
+    }
     const answer = 'answer: ' + texts.join(' | ')
     out({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'text', text: answer }] } })
     out({ type: 'result', subtype: 'success', result: answer, is_error: false, session_id: 's-chat' })
@@ -282,6 +294,28 @@ process.env.FAKE_CLAUDE_MODE = 'chat'
   const res = await pending
   assert.deepEqual(res, { text: 'answer: late one', isError: false })
   assert.deepEqual(seen, ['answer: hi'])
+}
+{
+  // A turn that leaves background work running answers at once, and the room
+  // can still talk to it until the work reports back and the process ends.
+  const replies = []
+  const seen = []
+  const pending = claude.run({
+    ...base, prompt: 'bg', roomId: '!bg', timeoutMs: 10000,
+    onText: (t) => seen.push(t), onReply: (r) => replies.push(r.text),
+  })
+  await new Promise((r) => setTimeout(r, 250))
+  assert.deepEqual(replies, ['answer: bg'], 'answered before the background work is done')
+  assert.equal(claude.steer('!bg', 'meanwhile'), true, 'still listening')
+  const res = await pending
+  assert.deepEqual(replies, ['answer: bg', 'answer: meanwhile'])
+  assert.deepEqual(res, { text: 'bg done', isError: false }, 'the report is the run\'s own answer')
+  assert.deepEqual(seen, [], 'nothing posted twice as narration')
+}
+{
+  // Without onReply nothing changes: one answer, the last one.
+  const res = await claude.run({ ...base, prompt: 'bg', roomId: '!bg-old', timeoutMs: 10000 })
+  assert.deepEqual(res, { text: 'bg done', isError: false })
 }
 
 process.env.FAKE_CLAUDE_MODE = 'crash'

@@ -16,6 +16,12 @@
 // final answer is being written becomes a turn of its own in the same process,
 // with its own `result`. So a turn is over only once a `result` arrives with
 // every message written also echoed — until then stdin stays open.
+//
+// Nor while background work (a Bash run in the background, a Monitor, a
+// background subagent) is still going: like the interactive CLI, the turn ends
+// but the conversation doesn't. Its reply goes out through `onReply` right
+// away, stdin stays open so the room can keep talking, and the CLI starts a
+// turn of its own when the work reports back.
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { spawn } from 'node:child_process'
@@ -369,7 +375,11 @@ export const claude = {
   // `onSubagent(card)`, when given, takes over reporting subagents: each one
   // becomes a card that is re-sent as it moves, instead of a single progress line.
   // `onArtifact(page)` hears of every page published to claude.ai in the turn.
-  run({ roomId, prompt, cwd, model, sessionId, instructions = [], family, approval, onProgress, onText, onSubagent, onArtifact, timeoutMs, onSession }) {
+  // `onReply({ text, isError })` takes the answer of a turn that ends while
+  // background work is still running; the run then resolves with `delivered`
+  // set when its last answer already went out that way. Without it, the
+  // process is held to one answer as before.
+  run({ roomId, prompt, cwd, model, sessionId, instructions = [], family, approval, onProgress, onText, onReply, onSubagent, onArtifact, timeoutMs, onSession }) {
     const args = [
       '-p',
       // stream-json in print mode refuses to run without --verbose.
@@ -415,9 +425,32 @@ export const claude = {
       // Messages written but not yet echoed back as taken in.
       let unread = 0
       let closing = false
+      // Background tasks still running, as the CLI last listed them.
+      let tasks = 0
+      // Between a turn's answer and the next turn, waiting on background work.
+      let idle = false
+      // The last answer already went out through `onReply`.
+      let delivered = false
+      // A turn can block on a human answering an approval, so this must
+      // exceed the approval timeout rather than race it. It times turns, not
+      // the wait on background work, which has the CLI's own limits.
+      let timer = null
+      let timedOut = false
+      const arm = () => {
+        clearTimeout(timer)
+        timer = timeoutMs ? setTimeout(() => {
+          timedOut = true
+          child.kill('SIGTERM')
+        }, timeoutMs) : null
+      }
+      const end = () => {
+        closing = true
+        child.stdin.end()
+      }
       const write = (text) => {
         if (closing || !child.stdin.writable) return false
         unread++
+        if (idle) { idle = false; arm() }
         child.stdin.write(userLine(text))
         return true
       }
@@ -429,7 +462,6 @@ export const claude = {
       let result = null
       let partial = ''
       let stderr = ''
-      let timedOut = false
       const reported = new Set()
       const subagents = onSubagent ? createSubagentTracker({ cwd, onChange: onSubagent }) : null
       const artifacts = onArtifact ? createArtifactWatcher({ cwd, onArtifact }) : null
@@ -452,15 +484,31 @@ export const claude = {
         let event
         try { event = JSON.parse(line) } catch { return }
         if (event.type === 'user' && event.isReplay) { unread = Math.max(0, unread - 1); return }
+        if (event.type === 'system' && event.subtype === 'background_tasks_changed') {
+          tasks = Array.isArray(event.tasks) ? event.tasks.length : 0
+          // The last of it finished between turns: the CLI answers its report,
+          // then exits once stdin is closed.
+          if (!tasks && idle && !closing) end()
+          return
+        }
+        // The CLI starting a turn on its own, to answer a background report.
+        if (event.type === 'system' && event.subtype === 'init' && idle) { idle = false; arm() }
         if (event.type === 'result') {
           // An earlier result answered a message that one sent mid-answer has
           // since overtaken. Its text is still held in `pendingText`, so the next
           // turn's first block posts it as narration like any other.
           result = event
-          if (unread === 0) {
-            closing = true
-            child.stdin.end()
-          }
+          delivered = false
+          if (unread > 0) return
+          if (!tasks || !onReply || closing) { if (!closing) end(); return }
+          // Background work outlives the turn: answer now, keep listening.
+          const text = (event.result ?? '').trim()
+          if (pendingText !== text) flushText()
+          pendingText = null
+          idle = true
+          delivered = true
+          clearTimeout(timer)
+          try { onReply({ text: event.result ?? '(no output)', isError: event.is_error }) } catch {}
           return
         }
         // Before the subagent tracker, which keeps a subagent's events to itself.
@@ -497,12 +545,7 @@ export const claude = {
         if (stderr.length < STDERR_LIMIT) stderr += chunk
       })
 
-      // A turn can block on a human answering an approval, so this must
-      // exceed the approval timeout rather than race it.
-      const timer = timeoutMs ? setTimeout(() => {
-        timedOut = true
-        child.kill('SIGTERM')
-      }, timeoutMs) : null
+      arm()
 
       const finish = (outcome) => {
         clearTimeout(timer)
@@ -513,6 +556,12 @@ export const claude = {
       child.on('close', (code, signal) => {
         handleLine(partial)
         subagents?.close()
+        if (result && delivered) {
+          // Anything said after the answer went out, by a turn that never finished.
+          flushText()
+          if (result.session_id) onSession?.(result.session_id)
+          return finish({ text: result.result ?? '(no output)', isError: result.is_error, delivered: true })
+        }
         if (result) {
           // Held text that isn't the reply (an error result, say) is still
           // something the agent said; post it rather than lose it.

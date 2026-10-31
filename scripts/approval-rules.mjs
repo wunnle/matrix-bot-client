@@ -78,7 +78,10 @@ export const PATH_SCOPED = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit'
 // Invoking one of these only loads its instructions into the turn — every tool
 // call the skill then makes comes back through this hook on its own, so this
 // grants nothing the skill's own calls would not have to earn separately.
-export const SAFE_SKILLS = new Set(['linear', 'next', 'room-rename', 'ship', 'newproject'])
+// The artifact and chart skills are pure guidance, and the Artifact tool's own
+// instructions say to load them before every page.
+export const SAFE_SKILLS = new Set(['linear', 'next', 'room-rename', 'ship', 'newproject',
+  'artifact-design', 'artifact-capabilities', 'artifact-diagramming', 'dataviz'])
 
 // Claude's Artifact tool publishes a page to Sinan's own claude.ai account,
 // private until he shares it, and rooms are told to use it freely; a tap per

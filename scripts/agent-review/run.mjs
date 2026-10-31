@@ -34,7 +34,7 @@ const KINDS = {
     collect: collectClaude,
     sources: [
       '   - Transcripts: `~/.claude/projects/<project>/<session>.jsonl`; the finding names the project. Read them with `jq` (the directory names start with `-`, so pass `./-home-…`).',
-      '   - The bot log: `~/matrix-pwa/scripts/.claude-bot-store/bot.log`.',
+      '   - The bot log: always by its full path, `grep … ~/matrix-pwa/scripts/.claude-bot-store/bot.log`. Never `cd` into `.claude-bot-store`: it holds the bot\'s tokens, so every command run from inside it asks for approval.',
     ],
     scope: [
       '   - `~/.claude/CLAUDE.md`, project CLAUDE.md files, memories in `~/.claude/projects/-home-wunnle-matrix-pwa/memory/`, helpers in `~/.local/bin/`.',

@@ -239,13 +239,15 @@ function previewCommand(tokens) {
 // reads and writes — a pre-approved ha_helper.py can turn lights and switches
 // on and off without asking. send-image.mjs posts an image file into the room
 // the turn is in, the same reach as room-rename.mjs; it was a tap per
-// screenshot.
+// screenshot. agent-review/session.mjs only reads a Hermes state.db, opened
+// read-only; the weekly reviewer opens every flagged conversation with it.
 const HOME = process.env.HOME ?? '/home/wunnle'
 const PREAPPROVED_SCRIPT_PATHS = new Set([
   `${HOME}/.openclaw/workspace/integrations/linear/linear.js`,
   `${HOME}/.openclaw/workspace/scripts/ha_helper.py`,
   `${HOME}/matrix-pwa/scripts/room-rename.mjs`,
   `${HOME}/matrix-pwa/scripts/send-image.mjs`,
+  `${HOME}/matrix-pwa/scripts/agent-review/session.mjs`,
 ])
 
 // A headless Chromium that renders a page and exits: the screenshot half of the

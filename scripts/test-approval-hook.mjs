@@ -192,6 +192,8 @@ const CASES = [
   [`python3 ${os.homedir()}/.openclaw/workspace/scripts/ha_helper.py states`, 'allow'],
   [`python3 ${os.homedir()}/.openclaw/workspace/scripts/ha_helper.py call light.turn_on --entity-id light.desk`, 'allow'],
   [`node ${os.homedir()}/matrix-pwa/scripts/room-rename.mjs "A Name"`, 'allow'],
+  ['node ~/matrix-pwa/scripts/agent-review/session.mjs default 20261028_214945_5532c9cb --from 40', 'allow'],
+  ['node /tmp/session.mjs default x', 'deny'],
   ['obsidian search:context query="bender"', 'allow'],
   ['obsidian daily:append content="note"', 'allow'],
   // The basename hole: /tmp is writable without a prompt, so a same-named

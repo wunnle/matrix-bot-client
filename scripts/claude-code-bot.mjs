@@ -761,12 +761,19 @@ function handleScheduledTurn(req, res) {
     if (typeof key !== 'string' || !/^[a-z0-9-]{1,40}$/.test(key) || typeof prompt !== 'string' || !prompt.trim()) {
       return reply(400, { error: 'a key ([a-z0-9-]) and a prompt are required' })
     }
+    // The room's directory is its approval sandbox. A job that only reads gets a
+    // folder of its own, so the repo's scripts stay outside what it may change
+    // unprompted and pre-approved ones among them keep running without a tap.
+    const cwd = payload.cwd ?? DEFAULT_CWD
+    if (typeof cwd !== 'string' || !path.isAbsolute(cwd) || !fs.statSync(cwd, { throwIfNoEntry: false })?.isDirectory()) {
+      return reply(400, { error: `cwd must be an existing absolute directory: ${cwd}` })
+    }
     try {
       let roomId = Object.keys(sessions).find((id) =>
         sessions[id].scheduledKey === key && client.getRoom(id)?.getMyMembership() === 'join')
       if (!roomId) {
         // Encrypted: these jobs quote private conversations back into the room.
-        const room = await spawnRoom(DEFAULT_CWD, DEFAULT_MODEL, DEFAULT.provider, null,
+        const room = await spawnRoom(cwd, DEFAULT_MODEL, DEFAULT.provider, null,
           { encrypted: true, name: typeof name === 'string' && name.trim() ? name.trim().slice(0, 60) : key })
         roomId = room.room_id
         sessions[roomId].scheduledKey = key
@@ -777,7 +784,7 @@ function handleScheduledTurn(req, res) {
         return reply(409, { error: 'room is busy', roomId })
       }
       const { auto, ...kept } = sessions[roomId]
-      sessions[roomId] = { ...kept, sessionId: null }
+      sessions[roomId] = { ...kept, cwd, sessionId: null }
       saveSessions()
       if (typeof notice === 'string' && notice.trim()) {
         await sendRoomText(roomId, notice.trim(), { 'com.construct.machine': { kind: 'scheduled', source: key } })

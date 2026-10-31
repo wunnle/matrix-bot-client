@@ -41,9 +41,36 @@ const CASES = [
   ['Bash', 'rm -rf ~/matrix-pwa/src', 'human'],
   ['Bash', 'mv ~/.hermes/rooms.yaml /tmp/x', 'human'],
   ['Bash', 'cp /etc/hostname /tmp/x', 'auto'],   // reads out, writes in
-  ['Bash', 'cp ~/.hermes/rooms.yaml /tmp/x', 'human'],  // …unless what it reads is a secret
+  ['Bash', 'cp ~/.hermes/rooms.yaml /tmp/x', 'auto'],
+  ['Bash', 'cp ~/.hermes/.env /tmp/x', 'human'],  // …unless what it reads is a secret
   ['Bash', 'chmod +x /usr/local/bin/thing', 'human'],
   ['Bash', 'echo hi > /etc/motd', 'human'],
+  // Creating files anywhere in $HOME is fine; the gate and shell startup are not.
+  ['Bash', 'ln -sfn /home/wunnle/matrix-pwa/node_modules node_modules', 'auto'],
+  ['Bash', 'echo "- x" >> ~/Documents/Obsidian/Daily\\ Notes/today.md', 'auto'],
+  ['Bash', 'echo "alias x=y" >> ~/.bashrc', 'human'],
+  ['Bash', 'cp /tmp/page ~/.local/bin/page', 'human'],
+  ['Bash', 'cp /tmp/tool ~/.local/bin/colonist-keys', 'auto'],
+
+  // User services: restart freely, except the bot that runs every room.
+  ['Bash', 'systemctl --user restart pebble-index.service', 'auto'],
+  ['Bash', 'systemctl --user daemon-reload && systemctl --user restart colonist-katan-sync.timer', 'auto'],
+  ['Bash', 'systemctl restart nginx', 'human'],
+  ['Bash', 'systemctl --user poweroff', 'human'],
+  ['Bash', 'systemctl --user status claude-code-bot', 'auto'],
+
+  // Reading GitHub is a GET; changing it is not.
+  ['Bash', 'gh repo view simbasjungles/free-my-tv', 'auto'],
+  ['Bash', 'gh api repos/a/b/readme --jq .content', 'auto'],
+  ['Bash', 'gh release list --repo a/b --limit 3', 'auto'],
+  ['Bash', 'gh api -X PATCH user/repository_invitations/1', 'human'],
+  ['Bash', 'gh api repos/a/b/issues -f title=x', 'human'],
+  ['Bash', 'gh release download v1 --repo a/b', 'human'],
+  ['Bash', 'curl -s -X HEAD https://example.com/', 'auto'],
+
+  // Hermes code and logs are not credentials; its keys still are.
+  ['Bash', 'tail -15 ~/.hermes/profiles/colonist/logs/agent.log', 'auto'],
+  ['Bash', 'grep -E "^MATRIX_ALLOWED_USERS=" ~/.hermes/.env', 'human'],
 
   // Credentials, whatever the tool.
   ['Bash', 'cat ~/.hermes/.env', 'human'],
@@ -55,9 +82,20 @@ const CASES = [
   ['Bash', `cat ~/.hermes/.env\n# in ${WORKTREE}`, 'human'],
   ['Bash', 'cat scripts/.claude-bot-store/.session.json', 'human'],
 
-  // Writes reaching here already failed the sandbox check in the hook.
-  ['Write', '# write /home/wunnle/matrix-pwa/src/App.tsx\n+x', 'human'],
+  // Writes reaching here already failed the sandbox check in the hook. In auto
+  // mode they may go anywhere in $HOME but a short protected list.
+  ['Write', '# write /home/wunnle/matrix-pwa/src/App.tsx\n+x', 'auto'],
+  ['Edit', '# edit /home/wunnle/Documents/Obsidian/People/Dang Nguyen.md\n-a\n+b', 'auto'],
+  ['Edit', '# edit /home/wunnle/.config/systemd/user/pebble-index.service\n-a\n+b', 'auto'],
+  // Mentioning a secret in the text is not writing to it.
+  ['Edit', '# edit /home/wunnle/Documents/Obsidian/Bender/Functionalities/Hermes.md\n-a\n+see ~/.hermes/.env', 'auto'],
   ['Edit', '# edit /etc/hosts\n-a\n+b', 'human'],
+  ['Edit', '# edit /home/wunnle/.hermes/.env\n-a\n+b', 'human'],
+  ['Edit', '# edit /home/wunnle/.hermes/config.yaml\n-a\n+b', 'human'],
+  ['Edit', '# edit /home/wunnle/.claude/settings.json\n-a\n+b', 'human'],
+  ['Edit', '# edit /home/wunnle/.bashrc\n-a\n+b', 'human'],
+  ['Write', '# write /home/wunnle/matrix-pwa/scripts/approval-rules.mjs\n+x', 'human'],
+  ['Edit', '# edit /home/wunnle/.claude/projects/-home-wunnle-matrix-pwa/memory/x.md (all occurrences)\n-a\n+b', 'auto'],
 
   // Wrappers must not launder the program they run.
   ['Bash', 'env sudo ls', 'human'],

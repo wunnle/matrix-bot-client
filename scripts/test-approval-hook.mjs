@@ -95,7 +95,14 @@ const CASES = [
   // 2g — cp is judged on its destination; the sources are reads.
   ['cp /etc/hostname /tmp/x', 'allow'],
   // …except where the source is a secret: copying it out is reading it.
-  ['cp /home/wunnle/.hermes/rooms.yaml /tmp/x', 'deny'],
+  ['cp /home/wunnle/.hermes/rooms.yaml /tmp/x', 'allow'],   // room config, not a credential
+  ['cp /home/wunnle/.hermes/credentials/google-calendar-token.json /tmp/x', 'deny'],
+  ['ln -sfn /home/wunnle/matrix-pwa/node_modules node_modules', 'allow'],
+  ['ln -s /tmp/x /home/wunnle/.bashrc', 'deny'],
+  ['curl -s -o /dev/null -w "%{http_code}" -X HEAD https://example.com/', 'allow'],
+  ['grep -rn foo /home/wunnle/.hermes/scripts', 'allow'],
+  ['grep -rn foo /home/wunnle/.hermes', 'deny'],             // walks into .env
+  ['grep -rn foo /home/wunnle/.hermes/profiles/colonist', 'deny'],
   ['cp notes.md /etc/notes.md', 'deny'],
   ['cp onearg', 'deny'],
   // 3 — writes into sandbox roots.
@@ -268,7 +275,9 @@ for (const [tool, input, expected, why] of [
   ['Read', { file_path: '/home/wunnle/.npmrc' }, 'deny', 'npm token'],
   ['Grep', { pattern: 'KEY', path: '/home/wunnle/.openclaw/.env' }, 'deny', 'grep leaks contents too'],
   ['Read', { file_path: '/home/wunnle/.hermes/.env' }, 'deny', 'hermes .env'],
-  ['Read', { file_path: '/home/wunnle/.hermes/profiles/colonist/config.yaml' }, 'deny', 'hermes profile'],
+  ['Read', { file_path: '/home/wunnle/.hermes/profiles/colonist/auth.json' }, 'deny', 'hermes profile auth'],
+  ['Read', { file_path: '/home/wunnle/.hermes/backups/auth.json.bak-provider-fix' }, 'deny', 'hermes backups'],
+  ['Read', { file_path: '/home/wunnle/.hermes/state/google-calendar-personal-oauth-session.json' }, 'deny', 'hermes oauth state'],
   ['Read', { file_path: '~/.aws/config' }, 'deny', 'aws, via ~'],
   ['Read', { file_path: '/home/wunnle/.config/gh/hosts.yml' }, 'deny', 'gh token'],
   ['Read', { file_path: '/home/wunnle/.netrc' }, 'deny', 'netrc'],
@@ -296,6 +305,10 @@ for (const [tool, input, expected, why] of [
   ['Grep', { pattern: 'env', glob: '*.ts' }, 'allow', 'ordinary grep filter'],
   ['Read', { file_path: path.join(WORKTREE, 'src/lib/environment.ts') }, 'allow', 'env in the name is not a .env'],
   ['Read', { file_path: '/etc/hostname' }, 'allow', 'reads outside the tree stay free'],
+  ['Read', { file_path: '/home/wunnle/.hermes/profiles/colonist/config.yaml' }, 'allow', 'hermes config holds no keys'],
+  ['Read', { file_path: '/home/wunnle/.hermes/rooms.yaml' }, 'allow', 'hermes room config'],
+  ['Read', { file_path: '/home/wunnle/.hermes/scripts/note_add.py' }, 'allow', 'hermes script'],
+  ['Grep', { pattern: 'x', path: '/home/wunnle/.hermes/skills' }, 'allow', 'grep hermes skills'],
 ]) {
   const got = ask(tool, input)
   if (got !== expected) { failed++; console.log(`FAIL  ${tool} ${why}: want ${expected}, got ${got}`) }
@@ -322,6 +335,17 @@ for (const [file, expected] of [
   [path.join(WORKTREE, 'src/app.ts'), 'allow'],
   ['/tmp/scratch.md', 'allow'],
   ['/home/wunnle/.claude/settings.json', 'deny'],
+  // Standing approvals: Bender notes, Hermes skills/scripts/rooms, Claude memory.
+  ['/home/wunnle/Documents/Obsidian/Bender/Functionalities/Lore 2.md', 'allow'],
+  ['/home/wunnle/.hermes/skills/note-taking/obsidian/SKILL.md', 'allow'],
+  ['/home/wunnle/.hermes/profiles/colonist/skills/x/SKILL.md', 'allow'],
+  ['/home/wunnle/.hermes/scripts/event_notes.py', 'allow'],
+  ['/home/wunnle/.hermes/rooms.yaml', 'allow'],
+  ['/home/wunnle/.claude/projects/-home-wunnle-matrix-pwa/memory/MEMORY.md', 'allow'],
+  ['/home/wunnle/.hermes/config.yaml', 'deny'],
+  ['/home/wunnle/.hermes/profiles/colonist/SOUL.md', 'deny'],
+  ['/home/wunnle/.hermes/skills/x/.env', 'deny'],
+  ['/home/wunnle/Documents/Obsidian/People/Someone.md', 'deny'],
 ]) {
   const got = ask('Write', { file_path: file, content: 'x' })
   if (got !== expected) { failed++; console.log(`FAIL  Write ${file}: want ${expected}, got ${got}`) }

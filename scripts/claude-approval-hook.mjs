@@ -9,8 +9,8 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import {
-  AUTO_ALLOW, PATH_SCOPED, SAFE_SKILLS, artifactIsSafe, bashIsSafe, commandWords, isSandboxPath,
-  linksToSecret, stripHeredocs, toolReadsSecret,
+  AUTO_ALLOW, PATH_SCOPED, SAFE_SKILLS, artifactIsSafe, bashIsSafe, commandWords, isPreapprovedWrite,
+  isSandboxPath, linksToSecret, stripHeredocs, toolReadsSecret,
 } from './approval-rules.mjs'
 
 const BROKER_URL = process.env.AGENT_APPROVAL_URL ?? 'http://127.0.0.1:8787/approve'
@@ -132,11 +132,14 @@ if (toolName === 'Skill' && SAFE_SKILLS.has(toolInput.skill)) {
   decide('allow', `Pre-approved skill: ${toolInput.skill}.`)
 }
 
-if (PATH_SCOPED.has(toolName)) {
-  const target = toolInput.file_path ?? toolInput.path ?? toolInput.notebook_path
-  if (target && isSandboxPath(target, cwd)) {
-    decide('allow', 'Write inside the session directory or scratch space.')
-  }
+const writeTarget = PATH_SCOPED.has(toolName)
+  ? toolInput.file_path ?? toolInput.path ?? toolInput.notebook_path
+  : undefined
+if (writeTarget && isSandboxPath(writeTarget, cwd)) {
+  decide('allow', 'Write inside the session directory or scratch space.')
+}
+if (writeTarget && isPreapprovedWrite(writeTarget, cwd) && !linksToSecret([writeTarget], cwd, realpath)) {
+  decide('allow', 'Write to a pre-approved note, skill or memory file.')
 }
 
 if (toolName === 'Bash' && bashIsSafe(toolInput.command, cwd)
@@ -170,6 +173,8 @@ try {
       // A read tool only reaches here for reading a secret; auto mode needs
       // its input to see that, because a Glob's summary omits the pattern.
       input: AUTO_ALLOW.has(toolName) ? toolInput : undefined,
+      // A write is judged on its file, which the summary only carries as text.
+      target: writeTarget,
       // Set only when a subagent made the call, so the card can say whose it is.
       agentType: typeof payload.agent_type === 'string' ? payload.agent_type : undefined,
     }),

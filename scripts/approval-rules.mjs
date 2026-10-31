@@ -32,7 +32,10 @@ const SCRATCH_ROOTS = ['/tmp', '/var/tmp', WORKTREES_ROOT, PROJECTS_ROOT]
 // saves the response outside the sandbox still asks — `curl … | sh` is the shape
 // this hook exists to stop, and that is caught by `sh` being an unknown program
 // in the next segment, not by the URL.
-const HTTP_MUTATES = /(^|\s)(-X\s*(?!GET\b)|--request\s+(?!GET\b)|-d\b|--data\S*|-F\b|--form\b|-T\b|--upload-file\b|--config\b|-K\b|--post\S*|--method\s+(?!GET\b))/
+// HEAD is a GET without the body, and `curl -I` already sends one unasked.
+// The `(?!\s|…)` stops `\s*` backtracking to zero spaces, where the lookahead
+// would see " GET" and so never match the exemption.
+const HTTP_MUTATES = /(^|\s)(-X\s*(?!\s|(GET|HEAD)\b)|--request\s+(?!\s|(GET|HEAD)\b)|-d\b|--data\S*|-F\b|--form\b|-T\b|--upload-file\b|--config\b|-K\b|--post\S*|--method\s+(?!\s|(GET|HEAD)\b))/
 // Where a download may land: discarded, stdout, or inside a sandbox root.
 function outputTargetOk(target, effCwd, cwd) {
   if (!target) return false
@@ -162,10 +165,13 @@ const GUARDED_BINS = {
   chmod: /-R\b|--recursive\b/,
 }
 // Bins whose non-flag arguments are paths that must land in a sandbox root.
-const PATH_ARG_BINS = new Set(['chmod', 'mkdir', 'touch', 'cp'])
+const PATH_ARG_BINS = new Set(['chmod', 'mkdir', 'touch', 'cp', 'ln'])
 // For these only the destination is written; the sources are reads, and reading
 // is unrestricted. `mv` is deliberately not here — it deletes its source too.
-const DEST_ONLY_BINS = new Set(['cp'])
+// `ln`'s source is only a name the link points at — `ln -s ~/matrix-pwa/
+// node_modules node_modules` is how a worktree gets its dependencies. A link
+// that points at a secret is still caught when something reads through it.
+const DEST_ONLY_BINS = new Set(['cp', 'ln'])
 // Run another program rather than doing anything themselves, so the wrapper's
 // own name says nothing about what actually executes: `env rm -rf …` must be
 // judged on `rm`, not on `env`.
@@ -316,8 +322,14 @@ const SECRET_PATTERNS = [
   /(^|\/)\.gnupg(\/|$)/,
   /(^|\/)\.aws(\/|$)/,
   /(^|\/)\.config\/gh(\/|$)/,
-  // Hermes keeps its .env and every profile's keys under here.
-  /(^|\/)\.hermes(\/|$)/,
+  // Hermes keeps its keys in .env files (caught above), auth.json (caught
+  // below) and these three directories: OAuth clients and tokens, the OAuth
+  // session state, and backups of all of the above. The rest of ~/.hermes is
+  // scripts, skills, logs and room config that agents read constantly, and
+  // counting the whole tree as a secret made every Hermes job a run of taps.
+  /(^|\/)\.hermes\/(credentials|state|backups)(\/|$)/,
+  // auth.json and its backups (auth.json.bak-…), in ~/.codex and every Hermes profile.
+  /(^|\/)auth\.json(\.[^/]*)?$/,
   // The bot's Matrix session, in every checkout and worktree. Its bot.log is
   // the one file left out: it is the only log on this Pi, agents debugging the
   // bot read it constantly, and a scan found no tokens in it — what it records
@@ -372,7 +384,8 @@ function globToRegex(glob) {
 // A glob cannot be matched against the disk without I/O, so it is matched
 // against where the secrets are: the fixed ones in $HOME, and the ones that can
 // sit in any directory, placed under the glob's own literal prefix.
-const HOME_SECRET_PROBES = ['.hermes/.env', '.hermes/profiles/p/.env', '.ssh/id_rsa', '.ssh/id_ed25519',
+const HOME_SECRET_PROBES = ['.hermes/.env', '.hermes/profiles/p/.env', '.hermes/auth.json',
+  '.hermes/profiles/p/auth.json', '.hermes/credentials/c.json', '.hermes/state/s', '.ssh/id_rsa','.ssh/id_ed25519',
   '.gnupg/k', '.aws/credentials', '.config/gh/hosts.yml', '.netrc', '.vercel-bender-token',
   '.codex/auth.json', '.claude/.credentials.json', '.npmrc', '.pgpass'].map((p) => `${HOME}/${p}`)
 const LOCAL_SECRET_PROBES = ['.env', '.env.local', 'x/.env', '.claude-bot-store/s.json',
@@ -418,11 +431,34 @@ export function isSecretPath(target, cwd) {
   })
 }
 
-// True for $HOME and every directory above it. Nothing there is a secret by
-// itself, but a recursive search from one walks into all of them.
+// True for $HOME, every directory above it, and every directory that holds one
+// of the fixed secrets (~/.hermes, ~/.hermes/profiles/x). Nothing there is a
+// secret by itself, but a recursive search from one walks into them.
 export function containsHomeSecrets(target, cwd) {
   const resolved = path.resolve(cwd ?? '.', expandHome(target))
-  return resolved === HOME || HOME.startsWith(resolved === '/' ? '/' : `${resolved}/`)
+  if (resolved === HOME || HOME.startsWith(resolved === '/' ? '/' : `${resolved}/`)) return true
+  const profile = /^(.*\/\.hermes\/profiles)\/[^/]+$/.exec(resolved)
+  return HOME_SECRET_PROBES.some((p) => p.startsWith(`${resolved}/`))
+    || Boolean(profile && profile[1] === `${HOME}/.hermes/profiles`)
+}
+
+// Writes outside the sandbox that Sinan has approved standing: the Bender
+// notes in the vault, Hermes skills, scripts and room config, and Claude's own
+// memory. Each is text that agents are told to keep current, and a tap per
+// edit was the most common card in the approval log.
+const PREAPPROVED_WRITES = [
+  `${HOME}/Documents/Obsidian/Bender/`,
+  `${HOME}/.hermes/skills/`,
+  `${HOME}/.hermes/scripts/`,
+  /^\.hermes\/profiles\/[^/]+\/skills\//,
+  /^\.hermes\/(profiles\/[^/]+\/)?rooms\.yaml$/,
+  /^\.claude\/projects\/[^/]+\/memory\//,
+]
+export function isPreapprovedWrite(target, cwd) {
+  if (!target || isSecretPath(target, cwd)) return false
+  const resolved = path.resolve(cwd ?? '.', expandHome(target))
+  const rel = resolved.startsWith(`${HOME}/`) ? resolved.slice(HOME.length + 1) : null
+  return PREAPPROVED_WRITES.some((p) => (typeof p === 'string' ? resolved.startsWith(p) : rel !== null && p.test(rel)))
 }
 
 // Symlinks need the filesystem, so the caller lends its realpath and the rules
@@ -430,9 +466,14 @@ export function containsHomeSecrets(target, cwd) {
 export function linksToSecret(targets, cwd, realpath) {
   return targets.some((t) => {
     if (!t || GLOB_CHARS.test(t)) return false
+    const named = path.resolve(cwd ?? '.', expandHome(t))
     let real
-    try { real = realpath(path.resolve(cwd ?? '.', expandHome(t))) } catch { return false }
-    return isSecretPath(real, '/')
+    try { real = realpath(named) } catch { return false }
+    // A link to a directory that holds secrets is a way for a search to walk
+    // into them; reading the directory itself would be harmless, so the cost
+    // of counting it is one prompt. Only for a link: naming ~ directly is
+    // already judged by the recursive-search rules.
+    return isSecretPath(real, '/') || (real !== named && containsHomeSecrets(real, '/'))
   })
 }
 
@@ -793,13 +834,78 @@ const NEVER_AUTO_BINS = new Set([
   // Privilege escalation — the worktree stops mattering the moment these run.
   'sudo', 'doas', 'su', 'pkexec',
   // The machine itself. A Pi that reboots mid-turn cannot be asked about it.
-  'shutdown', 'reboot', 'poweroff', 'halt', 'systemctl', 'mkfs', 'fdisk', 'dd',
+  // (`systemctl --user` is judged separately below.)
+  'shutdown', 'reboot', 'poweroff', 'halt', 'mkfs', 'fdisk', 'dd',
   // Leaving this machine: publishing, deploying, or reaching another host.
-  'ssh', 'scp', 'rsync', 'vercel', 'gh',
+  // (`gh`'s read-only verbs are judged separately below.)
+  'ssh', 'scp', 'rsync', 'vercel',
 ])
 // Bins that destroy or relocate whatever they are pointed at. Allowed under auto
 // mode only while every path argument stays in a sandbox root.
-const PATH_DESTRUCTIVE_BINS = new Set(['rm', 'rmdir', 'mv', 'cp', 'chmod', 'chown', 'truncate', 'ln', 'install'])
+const PATH_DESTRUCTIVE_BINS = new Set(['rm', 'rmdir', 'mv', 'truncate'])
+// Bins that create or change files without destroying a source. Under auto mode
+// they may write wherever an Edit may (see autoMayWrite).
+const PATH_WRITE_BINS = new Set(['cp', 'chmod', 'chown', 'ln', 'install'])
+
+// The user's own services are this Pi's apps — dev previews, Hermes gateways,
+// timers — and restarting one is the routine last step of changing it. Only the
+// user manager is reachable without sudo, which auto mode never answers. The bot
+// itself is the exception: restarting it cuts off every room's turn at once.
+const SYSTEMCTL_POWER_VERBS = new Set(['poweroff', 'reboot', 'halt', 'kexec', 'suspend', 'hibernate', 'exit', 'soft-reboot'])
+function systemctlVeto(tokens) {
+  if (!tokens.includes('--user')) return '`systemctl` without --user reaches the whole machine'
+  if (tokens.some((t) => SYSTEMCTL_POWER_VERBS.has(t))) return '`systemctl` would power off or exit the session'
+  if (tokens.some((t) => /^claude-code-bot(\.service)?$/.test(t))
+    && !tokens.some((t) => SAFE_SUBCOMMANDS.systemctl.has(t))) return 'restarting the bot cuts off every room'
+  return null
+}
+
+// Reading GitHub is the same class of act as a curl GET, which auto mode
+// already answers. Creating, editing, merging or downloading still asks.
+const GH_READS = {
+  repo: ['view', 'list'], release: ['view', 'list'], pr: ['view', 'list', 'diff', 'checks', 'status'],
+  issue: ['view', 'list', 'status'], run: ['view', 'list'], workflow: ['view', 'list'], gist: ['view', 'list'],
+  search: null, browse: null, status: null,
+}
+function ghIsRead(tokens) {
+  const words = tokens.slice(1).filter((t) => !t.startsWith('-'))
+  if (words[0] === 'api') {
+    return !/(^|\s)(-X\s*(?!GET\b)|--method\s+(?!GET\b)|-f\b|-F\b|--field\b|--raw-field\b|--input\b)/.test(tokens.slice(1).join(' '))
+  }
+  if (!(words[0] in GH_READS)) return false
+  const verbs = GH_READS[words[0]]
+  return verbs === null || verbs.includes(words[1])
+}
+
+// Under auto mode a write may leave the sandbox for anywhere in $HOME, except
+// the few files whose change outlives the room in a way nobody would review:
+// Claude's own settings, shell startup files, Hermes' model config, the
+// approval gate itself, and the helpers it lets run unprompted.
+const AUTO_PROTECTED_WRITES = [
+  /^\.claude\/(?!projects\/[^/]+\/memory\/)/,
+  /^\.[^/]+$/,                                   // ~/.bashrc, ~/.profile, ~/.gitconfig
+  /^\.hermes\/(profiles\/[^/]+\/)?config\.yaml$/,
+  /^matrix-pwa\/scripts\/(approval-rules|claude-approval-hook|approval-queue)\.mjs$/,
+  /^\.config\/systemd\/user\/claude-code-bot\.service$/,
+]
+function autoMayWrite(target, cwd) {
+  if (!target) return false
+  if (isSandboxPath(target, cwd)) return true
+  if (isSecretPath(target, cwd)) return false
+  const resolved = path.resolve(cwd ?? '.', expandHome(target))
+  if (!resolved.startsWith(`${HOME}/`)) return false
+  const rel = resolved.slice(HOME.length + 1)
+  if (rel.startsWith('.local/bin/') && HELPER_BINS.has(rel.slice('.local/bin/'.length))) return false
+  if (PREAPPROVED_SCRIPT_PATHS.has(resolved)) return false
+  return !AUTO_PROTECTED_WRITES.some((re) => re.test(rel))
+}
+
+// The file a write tool's summary names on its first line (`# edit <path>`),
+// for callers that did not send the target on its own.
+function summaryTarget(summary) {
+  const first = String(summary ?? '').split('\n')[0]
+  return /^# (?:edit|write|notebook \S+) (.+?)(?: \(all occurrences\)| \(cell .*\))?$/.exec(first)?.[1]
+}
 
 // The program a segment really runs, or null when it names none. Same unwrapping
 // bashIsSafe does — keywords, VAR=val assignments, wrappers — kept separate
@@ -823,31 +929,42 @@ function segmentHead(seg) {
 
 // Why this call still needs a human despite auto mode, or null if it does not.
 // The string is shown in the room, so it reads as a reason and not a code.
-export function requiresHuman({ toolName, summary, cwd, input } = {}) {
+export function requiresHuman({ toolName, summary, cwd, input, target } = {}) {
   const dir = cwd ?? '.'
+  // A write is judged on the file it names, never on the text it writes: a
+  // note that merely *mentions* ~/.hermes/.env is not a write to it.
+  if (PATH_SCOPED.has(toolName)) {
+    const file = target ?? summaryTarget(summary)
+    if (file && isSecretPath(file, dir)) return 'it writes to a secret file'
+    return autoMayWrite(file, dir) ? null : 'it writes to a protected file or outside your home directory'
+  }
+
   // Credentials first, and for every tool: a secret leaving is the one mistake
   // that cannot be undone by throwing the worktree away. The read tools are
   // judged on their input where the caller sends it, since a Glob's summary
   // does not carry its pattern.
   if (AUTO_ALLOW.has(toolName) && input && toolReadsSecret(toolName, input, dir)) return 'it reads a secret file'
-  if (commandTouchesSecret(summary ?? '', dir)) {
-    return PATH_SCOPED.has(toolName) ? 'it writes to a secret file' : 'it reads a secret file'
-  }
-
-  // A write reaching here already failed the sandbox check in the hook, so the
-  // target is outside the room's worktree and scratch space by definition.
-  if (PATH_SCOPED.has(toolName)) return 'it writes outside the room worktree'
+  if (commandTouchesSecret(summary ?? '', dir)) return 'it reads a secret file'
 
   if (toolName !== 'Bash') return null
 
   const cmd = stripHeredocs(String(summary ?? ''))
   for (const seg of splitSegments(cmd)) {
-    if (!redirectTargetsAllowed(seg, dir)) return 'it redirects output outside the worktree'
+    const text = unquoted(seg).replace(/\d*>&\d+/g, '').replace(/[&\d]*>\s*\/dev\/null/g, '')
+    const redirects = [...text.matchAll(/>>?\s*([^\s>|;&]+)/g)].map((m) => m[1])
+    if (text.replace(/>>?\s*[^\s>|;&]+/g, '').includes('>') || !redirects.every((t) => autoMayWrite(t, dir))) {
+      return 'it redirects output to a protected file or outside your home directory'
+    }
     const head = segmentHead(seg)
     if (!head) continue
     const { base, tokens } = head
     if (!base) return 'the wrapper hides which program runs'
     if (NEVER_AUTO_BINS.has(base)) return `\`${base}\` reaches outside this room`
+    if (base === 'systemctl') {
+      const veto = systemctlVeto(tokens)
+      if (veto) return veto
+    }
+    if (base === 'gh' && !ghIsRead(tokens)) return '`gh` would change something on GitHub'
     // `git push` is the step that leaves the Pi. Everything else git does is
     // either already allowed without asking or confined to the branch.
     if (base === 'git' && tokens.slice(1).some((t) => t === 'push')) return 'it pushes to a remote'
@@ -856,14 +973,19 @@ export function requiresHuman({ toolName, summary, cwd, input } = {}) {
     // a body is data leaving the machine, which is the same class as a push.
     if ((base === 'curl' || base === 'wget') && !httpIsRead(tokens, dir, dir)) return 'it sends data off this machine'
     if (PATH_DESTRUCTIVE_BINS.has(base)) {
-      const args = tokens.slice(1).filter((t) => !t.startsWith('-'))
-      // Only the destination is written by a copy, and reading is unrestricted;
       // `mv` is judged on every argument because it deletes its source too.
-      const paths = base === 'chmod' || base === 'chown' ? args.slice(1)
-        : base === 'cp' || base === 'install' ? args.slice(-1)
-        : args
+      const paths = tokens.slice(1).filter((t) => !t.startsWith('-'))
       if (!paths.length || !paths.every((p) => isSandboxPath(p, dir))) {
         return `\`${base}\` is pointed outside the worktree`
+      }
+    }
+    if (PATH_WRITE_BINS.has(base)) {
+      const args = tokens.slice(1).filter((t) => !t.startsWith('-'))
+      // Only the destination is written by a copy or a link, and reading is
+      // unrestricted; chmod and chown take a mode or owner first.
+      const paths = base === 'chmod' || base === 'chown' ? args.slice(1) : args.slice(-1)
+      if (!paths.length || !paths.every((p) => autoMayWrite(p, dir))) {
+        return `\`${base}\` is pointed at a protected file or outside your home directory`
       }
     }
   }

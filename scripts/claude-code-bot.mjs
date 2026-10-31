@@ -961,6 +961,7 @@ function runTurn(roomId, prompt) {
       drop: (reason) => questions.drop(roomId, reason),
     },
     onProgress: (progress) => {
+      resumeTyping(roomId)
       sendToolProgress(roomId, progress).catch((e) => log(`Could not post tool progress: ${e.message}`))
     },
     // What the agent says between tool calls. A real message, not machine
@@ -968,8 +969,17 @@ function runTurn(roomId, prompt) {
     // turn's answer is still coming. Dropped after !stop like the answer is.
     onText: (text) => {
       if (stopped.has(roomId)) return
+      resumeTyping(roomId)
       sendRoomText(roomId, text, { 'com.construct.interim': true })
         .catch((e) => log(`Could not post interim text: ${e.message}`))
+    },
+    // The answer of a turn that left background work running. It is posted
+    // now, as the CLI would show it, and the room stays open to messages.
+    onReply: ({ text }) => {
+      if (stopped.has(roomId)) return
+      awaitingBackground.add(roomId)
+      client.sendTyping(roomId, false).catch(() => {})
+      sendRoomText(roomId, text).catch((e) => log(`Could not post reply: ${e.message}`))
     },
     // A subagent's card, re-sent as it works; providers without subagents
     // never call it.
@@ -1319,6 +1329,12 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted 
 const startTs = Date.now()
 // Rooms with a turn in flight — Claude Code turns are not concurrency-safe per session.
 const busy = new Set()
+// Busy rooms whose agent has answered and is only waiting on background work.
+// Still busy — messages steer into the same process — but not typing.
+const awaitingBackground = new Set()
+function resumeTyping(roomId) {
+  if (awaitingBackground.delete(roomId)) client.sendTyping(roomId, true, 30000).catch(() => {})
+}
 
 // Messages that arrived while a turn was running, per room. Nothing is said in
 // the timeline about them: an unprocessed message is one that has no read
@@ -1607,7 +1623,7 @@ async function drainRoom(roomId, first, firstPrompt = null) {
   // leave this room permanently busy before the cleanup block is installed.
   await client.sendTyping(roomId, true, 30000).catch(() => {})
   const keepAlive = setInterval(() => {
-    client.sendTyping(roomId, true, 30000).catch(() => {})
+    if (!awaitingBackground.has(roomId)) client.sendTyping(roomId, true, 30000).catch(() => {})
   }, 25000)
 
   try {
@@ -1673,7 +1689,8 @@ async function drainRoom(roomId, first, firstPrompt = null) {
               saveSessions()
             }
             await setBlocked(roomId, null)
-            await sendRoomText(roomId, res.error ? `⚠️ ${res.error}` : res.text)
+            // A reply posted while background work ran is not posted twice.
+            if (!res.delivered) await sendRoomText(roomId, res.error ? `⚠️ ${res.error}` : res.text)
           }
         }
       } catch (e) {
@@ -1697,6 +1714,7 @@ async function drainRoom(roomId, first, firstPrompt = null) {
     // live queue to join.
     clearInterval(keepAlive)
     queued.delete(roomId)
+    awaitingBackground.delete(roomId)
     busy.delete(roomId)
     await client.sendTyping(roomId, false).catch(() => {})
   }
@@ -2203,6 +2221,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
     if (busy.has(roomId) && !stopped.has(roomId) && provider.steer(roomId, text)) {
       await client.sendReadReceipt(event).catch(() => {})
+      resumeTyping(roomId)
       log(`Steered the turn in ${roomId}`)
       return
     }

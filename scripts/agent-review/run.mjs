@@ -21,7 +21,7 @@ const KINDS = {
     label: 'Hermes (Bender and the other profiles)',
     collect: collectHermes,
     sources: [
-      '   - Conversations: `~/.hermes/state.db` and `~/.hermes/profiles/<name>/state.db`, tables `sessions` and `messages` (by `session_id`). Open them read-only with `node:sqlite` (`new DatabaseSync(file, { readOnly: true })`) in a small .mjs file in your scratchpad; there is no sqlite3 CLI.',
+      '   - Conversations: `node ~/matrix-pwa/scripts/agent-review/session.mjs <profile|default> <session_id> [--from N] [--max CHARS]` prints one, and `… <profile> --list [days]` lists recent ones. It is pre-approved; writing your own script to read a state.db is not, and would stop the run on an approval.',
       '   - Logs: `~/.hermes/logs/` and `~/.hermes/profiles/<name>/logs/` (`agent.log` names the model that actually answered).',
     ],
     scope: [
@@ -83,6 +83,9 @@ const res = await fetch(`http://127.0.0.1:${PORT}/scheduled-turn`, {
   body: JSON.stringify({
     key: 'agent-review',
     name: 'Agent review',
+    // Its own folder, not the repo: decisions.md is writable without a tap and
+    // session.mjs stays a pre-approved script rather than one the room could edit.
+    cwd: STATE,
     notice: `🔎 ${title}: ${report.count} signals from the last ${days} days. Checking them now.`,
     prompt,
   }),

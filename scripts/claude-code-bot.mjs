@@ -739,6 +739,9 @@ function handleBrowse(req, res) {
 // The broker is loopback-only, but this one runs a turn with no human asking,
 // so it also wants the token in SCHEDULE_TOKEN_FILE.
 const SCHEDULE_TOKEN_FILE = path.join(STORE_DIR, 'schedule.token')
+const UNATTENDED_DENIAL = 'Unattended scheduled run: nobody is there to approve, so anything that would ask is refused. ' +
+  'Use full paths, read-only commands and pre-approved helpers instead, and do not cd into other directories. ' +
+  'If you really need this, say so in your report for Sinan to run.'
 function scheduleToken() {
   try { return fs.readFileSync(SCHEDULE_TOKEN_FILE, 'utf8').trim() } catch {}
   const token = randomBytes(32).toString('hex')
@@ -784,7 +787,7 @@ function handleScheduledTurn(req, res) {
         return reply(409, { error: 'room is busy', roomId })
       }
       const { auto, ...kept } = sessions[roomId]
-      sessions[roomId] = { ...kept, cwd, sessionId: null }
+      sessions[roomId] = { ...kept, cwd, sessionId: null, unattended: true }
       saveSessions()
       if (typeof notice === 'string' && notice.trim()) {
         await sendRoomText(roomId, notice.trim(), { 'com.construct.machine': { kind: 'scheduled', source: key } })
@@ -827,6 +830,16 @@ function startApprovalBroker() {
         return
       }
       log(`[${roomId}] approval requested: ${payload.toolName} — ${payload.summary}`)
+
+      // A scheduled turn runs with nobody watching, so a card would only stall
+      // it. Refused on the spot, with a reason the agent can work around; once
+      // Sinan replies in the room it is a conversation again (see drainRoom).
+      if (sessions[roomId]?.unattended) {
+        log(`[${roomId}] approval deny (unattended): ${payload.toolName}`)
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ decision: 'deny', reason: UNATTENDED_DENIAL }))
+        return
+      }
 
       // If the hook goes away before the human answers — it aborted, or the
       // socket died — drop *this* request rather than leaving it stranded. It
@@ -1759,6 +1772,8 @@ async function drainRoom(roomId, first, firstPrompt = null) {
       // The receipt is the "picked up" signal behind the second check. Receipts
       // are monotonic, so marking the newest event of the batch covers them all.
       if (batch.length) await client.sendReadReceipt(batch[batch.length - 1]).catch(() => {})
+      // Someone typed: a scheduled room is a conversation now, and asks as usual.
+      if (batch.length && sessions[roomId]?.unattended) { delete sessions[roomId].unattended; saveSessions() }
       let modelOutcomeRecorded = false
       try {
         const parts = []

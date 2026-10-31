@@ -5,7 +5,7 @@
 
 ## This turn: read only
 
-Change nothing. No edits outside `{{STATE}}`, no restarts, no worker rooms. Every read you need is free of approvals; if one asks, you are reading something you should not (a `.env`, `auth.json`, a token), so skip it.
+Change nothing. No edits outside `{{STATE}}`, no restarts, no worker rooms. Every read you need is free of approvals when you name files by their full path and do not `cd` into other directories. If one asks anyway, you are reading something you should not (a `.env`, `auth.json`, a token), so skip it. This run has no one watching; an approval stalls it.
 
 1. Read the findings. Most items are noise. For the promising ones, open the source and find out what actually happened:
 {{SOURCES}}

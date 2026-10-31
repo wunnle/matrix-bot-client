@@ -7,6 +7,7 @@
 //
 // Wired up via --settings; see APPROVAL_SETTINGS in claude-code-bot.mjs.
 import * as fs from 'node:fs'
+import * as http from 'node:http'
 import * as path from 'node:path'
 import {
   AUTO_ALLOW, PATH_SCOPED, SAFE_SKILLS, artifactIsSafe, bashIsSafe, commandWords, isPreapprovedWrite,
@@ -153,14 +154,30 @@ const untrimmed = describe(toolName, toolInput, Infinity)
 // Only worth carrying when it says more than the card already does.
 const full = untrimmed !== summary ? untrimmed.slice(0, MAX_FULL_CHARS) : undefined
 
+// node:http rather than fetch: fetch's built-in headers timeout is a fixed five
+// minutes, so it gave up on a card the human still had five minutes to answer —
+// the agent was told "denied" while the card in the room still looked live.
+function post(url, body, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
+    }, (res) => {
+      let text = ''
+      res.setEncoding('utf8')
+      res.on('data', (c) => { text += c })
+      res.on('end', () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, text }))
+      res.on('error', reject)
+    })
+    req.setTimeout(timeoutMs, () => req.destroy(new Error(`no answer in ${Math.round(timeoutMs / 60000)} min`)))
+    req.on('error', reject)
+    req.end(body)
+  })
+}
+
 let res
 try {
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
-  res = await fetch(BROKER_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
+  res = await post(BROKER_URL, JSON.stringify({
       // The room is authoritative; sessionId is only a fallback for the broker.
       roomId: process.env.AGENT_ROOM_ID,
       sessionId,
@@ -177,9 +194,7 @@ try {
       target: writeTarget,
       // Set only when a subagent made the call, so the card can say whose it is.
       agentType: typeof payload.agent_type === 'string' ? payload.agent_type : undefined,
-    }),
-    signal: ctrl.signal,
-  }).finally(() => clearTimeout(timer))
+  }), TIMEOUT_MS)
 } catch (e) {
   decide('deny', `Could not reach the approval broker (${e.message}). Denied by default.`)
 }
@@ -188,6 +203,7 @@ if (!res.ok) {
   decide('deny', `Approval broker returned ${res.status}. Denied by default.`)
 }
 
-const body = await res.json().catch(() => null)
+let body = null
+try { body = JSON.parse(res.text) } catch { /* treated as a denial below */ }
 if (body?.decision === 'allow') decide('allow', body.reason ?? 'Approved in chat.')
 decide('deny', body?.reason ?? 'Denied in chat.')

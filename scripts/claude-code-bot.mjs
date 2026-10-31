@@ -354,8 +354,8 @@ const AUTO_DEFAULT_MS = Number(process.env.AGENT_AUTO_TTL_MS ?? 2 * 60 * 60 * 10
 // What turning auto mode on means, said the same way however it was turned on.
 const AUTO_ON_TERMS =
   "I'll approve my own tool calls and report each one.\n\n" +
-  'Still asking: credentials, writes outside this worktree, `sudo`, `systemctl`, pushes, and anything that ' +
-  'leaves this machine.\n\n[[!auto off]]'
+  'Still asking: credentials, writes outside your home folder or to settings and shell files, `sudo`, ' +
+  'restarting the bot, pushes, and anything that leaves this machine.\n\n[[!auto off]]'
 
 // The live auto-mode state for a room, or null. Lapsed entries are cleared as
 // they are read, so nothing has to sweep them.

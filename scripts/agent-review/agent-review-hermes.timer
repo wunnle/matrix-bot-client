@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly Hermes agent review, Mondays
+
+[Timer]
+# 10:00, after the 09:00 Functionalities audit.
+OnCalendar=Mon *-*-* 10:00
+Persistent=true
+Unit=agent-review@hermes.service
+
+[Install]
+WantedBy=timers.target

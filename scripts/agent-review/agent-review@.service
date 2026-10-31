@@ -1,0 +1,22 @@
+# Weekly agent review, one instance per set of agents: agent-review@hermes,
+# agent-review@claude. Started by agent-review-hermes.timer and
+# agent-review-claude.timer; see scripts/agent-review/run.mjs.
+#
+# Install:
+#   ln -sf ~/matrix-pwa/scripts/agent-review/agent-review@.service \
+#          ~/matrix-pwa/scripts/agent-review/agent-review-hermes.timer \
+#          ~/matrix-pwa/scripts/agent-review/agent-review-claude.timer ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now agent-review-hermes.timer agent-review-claude.timer
+#
+# Run one now:  systemctl --user start agent-review@hermes
+
+[Unit]
+Description=Weekly agent review (%i)
+After=claude-code-bot.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/wunnle/matrix-pwa
+Environment=PATH=/home/wunnle/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/node --no-warnings /home/wunnle/matrix-pwa/scripts/agent-review/run.mjs %i

@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly Claude-bot agent review, Thursdays
+
+[Timer]
+OnCalendar=Thu *-*-* 10:00
+Persistent=true
+Unit=agent-review@claude.service
+
+[Install]
+WantedBy=timers.target

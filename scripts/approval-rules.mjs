@@ -890,7 +890,7 @@ const AUTO_PROTECTED_WRITES = [
   /^\.claude\/(?!projects\/[^/]+\/memory\/)/,
   /^\.[^/]+$/,                                   // ~/.bashrc, ~/.profile, ~/.gitconfig
   /^\.hermes\/(profiles\/[^/]+\/)?config\.yaml$/,
-  /^matrix-pwa\/scripts\/(approval-rules|claude-approval-hook|approval-queue)\.mjs$/,
+  /^matrix-pwa\/scripts\/(approval-rules|claude-approval-hook|approval-queue|deploy-grant)\.mjs$/,
   /^\.config\/systemd\/user\/claude-code-bot\.service$/,
 ]
 function autoMayWrite(target, cwd) {
@@ -995,6 +995,134 @@ export function requiresHuman({ toolName, summary, cwd, input, target } = {}) {
     }
   }
   return null
+}
+
+// ---------------------------------------------------------------------------
+// Deploy grant: one tap on the deploy skill covers that deploy's own steps.
+//
+// The skill's steps — merge into ~/matrix-pwa, push, restart the bot — asked a
+// card each, five in a minute, and every one was approved within seconds. A tap
+// per step was not review, only latency. So approving the skill opens a short
+// grant in that room (deploy-grant.mjs keeps it), and while it is open the
+// shapes below run without a card. Only these: the grant names the steps of one
+// skill, and anything else in the same command must still pass bashIsSafe on
+// its own, from the directory it runs in.
+const DEPLOY_REPO = path.join(HOME, 'matrix-pwa')
+// The detached restart, exactly as the skill writes it. `$$` arrives literally:
+// the hook sees the command before the shell expands it.
+const DEPLOY_RESTART = ['systemd-run', '--user', '--collect', '--unit=deploy-restart-$$',
+  'systemctl', '--user', 'restart', 'claude-code-bot.service']
+// Flags each git step may carry. An allowlist, so `--force`, `-u`, `--amend`,
+// `--no-verify` and `-c` ask because nothing here names them.
+const DEPLOY_GIT_FLAGS = {
+  pull: ['-q', '--quiet', '--ff-only', '--no-rebase', '--no-edit'],
+  merge: ['-q', '--quiet', '--no-edit', '--no-ff', '--ff-only'],
+  add: ['-A', '--all', '-u', '--update'],
+  commit: ['-q', '--quiet', '--no-edit', '-a', '--all'],
+  push: ['-q', '--quiet'],
+}
+// These take the next word as their value: a message, or a file holding one.
+const COMMIT_MESSAGE_FLAGS = new Set(['-m', '--message', '-F', '--file'])
+
+// The words a program receives from one segment, with redirections taken out —
+// their targets are judged by redirectTargetsAllowed — so `git push -q 2>&1` is
+// `git push -q`, and a quoted commit message stays one word.
+function argWords(seg) {
+  const words = []
+  let cur = ''
+  let started = false
+  let quote = null
+  let dropNext = false
+  const push = () => {
+    if (started) { if (dropNext) dropNext = false; else words.push(cur) }
+    cur = ''
+    started = false
+  }
+  for (let i = 0; i < seg.length; i++) {
+    const c = seg[i]
+    if (quote) {
+      if (c === quote) quote = null
+      else if (c === '\\' && quote === '"' && i + 1 < seg.length) cur += seg[++i]
+      else cur += c
+      continue
+    }
+    if (c === '"' || c === "'") { quote = c; started = true; continue }
+    if (c === '\\' && seg[i + 1] === '\n') { i++; continue }  // line continuation
+    if (c === '\\' && i + 1 < seg.length) { cur += seg[++i]; started = true; continue }
+    if (c === '>' || c === '<') {
+      // An fd glued to the operator is part of it: the 2 in `2>&1`.
+      if (/^[\d&]*$/.test(cur)) { cur = ''; started = false } else push()
+      while (seg[i + 1] === '>' || seg[i + 1] === '&') i++
+      dropNext = true
+      continue
+    }
+    if (/\s/.test(c)) { push(); continue }
+    cur += c
+    started = true
+  }
+  push()
+  return words
+}
+
+function deployStep(words, effCwd) {
+  if (words.length === DEPLOY_RESTART.length && words.every((w, i) => w === DEPLOY_RESTART[i])) return true
+  // Polls Vercel and prints one line; nothing it is given changes what it reaches.
+  if (words[0] === 'vercel-wait') return true
+  if (words[0] !== 'git' || effCwd !== DEPLOY_REPO) return false
+  const [sub, ...rest] = words.slice(1)
+  // The merge conflict the version-bump hook causes every time, resolved the
+  // one way the skill allows.
+  if (sub === 'checkout') return ['--ours package.json', '--ours -- package.json'].includes(rest.join(' '))
+  const flags = DEPLOY_GIT_FLAGS[sub]
+  if (!flags) return false
+  const args = []
+  for (let i = 0; i < rest.length; i++) {
+    const w = rest[i]
+    if (sub === 'commit' && COMMIT_MESSAGE_FLAGS.has(w)) { i++; continue }
+    if (sub === 'commit' && /^--(message|file)=/.test(w)) continue
+    if (w.startsWith('-')) { if (!flags.includes(w)) return false; continue }
+    args.push(w)
+  }
+  if (sub === 'merge') return args.length === 1 && /^agent\/[\w.\-/]+$/.test(args[0])
+  if (sub === 'add') {
+    return args.every((a) => {
+      const p = path.resolve(effCwd, expandHome(a))
+      return p === DEPLOY_REPO || p.startsWith(DEPLOY_REPO + path.sep)
+    })
+  }
+  if (sub === 'commit') return args.length === 0
+  // pull and push: the tracked branch, or origin main said out loud. ~/matrix-pwa
+  // stays on main — nothing above can switch it — so both mean origin main.
+  return args.length === 0 || (args.length === 2 && args[0] === 'origin' && args[1] === 'main')
+}
+
+// True when a deploy grant answers this command: at least one segment is a
+// deploy step, and every other segment is one the hook allows anyway. The
+// secret check runs first, as everywhere else.
+export function deployGrantCovers(command, cwd) {
+  let cmd = String(command ?? '').trim()
+  if (!cmd || !cwd) return false
+  if (commandTouchesSecret(cmd, cwd)) return false
+  if (/(^|\s)sudo(\s|$)/.test(cmd)) return false
+  cmd = stripHeredocs(cmd)
+  const resolved = resolveSubstitutions(cmd, cwd)
+  if (resolved === null) return false
+  let effCwd = path.resolve(cwd)
+  let deploys = false
+  const ok = splitSegments(resolved).every((seg) => {
+    if (!redirectTargetsAllowed(seg, cwd)) return false
+    const words = stripKeywords(argWords(seg))
+    if (!words.length) return true
+    if (words[0] === 'cd') {
+      if (words.length !== 2) return false
+      effCwd = path.resolve(effCwd, expandHome(words[1]))
+      return true
+    }
+    if (deployStep(words, effCwd)) { deploys = true; return true }
+    // Judged as if it ran alone from where it runs, with the turn's own roots.
+    return !/\s/.test(effCwd) && bashIsSafe(`cd ${effCwd} && ${seg}`, cwd)
+  })
+  return ok && deploys
 }
 
 // A git write is pre-approved only when it acts on the room's own worktree: the

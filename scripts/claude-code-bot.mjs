@@ -20,6 +20,7 @@ import { createApprovalQueue } from './approval-queue.mjs'
 import { createQuestionQueue } from './question-queue.mjs'
 import { parseTrusted, inviteAllowed, mayPrompt, mayAnswer, isOwnAgentRoom } from './sender-policy.mjs'
 import { requiresHuman } from './approval-rules.mjs'
+import { APPROVE_DEPLOY, createDeployGrants, isDeploySkill } from './deploy-grant.mjs'
 import { detectLimitBlock, isQuotaBlockedState } from './limit-block.mjs'
 import { createProcessSampler } from './process-usage.mjs'
 import { fetchPlanUsage, sameUsage, fetchCodexUsage, sameCodexUsage } from './plan-usage.mjs'
@@ -287,16 +288,17 @@ const approvals = createApprovalQueue({
   timeoutMs: APPROVAL_TIMEOUT_MS,
   onTimeout: (roomId, toolName) =>
     sendRoomText(roomId, `⏱️ No answer — denied \`${toolName}\`.`).catch(() => {}),
-  // Waiting calls go through the same auto-mode rules as new ones, so turning it
-  // on from a card covers what queued up behind that card too.
-  autoAnswer: (roomId, request) => autoApprove(roomId, request),
+  // Waiting calls go through the same auto-mode and deploy-grant rules as new
+  // ones, so turning either on from a card covers what queued up behind it too.
+  autoAnswer: (roomId, request) => standingAnswer(roomId, request),
   present: (roomId, request, abandon) => {
     const { toolName, summary, full, lang, allowSession = false, vetoReason, agentType } = request
     // "Approve + auto" only while auto mode is off: when it is on, this card is
     // here because auto mode refused the call, and switching it on again would
-    // not change that.
+    // not change that. The deploy skill's approve names what one tap covers.
+    const approve = isDeploySkill(request) ? APPROVE_DEPLOY : 'Approve'
     const buttons = [
-      '[[Deny]] [[Approve]]',
+      `[[Deny]] [[${approve}]]`,
       allowSession && '[[Always allow]]',
       !autoMode(roomId) && `[[${APPROVE_AND_AUTO}]]`,
     ].filter(Boolean).join(' ')
@@ -412,10 +414,36 @@ function autoApprove(roomId, request) {
   return { decision: 'allow', reason: 'Auto-approved (auto mode is on for this room).' }
 }
 
-// Approvals still go through the queue unless the room is in auto mode and the
-// call is one auto mode is allowed to answer.
+// Deploy grants: approving the deploy skill covers its merge, push and restart
+// for the rest of the turn (15 min at most). In memory only, so the restart a
+// deploy ends with drops it. The shapes it covers are in approval-rules.mjs.
+const deployGrants = createDeployGrants({ owner: OWNER_ID })
+
+// The grant's answer to a call, or null. Reported like auto mode's, and checked
+// before it: auto mode never answers a push or a bot restart.
+function deployGrantApprove(roomId, request) {
+  if (!deployGrants.covers(roomId, request)) return null
+  const first = String(request.summary ?? '').split('\n')[0]
+  sendRoomText(roomId, `🚀 Covered by the deploy approval: ${fencedBlock(first, 'cmd')}`, {
+    'com.construct.machine': { kind: 'notification', source: 'deploy-grant' },
+  }).catch(() => {})
+  log(`[${roomId}] deploy grant approved ${request.toolName}`)
+  return { decision: 'allow', reason: 'Covered by the deploy approval for this turn.' }
+}
+
+const standingAnswer = (roomId, request) => deployGrantApprove(roomId, request) ?? autoApprove(roomId, request)
+
+// Opens a deploy grant when the card being answered is the deploy skill's.
+// Called before the card settles, so a call queued behind it already finds it.
+function openDeployGrant(roomId, sender) {
+  return isDeploySkill(approvals.current(roomId)) && deployGrants.open(roomId, sender)
+}
+
+// Approvals still go through the queue unless the room holds a deploy grant
+// that covers the call, or is in auto mode and the call is one auto mode is
+// allowed to answer.
 const askForApproval = (roomId, request) => {
-  const answer = autoApprove(roomId, request)
+  const answer = standingAnswer(roomId, request)
   if (answer) return Promise.resolve(answer)
   const veto = autoMode(roomId) && requiresHuman(request)
   if (veto) {
@@ -1796,7 +1824,8 @@ async function drainRoom(roomId, first, firstPrompt = null) {
         const consumedReports = [...(sessions[roomId]?.agentReports ?? [])]
         // This turn carries every report so far, so a pending wake has nothing left to say.
         if (sessions[roomId]?.agentWakePending) { delete sessions[roomId].agentWakePending; saveSessions() }
-        const res = await runTurn(roomId, prompt)
+        // A deploy grant lasts one turn at most, however that turn ends.
+        const res = await runTurn(roomId, prompt).finally(() => deployGrants.end(roomId))
         refreshUsage()
         if (!stopped.has(roomId)) {
           // A quota block is not a failure of this prompt, so the prompt is kept
@@ -2338,9 +2367,12 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     return
   }
   const answer = fromOwner ? body.toLowerCase() : null
-  if (answer === 'approve' || answer === 'yes' || answer === 'y') {
+  if (answer === 'approve' || answer === 'yes' || answer === 'y' || answer === APPROVE_DEPLOY.toLowerCase()) {
+    const granted = openDeployGrant(roomId, event.getSender())
     if (settleApproval(roomId, 'allow', 'Approved in chat.')) {
-      await sendRoomText(roomId, '✅ Approved — continuing.', ack)
+      await sendRoomText(roomId, granted
+        ? '✅ Approved — the merge, push and restart this deploy needs won\'t ask again this turn.'
+        : '✅ Approved — continuing.', ack)
       return
     }
   }
@@ -2358,6 +2390,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   // Already on, the card never offered this (auto mode refused the call), so a
   // typed one is just an approval — not a reason to restart the clock.
   if (answer === APPROVE_AND_AUTO.toLowerCase() && autoMode(roomId)) {
+    openDeployGrant(roomId, event.getSender())
     if (settleApproval(roomId, 'allow', 'Approved in chat.')) {
       await sendRoomText(roomId, '✅ Approved — continuing. (Auto mode was already on.)', ack)
       return
@@ -2365,6 +2398,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   }
   if (answer === APPROVE_AND_AUTO.toLowerCase() && fromOwner && approvals.has(roomId)) {
     const started = setAutoMode(roomId, true)
+    openDeployGrant(roomId, event.getSender())
     settleApproval(roomId, 'allow', 'Approved in chat; auto mode turned on.')
     // Not machine-flagged like the other acks: this changes how the room
     // behaves from here on, which is worth a line you actually see.

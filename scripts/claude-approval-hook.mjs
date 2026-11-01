@@ -189,7 +189,8 @@ try {
       cwd,
       // A read tool only reaches here for reading a secret; auto mode needs
       // its input to see that, because a Glob's summary omits the pattern.
-      input: AUTO_ALLOW.has(toolName) ? toolInput : undefined,
+      // A Skill's tells the bot which skill, which a clipped summary may not.
+      input: AUTO_ALLOW.has(toolName) || toolName === 'Skill' ? toolInput : undefined,
       // A write is judged on its file, which the summary only carries as text.
       target: writeTarget,
       // Set only when a subagent made the call, so the card can say whose it is.

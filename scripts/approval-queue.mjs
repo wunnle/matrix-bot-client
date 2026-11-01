@@ -17,7 +17,7 @@
 // auto mode switched on while a card was showing must also cover the calls
 // queued behind it, not only the ones that arrive later.
 export function createApprovalQueue({ timeoutMs, maxQueued = 5, present, onTimeout, autoAnswer }) {
-  // roomId -> { id, resolve, timer, toolName }. One question on screen at a
+  // roomId -> { id, resolve, timer, toolName, request }. One question on screen at a
   // time: two cards in a room are ambiguous, because [[Approve]] names no card.
   const pending = new Map()
   // roomId -> [{ id, request, resolve }] waiting their turn.
@@ -35,7 +35,7 @@ export function createApprovalQueue({ timeoutMs, maxQueued = 5, present, onTimeo
       resolve({ decision: 'deny', reason: 'Timed out waiting for approval.' })
       next(roomId)
     }, timeoutMs)
-    pending.set(roomId, { id, resolve, timer, toolName: request.toolName })
+    pending.set(roomId, { id, resolve, timer, toolName: request.toolName, request })
     present(roomId, request, (reason) => release(roomId, id, reason))
   }
 
@@ -116,6 +116,8 @@ export function createApprovalQueue({ timeoutMs, maxQueued = 5, present, onTimeo
 
   // Whether a card is on screen, i.e. whether an answer would settle anything.
   const has = (roomId) => pending.has(roomId)
+  // The request on screen, so an answer can depend on what it is answering.
+  const current = (roomId) => pending.get(roomId)?.request ?? null
 
-  return { ask, settle, release, dropQueued, has }
+  return { ask, settle, release, dropQueued, has, current }
 }

@@ -7,6 +7,8 @@ import { donateShareTargets, getAppIcon, setAppIcon } from '../lib/liveActivity'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { toggleDebug } from '../lib/debug'
 import { apiUrl } from '../lib/apiUrl'
+import { getConnectionLog } from '../lib/connectionLog'
+import { copyTextToClipboard } from '../lib/clipboard'
 
 interface Props {
   auth: AuthState
@@ -68,6 +70,13 @@ async function debugNotifications() {
     }),
   ]
   alert(report.join('\n'))
+}
+
+// Pasted into an agent room to diagnose drops; see lib/connectionLog.ts.
+async function copyConnectionLog() {
+  const log = getConnectionLog()
+  await copyTextToClipboard(log || 'Connection log is empty.')
+  alert(log ? `Copied ${log.split('\n').length} lines.` : 'Connection log is empty.')
 }
 
 // The web app is served over the network (see capacitor.config.ts), so this
@@ -249,6 +258,7 @@ export default function Settings({ auth, clientReady, dictationAutoSend, onDicta
 
       <section className="settings-section">
         <button className="settings-action" onClick={() => void debugNotifications()}>Debug notifications</button>
+        <button className="settings-action" onClick={() => void copyConnectionLog()}>Copy connection log</button>
         <button className="settings-action" onClick={() => void reloadApp()}>Reload app</button>
         <button className="settings-action settings-action--danger" onClick={onSignOut}>Sign out</button>
       </section>

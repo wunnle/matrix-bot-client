@@ -3,6 +3,7 @@ import type { AuthState } from '../types'
 import { loadAuth } from './auth'
 import { AGENT_ROOM_TYPE, seedAgentPills } from './roomMeta'
 import { isBotAgentInvite } from './agentInvite'
+import { loggingFetch, startConnectionLog } from './connectionLog'
 
 // The Claude Code bot, whose agent-room invites are accepted without asking.
 // Pinned rather than inferred from rooms already joined: one manual Accept of a
@@ -291,9 +292,11 @@ async function doInit(auth: AuthState): Promise<RoomSummary[]> {
     deviceId: auth.deviceId,
     // Required for getEventTimeline (/context); defaults to false otherwise.
     timelineSupport: true,
+    fetchFn: loggingFetch,
     ...(s ? { store: s } : {}),
   })
   const c = client
+  startConnectionLog(c)
 
   const storageKey = getCryptoStorageKey(auth.userId, auth.deviceId)
 

@@ -244,6 +244,24 @@ await new Promise((resolve, reject) => {
   client.startClient({ lazyLoadMembers: true })
 })
 
+// Log every change in the sync loop's health, with the error that caused it and
+// how long the outage lasted, so a "bot went quiet" report can be matched to
+// what matrix.org was doing at the time. Steady SYNCING is not logged.
+let syncDownSince = null
+client.on(sdk.ClientEvent.Sync, (state, prev, data) => {
+  if (state === prev) return
+  if (state === 'SYNCING' || state === 'PREPARED') {
+    if (syncDownSince) {
+      log(`Sync recovered (${prev} → ${state}) after ${Math.round((Date.now() - syncDownSince) / 1000)}s`)
+      syncDownSince = null
+    }
+    return
+  }
+  syncDownSince ??= Date.now()
+  const err = data?.error
+  log(`Sync ${prev ?? 'none'} → ${state}${err ? `: ${err.name ?? 'Error'} ${err.httpStatus ?? ''} ${err.message}` : ''}`)
+})
+
 log('Ready. Joined rooms:')
 client.getRooms().filter((r) => r.getMyMembership() === 'join').forEach((r) => {
   const s = sessions[r.roomId]

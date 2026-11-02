@@ -157,8 +157,10 @@ const GUARDED_BINS = {
   // journalctl reads logs; these flags delete, rotate or re-key them.
   journalctl: /--(vacuum-\w+|rotate|flush|sync|relinquish-var|setup-keys|update-catalog|header)\b/,
   // systemctl's read-only verbs are handled via SAFE_SUBCOMMANDS.
-  // sed prints to stdout unless asked to rewrite the file under it.
-  sed: /(^|\s)-[a-zA-Z]*i([a-zA-Z]*)?(\s|=|$)|--in-place\b/,
+  // sed prints to stdout unless asked to rewrite the file under it — or, in GNU
+  // sed, to run its pattern space as a command (`e`, `s///e`) or write a file
+  // (`w`, `s///w`), which the quoted program hid from every other check.
+  sed: /(^|\s)-[a-zA-Z]*i([a-zA-Z]*)?(\s|=|$)|--in-place\b|(^|[\s'";{}\d$!])[eEwW](\s|$|['";}])|[^\w\s\\-][gpiImM0-9]*[eEwW](\s|$|['";}])/,
   // An awk program can open files for writing and shell out. The program text is
   // quoted, so the segment-level redirect check never sees these.
   awk: /print[^|]*>|>>|\bsystem\s*\(|\bclose\s*\(|\|\s*&?\s*"/,
@@ -474,6 +476,10 @@ export function linksToSecret(targets, cwd, realpath) {
     const named = path.resolve(cwd ?? '.', expandHome(t))
     let real
     try { real = realpath(named) } catch { return false }
+    // No link on the way: the path is what it says, and the rules have already
+    // judged it as written — including a `cd` into a secret directory, which is
+    // allowed when what runs there names only files that are not secret.
+    if (real === named) return false
     // A link to a directory that holds secrets is a way for a search to walk
     // into them; reading the directory itself would be harmless, so the cost
     // of counting it is one prompt. Only for a link: naming ~ directly is
@@ -525,7 +531,77 @@ function recursesFromHome(words, effCwd) {
   const args = words.slice(at + 1).filter((w) => !w.startsWith('-'))
   // With only a pattern, the search starts where the command runs.
   if (args.length < 2 && containsHomeSecrets('.', effCwd)) return true
-  return args.some((a) => containsHomeSecrets(a, effCwd))
+  // A root held in a variable could be ~ itself.
+  return args.some((a) => hasExpansion(a) || containsHomeSecrets(a, effCwd))
+}
+
+// The text the shell still expands: everything outside single quotes.
+function outsideSingleQuotes(seg) {
+  let out = ''
+  let quote = null
+  for (let i = 0; i < seg.length; i++) {
+    const c = seg[i]
+    if (quote === "'") { if (c === "'") quote = null; continue }
+    if (c === '\\' && i + 1 < seg.length) { out += c + seg[++i]; continue }
+    if (c === "'" && !quote) { quote = c; continue }
+    if (c === '"') quote = quote ? null : '"'
+    out += c
+  }
+  return out
+}
+
+// Programs that read only the files they are handed by name, or stdin.
+const NAMED_READERS = new Set(['cat', 'head', 'tail', 'grep', 'egrep', 'fgrep', 'wc', 'cut', 'sort', 'uniq',
+  'tr', 'jq', 'echo', 'printf', 'pwd', 'ls', 'stat', 'file', 'du', 'tree', 'date', 'sleep', 'true', 'false',
+  'test', '[', '[[', 'nl', 'tac', 'comm', 'column', 'basename', 'dirname', 'awk', 'gawk', 'sed', 'diff'])
+// True when a segment, run inside a directory that holds secrets, could read a
+// file it does not name. A named file is judged by the word checks; these are
+// the ways round them: `ls | xargs cat`, `cat $(ls)`, `grep -r token`, an awk
+// `getline` or a sed `r` reading a file named inside the program text.
+function readsUnnamed(seg) {
+  if (hasExpansion(outsideSingleQuotes(seg))) return true
+  let words = stripKeywords(argWords(seg))
+  while (words.length && ASSIGNMENT.test(words[0])) words = words.slice(1)
+  if (!words.length) return false
+  const base = words[0]
+  if (!NAMED_READERS.has(base)) return true
+  const args = words.slice(1)
+  if ((GREP_BINS.has(base) || base === 'diff')
+    && args.some((f) => /^-[a-zA-Z]*[rR][a-zA-Z]*$|^--(dereference-)?recursive$|^--directories=recurse$/.test(f))) return true
+  if ((base === 'awk' || base === 'gawk') && args.some((a) => /\bgetline\b|(^|\s)-f\b/.test(a))) return true
+  if (base === 'sed' && args.some((a) => /(^|[;{}\n\d$/!])\s*[rR]\s+\S/.test(a))) return true
+  // Flags whose value is a file read alongside the operands.
+  if (args.some((a) => /^(-f|--file|--from-file|--to-file|--rawfile|--slurpfile|--exclude-from)(=|$)/.test(a))) return true
+  // `<` reads a file without naming it as an operand.
+  if (/(^|[^<])<(?![<(])/.test(unquoted(seg))) return true
+  return false
+}
+
+// The words of a segment that its program opens as files. Needed only inside a
+// directory that holds secrets, where every relative word would otherwise be
+// judged as a file in it — `grep 429 bot.log` would count `429` and `grep`.
+// Errs towards counting: a flag's separate value (`head -n 5`) is dropped only
+// when it is a number, so `cut -d , -f 1` counts `,` and asks.
+const PROGRAM_FIRST = new Set(['grep', 'egrep', 'fgrep', 'sed', 'awk', 'gawk', 'jq'])
+const NO_FILES = new Set(['echo', 'printf', 'pwd', 'date', 'sleep', 'true', 'false', 'test', '[', '[[', 'basename', 'dirname'])
+function fileOperands(seg) {
+  let words = stripKeywords(argWords(seg))
+  while (words.length && ASSIGNMENT.test(words[0])) words = words.slice(1)
+  const base = words[0]
+  if (!base || NO_FILES.has(base)) return []
+  let operands = []
+  let endOfFlags = false
+  const args = words.slice(1)
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (!endOfFlags && a === '--') { endOfFlags = true; continue }
+    if (!endOfFlags && base === 'jq' && (a === '--arg' || a === '--argjson')) { i += 2; continue }
+    if (!endOfFlags && a.length > 1 && a.startsWith('-')) continue
+    operands.push(a)
+  }
+  // The pattern or program comes first, unless a flag supplied it.
+  if (PROGRAM_FIRST.has(base) && !args.some((a) => /^(-e|--regexp|--expression)(=|$)/.test(a))) operands = operands.slice(1)
+  return operands.filter((a) => !/^[+-]?\d+([,.:-]\d+)*$/.test(a))
 }
 
 // True when any word of a command names a secret. Deliberately blunt: it does
@@ -533,19 +609,39 @@ function recursesFromHome(words, effCwd) {
 // and `cat ~/.codex/auth.json` both leak and neither is worth modelling
 // precisely. A false positive costs one prompt. A `cd` moves where later
 // relative words resolve, so `cd ~/.config && cat gh/hosts.yml` counts.
+//
+// The cd itself names no file: `cd ~/matrix-pwa/scripts/.claude-bot-store &&
+// grep 429 bot.log` reads only bot.log. But once the command stands in a
+// directory that holds secrets (or one it cannot name), every later segment
+// must name what it reads — see readsUnnamed.
 export function commandTouchesSecret(command, cwd) {
   let effCwd = cwd ?? '.'
-  return splitSegments(stripHeredocs(String(command ?? ''))).some((seg) => {
-    const all = commandWords(seg)
-    // Before the keywords come off: a `for f in ~/.ssh/*` header names no
-    // program, but its words are what the loop body reads.
-    if (all.some((w) => isSecretPath(w, effCwd))) return true
-    const words = stripKeywords(all)
-    if (words[0] === 'cd' && words.length <= 2) {
-      effCwd = path.resolve(effCwd, expandHome(words[1] ?? '~'))
+  let prevCwd = null
+  const blind = (dir) => dir === null || isSecretPath(dir, '/') || containsHomeSecrets(dir, '/')
+  let inSecrets = blind(path.resolve(effCwd))
+  // An unresolved `$NAME` could hold any path, so it is judged as a glob there.
+  const secret = (w) => isSecretPath(w, effCwd ?? '.')
+    || (hasExpansion(w) && isSecretPath(w.replace(/\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/g, '*'), effCwd ?? '.'))
+  return splitSegments(expandVariables(stripHeredocs(String(command ?? '')))).some((seg) => {
+    const cd = cdTarget(seg, effCwd, prevCwd)
+    if (cd && !cd.bad) {
+      prevCwd = effCwd
+      effCwd = cd.to
+      inSecrets = blind(effCwd)
       return false
     }
-    return recursesFromHome(words, effCwd)
+    const all = commandWords(seg)
+    if (inSecrets) {
+      if (readsUnnamed(seg)) return true
+      // Paths spelled out in full are judged as anywhere else; relative words
+      // only when the program opens them.
+      if (all.filter((w) => /^[/~]/.test(w)).some(secret) || fileOperands(seg).some(secret)) return true
+    } else if (all.some(secret)) {
+      // Before the keywords come off: a `for f in ~/.ssh/*` header names no
+      // program, but its words are what the loop body reads.
+      return true
+    }
+    return recursesFromHome(stripKeywords(all), effCwd ?? '.')
   })
 }
 
@@ -583,40 +679,183 @@ export function isSandboxPath(target, cwd) {
 // into" — always yes, which quietly allowed `cd ~/.hermes && mkdir x`. Relative
 // paths must resolve against where the command actually runs while still being
 // judged against the roots of the directory the *turn* started in.
+//
+// Bash words arrive with their quotes, and `"/etc/x"` is not a relative path:
+// left quoted it resolved inside the worktree and `mkdir "/etc/x"` passed. A word
+// that still expands (`$D/x`, `$(…)/x`) could be anywhere, so it never counts.
 export function isSandboxPathFrom(target, effCwd, cwd) {
-  const resolved = path.resolve(effCwd, String(target).replace(/^~(?=\/|$)/, HOME))
+  const word = String(target).replace(/['"]/g, '')
+  if (effCwd === null || hasExpansion(word)) return false
+  const resolved = path.resolve(effCwd, word.replace(/^~(?=\/|$)/, HOME))
   return isSandboxPath(resolved, cwd)
 }
 
 // Splits a command line on unquoted `|`, `||`, `&&`, `;` and newline. A naive
 // regex split treats a `|` inside quotes as a pipeline, so `grep "a\|b" f` was
 // judged as a call to `grep "a\` and denied — the operator is data there, not
-// syntax. Single `&` is deliberately not a separator, so `2>&1` survives.
+// syntax. A single `&` separates too — `sleep 1 & rm -rf x` runs both, and
+// treating it as part of the first segment let the second through as `sleep`'s
+// arguments — except where it belongs to a redirect: `2>&1`, `&>`, `>&`.
 export function splitSegments(cmd) {
+  return splitWithSeparators(cmd).map((s) => s.text.trim()).filter(Boolean)
+}
+
+// splitSegments, keeping each segment's text untouched and the operator that
+// ends it, so the command can be put back together after rewriting a segment.
+// `nested` also keeps `$(…)` and backticks whole, for callers that run before
+// the substitutions are resolved.
+function splitWithSeparators(cmd, { nested = false } = {}) {
   const segs = []
   let cur = ''
   let quote = null
+  let depth = 0
   for (let i = 0; i < cmd.length; i++) {
     const c = cmd[i]
+    if (quote === "'") {
+      cur += c
+      if (c === "'") quote = null
+      continue
+    }
+    if (c === '\\' && i + 1 < cmd.length) { cur += c + cmd[++i]; continue }
+    if (nested && c === '$' && cmd[i + 1] === '(') { depth++; cur += '$('; i++; continue }
+    if (nested && depth && c === ')') { depth--; cur += c; continue }
+    if (nested && c === '`') { quote = quote === '`' ? null : (quote ?? '`'); cur += c; continue }
     if (quote) {
       cur += c
-      // A backslash escapes the next character inside "" but not inside ''.
-      if (c === '\\' && quote === '"' && i + 1 < cmd.length) cur += cmd[++i]
-      else if (c === quote) quote = null
+      if (c === quote) quote = null
       continue
     }
     if (c === '"' || c === "'") { quote = c; cur += c; continue }
-    if (c === '\\' && i + 1 < cmd.length) { cur += c + cmd[++i]; continue }
-    if (c === ';' || c === '\n' || c === '|' || (c === '&' && cmd[i + 1] === '&')) {
-      if ((c === '|' && cmd[i + 1] === '|') || c === '&') i++
-      segs.push(cur)
+    if (depth) { cur += c; continue }
+    const background = c === '&' && cmd[i + 1] !== '&' && cmd[i + 1] !== '>' && !/[<>]$/.test(cur)
+    if (c === ';' || c === '\n' || c === '|' || (c === '&' && cmd[i + 1] === '&') || background) {
+      const sep = (c === '|' && cmd[i + 1] === '|') || (c === '&' && cmd[i + 1] === '&') ? c + cmd[++i] : c
+      segs.push({ text: cur, sep })
       cur = ''
       continue
     }
     cur += c
   }
-  segs.push(cur)
-  return segs.map((s) => s.trim()).filter(Boolean)
+  segs.push({ text: cur, sep: '' })
+  return segs
+}
+
+// ---------------------------------------------------------------------------
+// Shell variables an agent sets for itself.
+//
+// `D=/tmp/…/scratchpad; ls $D` and `L=…/bot.log; grep 429 $L` were among the
+// commonest prompts: the rules saw `$D` as a word, not as the path it is. So a
+// variable assigned a plain value earlier in the same command is put back where
+// it is used, and the command is judged as if it had been typed out in full.
+// That cuts both ways — `D=/etc; echo x > $D/motd` used to pass, because `$D/motd`
+// looked like a relative path inside the worktree.
+//
+// Only plain values are known: no quotes inside, no `$(…)`, no backslashes. A
+// variable set any other way — from a substitution, by `read` or a `for` loop,
+// inside an if/loop body, in a pipeline — is left as `$NAME`, and a path that
+// still holds a `$` is never treated as inside the sandbox.
+const PLAIN_VALUE = /^[\w@%+=:,./~^!*?[\] -]*$/
+// Names whose value changes what a later program does rather than what it is
+// handed: the loader, the search paths, git's and node's hooks, pagers, and the
+// variables this file itself relies on to resolve paths.
+const UNSAFE_ASSIGN = /^(LD_\w*|DYLD_\w*|PATH|IFS|CDPATH|HOME|PWD|OLDPWD|BASH_ENV|ENV|PS4|PROMPT_COMMAND|SHELLOPTS|BASHOPTS|GLOBIGNORE|SHELL|GIT_\w*|NODE_OPTIONS|NODE_PATH|PYTHON\w*|PERL5\w*|RUBY\w*|PAGER|MANPAGER|SYSTEMD_PAGER|LESS\w*|EDITOR|VISUAL|BROWSER|[nN][pP][mM]_[cC][oO][nN][fF][iI][gG]_\w*|XDG_\w*|TMPDIR)$/
+const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)\+?=/
+export function isUnsafeAssignment(word) {
+  const m = ASSIGNMENT.exec(word)
+  return Boolean(m && UNSAFE_ASSIGN.test(m[1]))
+}
+// Expansions whose value is only ever a number: the shell's pid, the last
+// status, a random number. Harmless in a path (`/tmp/out-$$.txt`).
+const NUMERIC_PARAMS = /\$(\$|\?|!|#|\{?RANDOM\}?(?!\w))/g
+// True when a word still expands to something these rules could not see.
+export function hasExpansion(word) {
+  return /[$`]/.test(String(word).replace(/\\[\\$`]/g, '').replace(NUMERIC_PARAMS, ''))
+}
+
+// Replaces `$NAME` and `${NAME}` with known values, outside single quotes.
+function substituteRefs(text, vars) {
+  let out = ''
+  let quote = null
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (quote === "'") { out += c; if (c === "'") quote = null; continue }
+    if (c === '\\' && i + 1 < text.length) { out += c + text[++i]; continue }
+    if (c === "'" && !quote) { quote = c; out += c; continue }
+    if (c === '"') { quote = quote ? null : '"'; out += c; continue }
+    if (c === '$') {
+      const m = /^\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\})/.exec(text.slice(i))
+      const name = m && (m[1] ?? m[2])
+      if (name && typeof vars.get(name) === 'string') {
+        out += vars.get(name)
+        i += m[0].length - 1
+        continue
+      }
+    }
+    out += c
+  }
+  return out
+}
+
+// The value an assignment word gives its variable, or null when it is not plain.
+function plainValue(word) {
+  let v = word.replace(ASSIGNMENT, '')
+  if (/^'[^']*'$/.test(v) || /^"[^"]*"$/.test(v)) v = v.slice(1, -1)
+  else if (/^~(\/|$)/.test(v)) v = expandHome(v)
+  return PLAIN_VALUE.test(v) ? v : null
+}
+
+// The command with every reference to a plainly-assigned variable replaced by
+// its value. Runs before anything else looks at the command.
+export function expandVariables(command) {
+  const vars = new Map([['HOME', HOME]])
+  let out = ''
+  let prev = ''
+  let depth = 0
+  // `cd x && D=…` still assigns D when the cd succeeds, which is the same
+  // assumption the cd tracking makes. After any other command, an `&&` makes the
+  // assignment conditional, and an unset variable is not the value we saw.
+  let chainPlain = true
+  for (const { text, sep } of splitWithSeparators(command, { nested: true })) {
+    const seg = substituteRefs(text, vars)
+    out += seg + sep
+    let words = argWords(seg)
+    while (words.length && KEYWORD_NOOPS.has(words[0])) words = words.slice(1)
+    if (KEYWORD_HEADS.has(words[0]) || words[0] === 'select') depth++
+    const pure = words.length > 0 && words.every((w) => ASSIGNMENT.test(w))
+    const conditional = depth > 0 || prev === '|' || prev === '||' || sep === '|' || sep === '&'
+      || (prev === '&&' && !chainPlain)
+    if (pure) {
+      for (const w of words) {
+        const name = ASSIGNMENT.exec(w)[1]
+        vars.set(name, !conditional && !w.includes('+=') ? plainValue(w) : null)
+      }
+    } else {
+      // Anything else that names a known variable may be setting it — `for D in`,
+      // `read D`, `unset D`, `export D=…` — so its value is no longer known.
+      for (const name of vars.keys()) {
+        if (new RegExp(`(^|[^\\w$])${name}(?!\\w)`).test(seg)) vars.set(name, null)
+      }
+    }
+    if (words.some((w) => w === 'done' || w === 'fi' || w === 'esac')) depth = Math.max(0, depth - 1)
+    chainPlain = sep === '&&' ? chainPlain && (pure || words[0] === 'cd') : true
+    prev = sep
+  }
+  return out
+}
+
+// Where a plain `cd` segment goes, or null when the segment is not one. `to` is
+// null when the target is a variable that could not be resolved; `bad` marks a
+// cd with more words than a directory. Redirects are dropped, so
+// `cd ~/x 2>/dev/null` is a cd, and `cd -` returns to `prev`.
+function cdTarget(seg, effCwd, prev) {
+  const words = stripKeywords(argWords(seg))
+  if (words[0] !== 'cd') return null
+  const args = words.slice(1).filter((w) => w !== '--' && w !== '-P' && w !== '-L')
+  if (args.length > 1) return { bad: true }
+  const target = args[0] ?? '~'
+  if (target === '-') return { to: prev }
+  if (hasExpansion(target) || GLOB_CHARS.test(target) || effCwd === null) return { to: null }
+  return { to: path.resolve(effCwd, expandHome(target)) }
 }
 
 // The parts of a segment that are outside quotes — where an operator is syntax
@@ -667,6 +906,15 @@ export function resolveSubstitutions(cmd, cwd) {
   if (/<\(|>\(/.test(cmd)) return null   // process substitution: not worth modelling
   let out = ''
   for (let i = 0; i < cmd.length; i++) {
+    // `$((n+60))` is arithmetic, not a command. Inert unless it nests a real
+    // substitution, which is then not worth picking apart.
+    if (cmd.startsWith('$((', i)) {
+      const end = cmd.indexOf('))', i + 3)
+      if (end === -1 || /\$\(|`/.test(cmd.slice(i + 3, end))) return null
+      out += '0'
+      i = end + 1
+      continue
+    }
     const isDollar = cmd[i] === '$' && cmd[i + 1] === '('
     if (!isDollar && cmd[i] !== '`') { out += cmd[i]; continue }
     const open = isDollar ? i + 2 : i + 1
@@ -680,31 +928,78 @@ export function resolveSubstitutions(cmd, cwd) {
     }
     if (depth > 0) return null           // unterminated — cannot reason about it
     if (!bashIsSafe(cmd.slice(open, end), cwd)) return null
-    out += 'x'                           // stands in for the captured output
+    // Stands in for the captured output, and still reads as an expansion: what
+    // the command prints could be `../../.bashrc`, so a write into
+    // `$(…)/x` must not look like a relative path inside the worktree.
+    out += '$SUBST'
     i = end
   }
   return out
 }
 
 // Every write target named by a redirect in the segment. `>/dev/null` and fd
-// merges (2>&1) are dropped first; what is left has to land in a sandbox root.
-export function redirectTargetsAllowed(seg, cwd) {
-  const text = unquoted(seg).replace(/\d*>&\d+/g, '').replace(/[&\d]*>\s*\/dev\/null/g, '')
-  const targets = [...text.matchAll(/>>?\s*([^\s>|;&]+)/g)].map((m) => m[1])
-  // Any `>` that could not be paired with a target is unexplained — deny.
-  const unmatched = text.replace(/>>?\s*[^\s>|;&]+/g, '')
-  if (unmatched.includes('>')) return false
-  return targets.every((t) => isSandboxPath(t, cwd))
+// merges (2>&1) are dropped first; what is left has to land in a sandbox root,
+// resolved from where the segment runs: `cd ~ && echo x >> .bashrc` used to be
+// judged as a write to the worktree's own .bashrc.
+//
+// Only a `>` outside quotes is a redirect, but its target is read as the shell
+// reads it, quotes and all: `> "$D"/out.txt` names one path, which used to be
+// dropped with the quotes and so always asked.
+export function redirectTargetsAllowed(seg, cwd, effCwd = cwd) {
+  const targets = []
+  let quote = null
+  for (let i = 0; i < seg.length; i++) {
+    const c = seg[i]
+    if (quote) {
+      if (c === '\\' && quote === '"') i++
+      else if (c === quote) quote = null
+      continue
+    }
+    if (c === '"' || c === "'") { quote = c; continue }
+    if (c === '\\') { i++; continue }
+    if (c !== '>') continue
+    if (seg[i + 1] === '>' || seg[i + 1] === '|') i++
+    if (seg[i + 1] === '&') {
+      // `>&2`, `2>&1`, `>&-`: a descriptor, not a file.
+      const fd = /^&(\d+|-)/.exec(seg.slice(i + 1))
+      if (fd) { i += fd[0].length; continue }
+      i++
+    }
+    let j = i + 1
+    while (seg[j] === ' ' || seg[j] === '\t') j++
+    let word = ''
+    let q = null
+    for (; j < seg.length; j++) {
+      const d = seg[j]
+      if (q) {
+        if (d === q) q = null
+        else if (d === '\\' && q === '"' && j + 1 < seg.length) word += seg[++j]
+        else word += d
+        continue
+      }
+      if (d === '"' || d === "'") { q = d; continue }
+      if (d === '\\' && j + 1 < seg.length) { word += seg[++j]; continue }
+      if (/[\s<>|;&()]/.test(d)) break
+      word += d
+    }
+    // Any `>` that could not be paired with a target is unexplained — deny.
+    if (!word) return false
+    targets.push(word)
+    i = j - 1
+  }
+  return targets.every((t) => t === '/dev/null' || isSandboxPathFrom(t, effCwd, cwd))
 }
 
 export function bashIsSafe(command, cwd) {
   let cmd = (command ?? '').trim()
   if (!cmd) return false
+  // Variables first, so every check below sees the paths and programs the shell
+  // will actually use.
+  cmd = expandVariables(stripHeredocs(cmd))
   // Reading is otherwise free, and `cat` is on the allowlist — so without this
   // every credential on the machine could be read with no prompt.
   if (commandTouchesSecret(cmd, cwd)) return false
   if (/(^|\s)sudo(\s|$)/.test(cmd)) return false               // privilege escalation
-  cmd = stripHeredocs(cmd)
   // Substitution is checked against the raw string: `$(…)` and backticks still
   // expand inside double quotes, so quoting is no reason to trust them.
   const resolved = resolveSubstitutions(cmd, cwd)
@@ -714,27 +1009,35 @@ export function bashIsSafe(command, cwd) {
   // it, so the latitude granted there has to follow the `cd` rather than judging
   // every segment against the directory the turn started in.
   let effCwd = cwd
+  let prevCwd = null
   // Every pipeline/sequence segment must be a recognised read-only program.
   return splitSegments(cmd).every((seg) => {
-    if (!redirectTargetsAllowed(seg, cwd)) return false
+    if (!redirectTargetsAllowed(seg, cwd, effCwd)) return false
+    // `cd somewhere && <command>` is judged on the command. The directory itself
+    // is not a decision: reads are judged by commandTouchesSecret from wherever
+    // the cd lands, and writes against the sandbox roots after resolving.
+    const cd = cdTarget(seg, effCwd, prevCwd)
+    if (cd) {
+      // A cd into a directory we cannot name leaves every relative path below it
+      // unresolvable, so it asks rather than guessing.
+      if (cd.bad || !cd.to) return false
+      prevCwd = effCwd
+      effCwd = cd.to
+      return true
+    }
     // Shell keywords: `done`/`fi` name no program, a `for` header names none
     // either, and a `while`/`until`/`if` header is judged as the command it runs.
     let tokens = stripKeywords(seg.split(/\s+/))
     if (!tokens.length) return true
-    while (tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens = tokens.slice(1) // strip VAR=val
+    // `LD_PRELOAD=/tmp/x.so ls` runs whatever is in /tmp; `GIT_EXTERNAL_DIFF=…
+    // git diff` likewise. Such a name asks whether it prefixes a command or sets
+    // the variable for the commands after it.
+    while (tokens.length && ASSIGNMENT.test(tokens[0])) {
+      if (isUnsafeAssignment(tokens[0])) return false
+      tokens = tokens.slice(1)
+    }
     if (!tokens.length) return true      // assignment from an already-checked substitution
     let base = (tokens[0] ?? '').split('/').pop()
-    // `cd somewhere && <command>` is judged on the command. The directory itself
-    // is not a decision: reads are unrestricted and writes are checked against
-    // the sandbox roots by absolute path anyway.
-    if (base === 'cd') {
-      if (tokens.length === 2) {
-        effCwd = path.resolve(effCwd, tokens[1].replace(/^~(?=\/|$)/, HOME))
-        return true
-      }
-      if (tokens.length === 1) return true
-      return false                       // `cd` with extra words is not a plain cd
-    }
     // Unwrap to the program that really runs. Bail on flags (env -i, -S …)
     // rather than trying to model each wrapper's option grammar.
     if (previewCommand(tokens) !== tokens) {
@@ -745,7 +1048,10 @@ export function bashIsSafe(command, cwd) {
     while (WRAPPERS.has(base) || DURATION_WRAPPERS.has(base)) {
       const skip = DURATION_WRAPPERS.has(base) ? 2 : 1
       tokens = tokens.slice(skip)
-      while (tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens = tokens.slice(1)
+      while (tokens.length && ASSIGNMENT.test(tokens[0])) {
+        if (isUnsafeAssignment(tokens[0])) return false
+        tokens = tokens.slice(1)
+      }
       if (!tokens.length || tokens[0].startsWith('-')) return false
       base = tokens[0].split('/').pop()
     }
@@ -774,7 +1080,7 @@ export function bashIsSafe(command, cwd) {
     if (SCRIPT_INTERPRETERS.has(base)) {
       const arg = tokens[1]
       if (arg && !arg.startsWith('-')) {
-        const script = path.resolve(cwd, arg.replace(/^~(?=\/|$)/, HOME))
+        const script = path.resolve(effCwd, arg.replace(/^~(?=\/|$)/, HOME))
         // Belt and braces: a pre-approved path must not sit anywhere the agent
         // can write unprompted, or the entry becomes a bypass of itself.
         if (PREAPPROVED_SCRIPT_PATHS.has(script) && !isSandboxPath(script, cwd)) return true
@@ -800,14 +1106,27 @@ export function bashIsSafe(command, cwd) {
     // The subcommand is the first non-flag word — `systemctl --user status` used
     // to be judged on `--user` and so always asked. Flags that are themselves
     // the subcommand (`node --check`) still match.
+    // `git -C <dir>` is `cd <dir> && git`, so the directory is skipped as a word
+    // and stands in for where git runs.
     let at = 1
-    while (at < tokens.length && tokens[at].startsWith('-') && !subs.has(tokens[at])) at++
+    let gitCwd = effCwd
+    while (at < tokens.length && tokens[at].startsWith('-') && !subs.has(tokens[at])) {
+      if (base === 'git' && tokens[at] === '-C') {
+        const dir = (tokens[at + 1] ?? '').replace(/['"]/g, '')
+        gitCwd = dir && !hasExpansion(dir) ? path.resolve(gitCwd, expandHome(dir)) : null
+        at++
+      }
+      at++
+    }
     const sub = tokens[at]
-    if (base === 'git' && GIT_WORKTREE_SUBCOMMANDS.has(sub)) return gitStaysInWorktree(tokens, effCwd) || inProjects(effCwd)
+    if (base === 'git' && GIT_WORKTREE_SUBCOMMANDS.has(sub)) {
+      // Every -C is already folded into gitCwd, so it is judged with none left.
+      return gitCwd !== null && (gitStaysInWorktree([base, sub], gitCwd) || inProjects(gitCwd))
+    }
     // `push` still leaves the Pi, so it stays out of the worktree set above. In
     // the projects tree it is the whole point — the push *is* the deploy — and
     // the only thing reachable is a repo Sinan treats as disposable.
-    if (base === 'git' && sub === 'push') return inProjects(effCwd)
+    if (base === 'git' && sub === 'push') return gitCwd !== null && inProjects(gitCwd)
     if (!subs.has(sub)) return false
     if (base === 'npm' && sub === 'run') return SAFE_NPM_SCRIPTS.has(tokens[at + 1])
     if (base === 'npm' && (sub === 'install' || sub === 'i' || sub === 'ci')) return inProjects(effCwd)
@@ -1110,7 +1429,7 @@ export function deployGrantCovers(command, cwd) {
   let effCwd = path.resolve(cwd)
   let deploys = false
   const ok = splitSegments(resolved).every((seg) => {
-    if (!redirectTargetsAllowed(seg, cwd)) return false
+    if (!redirectTargetsAllowed(seg, cwd, effCwd)) return false
     const words = stripKeywords(argWords(seg))
     if (!words.length) return true
     if (words[0] === 'cd') {

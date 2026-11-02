@@ -1,0 +1,15 @@
+/* ─────────────────────────────
+   Chat
+───────────────────────────── */
+
+.chat-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+}
+
+/* The chat and its side panel, side by side. Clipped (not a scroll container,
+   so scrollIntoView can't shift it) for the panel sliding in from beyond it. */
+.chat-shell { display: flex; height: 100%; min-height: 0; position: relative; overflow: clip; }
+.chat-shell > .chat-view { flex: 1; min-width: 0; }

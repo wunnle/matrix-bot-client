@@ -1,0 +1,58 @@
+/* ─────────────────────────────
+   Touch hit areas
+───────────────────────────── */
+
+/* Apple's floor for a tap target is 44pt, and these controls draw at 18–38px.
+   Growing them would change the design, so on touch only an invisible box of at
+   least 44×44 is centred over each one instead: the glyph stays the size it is,
+   the finger gets the room it needs. */
+@media (pointer: coarse) {
+  .back,
+  .header-pinned,
+  .room-editor-close,
+  .reaction-btn,
+  .agent-blocked-btn,
+  .approval-full-btn,
+  .pill-add,
+  .room-toast-close,
+  .room-toast-action,
+  .notif-card-close,
+  .editor-pill button,
+  .input-row button,
+  .send-error-dismiss {
+    position: relative;
+  }
+
+  .back::after,
+  .header-pinned::after,
+  .room-editor-close::after,
+  .lightbox-close::after,
+  .reaction-btn::after,
+  .agent-blocked-btn::after,
+  .approval-full-btn::after,
+  .pill-add::after,
+  .room-toast-close::after,
+  .room-toast-action::after,
+  .notif-card-close::after,
+  .editor-pill button::after,
+  .input-row button::after,
+  .send-error-dismiss::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+
+  /* The one control here that is a decision, not a convenience — worth being
+     visibly bigger rather than only easier to hit. */
+  .agent-blocked-btn {
+    padding: 9px 14px;
+    font-size: 13px;
+  }
+
+  /* Matches the height of the pills it sits beside. */
+  .pill-add { padding: 8px 13px; }
+}

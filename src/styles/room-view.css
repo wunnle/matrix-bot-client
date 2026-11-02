@@ -1,0 +1,73 @@
+/* Room pages: a room whose state names a view kind opens as that page, with
+   the chat one tap away in the header. */
+.room-view-toggle {
+  display: flex;
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bg-active);
+}
+.room-view-toggle button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  -webkit-tap-highlight-color: transparent;
+}
+.room-view-toggle button .material-symbols-outlined { font-size: 19px; }
+.room-view-toggle .room-view-toggle--on { background: var(--bg-hover); color: var(--text); }
+
+/* The chat is hidden, not unmounted, while the page is up — all but the
+   composer, which stays as the page's input, with the latest line above it. */
+.chat-view--page > :is(.pinned-strip, .messages-init-loading, .messages, .camera-prompt, .scroll-down-btn) {
+  display: none !important;
+}
+.chat-view--page .room-view { padding-bottom: calc(var(--footer-h, 0px) + 20px); }
+
+.room-peek {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  margin-bottom: 8px;
+  padding: 0 6px 0 12px;
+  border-radius: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.room-peek:active { background: var(--bg-hover); }
+.room-peek-who {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.room-peek-body {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.room-peek-open { font-size: 20px; color: var(--text-muted); }
+.room-peek--thinking .room-peek-who,
+.room-peek--thinking .room-peek-body { color: var(--accent); }
+.room-peek--thinking .room-peek-body { animation: room-peek-pulse 1.6s ease-in-out infinite; }
+@keyframes room-peek-pulse { 50% { opacity: 0.55; } }
+
+.room-view {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 16px calc(24px + env(safe-area-inset-bottom));
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+}

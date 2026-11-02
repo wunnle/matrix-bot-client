@@ -1,0 +1,394 @@
+/* ─────────────────────────────
+   Room Editor
+───────────────────────────── */
+
+.header-action {
+  color: var(--text-muted);
+  font-size: 18px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: color 0.15s;
+  line-height: 1;
+}
+.header-action:hover { color: var(--text); }
+
+.room-editor-overlay {
+  position: fixed;
+  /* Track the visual viewport like .layout does, so a sheet whose input is
+     focused sits above the keyboard instead of behind it. */
+  top: var(--vv-top, 0px);
+  left: 0;
+  right: 0;
+  height: var(--vv-height, var(--app-height, 100dvh));
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fadeIn 0.15s ease;
+}
+
+@media (min-width: 641px) {
+  .room-editor-overlay {
+    left: var(--sidebar-width);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.room-editor {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(var(--vv-height, var(--app-height, 100vh)) * 0.8);
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+  animation: slideUp 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+/* drag handle */
+.room-editor::before {
+  content: '';
+  display: block;
+  width: 36px;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--border);
+  margin: 12px auto 0;
+  flex-shrink: 0;
+}
+
+.room-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+}
+.room-editor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.room-editor-copy-id {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-active);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.room-editor-copy-id .material-icons { font-size: 14px; }
+.room-editor-copy-id:hover { background: var(--bg-hover); color: var(--text); }
+
+.room-editor-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.room-editor-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-active);
+  color: var(--text-muted);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.room-editor-close:hover { background: var(--bg-hover); color: var(--text); }
+
+.room-editor-body {
+  padding: 4px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 20px;
+}
+
+.editor-section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.editor-select {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-input, var(--bg));
+  color: var(--text);
+}
+
+.editor-members {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.editor-member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.editor-member:active {
+  background: var(--bg-active);
+}
+
+.editor-member-avatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--bg-active);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.editor-member-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.editor-member-text {
+  min-width: 0;
+  flex: 1;
+}
+.editor-member-name {
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.editor-member-id {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-member-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 2px 7px;
+}
+
+.editor-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 36px;
+  align-items: center;
+}
+
+.editor-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-active);
+  color: var(--text);
+  border-radius: 99px;
+  padding: 6px 8px 6px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+}
+
+.editor-pill button {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.editor-pill button:hover { background: var(--danger); color: #fff; }
+
+.editor-pill-input {
+  display: flex;
+  align-items: center;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 4px 4px 4px 14px;
+  transition: border-color 0.15s;
+}
+.editor-pill-input:focus-within { border-color: var(--accent); }
+
+.editor-pill-input input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 7px 0;
+  color: var(--text);
+  font: 15px/1 system-ui, sans-serif;
+  outline: none;
+  min-width: 0;
+}
+.editor-pill-input input::placeholder { color: var(--text-faint); }
+
+.editor-pill-input button {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 9px;
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+  height: 34px;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.editor-pill-input button:hover:not(:disabled) { background: var(--accent-hover); }
+.editor-pill-input button:disabled { opacity: 0.35; }
+
+.editor-error {
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.room-editor-footer {
+  display: flex;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  justify-content: flex-end;
+}
+
+.editor-btn-cancel {
+  color: var(--text-muted);
+  padding: 9px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.editor-btn-cancel:hover { background: var(--bg-active); }
+.editor-btn-inline { align-self: flex-start; }
+.editor-actions-row {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.toast {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom) + 80px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-active);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 7px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  pointer-events: none;
+  z-index: 200;
+  white-space: nowrap;
+  animation: toastIn 0.15s ease;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.editor-btn-save {
+  background: var(--accent);
+  color: #fff;
+  padding: 9px 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.editor-btn-save:hover { background: var(--accent-hover); }
+.editor-btn-save:disabled { opacity: 0.5; cursor: default; }
+
+.editor-room-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-active);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+}
+.editor-room-id span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.editor-room-id button {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.1s;
+}
+.editor-room-id button:hover { color: var(--accent); }
+
+.editor-btn-danger {
+  color: #f87171;
+  padding: 9px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  transition: background 0.15s;
+}
+.editor-btn-danger:hover { background: rgba(248, 113, 113, 0.1); }

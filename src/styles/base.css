@@ -1,0 +1,78 @@
+:root {
+  --bg: #0f0f13;
+  --bg-surface: #16161e;
+  --bg-hover: #1e1e28;
+  --bg-active: #252535;
+  --bg-input: #1e1e28;
+  --border: #2a2a38;
+  --text: #e2e2f0;
+  /* One step above --text, for the few things that carry a reply's structure:
+     headings and bold lead-ins. The gap is deliberately small — hierarchy in a
+     chat column comes from size and space, and a second bright colour would
+     just make body text look dimmed. */
+  --text-strong: #f4f4ff;
+  --text-muted: #6b6b85;
+  --text-faint: #3e3e52;
+  --accent: #7c6af7;
+  --accent-hover: #9585f9;
+  --accent-dim: rgba(124, 106, 247, 0.15);
+  --own-bubble: #2d2a5e;
+  --other-bubble: #1a1a24;
+  --danger: #e05c5c;
+  /* Agent state on the room grid: iOS system hues, the orange and green taken
+     darker so the white glyph on them still reads. */
+  --agent-working: #0a84ff;
+  --agent-approval: #c96f00;
+  --agent-question: #1f9a45;
+  --agent-blocked: var(--danger);
+  --diff-add: #7ee2a8;
+  --diff-add-bg: rgba(72, 187, 120, 0.14);
+  --diff-del: #f08c8c;
+  --diff-del-bg: rgba(224, 92, 92, 0.14);
+  --sidebar-width: 280px;
+  --chat-desktop-width: 560px;
+
+  font: 15px/1.5 system-ui, -apple-system, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+/* More room for the agent rows' previews once the window can spare it. */
+@media (min-width: 1100px) { :root { --sidebar-width: 320px; --chat-desktop-width: 720px; } }
+@media (min-width: 1440px) { :root { --sidebar-width: 360px; } }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* WebKit's text autosizing inflates the font in tall/wide block containers,
+   which is why long <pre> code blocks sometimes render much larger than the
+   0.9em they're set to. Pin it off so declared sizes are what you get. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Height matters as much as width: without it a horizontal scrollbar (code
+   blocks) keeps WebKit's default ~15px thickness, which is far taller than the
+   lane the block reserves for it, so in the Safari PWA the bar renders thick
+   and spills onto whatever follows the block.
+   10px, and the thumb fills it: a 4px hairline is pretty but too thin to grab
+   with a mouse. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+/* :active, not just :hover — a drag that leaves the element stops matching
+   :hover, which made the thumb snap back to its dim colour mid-drag as if the
+   grab had been cancelled. WebKit holds :active for the whole drag. */
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active { background: var(--text-faint); }
+
+body {
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#root { height: 100%; display: flex; flex-direction: column; }
+
+button { cursor: pointer; border: none; font: inherit; background: none; color: inherit; }

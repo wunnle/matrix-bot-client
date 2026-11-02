@@ -1,0 +1,134 @@
+/* ─────────────────────────────
+   Layout
+───────────────────────────── */
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: var(--vv-top, 0px);
+  width: 100%;
+  /* --vv-* are only set while an editable element is focused (keyboard
+     open); the rest of the time this dvh fallback is the live value. */
+  height: var(--vv-height, var(--app-height, 100dvh));
+  overflow: hidden;
+}
+
+.layout-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Connection banner */
+.connection-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  flex-shrink: 0;
+  animation: slideDown 0.2s ease;
+}
+
+/* The topmost banner sits under the status bar / notch, so it carries the inset. */
+.layout > .connection-banner:first-child {
+  padding-top: calc(7px + env(safe-area-inset-top));
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+
+.banner-connecting  { background: #2a2a1a; color: #c8b86a; }
+.banner-reconnecting { background: #2a1e1a; color: #e0956a; }
+.banner-error       { background: #2a1a1a; color: #e06a6a; }
+.banner-update      { background: #1a2430; color: #7ab0e0; }
+
+.banner-action {
+  margin-left: auto;
+  padding: 3px 12px;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.banner-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: pulse 1.5s infinite;
+}
+
+.banner-connecting  .banner-dot { background: #c8b86a; }
+.banner-reconnecting .banner-dot { background: #e0956a; }
+.banner-error       .banner-dot { background: #e06a6a; animation: none; }
+.banner-update      .banner-dot { background: #7ab0e0; animation: none; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.sidebar {
+  /* Positioned for the floating tab bar; mobile overrides this with absolute. */
+  position: relative;
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  overflow: hidden;
+  /* The WebView draws under the status bar (contentInset: 'never') and this is
+     the only chrome at the top of the home screen, so it owns the inset. Was
+     scoped to the mobile breakpoint, which left iPad — on the sidebar layout at
+     820pt — with its first row of tiles tucked under the status bar. The floor
+     gives the same breathing room where there is no inset to speak of (Mac,
+     web). */
+  padding-top: max(env(safe-area-inset-top), 10px);
+}
+
+/* A banner above takes over the inset, so the chrome below drops back to its
+   plain padding instead of leaving a status-bar-sized gap. */
+.layout:has(> .connection-banner) .sidebar { padding-top: 10px; }
+.layout:has(> .connection-banner) .chat-header { padding-top: 11px; }
+
+.main {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+/* Mobile: sidebar full-width, hidden when room open */
+@media (max-width: 640px) {
+  .layout-body {
+    position: relative;
+  }
+
+  .sidebar {
+    width: 100%;
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    transition: transform 0.25s ease;
+  }
+
+  .layout.room-open .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .main {
+    position: absolute;
+    inset: 0;
+  }
+}

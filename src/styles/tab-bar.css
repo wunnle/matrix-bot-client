@@ -1,0 +1,150 @@
+/* ─────────────────────────────
+   Tab bar — iOS 26 floating liquid-glass capsule
+───────────────────────────── */
+
+/* The bar floats over the tab's content, so every tab scroller pads its
+   bottom by this much to let the last row scroll clear of it. */
+.sidebar {
+  --tab-bar-space: calc(max(env(safe-area-inset-bottom), 12px) + 76px);
+}
+
+.tab-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.tab-pane[hidden] { display: none; }
+
+.tab-bar {
+  position: absolute;
+  left: 50%;
+  bottom: max(env(safe-area-inset-bottom), 12px);
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  gap: 2px;
+  width: min(calc(100% - 40px), 360px);
+  padding: 4px;
+  border-radius: 999px;
+}
+
+/* Liquid glass, shared by the tab bar and the composer: a thin tint over
+   blurred, saturated content, lit from the top edge with a darker rim
+   underneath. Users must be positioned (for the sheen) and set their own
+   border-radius. */
+.glass {
+  isolation: isolate;
+  background: rgba(30, 30, 42, 0.45);
+  -webkit-backdrop-filter: blur(22px) saturate(190%);
+  backdrop-filter: blur(22px) saturate(190%);
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+    0 10px 30px rgba(0, 0, 0, 0.45),
+    0 1px 3px rgba(0, 0, 0, 0.3);
+}
+/* Specular sheen across the upper half. */
+.glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 45%, transparent 55%);
+  pointer-events: none;
+}
+
+.tab-bar-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  height: 54px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.25s ease, color 0.25s ease, transform 0.15s ease;
+}
+.tab-bar-item svg {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tab-bar-item:active { transform: scale(0.94); }
+/* The selected tab sits in its own brighter drop of glass, tinted by the accent. */
+.tab-bar-item--active {
+  color: var(--accent-hover);
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.18);
+}
+.tab-bar-item--active svg { stroke-width: 2; }
+
+/* Live usage gauge in the Usage tab: a faint full dial, filled to how much of
+   the session is used. The fill takes the icon's colour until the window runs
+   low, then the Usage screen's warn/critical colours. */
+.gauge-track { opacity: 0.28; }
+.gauge-fill--warn { stroke: #e0a84e; }
+.gauge-fill--critical { stroke: var(--danger); }
+
+/* Fallback where backdrop-filter isn't available: opaque enough to read. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: rgba(30, 30, 42, 0.94); }
+}
+
+/* Non-chat tabs use the page background, not the sidebar surface. */
+.sidebar:has(> .settings-screen) { background: var(--bg); }
+
+/* The 5-hour window, drawn over the header's bottom border in Claude rooms.
+   Sits on the border rather than adding a row: it is ambient, not content. */
+.chat-header { position: relative; }
+.header-usage {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  pointer-events: none;
+}
+.header-usage-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  opacity: 0.55;
+  transition: width 0.4s;
+}
+.header-usage--warn .header-usage-fill { background: #e0a84e; opacity: 0.8; }
+.header-usage--critical .header-usage-fill { background: var(--danger); opacity: 0.9; }
+.header-usage--stale .header-usage-fill { opacity: 0.2; }
+
+/* ─────────────────────────────
+   Empty state
+───────────────────────────── */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 12px;
+  color: var(--text-muted);
+}
+
+.empty-icon { font-size: 40px; }
+.empty-state p { font-size: 14px; }

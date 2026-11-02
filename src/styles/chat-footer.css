@@ -1,0 +1,173 @@
+/* ─────────────────────────────
+   Chat footer (typing + compose)
+───────────────────────────── */
+
+.scroll-down-btn {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+  cursor: pointer;
+  z-index: 10;
+  transition: background 0.15s, color 0.15s;
+  animation: fadeIn 0.15s ease;
+}
+
+.scroll-down-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+.message-pin-surface--own {
+  align-self: flex-end;
+  max-width: 100%;
+}
+
+.message-pin-surface--pinned {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Floats over the end of the list with no background of its own, so messages
+   scroll under the glass composer. ChatView measures it into --footer-h, which
+   .messages-inner pads its end by. */
+.chat-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  /* .layout is already sized to the visual viewport (--vv-height), so the
+     keyboard never needs compensating here — only the home-indicator inset.
+     --vv-safe-bottom is zeroed while the native keyboard is open (the
+     keyboard sits above the home indicator, so no inset is needed). */
+  padding: 0 16px max(20px, var(--vv-safe-bottom, env(safe-area-inset-bottom)));
+}
+
+/* Inner wrapper centers footer content to match messages */
+.chat-footer > * {
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 641px) {
+  .chat-footer > * {
+    max-width: var(--chat-desktop-width);
+  }
+}
+
+
+/* What the bot is doing right now — sits between the timeline and the pills,
+   where the eye already is when you're waiting on a reply. */
+/* The step a run is on, as the last line of the chat: standing in for its tool
+   group while the run is live, on its own while it only thinks. */
+.tool-progress-now { cursor: pointer; }
+
+.agent-activity {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 0;
+  /* The row's content changes shape constantly during a run ("Thinking" with no
+     detail, then a monospace detail at a different font-size). Left to the
+     baseline-aligned line boxes, each swap resized the row by a pixel or two and
+     shoved the whole timeline up and down. Pin the box instead: fixed
+     line-height on every child, so height is the same in every phase. */
+  line-height: 16px;
+  height: 16px;
+  box-sizing: content-box;
+}
+
+.agent-activity > * {
+  line-height: inherit;
+}
+
+.agent-activity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: live-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.agent-activity-label {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.agent-activity-detail {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* A sentence, not a path: the row's own type, since it now leads the row. */
+.agent-activity-detail--prose {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.agent-activity-elapsed {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+/* The room is alive but the provider has cut us off — sits where the activity
+   row would, since the two states are mutually exclusive in practice. */
+.agent-blocked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  /* `auto` on the sides, not 0: .chat-footer > * centers footer content on the
+     shorthand's margin-left/right, and a `0` here would silently undo it. */
+  margin: 6px auto 2px;
+  width: 100%;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.agent-blocked-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-blocked-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agent-blocked-btn:active { opacity: 0.8; }

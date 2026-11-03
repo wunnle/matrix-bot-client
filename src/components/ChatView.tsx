@@ -34,7 +34,7 @@ import { resolveMediaUrl, type EncryptedMedia } from '../lib/mediaUrl'
 import { encryptAttachment, type EncryptedFile } from '../lib/attachmentCrypto.js'
 import { Capacitor } from '@capacitor/core'
 import { isMobileSafari } from '../lib/isMobileSafari'
-import { actionLabel, choiceIndexFromKey, isChoiceList, parseActions, pickedChoice, stripActionMarkersInRichHtml } from '../lib/actions'
+import { actionLabel, choiceIndexFromKey, parseActions, stripActionMarkersInRichHtml } from '../lib/actions'
 import { formatModel } from '../lib/modelLabel'
 import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
@@ -50,7 +50,6 @@ import { AgentActivityBar } from './AgentActivityBar'
 import MessageActionSheet from './MessageActionSheet'
 import ApprovalBar from './ApprovalBar'
 import ModelMenu from './ModelMenu'
-import { approvalChoices, parseApprovalCard } from '../lib/approval'
 import { artifactIdOf, parseArtifact } from '../lib/artifact'
 import { parseBrowserPage, storedPage, storePage } from '../lib/browser'
 import { useArtifactIndex, useArtifactsUpdatedAt } from '../hooks/useArtifactIndex'
@@ -69,14 +68,17 @@ import { sameDay, formatSentAt } from '../lib/chatFormat'
 import { sanitizeHtml } from '../lib/sanitizeHtml'
 import { threadMd } from '../lib/threadMarkdown'
 import { isBotToolProgress, parseToolProgressMessage, summarizeToolLines } from '../lib/toolProgress'
-import { getRoomModel, setRoomModel, isModelPicker, isModelPickerTraffic } from '../lib/roomModel'
-import { scrollbackWithRetry, getRoomBotMeta, shortenTopicPaths, roomIsEncrypted } from '../lib/chatRoom'
+import { getRoomModel, setRoomModel, isModelPickerTraffic } from '../lib/roomModel'
+import { scrollbackWithRetry, roomIsEncrypted } from '../lib/chatRoom'
 import { scrollToEnd, isOnScrollbar } from '../lib/scroll'
 import { getMaxReadTs, eventToMessage, eventsToMessages } from '../lib/eventToMessage'
 import { ArtifactOpenContext, BrowserOpenContext } from './chat/openContexts'
 import { MessageRow } from './chat/MessageRow'
 import { useRoomPills } from '../hooks/useRoomPills'
 import { useTypingUsers } from '../hooks/useTypingUsers'
+import { useRoomHeaderInfo } from '../hooks/useRoomHeaderInfo'
+import { usePinnedMessages } from '../hooks/usePinnedMessages'
+import { useMessageActions } from '../hooks/useMessageActions'
 
 interface Props {
   roomId: string
@@ -191,7 +193,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       savePills(getClient(), roomId, next)
       return next
     })
-  }, [roomId])
+  }, [roomId, setPills])
 
   // A drag is not a tap. Scrolling a code block sideways ends in a click on
   // it, which would otherwise copy the block and pop a toast on every swipe.
@@ -242,68 +244,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     void copyTextToClipboard(text).then(() => showToast('Copied'))
   }, [showToast])
 
-  // Action pills reflect the last message only: once you reply (or the bot
-  // says anything after), the previous message's [[buttons]] should clear.
-  // Tool lines and mid-turn narration don't count as "saying anything" — the
-  // bot keeps posting those while an approval card waits on you, and letting
-  // them win took the Approve / Deny pills away the moment one landed.
-  const lastActionMessage = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]
-      // A subagent card is progress too; one posted behind an approval card
-      // must not take its approval bar away.
-      if (isBotToolProgress(m) || ((m.interim || m.subagent || m.artifact || m.browser) && !m.isOwnMessage && !m.isPeerMessage)) continue
-      return m.isOwnMessage ? null : m
-    }
-    return null
-  }, [messages])
-  const lastActions = useMemo(
-    () => (lastActionMessage ? parseActions(lastActionMessage.body).actions : []),
-    [lastActionMessage],
-  )
-  // That message, when it is an approval card: it gets the approval bar in
-  // place of the pill row.
-  const pendingApproval = useMemo(() => {
-    if (!lastActionMessage) return null
-    const { approve, deny, always, session, auto } = approvalChoices(lastActions)
-    const card = approve ? parseApprovalCard(lastActionMessage.body) : null
-    if (!approve || !card) return null
-    return { msg: lastActionMessage, card, approve, deny, always, session, auto }
-  }, [lastActionMessage, lastActions])
-  // That message, when it is a model picker — the agent bot's answer to !model
-  // ("Model: …" + [[!model <id>]]) or Hermes' to !switch ("Pick model:" +
-  // [[/luna]]): the model menu lists its options, and the timeline hides it.
-  const modelPicker = useMemo(
-    () => (lastActionMessage && isModelPicker(lastActionMessage) ? { msg: lastActionMessage, options: lastActions } : null),
-    [lastActionMessage, lastActions],
-  )
-  // A bot message's [[…]] answers show as a lettered list under its text, not
-  // as pills: open on the last message, faded on older ones,
-  // with the option your next message picked kept lit. That message itself
-  // leaves the timeline: the lit option already says what you sent.
-  const { choiceLists, choiceReplies } = useMemo(() => {
-    const lists: Record<string, { open: boolean; picked?: string }> = {}
-    const replies = new Set<string>()
-    // Walking back, the nearest own message after the one being looked at.
-    let reply: Message | undefined
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]
-      if (m.isOwnMessage) { reply = m; continue }
-      if (!m.body.includes('[[')) continue
-      const { actions } = parseActions(m.body)
-      if (!isChoiceList(actions)) continue
-      // Approval cards answer through the approval bar.
-      if (approvalChoices(actions).approve && parseApprovalCard(m.body)) continue
-      const picked = m !== lastActionMessage && reply ? pickedChoice(reply.body, actions) : undefined
-      if (picked) replies.add(reply!.eventId)
-      lists[m.eventId] = { open: m === lastActionMessage, picked }
-    }
-    return { choiceLists: lists, choiceReplies: replies }
-  }, [messages, lastActionMessage])
-  const openChoices = lastActionMessage && choiceLists[lastActionMessage.eventId] ? lastActions : null
-  // The reply buttons the pill row shows: none when the model menu or the
-  // lettered list stands in for them.
-  const pillActions = modelPicker || openChoices ? [] : lastActions
+  const { lastActionMessage, pendingApproval, modelPicker, choiceLists, choiceReplies, openChoices, pillActions } = useMessageActions(messages)
   // The header chip's dropdown, holding the command it sent. It opens at once
   // and loads for as long as that command is still the last word.
   const [modelMenuRequest, setModelMenuRequest] = useState<string | null>(null)
@@ -341,7 +282,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [hasMore, setHasMore] = useState(true)
   const [renderStart, setRenderStart] = useState(0)
   const typingUsers = useTypingUsers(client, roomId, userId)
-  const [bot, setBot] = useState<{ name: string; avatarUrl: string | null } | null>(null)
+  const { bot, roomTopic, roomAvatarUrl } = useRoomHeaderInfo(client, roomId, userId)
   // When the bot started typing, for the page's "Thinking… 12s" strip; ticks
   // once a second while it lasts.
   const thinking = typingUsers.length > 0
@@ -353,8 +294,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const t = setInterval(() => setThinkingTick((n) => n + 1), 1000)
     return () => clearInterval(t)
   }, [thinking])
-  const [roomAvatarUrl, setRoomAvatarUrl] = useState<string | null>(null)
-  const [roomTopic, setRoomTopic] = useState('')
   const [sendError, setSendError] = useState('')
   const [pinError, setPinError] = useState('')
   const [pinInFlight, setPinInFlight] = useState(false)
@@ -386,8 +325,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [])
   const [dragOver, setDragOver] = useState(false)
   const dragCounterRef = useRef(0)
-  const [pinnedEventIds, setPinnedEventIds] = useState<string[]>([])
-  const [pinnedDisplay, setPinnedDisplay] = useState<Message[]>([])
+  const { pinnedEventIds, pinnedDisplay, pinnedIdsRef, refreshPinnedRef } = usePinnedMessages(client, roomId, userId, messages.length)
   const [pinnedExpanded, setPinnedExpanded] = useState(true)
 
   // A room with a page opens on it; the chat stays mounted underneath, so
@@ -399,9 +337,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const bottomRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
   const codeScrollRef = useRef(new Map<string, number>())
-  const refreshPinnedRef = useRef<() => void>(() => {})
-  const pinnedIdsRef = useRef<Set<string>>(new Set())
-  const activeRoomIdRef = useRef(roomId)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
@@ -416,10 +351,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const touchStartY = useRef<number | null>(null)
 
   useEffect(() => {
-    activeRoomIdRef.current = roomId
-  }, [roomId])
-
-  useEffect(() => {
     setPinnedExpanded(true)
   }, [roomId])
 
@@ -428,66 +359,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     if (window.matchMedia('(max-width: 640px)').matches) return
     textareaRef.current?.focus()
   }, [roomId, isActive])
-
-  const refreshPinned = useCallback(async () => {
-    const forRoom = roomId
-    const room = client.getRoom(forRoom)
-    if (!room) return
-    const st = room.currentState.getStateEvents(sdk.EventType.RoomPinnedEvents, '')
-    const content = st?.getContent() as { pinned?: string[] } | undefined
-    const ids = content?.pinned ?? []
-    pinnedIdsRef.current = new Set(ids)
-    if (forRoom !== activeRoomIdRef.current) return
-    setPinnedEventIds(ids)
-
-    if (ids.length === 0) {
-      setPinnedDisplay([])
-      return
-    }
-
-    // Prefer the local timeline, then GET /rooms/.../event/... for each pin. That works when
-    // timelineSupport was off, for thread based pins (getEventTimeline bails on thread roots), etc.
-    const eventById = new Map<string, sdk.MatrixEvent>()
-    for (const id of ids) {
-      const local = room.findEventById(id)
-      if (local) eventById.set(id, local)
-    }
-    const needFetch = ids.filter((id) => !eventById.has(id))
-    if (needFetch.length > 0) {
-      const mapper = client.getEventMapper()
-      await Promise.all(
-        needFetch.map(async (id) => {
-          try {
-            const raw = await client.fetchRoomEvent(forRoom, id)
-            const ev = mapper(raw)
-            await client.decryptEventIfNeeded(ev)
-            eventById.set(id, ev)
-          } catch {
-            // 404, access denied, etc.
-          }
-        }),
-      )
-    }
-
-    if (forRoom !== activeRoomIdRef.current) return
-
-    const maxReadTs = getMaxReadTs(room, userId)
-    const resolved: Message[] = []
-    for (const id of [...ids].reverse()) {
-      const ev = eventById.get(id)
-      if (!ev || ev.isRedacted()) continue
-      const t = ev.getType()
-      if (t !== 'm.room.message' && t !== 'm.room.encrypted' && !ev.isDecryptionFailure()) continue
-      resolved.push(eventToMessage(ev, userId, maxReadTs, room))
-    }
-    setPinnedDisplay(resolved)
-  }, [client, roomId, userId])
-
-  useEffect(() => {
-    refreshPinnedRef.current = () => {
-      void refreshPinned()
-    }
-  }, [refreshPinned])
 
   // Model-picker traffic is the header menu's business, not the timeline's;
   // a pick from a lettered list shows as that list's lit option.
@@ -803,7 +674,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       client.off(sdk.MatrixEventEvent.Decrypted, onDecrypted)
       client.off(sdk.RoomEvent.Receipt, onReceipt)
     }
-  }, [roomId, userId, client])
+  }, [roomId, userId, client, pinnedIdsRef, refreshPinnedRef])
 
   // A failed first load retries by itself once there is reason to think it
   // would now work: the app is back in front, or sync has just recovered.
@@ -880,80 +751,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     if (scannedModel) setRoomModel(roomId, scannedModel)
   }, [scannedModel, roomId])
 
-  // Compute bot info reactively — members may be lazy-loaded. Listen on
-  // room.currentState rather than the client so we don't wake up for
-  // every member change in every other joined room.
-  useEffect(() => {
-    const room = client.getRoom(roomId)
-    if (!room) return
-    let cancelled = false
-    const update = async () => {
-      const meta = getRoomBotMeta(roomId, userId, client)
-      if (!meta) {
-        if (!cancelled) setBot((prev) => (prev === null ? prev : null))
-        return
-      }
-      const avatarUrl = meta.mxcUrl ? await resolveMediaUrl(client, meta.mxcUrl, 80, 80, 'crop') : null
-      if (cancelled) return
-      setBot((prev) => {
-        if (prev && prev.name === meta.name && prev.avatarUrl === avatarUrl) return prev
-        return { name: meta.name, avatarUrl }
-      })
-    }
-    update()
-    room.loadMembersIfNeeded().then(update).catch(() => {})
-    const onMembers = (_e: sdk.MatrixEvent, _s: sdk.RoomState, member: sdk.RoomMember) => {
-      if (member.userId !== userId) update()
-    }
-    // On the room, not room.currentState — see useAgentBlocked for why.
-    room.on(sdk.RoomStateEvent.Members, onMembers)
-    room.on(sdk.RoomEvent.CurrentStateUpdated, update)
-    return () => {
-      cancelled = true
-      room.off(sdk.RoomStateEvent.Members, onMembers)
-      room.off(sdk.RoomEvent.CurrentStateUpdated, update)
-    }
-  }, [roomId, userId, client])
-
-  // m.room.topic for subtitle (when non-empty); listen for state updates
-  useEffect(() => {
-    const room = client.getRoom(roomId)
-    if (!room) {
-      setRoomTopic('')
-      return
-    }
-    const readTopic = () => {
-      const ev = room.currentState.getStateEvents(sdk.EventType.RoomTopic, '')
-      const raw = ev?.getContent()?.topic
-      const t = typeof raw === 'string' ? raw.trim() : ''
-      setRoomTopic(shortenTopicPaths(t))
-    }
-    readTopic()
-    const onState = (ev: sdk.MatrixEvent) => {
-      if (ev.getRoomId() !== roomId) return
-      if (ev.getType() === sdk.EventType.RoomTopic) readTopic()
-    }
-    room.on(sdk.RoomStateEvent.Events, onState)
-    room.on(sdk.RoomEvent.CurrentStateUpdated, readTopic)
-    return () => {
-      room.off(sdk.RoomStateEvent.Events, onState)
-      room.off(sdk.RoomEvent.CurrentStateUpdated, readTopic)
-    }
-  }, [roomId, client])
-
-  // Resolve room's own avatar URL
-  useEffect(() => {
-    const room = client.getRoom(roomId)
-    if (!room) return
-    const mxcUrl = room.getMxcAvatarUrl()
-    if (!mxcUrl) { setRoomAvatarUrl(null); return }
-    let cancelled = false
-    resolveMediaUrl(client, mxcUrl, 80, 80, 'crop').then(url => {
-      if (!cancelled) setRoomAvatarUrl(url ?? null)
-    })
-    return () => { cancelled = true }
-  }, [roomId, client])
-
   // Resolve mxc image URLs to authenticated blob URLs. Kept out of
   // `messages` so resolution doesn't mutate the message array and
   // re-trigger this effect in a feedback loop.
@@ -1002,28 +799,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       })
     })
   }, [messages, pinnedDisplay, client])
-
-  // Pinned events (m.room.pinned_events) — resolve when state changes or the timeline may contain them
-  useEffect(() => {
-    const room = client.getRoom(roomId)
-    if (!room) return
-    refreshPinned()
-    const onState = (ev: sdk.MatrixEvent) => {
-      if (ev.getType() === sdk.EventType.RoomPinnedEvents) refreshPinned()
-    }
-    const onSwap = () => refreshPinned()
-    room.on(sdk.RoomStateEvent.Events, onState)
-    room.on(sdk.RoomEvent.CurrentStateUpdated, onSwap)
-    return () => {
-      room.off(sdk.RoomStateEvent.Events, onState)
-      room.off(sdk.RoomEvent.CurrentStateUpdated, onSwap)
-    }
-  }, [roomId, client, refreshPinned])
-
-  useEffect(() => {
-    if (pinnedEventIds.length === 0) return
-    refreshPinned()
-  }, [messages.length, pinnedEventIds.length, refreshPinned])
 
 
   // Keep scroll-down button in sync after renders (not just on scroll events)
@@ -1825,7 +1600,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     } finally {
       setPinInFlight(false)
     }
-  }, [roomId])
+  }, [roomId, pinnedIdsRef, refreshPinnedRef])
   useEffect(() => {
     togglePinRef.current = togglePin
   }, [togglePin])

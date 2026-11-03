@@ -1,0 +1,488 @@
+.msg-status {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 3px;
+  color: rgba(255,255,255,0.35);
+  user-select: none;
+}
+.msg-status .material-icons {
+  font-size: 14px;
+  line-height: 1;
+}
+.msg-status-read {
+  color: rgba(255,255,255,0.55);
+}
+
+.reaction-bar {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+.reaction-bar--own {
+  justify-content: flex-end;
+}
+.reaction-bar--own-inline {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  margin-right: 4px;
+}
+.reaction-pill--own {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  opacity: 0.6;
+}
+.reaction-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2px 7px;
+  font-size: 15px;
+  cursor: pointer;
+  color: var(--text);
+  line-height: 1.4;
+  transition: background 0.15s, border-color 0.15s;
+}
+.reaction-btn:hover {
+  background: var(--bg-hover);
+}
+.reaction-btn--active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.reaction-count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+/* Sender, time and the message actions, sitting under the message. This is now
+   the only route to those actions — there is no context menu — so right-click
+   is left entirely to the browser.
+
+   `visibility: hidden` rather than `display: none` where it does hide: the row
+   always takes its space, so revealing it never shifts the timeline, and the
+   reserved height reads as breathing room between messages. */
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  max-width: 100%;
+}
+
+.message-meta-info {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.message-meta-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  /* Cancel the button's own padding so the first glyph optically lines up with
+     the bubble's edge instead of sitting in a stray indent. */
+  margin-left: -4px;
+}
+
+.message-meta-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+/* One glyph box for all three, so differing intrinsic widths in the icon font
+   can't make the row look ragged. */
+.message-meta-btn .material-symbols-outlined {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  font-variation-settings: 'opsz' 20, 'wght' 400, 'FILL' 0, 'GRAD' 0;
+}
+.message-meta-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.message-meta-btn--on { color: var(--accent); }
+.message-meta-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* The row is always in the layout and only visibility-hidden, so revealing it
+   never shifts the timeline and the space it holds is the gap between
+   messages. Hover devices reveal it on hover. Touch never does: a long-press
+   opens the same actions in a sheet, which has room for them. */
+.message-meta { visibility: hidden; }
+@media (hover: hover) and (pointer: fine) {
+  .message:hover .message-meta { visibility: visible; }
+}
+
+/* Touch: message text isn't selectable, which is what lets a long-press open
+   the sheet instead of starting a selection. Links and images keep the OS
+   sheet, code blocks keep selection, and "Select text" in the sheet switches
+   one message back on. */
+@media not all and (hover: hover) and (pointer: fine) {
+  .message-pin-surface {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .message-pin-surface pre,
+  .message--selecting .message-pin-surface {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .message-pin-surface a,
+  .message-pin-surface img { -webkit-touch-callout: default; }
+}
+
+/* Collapse vertical gap between consecutive tool-progress messages so
+   they read as a single "thinking" thread instead of separate pills. */
+.tool-progress-wrap-cont { margin-top: -4px; }
+.tool-progress-wrap-cont .date-divider { display: none; }
+
+.tool-progress {
+  display: inline-flex;
+  flex-direction: column;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  opacity: 0.7;
+  overflow: hidden;
+}
+
+/* When grouped, flatten the touching edges so they look like one bubble. */
+.tool-progress-cont {
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  border-top: none;
+  margin-top: 0;
+}
+.tool-progress-open {
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+
+.tool-progress-collapsed {
+  cursor: pointer;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  opacity: 0.45;
+  transition: opacity 0.15s;
+}
+
+.tool-progress-collapsed:hover { opacity: 0.75; }
+
+.tool-progress-expand-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.tool-dialog-line {
+  border-radius: 6px;
+  padding: 3px 4px;
+}
+
+.tool-dialog-line-tappable {
+  cursor: pointer;
+}
+
+.tool-dialog-line-tappable:hover {
+  background: var(--bg-active);
+}
+
+.tool-dialog-raw {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 6px 8px;
+  margin-top: 4px;
+  background: var(--bg-active);
+  border-radius: 6px;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.tool-progress-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.8;
+  animation: live-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+.tool-progress-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  min-width: 0;
+}
+
+.tool-progress-emoji {
+  flex: 0 0 auto;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.tool-progress-tool {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.tool-progress-tool::after { content: ''; }
+
+.tool-progress-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-dialog-line .tool-progress-content {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  word-break: break-word;
+}
+
+.tool-progress-repeat {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+
+.action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.action-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.action-btn-stale {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
+.action-btn:not(.action-btn-stale):hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.message.own .bubble {
+  background: var(--own-bubble);
+  border-radius: 18px 18px 4px 18px;
+  color: #d4d0ff;
+}
+
+.message.other .bubble {
+  background: var(--other-bubble);
+  border: 1px solid var(--border);
+  border-radius: 18px 18px 18px 4px;
+}
+
+.bubble-image {
+  padding: 4px;
+  background: transparent !important;
+  border: none !important;
+}
+
+/* An image with a caption keeps the bubble, so the text reads as part of it. */
+.bubble-image-captioned {
+  padding: 4px;
+}
+
+.msg-caption {
+  padding: 6px 8px 2px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bubble-image-captioned .msg-caption {
+  max-width: 260px;
+}
+
+.bubble-voice {
+  position: relative;
+  padding-left: 30px;
+}
+
+.bubble-voice-icon {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 16px !important;
+  opacity: 0.7;
+}
+
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 16px);
+}
+
+.lightbox-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 12px);
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.msg-image,
+.pinned-image {
+  cursor: zoom-in;
+}
+
+.msg-image {
+  display: block;
+  max-width: 260px;
+  max-height: 320px;
+  width: 100%;
+  border-radius: 14px;
+  object-fit: cover;
+}
+
+.bubble-failed {
+  color: var(--text-muted) !important;
+  font-style: italic;
+  font-size: 13px;
+}
+
+.timestamp {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 3px;
+  padding: 0 6px;
+}
+
+/* Date divider */
+.date-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.date-divider::before,
+.date-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Load more */
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 16px;
+}
+
+.load-more button {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.load-more button:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Loading dots */
+.loading-dots {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.loading-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: bounce 1.2s infinite;
+}
+
+.loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}

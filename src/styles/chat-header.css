@@ -1,0 +1,321 @@
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #fff;
+  font-size: 18px;
+  pointer-events: none;
+  border: 2px dashed rgba(255, 255, 255, 0.4);
+  border-radius: 8px;
+}
+
+.drop-overlay-icon {
+  font-size: 48px;
+  opacity: 0.8;
+}
+
+.chat-header {
+  padding: 11px 20px;
+  padding-top: calc(11px + env(safe-area-inset-top));
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+
+.chat-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+@media (min-width: 641px) {
+  .chat-header-inner { max-width: var(--chat-desktop-width); }
+}
+
+.chat-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.chat-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-active);
+}
+
+.chat-header-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chat-header-model {
+  display: block;
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--bg-active);
+}
+.chat-header-model--open { background: var(--accent); color: #fff; }
+
+/* The chip's model dropdown. */
+.model-menu-anchor {
+  position: relative;
+  flex-shrink: 0;
+  max-width: 45%;
+}
+.model-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+/* Liquid glass (.glass) over the timeline. It grows out of the chip with a
+   little overshoot, and the items follow it in, one after another. */
+.model-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 41;
+  min-width: 168px;
+  padding: 6px;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transform-origin: calc(100% - 24px) -8px;
+  animation: model-menu-in 0.42s cubic-bezier(0.34, 1.45, 0.5, 1) both;
+}
+@keyframes model-menu-in {
+  from { opacity: 0; transform: scale(0.35, 0.2); filter: blur(6px); }
+  55% { opacity: 1; filter: blur(0); }
+}
+.model-menu-item {
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-strong);
+  text-align: left;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+  animation: model-menu-item-in 0.32s ease-out both;
+  animation-delay: calc(0.06s + var(--i, 0) * 0.04s);
+}
+@keyframes model-menu-item-in {
+  from { opacity: 0; transform: translateY(-6px); }
+}
+/* The touched item lifts into its own brighter drop, like the active tab. */
+.model-menu-item:hover,
+.model-menu-item:active {
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.18);
+}
+.model-menu-item:active { transform: scale(0.96); }
+@media (prefers-reduced-motion: reduce) {
+  .model-menu, .model-menu-item { animation: none; }
+}
+.model-menu-status {
+  height: 44px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.chat-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  min-height: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-subtitle--thinking { color: var(--accent); }
+
+.back {
+  color: var(--text-muted);
+  font-size: 18px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  line-height: 1;
+  transition: color 0.15s;
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .back { display: block; }
+}
+
+.back:hover { color: var(--text); }
+
+.chat-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.syncing {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.pinned-strip {
+  flex-shrink: 0;
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface, var(--bg));
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  box-sizing: border-box;
+}
+
+.header-pinned {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin: 0;
+  padding: 2px 2px 2px 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s, background 0.12s;
+}
+
+.header-pinned:hover {
+  color: var(--text);
+  background: var(--bg-active, rgba(0, 0, 0, 0.04));
+}
+
+.header-pinned:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
+.header-pinned-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.header-pinned-chevron {
+  font-size: 16px;
+  line-height: 1;
+  margin-left: -3px;
+  opacity: 0.75;
+}
+
+.pinned-strip-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+
+@media (min-width: 641px) {
+  .pinned-strip { max-width: var(--chat-desktop-width); }
+  .pinned-toggle { padding: 1px 0; }
+  .pinned-strip-inner { padding: 0 0 12px; }
+}
+
+.pinned-placeholder {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.pinned-body {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.pinned-body.pinned-body-rich {
+  white-space: normal;
+}
+
+.pinned-body-rich a {
+  color: var(--accent, inherit);
+}
+
+/* See .bot-text pre + p. */
+.pinned-body-rich pre + p,
+.pinned-body-rich pre + ul,
+.pinned-body-rich pre + ol { margin-top: 1.2em; }
+
+.pinned-body-rich pre {
+  margin: 0.35em 0 0.9em;
+  /* Bottom padding is the scrollbar's lane — see .bot-text pre. */
+  padding: 8px 10px 14px;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border-radius: 6px;
+  background: var(--bg-active, rgba(0, 0, 0, 0.06));
+}
+
+.pinned-body-rich code,
+.pinned-body-rich pre {
+  font-size: 0.9em;
+}
+
+.pinned-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+}
+
+.pinned-caption {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -1,0 +1,86 @@
+/* ─────────────────────────────
+   Login
+───────────────────────────── */
+
+.login-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: var(--app-height, 100dvh);
+  padding: 24px;
+  gap: 28px;
+  background: var(--bg);
+}
+
+.login-logo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.login-logo .logo-icon {
+  font-size: 36px;
+  line-height: 1;
+}
+
+.login-logo h1 {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.3px;
+}
+
+.login-logo p {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.login-screen form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 340px;
+}
+
+.login-screen label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.login-screen input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+  font: 16px/1 system-ui, sans-serif;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.login-screen input:focus { border-color: var(--accent); }
+
+.login-screen button[type="submit"] {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  padding: 11px;
+  font-weight: 600;
+  margin-top: 4px;
+  transition: background 0.15s;
+}
+
+.login-screen button[type="submit"]:hover { background: var(--accent-hover); }
+.login-screen button[type="submit"]:disabled { opacity: 0.5; cursor: default; }
+
+.error { color: var(--danger); font-size: 13px; }
+.status { color: var(--text-muted); font-size: 13px; padding: 16px; }

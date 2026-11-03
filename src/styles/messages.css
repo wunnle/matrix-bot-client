@@ -1,0 +1,169 @@
+/* Scrollable messages area */
+.messages-init-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.messages-init-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.messages-init-error button {
+  padding: 8px 20px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.messages-init-error button:active { background: var(--bg-active); }
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+  /* Top: the long scroll fade. Bottom: a scroll-edge dim under the floating
+     footer, done just below where .messages-inner's end padding parks the last
+     message, so text passing behind the activity row and pills recedes instead
+     of colliding with them. */
+  mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black calc(100% - var(--footer-h, 0px) - 16px), rgba(0, 0, 0, 0.12) calc(100% - var(--footer-h, 0px) + 6px));
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black calc(100% - var(--footer-h, 0px) - 16px), rgba(0, 0, 0, 0.12) calc(100% - var(--footer-h, 0px) + 6px));
+}
+
+/* Centered content column */
+.messages-inner {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 16px 16px calc(var(--footer-h, 0px) + 20px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The column is --chat-desktop-width of text where the chat has room for it,
+   and keeps the phone's gutter where it doesn't (a side panel open beside it,
+   a narrow window), as the composer below does, instead of meeting the edges. */
+@media (min-width: 641px) {
+  .messages-inner {
+    max-width: calc(var(--chat-desktop-width) + 32px);
+  }
+}
+
+.message {
+  display: flex;
+  width: 100%;
+}
+
+.message.sender-switch { margin-top: 12px; }
+
+.message.own { justify-content: flex-end; }
+.message.other { justify-content: flex-start; }
+
+.message-body {
+  display: flex;
+  flex-direction: column;
+  max-width: 78%;
+}
+
+/* Bot replies take most of the row; the cap keeps lines readable once the
+   chat column is wide. */
+.message.other .message-body { width: 100%; max-width: min(90%, 640px); min-width: 0; overflow: hidden; }
+/* Full-row so a code block spans the width instead of clipping into a narrow box
+   on short messages. The .bot-text wrapper (.message-pin-surface) is a shrink-to-
+   fit flex item, so it (and the <pre> inside) only got as wide as the text.
+   Scoped to :has(pre) so plain-text messages keep their tight long-press highlight. */
+.message.other .message-pin-surface:has(pre) { width: 100%; }
+.message.other .message-pin-surface:has(pre) .bot-text { width: 100%; }
+/* Same for a form or a lettered list, so its options are one width whatever their labels. */
+.message.other .message-pin-surface:has(.msg-form, .msg-choices),
+.message.other .message-pin-surface:has(.msg-form, .msg-choices) .bot-text { width: 100%; }
+
+.message.own .message-body { align-items: flex-end; }
+.message.other .message-body { align-items: flex-start; }
+
+.sender {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+  padding: 0 6px;
+}
+
+.bubble {
+  padding: 10px 14px;
+  font-size: 15px;
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.bot-text {
+  --text: #d0d0de;
+  --text-strong: #e2e2ef;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text);
+  word-break: break-word;
+  white-space: pre-wrap;
+  padding: 2px 0;
+}
+
+.bot-text.bot-text-rich { white-space: normal; }
+
+.message.other:not(.peer) .bot-text:not(.bot-text-machine) {
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+
+/* A peer: someone other than you and other than the room's owner (the member
+   at the top power level). They make requests in a room you share, so they read
+   as someone talking — indented and attributed — rather than as the bot's own
+   voice, which stays the plain full-width text below. */
+.message.peer .message-body {
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+  margin-left: 2px;
+}
+
+.peer-sender {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 2px;
+  letter-spacing: 0.01em;
+}
+
+/* Deliberately NOT dimmed: a peer's message is a request someone typed, not
+   background noise like bot-text-machine. The rule and the name carry the
+   distinction; dimming the body would push real content under the contrast
+   floor and read as less important than the bot's own replies. */
+
+/* com.construct.machine — a notification or orchestration event nobody typed.
+   Recedes rather than hides: it should be skimmable at a glance and clearly
+   not a person talking, but still legible when you go looking for it. */
+.bot-text.bot-text-machine {
+  font-size: 13px;
+  color: var(--text-muted);
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+  font-family: ui-monospace, monospace;
+  white-space: pre-wrap;
+}
+
+.bot-text.bot-text-machine code {
+  background: transparent;
+  padding: 0;
+}

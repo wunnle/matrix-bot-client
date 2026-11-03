@@ -1,0 +1,463 @@
+/* Pills & Autocomplete */
+.pills {
+  display: flex;
+  gap: 6px;
+  padding: 4px 0 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.pills::-webkit-scrollbar { display: none; }
+
+/* Small glass tiles to match the composer below them: the same top-lit rim,
+   without the heavy drop shadow a whole row of them would pile up. */
+.pill {
+  background: rgba(30, 30, 42, 0.5);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 13px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Holding a pill is how a drag starts; don't let iOS open its callout. */
+  -webkit-touch-callout: none;
+}
+
+/* Touch browsers leave :hover stuck on whatever sat under the finger, so a tap
+   that re-renders the row lights up the pill that took its place. Hover styling
+   is for real pointers only. */
+@media (hover: hover) {
+  .pill:hover {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+}
+
+@media (hover: none) {
+  .pill:focus { background: rgba(30, 30, 42, 0.5); border-color: rgba(255, 255, 255, 0.14); color: var(--text-muted); outline: none; }
+}
+
+.pill-param {
+  border-style: dashed;
+}
+
+.pill-action {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+  flex-shrink: 0;
+}
+@media (hover: hover) {
+  .pill-action:hover {
+    opacity: 0.8;
+  }
+}
+
+.pill-add {
+  color: var(--text-faint);
+  font-size: 16px;
+  padding: 5px 11px;
+  line-height: 1;
+}
+@media (hover: hover) {
+  .pill-add:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-dim);
+  }
+}
+
+.pill-input {
+  outline: none;
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--bg-input);
+  width: 130px;
+  font: 16px/1 system-ui, sans-serif;
+}
+
+.autocomplete {
+  list-style: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+
+.autocomplete li {
+  padding: 9px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.1s;
+  color: var(--text-muted);
+}
+
+.autocomplete li:hover {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.send-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--danger);
+  padding: 2px 0 6px 4px;
+}
+.send-error-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.send-error-dismiss {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: var(--danger);
+}
+.send-error-dismiss .material-symbols-outlined { font-size: 16px; }
+
+.pills--hidden { display: none; }
+
+/* Stands in for the pill row while an approval card waits on you. */
+.approval-bar {
+  /* `auto` sides, not 0 — .chat-footer > * centres on them. */
+  margin: 4px auto 10px;
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+.approval-bar-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 12px;
+}
+.approval-bar-icon {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--agent-approval);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.approval-bar-icon .material-symbols-outlined {
+  font-size: 16px;
+  font-variation-settings: 'opsz' 20, 'wght' 400, 'FILL' 1, 'GRAD' 0;
+}
+.approval-bar-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.approval-bar-tool { font-size: 14px; font-weight: 600; color: var(--text-strong); }
+.approval-bar-target {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.approval-bar-view {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent-hover);
+}
+.approval-bar-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 8px;
+}
+.approval-bar-actions--single { grid-template-columns: 1fr; }
+.approval-bar-btn {
+  height: 46px;
+  border-radius: 13px;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s, transform 0.1s;
+}
+.approval-bar-btn:active:not(:disabled) { transform: scale(0.97); }
+.approval-bar-btn:disabled { opacity: 0.6; }
+.approval-bar-btn--deny { background: var(--bg-active); color: var(--text); }
+.approval-bar-btn--approve { background: var(--accent); color: #fff; }
+.approval-bar-btn .material-symbols-outlined { font-size: 20px; }
+.approval-bar-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: room-card-badge-spin 0.9s linear infinite;
+}
+.approval-bar-always {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.approval-bar-always:disabled { opacity: 0.6; }
+
+.dictation-voice-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 4px 6px 4px;
+}
+
+.dictation-voice-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  flex-shrink: 0;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.dictation-voice-dot--on {
+  background: var(--accent);
+  box-shadow: 0 0 0 0 rgba(124, 106, 247, 0.45);
+  animation: dictation-voice-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes dictation-voice-pulse {
+  50% {
+    box-shadow: 0 0 0 4px rgba(124, 106, 247, 0.15);
+    transform: scale(1.1);
+  }
+}
+
+/* Input Row — a glass panel (see .glass) with rounded-square controls inside. */
+.input-row {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  border-radius: 14px;
+  padding: 6px;
+  transition: border-color 0.15s;
+}
+
+/* No specular sheen here: the composer sits on a flat background, so there is
+   nothing for it to catch and it only reads as a gradient. */
+.input-row.glass::before { content: none; }
+
+.input-row:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.input-row textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 6px 0;
+  color: var(--text);
+  font: 16px/1.25 system-ui, sans-serif;
+  outline: none;
+  min-width: 0;
+  resize: none;
+  overflow-y: hidden;
+  max-height: 160px;
+  overflow-y: auto;
+  margin-bottom: 3px;
+}
+
+.input-row textarea::placeholder { color: var(--text-faint); }
+.input-row textarea:disabled { opacity: 0.5; }
+
+.input-row button {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  padding: 0 18px;
+  font-weight: 600;
+  font-size: 15px;
+  transition: background 0.15s;
+  height: 38px;
+  flex-shrink: 0;
+  margin-bottom: 1px;
+}
+
+.input-row button:hover { background: var(--accent-hover); }
+.input-row button:disabled { opacity: 0.4; cursor: default; }
+
+.send-btn-label { display: none; }
+.send-btn-icon { display: inline; }
+
+.input-row button {
+  padding: 0;
+  width: 38px;
+  font-size: 18px;
+}
+
+.file-input-hidden {
+  display: none;
+}
+
+/* The attachment waiting to go out with the next Send. */
+.composer-attachment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--other-bubble);
+  border: 1px solid var(--border);
+}
+.composer-attachment-thumb {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.composer-attachment-file {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-muted);
+}
+.composer-attachment-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.composer-attachment-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-muted);
+}
+.composer-attachment-remove:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+.composer-attachment-remove .material-symbols-outlined { font-size: 18px; }
+/* Secondary controls are drops of lighter glass inside the capsule; only Send
+   keeps the solid accent. */
+.input-row button.attach-btn {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-muted);
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  font-size: 0;
+  line-height: 1;
+}
+.input-row button.attach-btn .material-icons {
+  font-size: 22px;
+  line-height: 1;
+}
+.input-row button.attach-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+.camera-prompt {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  cursor: pointer;
+}
+.camera-prompt-icon { font-size: 64px; color: #fff; }
+.camera-prompt-label { font-size: 18px; font-weight: 600; color: #fff; }
+
+/* The paperclip's menu: the model dropdown's glass, opening upward from the
+   composer's left edge. */
+.input-row-anchor { position: relative; }
+.attach-menu {
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 8px);
+  left: 0;
+  transform-origin: 24px calc(100% + 8px);
+}
+.attach-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-left: 12px;
+}
+.attach-menu-item .material-icons { font-size: 20px; color: var(--text-muted); }
+
+.input-row button.dictation-btn {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-muted);
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  font-size: 0;
+  line-height: 1;
+}
+.input-row button.dictation-btn .material-icons {
+  font-size: 22px;
+  line-height: 1;
+}
+.input-row button.dictation-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+.input-row button.dictation-btn:disabled { opacity: 0.4; }
+.input-row button.dictation-btn--on,
+.input-row button.dictation-btn--on:hover:not(:disabled) {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.input-row button.dictation-btn--on.dictation-btn--hearing {
+  animation: dictation-mic-breathe 1.2s ease-in-out infinite;
+}
+@keyframes dictation-mic-breathe {
+  50% {
+    border-color: var(--accent-hover);
+    background: rgba(124, 106, 247, 0.22);
+  }
+}

@@ -1,0 +1,336 @@
+/* ─────────────────────────────
+   Sidebar / Room List
+───────────────────────────── */
+
+.room-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+
+.room-list-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-top: 10px;
+  padding-bottom: var(--tab-bar-space);
+  display: flex;
+  flex-direction: column;
+}
+
+.room-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  padding: 12px;
+}
+
+/* An invite is the room tile it will become, faded until accepted. */
+.room-card--invite { opacity: 0.45; }
+.room-card--invite:disabled { cursor: progress; }
+
+.room-card--invite .room-card-avatar {
+  border: 1px dashed var(--text-faint);
+  background: transparent;
+}
+
+@media (hover: hover) {
+  .room-card--invite:hover { opacity: 0.75; }
+}
+
+/* The spawn tile is a ghost of a room that does not exist yet — same shape as
+   an invite, since an invite is literally what tapping it produces. */
+.room-card--spawn { opacity: 0.45; }
+.room-card--spawn:disabled { cursor: progress; }
+
+.room-card--spawn .room-card-avatar {
+  border: 1px dashed var(--text-faint);
+  background: transparent;
+  /* Nothing to drag here, so let a touch on it scroll the grid. */
+  touch-action: auto;
+}
+
+@media (hover: hover) {
+  .room-card--spawn:hover { opacity: 0.75; }
+}
+
+.room-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 6px;
+  border-radius: 14px;
+  transition: background 0.1s;
+  width: 100%;
+}
+
+/* Only apply hover on devices that actually hover. Without this,
+   tapping a tile on mobile leaves :hover stuck until another element
+   is hovered — which looks like the active state is lingering after
+   navigating back to the rooms screen. */
+@media (hover: hover) {
+  .room-card:hover { background: var(--bg-hover); }
+}
+.room-card:focus { outline: none; }
+.room-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.room-card.active { background: var(--accent-dim); }
+.room-card.active .room-card-name { color: var(--accent); }
+
+.room-card-avatar {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  border-radius: 18px;
+  background: var(--bg-active);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-muted);
+  overflow: visible;
+  /* drag handle: touch-action:none lets @dnd-kit capture the touch
+     before the browser steals it for scrolling. Applied here only
+     so the card-name area can still initiate list scrolling. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  /* iOS otherwise offers its image callout ("Zoom in on image", save, copy)
+     when the drag press lingers on the avatar. */
+  -webkit-touch-callout: none;
+}
+
+.room-card-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 18px;
+  object-fit: cover;
+  /* Keep the touch targeting the drag handle, never the <img> itself, so
+     iOS never treats a slow drag as a gesture on an image. */
+  pointer-events: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+}
+
+.room-card.active .room-card-avatar {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+/* The tile is for the letter fallback. Behind an image it would fill the
+   transparent background of the agent minifigs. */
+.room-card-avatar:has(img),
+.room-card.active .room-card-avatar:has(img) { background: transparent; }
+
+/* The tile's one badge, iOS-style: cut out of the icon by a ring of the grid's
+   background. A bare dot for unread; a glyph on a state colour for the agent. */
+.room-card-badge {
+  --badge-color: var(--accent);
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--badge-color);
+  box-shadow: 0 0 0 2.5px var(--bg-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+.room-card-badge--unread {
+  top: -3px;
+  right: -3px;
+  width: 12px;
+  height: 12px;
+}
+.room-card-badge .material-symbols-outlined {
+  font-size: 15px;
+  line-height: 1;
+  font-variation-settings: 'opsz' 20, 'wght' 400, 'FILL' 1, 'GRAD' 0;
+}
+.room-card-badge--working { --badge-color: var(--agent-working); }
+.room-card-badge--approval { --badge-color: var(--agent-approval); }
+.room-card-badge--question { --badge-color: var(--agent-question); }
+.room-card-badge--blocked { --badge-color: var(--agent-blocked); }
+.room-card-badge-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: room-card-badge-spin 0.9s linear infinite;
+}
+
+@keyframes room-card-badge-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-card-badge-spinner { animation: none; }
+}
+
+.room-card-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: center;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Agent rooms: chat rows under the tiles, with the newest message. */
+.room-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 12px 12px;
+}
+.room-rows-title {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.room-row {
+  --tree-indent: 36px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - var(--tree-depth, 0) * var(--tree-indent));
+  margin-left: calc(var(--tree-depth, 0) * var(--tree-indent));
+  padding: 8px;
+  border-radius: 16px;
+  text-align: left;
+  transition: background 0.1s;
+}
+/* Child agent tree lines. A row's avatar centre sits 28px in (8px padding +
+   half the 40px avatar), so a parent's line runs down x = 28px of its row,
+   which is one indent left of that inside its child's row. Every segment
+   reaches 4px up into the gap above, so the pieces meet. */
+.room-row-rail,
+.room-row-elbow,
+.room-row-stem {
+  position: absolute;
+  pointer-events: none;
+  border: 0 solid var(--text-faint);
+}
+.room-row-rail {
+  top: -4px;
+  bottom: 0;
+  left: calc(27px - var(--tree-level) * var(--tree-indent));
+  border-left-width: 2px;
+}
+/* Turns from the parent's line into this row's avatar, ending at its centre. */
+.room-row-elbow {
+  top: -4px;
+  height: 33px;
+  left: calc(27px - var(--tree-indent));
+  width: calc(var(--tree-indent) - 19px);
+  border-left-width: 2px;
+  border-bottom-width: 2px;
+  border-bottom-left-radius: 12px;
+}
+/* Leaves a parent's avatar from its bottom centre. */
+.room-row-stem {
+  top: 48px;
+  bottom: 0;
+  left: 27px;
+  border-left-width: 2px;
+}
+@media (hover: hover) {
+  .room-row:hover { background: var(--bg-hover); }
+}
+.room-row:focus { outline: none; }
+.room-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.room-row.active { background: var(--bg-active); }
+.room-row.active .room-row-avatar:not(:has(img)) { background: rgba(255, 255, 255, 0.08); }
+.room-row-avatar {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  font-size: 16px;
+  /* Not a drag handle here: a touch on it should scroll the list. */
+  touch-action: auto;
+}
+.room-row-avatar img { border-radius: 11px; }
+.room-row .room-card-badge { top: auto; bottom: -2px; right: -5px; width: 18px; height: 18px; }
+.room-row .room-card-badge .material-symbols-outlined { font-size: 12px; }
+.room-row .room-card-badge-spinner { width: 9px; height: 9px; }
+.room-row .room-card-badge--unread { width: 11px; height: 11px; bottom: -2px; right: -2px; }
+.room-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 1px 0; }
+.room-row-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--text-strong);
+}
+.room-row--unread .room-row-name { font-weight: 600; }
+.room-row-preview {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  line-height: 17px;
+  color: var(--text-muted);
+}
+.room-row--unread .room-row-preview { color: var(--text); }
+.room-row--spawn { opacity: 0.45; }
+.room-row--spawn:disabled { cursor: progress; }
+.room-row--spawn .room-row-avatar { border: 1px dashed var(--text-faint); background: transparent; }
+.room-row--spawn .room-row-name { font-weight: 500; color: var(--text-muted); }
+@media (hover: hover) {
+  .room-row--spawn:hover { opacity: 0.75; }
+}
+
+/* Skeleton loading */
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px;
+}
+
+.skeleton-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 18px;
+  background: linear-gradient(90deg, var(--bg-active) 25%, var(--bg-hover) 50%, var(--bg-active) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+
+.skeleton-line {
+  height: 10px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--bg-active) 25%, var(--bg-hover) 50%, var(--bg-active) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+
+.skeleton-line.wide { width: 65%; }
+.skeleton-line.narrow { width: 40%; }
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

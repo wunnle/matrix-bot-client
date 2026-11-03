@@ -28,14 +28,13 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useSearchParams } from 'react-router-dom'
 import { getClient } from '../lib/matrix'
-import { getRoomOwners } from '../lib/roomOwners'
 import { pinRoomEvent, unpinRoomEvent } from '../lib/pinRoomMessage'
 import { loadPills, savePills, isAgentRoom, agentRoomModels } from '../lib/roomMeta'
 import { resolveMediaUrl, type EncryptedMedia } from '../lib/mediaUrl'
 import { encryptAttachment, type EncryptedFile } from '../lib/attachmentCrypto.js'
 import { Capacitor } from '@capacitor/core'
 import { isMobileSafari } from '../lib/isMobileSafari'
-import { actionLabel, choiceIndexFromKey, choiceLetter, isChoiceList, parseActions, pickedChoice, stripActionMarkersInRichHtml } from '../lib/actions'
+import { actionLabel, choiceIndexFromKey, parseActions, stripActionMarkersInRichHtml } from '../lib/actions'
 import { formatModel } from '../lib/modelLabel'
 import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
@@ -45,20 +44,18 @@ import RoomSidebar, { type SidebarTab } from './RoomSidebar'
 import { collectRoomMedia } from '../lib/roomMedia'
 import { HeaderUsageBar } from './PlanUsageMeter'
 import { usePlanUsage, useCodexUsage } from '../hooks/usePlanUsage'
-import { Marked } from 'marked'
-import type { Message, RoomConfig, ConstructThread, ConstructApproval, ConstructForm, ToolProgressLine, SharedLocation, SubagentCard, ConstructArtifact } from '../types'
-import { useAgentRun, type AgentRun } from '../hooks/useAgentActivity'
+import type { Message, RoomConfig, ConstructApproval, ConstructForm, SharedLocation } from '../types'
+import { useAgentRun } from '../hooks/useAgentActivity'
 import { AgentActivityBar } from './AgentActivityBar'
 import MessageActionSheet from './MessageActionSheet'
 import ApprovalBar from './ApprovalBar'
 import ModelMenu from './ModelMenu'
-import { approvalChoices, parseApprovalCard } from '../lib/approval'
 import { artifactIdOf, parseArtifact } from '../lib/artifact'
 import { parseBrowserPage, storedPage, storePage } from '../lib/browser'
 import { useArtifactIndex, useArtifactsUpdatedAt } from '../hooks/useArtifactIndex'
 import { useLinearIndex } from '../hooks/useLinearIndex'
-import { extractFormBlock, formAnswerBody, formResponseFromContent, FORM_RESPONSE_KEY } from '../lib/form'
-import { extractLocationBlocks, formatCoords, locationContent, locationFromContent, mapsUrl, mapTiles, MAP_ATTRIBUTION } from '../lib/location'
+import { formAnswerBody, FORM_RESPONSE_KEY } from '../lib/form'
+import { locationContent } from '../lib/location'
 import LocationPicker from './LocationPicker'
 import RoomViewToggle from './RoomViewToggle'
 import RoomPage from './views/RoomPage'
@@ -67,6 +64,21 @@ import { ROOM_VIEW_COMPOSER_HINT } from '../lib/roomView'
 import { hapticPress, hapticSend, hapticSuccess, hapticTick, hapticWarning } from '../lib/haptics'
 import { copyTextToClipboard } from '../lib/clipboard'
 import { useAgentBlocked, formatResetsAt, blockedHeadline } from '../hooks/useAgentBlocked'
+import { sameDay, formatSentAt } from '../lib/chatFormat'
+import { sanitizeHtml } from '../lib/sanitizeHtml'
+import { threadMd } from '../lib/threadMarkdown'
+import { isBotToolProgress, parseToolProgressMessage, summarizeToolLines } from '../lib/toolProgress'
+import { getRoomModel, setRoomModel, isModelPickerTraffic } from '../lib/roomModel'
+import { scrollbackWithRetry, roomIsEncrypted } from '../lib/chatRoom'
+import { scrollToEnd, isOnScrollbar } from '../lib/scroll'
+import { getMaxReadTs, eventToMessage, eventsToMessages } from '../lib/eventToMessage'
+import { ArtifactOpenContext, BrowserOpenContext } from './chat/openContexts'
+import { MessageRow } from './chat/MessageRow'
+import { useRoomPills } from '../hooks/useRoomPills'
+import { useTypingUsers } from '../hooks/useTypingUsers'
+import { useRoomHeaderInfo } from '../hooks/useRoomHeaderInfo'
+import { usePinnedMessages } from '../hooks/usePinnedMessages'
+import { useMessageActions } from '../hooks/useMessageActions'
 
 interface Props {
   roomId: string
@@ -87,25 +99,7 @@ const MSG_CAP = 200 // max messages kept in state; old ones dropped from the fro
 // How long a room with nothing cached waits on the server before the spinner
 // gives way to a retry. /messages has no timeout of its own.
 const INITIAL_LOAD_TIMEOUT_MS = 8000
-const SCROLLBACK_RETRIES = 3
 
-// The SDK does not retry scrollback, so a single failed /messages, a 429 from
-// matrix.org or a request lost on a socket iOS killed while suspended, used to
-// end a room's history. Retry with the SDK's own policy: wait what a 429 asks
-// for, back off on network and server errors, give up on other 4xx.
-async function scrollbackWithRetry(client: sdk.MatrixClient, room: sdk.Room, limit: number): Promise<sdk.Room> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await client.scrollback(room, limit)
-    } catch (err) {
-      const e = err as { httpStatus?: number; errcode?: string; name?: string }
-      console.warn(`[scrollback] ${room.roomId} attempt ${attempt} failed:`, e.httpStatus ?? e.name, e.errcode ?? '')
-      const wait = attempt > SCROLLBACK_RETRIES ? -1 : sdk.calculateRetryBackoff(err, attempt, true)
-      if (wait < 0) throw err
-      await new Promise((r) => setTimeout(r, wait))
-    }
-  }
-}
 // Where the side panel is a column rather than a sheet; matches the CSS.
 const WIDE = '(min-width: 641px)'
 const SIDEBAR_KEY = 'room-sidebar-open'
@@ -135,63 +129,6 @@ const enableSwipeBack =
     // iOS-specific standalone flag (non-standard, still used)
     (navigator as unknown as { standalone?: boolean }).standalone === true)
 
-
-function isToolProgressMessage(_body: string, msg?: Message): boolean {
-  return !!msg?.toolProgress
-}
-
-// Only the room's own bot gets its tool progress collapsed into a chip. A peer
-// agent's progress lines stay attributed to them rather than folding into this
-// room's bot narration.
-function isBotToolProgress(msg: Message): boolean {
-  return !msg.isOwnMessage && !msg.isPeerMessage && isToolProgressMessage(msg.body, msg)
-}
-
-function parseToolProgressMessage(_body: string, msg?: Message): ToolProgressLine[] {
-  return msg?.toolProgress ?? []
-}
-
-function summarizeToolLines(lines: ToolProgressLine[]): string {
-  const known: Record<string, number> = {}
-  const byName: Record<string, number> = {}
-  for (const l of lines) {
-    const t = l.tool.toLowerCase()
-    const n = l.repeat ?? 1
-    const cat =
-      t === 'bash' || t === 'terminal' ? 'commands' :
-      t === 'edit' || t === 'write' || t === 'patch' ? 'edited' :
-      t === 'read' || t === 'read_file' ? 'read' :
-      t === 'grep' || t === 'glob' || t === 'search_files' || t === 'search' ? 'searches' :
-      t === 'agent' ? 'agents' :
-      t === 'skill_view' ? 'skills' :
-      null
-    if (cat) {
-      known[cat] = (known[cat] ?? 0) + n
-    } else {
-      byName[l.tool] = (byName[l.tool] ?? 0) + n
-    }
-  }
-  const parts: string[] = []
-  if (known['commands']) { const v = known['commands']; parts.push(`Ran ${v} command${v === 1 ? '' : 's'}`) }
-  if (known['edited']) { const v = known['edited']; parts.push(`edited ${v} file${v === 1 ? '' : 's'}`) }
-  if (known['read']) { const v = known['read']; parts.push(`read ${v} file${v === 1 ? '' : 's'}`) }
-  if (known['searches']) { const v = known['searches']; parts.push(`${v} search${v === 1 ? '' : 'es'}`) }
-  if (known['agents']) { const v = known['agents']; parts.push(`${v} agent${v === 1 ? '' : 's'}`) }
-  if (known['skills']) { const v = known['skills']; parts.push(`${v} skill${v === 1 ? '' : 's'}`) }
-  for (const [name, v] of Object.entries(byName)) parts.push(`${v}× ${name}`)
-  return parts.join(', ') || 'Used tools'
-}
-
-
-function getRoomBotMeta(roomId: string, userId: string, client: sdk.MatrixClient): { name: string; mxcUrl: string | null } | null {
-  const room = client.getRoom(roomId)
-  if (!room) return null
-  const others = room.getMembersWithMembership('join').filter(m => m.userId !== userId)
-  if (others.length === 0) return null
-  const m = others[0]
-  return { name: m.name ?? shortName(m.userId), mxcUrl: m.getMxcAvatarUrl() ?? null }
-}
-
 function SortablePill({ pill, onActivate }: { pill: string; onActivate: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: pill })
   const style = {
@@ -216,264 +153,8 @@ function SortablePill({ pill, onActivate }: { pill: string; onActivate: () => vo
   )
 }
 
-// Thread bodies are parsed here rather than arriving as HTML, so the diff and
-// command renderers have to be repeated client-side — otherwise the full change
-// behind an approval card would render as a flat, uncoloured block.
-function escapeCode(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
-const threadMd = new Marked({
-  renderer: {
-    code(token: { lang?: string; text: string }) {
-      if (token.lang === 'cmd') return `<pre><code class="cmd">${escapeCode(token.text)}</code></pre>`
-      if (token.lang !== 'diff') return false
-      const lines = token.text.split('\n').map((line) => {
-        const cls = line.startsWith('+') ? 'diff-add'
-          : line.startsWith('-') ? 'diff-del'
-          : line.startsWith('#') ? 'diff-meta'
-          : 'diff-ctx'
-        const marked_ = cls !== 'diff-ctx'
-        const mark = marked_ ? escapeCode(line[0]) : ''
-        const rest = escapeCode(marked_ ? line.slice(1) : line) || '&nbsp;'
-        return `<span class="${cls}"><span class="diff-mark">${mark}</span>${rest}</span>`
-      })
-      return `<pre><code class="diff">${lines.join('')}</code></pre>`
-    },
-  },
-} as any)
-
-function ThreadBlock({ thread }: { thread: ConstructThread }) {
-  const [expanded, setExpanded] = React.useState(false)
-  const bodyHtml = React.useMemo(
-    () => sanitizeHtml(threadMd.parse(thread.body, { async: false }) as string),
-    [thread.body]
-  )
-  return (
-    <div className={`msg-thread${expanded ? ' msg-thread--open' : ''}`}>
-      <button className="msg-thread-header" onClick={() => setExpanded(v => !v)}>
-        <span className="material-icons msg-thread-chevron">chevron_right</span>
-        <span className="msg-thread-title">{thread.title}</span>
-      </button>
-      {!expanded && thread.summary && (
-        <div className="msg-thread-summary">{thread.summary}</div>
-      )}
-      {expanded && (
-        <div
-          className="msg-thread-body bot-text bot-text-rich"
-          dangerouslySetInnerHTML={{ __html: bodyHtml }}
-        />
-      )}
-    </div>
-  )
-}
-
-function formatDuration(ms: number): string {
-  const s = Math.max(0, Math.round(ms / 1000))
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
-}
-
-// Running shows the live dot instead; its entry is never drawn.
-const SUBAGENT_ICON: Record<SubagentCard['status'], string> = {
-  running: 'pending',
-  completed: 'check_circle',
-  failed: 'error',
-  stopped: 'stop_circle',
-}
-
-// A subagent the agent handed work to: what it's doing while it runs, its
-// report once it's done. Collapsed by default; the card is edited in place, so
-// this re-renders as the bot sends each snapshot.
-function SubagentBlock({ card }: { card: SubagentCard }) {
-  const [expanded, setExpanded] = React.useState(false)
-  const running = card.status === 'running'
-  // Snapshots come every few seconds at best; the clock shouldn't wait on them.
-  const [now, setNow] = React.useState(() => Date.now())
-  React.useEffect(() => {
-    if (!running || !card.startedAt) return
-    const t = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(t)
-  }, [running, card.startedAt])
-  const elapsed = running && card.startedAt ? Math.max(card.durationMs ?? 0, now - card.startedAt) : card.durationMs
-  const summaryHtml = React.useMemo(
-    () => (card.summary ? sanitizeHtml(threadMd.parse(card.summary, { async: false }) as string) : ''),
-    [card.summary]
-  )
-  const latest = card.lines[card.lines.length - 1]
-  const meta = [
-    card.toolUses > 0 && `${card.toolUses} ${card.toolUses === 1 ? 'tool' : 'tools'}`,
-    elapsed !== undefined && elapsed > 0 && formatDuration(elapsed),
-  ].filter(Boolean).join(' · ')
-  // Collapsed, the second line is what it's doing now, or how it ended.
-  const peek = running
-    ? latest && `${latest.tool}${latest.content ? ` · ${latest.content}` : ''}`
-    : card.summary?.split('\n').find((l) => l.trim())?.replace(/[*_`#>]/g, '').trim()
-  return (
-    <div className={`subagent-card subagent-card--${card.status}${expanded ? ' subagent-card--open' : ''}`}>
-      <button className="subagent-card-header" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
-        {running
-          ? <span className="tool-progress-live-dot subagent-card-live" aria-label="Running" />
-          : <span className="material-icons subagent-card-icon" aria-label={card.status}>{SUBAGENT_ICON[card.status]}</span>}
-        <span className="subagent-card-heading">
-          <span className="subagent-card-title">{card.description}</span>
-          {(card.agentType || meta) && (
-            <span className="subagent-card-meta">
-              {card.agentType && <span className="subagent-card-type">{card.agentType}</span>}
-              {meta}
-            </span>
-          )}
-          {!expanded && peek && <span className="subagent-card-peek">{peek}</span>}
-        </span>
-        <span className="material-icons subagent-card-chevron">chevron_right</span>
-      </button>
-      {expanded && (
-        <div className="subagent-card-body">
-          {card.lines.length > 0 && (
-            <div className="subagent-card-lines">
-              {card.toolUses > card.lines.length && (
-                <div className="subagent-card-earlier">{card.toolUses - card.lines.length} earlier</div>
-              )}
-              {card.lines.map((l, i) => (
-                <div key={i} className="tool-progress-line">
-                  <span className="tool-progress-emoji">{l.emoji}</span>
-                  <span className="tool-progress-tool">{l.tool}</span>
-                  {l.content !== undefined && <span className="tool-progress-content">{l.content}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-          {summaryHtml
-            ? <div className="subagent-card-summary bot-text" dangerouslySetInnerHTML={{ __html: summaryHtml }} />
-            : !running && card.lines.length === 0 && <div className="subagent-card-earlier">No report.</div>}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Opens an artifact in the room's side panel; provided by ChatView so the card,
-// deep inside memoised message rows, needs no prop threaded down to it.
-const ArtifactOpenContext = React.createContext<((url: string) => void) | null>(null)
-
-// A page an agent published to claude.ai. A tap opens it in the side panel
-// (from the copy the bot keeps); the link itself still goes to claude.ai, for
-// a long-press or a new tab.
-function ArtifactBlock({ artifact }: { artifact: ConstructArtifact }) {
-  const open = React.useContext(ArtifactOpenContext)
-  return (
-    <a
-      className="artifact-card"
-      href={artifact.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={open ? (e) => {
-        if (e.metaKey || e.ctrlKey || e.shiftKey) return
-        e.preventDefault()
-        open(artifact.url)
-      } : undefined}
-    >
-      <span className="material-symbols-outlined artifact-card-icon" aria-hidden="true">article</span>
-      <span className="artifact-card-text">
-        <span className="artifact-card-title">{artifact.title}</span>
-        {artifact.description && <span className="artifact-card-description">{artifact.description}</span>}
-        <span className="artifact-card-meta">claude.ai{artifact.version && artifact.version > 1 ? ` · version ${artifact.version}` : ''}</span>
-      </span>
-      <span className="material-icons artifact-card-open" aria-hidden="true">open_in_new</span>
-    </a>
-  )
-}
-
-// Opens a page in the side panel's Browser tab; provided like the one above.
-const BrowserOpenContext = React.createContext<((url: string) => void) | null>(null)
-
-// A page an agent opened beside the chat (construct-browse). A tap shows it in
-// the Browser tab again; the link itself still goes to the page.
-function BrowserBlock({ page }: { page: NonNullable<Message['browser']> }) {
-  const open = React.useContext(BrowserOpenContext)
-  const host = new URL(page.url).host
-  return (
-    <a
-      className="artifact-card"
-      href={page.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={open ? (e) => {
-        if (e.metaKey || e.ctrlKey || e.shiftKey) return
-        e.preventDefault()
-        open(page.url)
-      } : undefined}
-    >
-      <span className="material-symbols-outlined artifact-card-icon" aria-hidden="true">language</span>
-      <span className="artifact-card-text">
-        <span className="artifact-card-title">{page.title ?? host}</span>
-        <span className="artifact-card-meta">{page.title ? `${host} · ` : ''}Open beside the chat</span>
-      </span>
-      <span className="material-icons artifact-card-open" aria-hidden="true">chevron_right</span>
-    </a>
-  )
-}
-
-function getRoomModel(roomId: string): string | null {
-  return localStorage.getItem(`room-model:${roomId}`)
-}
-
-function setRoomModel(roomId: string, model: string) {
-  localStorage.setItem(`room-model:${roomId}`, model)
-}
-
-// A bot's model picker: the agent bot's answer to !model ("Model: …" +
-// [[!model <id>]]) or Hermes' to !switch ("Pick model:" + [[/luna]]).
-function isModelPicker(m: Message): boolean {
-  if (m.isOwnMessage) return false
-  const { actions } = parseActions(m.body)
-  if (!actions.length) return false
-  if (/^\s*Model:/.test(m.body)) return actions.every((a) => /^!model\s+\S+$/.test(a))
-  if (/^\s*Pick model:/i.test(m.body)) return actions.every((a) => /^\/\w+$/.test(a))
-  return false
-}
-
-// The ask and the answer of a model picker, which the header's model menu
-// stands in for. The pick and the bot's confirmation stay, as the record.
-function isModelPickerTraffic(m: Message): boolean {
-  return (m.isOwnMessage && /^!(model|switch)$/.test(m.body.trim())) || isModelPicker(m)
-}
-
-// Agent room topics are ` · `-separated, and their first field is where the
-// room works: an absolute path for a plain room, a branch name for one running
-// in its own worktree. A full path never fits the subtitle line, so keep only
-// its last segment — the directory or worktree name is what identifies it.
-// Branches pass through untouched, being short and already meaningful.
-function shortenTopicPaths(topic: string): string {
-  return topic
-    .split(' · ')
-    .map((part) => (part.startsWith('/') ? part.split('/').filter(Boolean).pop() ?? part : part))
-    .join(' · ')
-}
-
-/**
- * Scroll a container to its true end.
- *
- * scrollIntoView on the bottom sentinel aligns that zero-height div, which
- * leaves whatever sits below it — a collapsed bottom margin on the last block,
- * the container's own padding — still scrollable, so entering a room landed a
- * few pixels short. The arithmetic has no such gap.
- */
-function scrollToEnd(el: HTMLElement | null, behavior: ScrollBehavior = 'instant') {
-  if (!el) return
-  el.scrollTo({ top: el.scrollHeight - el.clientHeight, behavior })
-}
-
-// The scrollbar lives inside the block's border box but outside its client
-// box, so a hit below/right of the client box is the bar, not the code.
-const isOnScrollbar = (block: HTMLElement, e: { clientX: number; clientY: number }) => {
-  const rect = block.getBoundingClientRect()
-  return (
-    e.clientY >= rect.top + block.clientTop + block.clientHeight ||
-    e.clientX >= rect.left + block.clientLeft + block.clientWidth
-  )
-}
-
 function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictationAutoSend }: Props) {
+  const client = getClient()
   // Read inside the timeline listener, which must not re-subscribe whenever
   // the active room changes.
   const isActiveRef = useRef(isActive)
@@ -493,7 +174,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [showEditor, setShowEditor] = useState(false)
-  const [pills, setPills] = useState<string[]>([])
+  const [pills, setPills] = useRoomPills(client, roomId)
   const [currentModel, setCurrentModel] = useState<string | null>(() => getRoomModel(roomId))
   // MouseSensor, not PointerSensor: a finger fires pointerdown too, and the
   // pointer sensor claims the drag before TouchSensor's long-press can — then
@@ -512,7 +193,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       savePills(getClient(), roomId, next)
       return next
     })
-  }, [roomId])
+  }, [roomId, setPills])
 
   // A drag is not a tap. Scrolling a code block sideways ends in a click on
   // it, which would otherwise copy the block and pop a toast on every swipe.
@@ -563,68 +244,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     void copyTextToClipboard(text).then(() => showToast('Copied'))
   }, [showToast])
 
-  // Action pills reflect the last message only: once you reply (or the bot
-  // says anything after), the previous message's [[buttons]] should clear.
-  // Tool lines and mid-turn narration don't count as "saying anything" — the
-  // bot keeps posting those while an approval card waits on you, and letting
-  // them win took the Approve / Deny pills away the moment one landed.
-  const lastActionMessage = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]
-      // A subagent card is progress too; one posted behind an approval card
-      // must not take its approval bar away.
-      if (isBotToolProgress(m) || ((m.interim || m.subagent || m.artifact || m.browser) && !m.isOwnMessage && !m.isPeerMessage)) continue
-      return m.isOwnMessage ? null : m
-    }
-    return null
-  }, [messages])
-  const lastActions = useMemo(
-    () => (lastActionMessage ? parseActions(lastActionMessage.body).actions : []),
-    [lastActionMessage],
-  )
-  // That message, when it is an approval card: it gets the approval bar in
-  // place of the pill row.
-  const pendingApproval = useMemo(() => {
-    if (!lastActionMessage) return null
-    const { approve, deny, always, session, auto } = approvalChoices(lastActions)
-    const card = approve ? parseApprovalCard(lastActionMessage.body) : null
-    if (!approve || !card) return null
-    return { msg: lastActionMessage, card, approve, deny, always, session, auto }
-  }, [lastActionMessage, lastActions])
-  // That message, when it is a model picker — the agent bot's answer to !model
-  // ("Model: …" + [[!model <id>]]) or Hermes' to !switch ("Pick model:" +
-  // [[/luna]]): the model menu lists its options, and the timeline hides it.
-  const modelPicker = useMemo(
-    () => (lastActionMessage && isModelPicker(lastActionMessage) ? { msg: lastActionMessage, options: lastActions } : null),
-    [lastActionMessage, lastActions],
-  )
-  // A bot message's [[…]] answers show as a lettered list under its text, not
-  // as pills: open on the last message, faded on older ones,
-  // with the option your next message picked kept lit. That message itself
-  // leaves the timeline: the lit option already says what you sent.
-  const { choiceLists, choiceReplies } = useMemo(() => {
-    const lists: Record<string, { open: boolean; picked?: string }> = {}
-    const replies = new Set<string>()
-    // Walking back, the nearest own message after the one being looked at.
-    let reply: Message | undefined
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]
-      if (m.isOwnMessage) { reply = m; continue }
-      if (!m.body.includes('[[')) continue
-      const { actions } = parseActions(m.body)
-      if (!isChoiceList(actions)) continue
-      // Approval cards answer through the approval bar.
-      if (approvalChoices(actions).approve && parseApprovalCard(m.body)) continue
-      const picked = m !== lastActionMessage && reply ? pickedChoice(reply.body, actions) : undefined
-      if (picked) replies.add(reply!.eventId)
-      lists[m.eventId] = { open: m === lastActionMessage, picked }
-    }
-    return { choiceLists: lists, choiceReplies: replies }
-  }, [messages, lastActionMessage])
-  const openChoices = lastActionMessage && choiceLists[lastActionMessage.eventId] ? lastActions : null
-  // The reply buttons the pill row shows: none when the model menu or the
-  // lettered list stands in for them.
-  const pillActions = modelPicker || openChoices ? [] : lastActions
+  const { lastActionMessage, pendingApproval, modelPicker, choiceLists, choiceReplies, openChoices, pillActions } = useMessageActions(messages)
   // The header chip's dropdown, holding the command it sent. It opens at once
   // and loads for as long as that command is still the last word.
   const [modelMenuRequest, setModelMenuRequest] = useState<string | null>(null)
@@ -661,8 +281,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
   const [renderStart, setRenderStart] = useState(0)
-  const [typingUsers, setTypingUsers] = useState<string[]>([])
-  const [bot, setBot] = useState<{ name: string; avatarUrl: string | null } | null>(null)
+  const typingUsers = useTypingUsers(client, roomId, userId)
+  const { bot, roomTopic, roomAvatarUrl } = useRoomHeaderInfo(client, roomId, userId)
   // When the bot started typing, for the page's "Thinking… 12s" strip; ticks
   // once a second while it lasts.
   const thinking = typingUsers.length > 0
@@ -674,8 +294,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const t = setInterval(() => setThinkingTick((n) => n + 1), 1000)
     return () => clearInterval(t)
   }, [thinking])
-  const [roomAvatarUrl, setRoomAvatarUrl] = useState<string | null>(null)
-  const [roomTopic, setRoomTopic] = useState('')
   const [sendError, setSendError] = useState('')
   const [pinError, setPinError] = useState('')
   const [pinInFlight, setPinInFlight] = useState(false)
@@ -707,11 +325,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   }, [])
   const [dragOver, setDragOver] = useState(false)
   const dragCounterRef = useRef(0)
-  const [pinnedEventIds, setPinnedEventIds] = useState<string[]>([])
-  const [pinnedDisplay, setPinnedDisplay] = useState<Message[]>([])
+  const { pinnedEventIds, pinnedDisplay, pinnedIdsRef, refreshPinnedRef } = usePinnedMessages(client, roomId, userId, messages.length)
   const [pinnedExpanded, setPinnedExpanded] = useState(true)
 
-  const client = getClient()
   // A room with a page opens on it; the chat stays mounted underneath, so
   // switching back keeps its scroll position and live timeline.
   const viewKind = useRoomViewKind(client, roomId)
@@ -721,9 +337,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const bottomRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
   const codeScrollRef = useRef(new Map<string, number>())
-  const refreshPinnedRef = useRef<() => void>(() => {})
-  const pinnedIdsRef = useRef<Set<string>>(new Set())
-  const activeRoomIdRef = useRef(roomId)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
@@ -738,10 +351,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const touchStartY = useRef<number | null>(null)
 
   useEffect(() => {
-    activeRoomIdRef.current = roomId
-  }, [roomId])
-
-  useEffect(() => {
     setPinnedExpanded(true)
   }, [roomId])
 
@@ -750,66 +359,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     if (window.matchMedia('(max-width: 640px)').matches) return
     textareaRef.current?.focus()
   }, [roomId, isActive])
-
-  const refreshPinned = useCallback(async () => {
-    const forRoom = roomId
-    const room = client.getRoom(forRoom)
-    if (!room) return
-    const st = room.currentState.getStateEvents(sdk.EventType.RoomPinnedEvents, '')
-    const content = st?.getContent() as { pinned?: string[] } | undefined
-    const ids = content?.pinned ?? []
-    pinnedIdsRef.current = new Set(ids)
-    if (forRoom !== activeRoomIdRef.current) return
-    setPinnedEventIds(ids)
-
-    if (ids.length === 0) {
-      setPinnedDisplay([])
-      return
-    }
-
-    // Prefer the local timeline, then GET /rooms/.../event/... for each pin. That works when
-    // timelineSupport was off, for thread based pins (getEventTimeline bails on thread roots), etc.
-    const eventById = new Map<string, sdk.MatrixEvent>()
-    for (const id of ids) {
-      const local = room.findEventById(id)
-      if (local) eventById.set(id, local)
-    }
-    const needFetch = ids.filter((id) => !eventById.has(id))
-    if (needFetch.length > 0) {
-      const mapper = client.getEventMapper()
-      await Promise.all(
-        needFetch.map(async (id) => {
-          try {
-            const raw = await client.fetchRoomEvent(forRoom, id)
-            const ev = mapper(raw)
-            await client.decryptEventIfNeeded(ev)
-            eventById.set(id, ev)
-          } catch {
-            // 404, access denied, etc.
-          }
-        }),
-      )
-    }
-
-    if (forRoom !== activeRoomIdRef.current) return
-
-    const maxReadTs = getMaxReadTs(room, userId)
-    const resolved: Message[] = []
-    for (const id of [...ids].reverse()) {
-      const ev = eventById.get(id)
-      if (!ev || ev.isRedacted()) continue
-      const t = ev.getType()
-      if (t !== 'm.room.message' && t !== 'm.room.encrypted' && !ev.isDecryptionFailure()) continue
-      resolved.push(eventToMessage(ev, userId, maxReadTs, room))
-    }
-    setPinnedDisplay(resolved)
-  }, [client, roomId, userId])
-
-  useEffect(() => {
-    refreshPinnedRef.current = () => {
-      void refreshPinned()
-    }
-  }, [refreshPinned])
 
   // Model-picker traffic is the header menu's business, not the timeline's;
   // a pick from a lettered list shows as that list's lit option.
@@ -1125,7 +674,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       client.off(sdk.MatrixEventEvent.Decrypted, onDecrypted)
       client.off(sdk.RoomEvent.Receipt, onReceipt)
     }
-  }, [roomId, userId, client])
+  }, [roomId, userId, client, pinnedIdsRef, refreshPinnedRef])
 
   // A failed first load retries by itself once there is reason to think it
   // would now work: the app is back in front, or sync has just recovered.
@@ -1202,80 +751,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     if (scannedModel) setRoomModel(roomId, scannedModel)
   }, [scannedModel, roomId])
 
-  // Compute bot info reactively — members may be lazy-loaded. Listen on
-  // room.currentState rather than the client so we don't wake up for
-  // every member change in every other joined room.
-  useEffect(() => {
-    const room = client.getRoom(roomId)
-    if (!room) return
-    let cancelled = false
-    const update = async () => {
-      const meta = getRoomBotMeta(roomId, userId, client)
-      if (!meta) {
-        if (!cancelled) setBot((prev) => (prev === null ? prev : null))
-        return
-      }
-      const avatarUrl = meta.mxcUrl ? await resolveMediaUrl(client, meta.mxcUrl, 80, 80, 'crop') : null
-      if (cancelled) return
-      setBot((prev) => {
-        if (prev && prev.name === meta.name && prev.avatarUrl === avatarUrl) return prev
-        return { name: meta.name, avatarUrl }
-      })
-    }
-    update()
-    room.loadMembersIfNeeded().then(update).catch(() => {})
-    const onMembers = (_e: sdk.MatrixEvent, _s: sdk.RoomState, member: sdk.RoomMember) => {
-      if (member.userId !== userId) update()
-    }
-    // On the room, not room.currentState — see useAgentBlocked for why.
-    room.on(sdk.RoomStateEvent.Members, onMembers)
-    room.on(sdk.RoomEvent.CurrentStateUpdated, update)
-    return () => {
-      cancelled = true
-      room.off(sdk.RoomStateEvent.Members, onMembers)
-      room.off(sdk.RoomEvent.CurrentStateUpdated, update)
-    }
-  }, [roomId, userId, client])
-
-  // m.room.topic for subtitle (when non-empty); listen for state updates
-  useEffect(() => {
-    const room = client.getRoom(roomId)
-    if (!room) {
-      setRoomTopic('')
-      return
-    }
-    const readTopic = () => {
-      const ev = room.currentState.getStateEvents(sdk.EventType.RoomTopic, '')
-      const raw = ev?.getContent()?.topic
-      const t = typeof raw === 'string' ? raw.trim() : ''
-      setRoomTopic(shortenTopicPaths(t))
-    }
-    readTopic()
-    const onState = (ev: sdk.MatrixEvent) => {
-      if (ev.getRoomId() !== roomId) return
-      if (ev.getType() === sdk.EventType.RoomTopic) readTopic()
-    }
-    room.on(sdk.RoomStateEvent.Events, onState)
-    room.on(sdk.RoomEvent.CurrentStateUpdated, readTopic)
-    return () => {
-      room.off(sdk.RoomStateEvent.Events, onState)
-      room.off(sdk.RoomEvent.CurrentStateUpdated, readTopic)
-    }
-  }, [roomId, client])
-
-  // Resolve room's own avatar URL
-  useEffect(() => {
-    const room = client.getRoom(roomId)
-    if (!room) return
-    const mxcUrl = room.getMxcAvatarUrl()
-    if (!mxcUrl) { setRoomAvatarUrl(null); return }
-    let cancelled = false
-    resolveMediaUrl(client, mxcUrl, 80, 80, 'crop').then(url => {
-      if (!cancelled) setRoomAvatarUrl(url ?? null)
-    })
-    return () => { cancelled = true }
-  }, [roomId, client])
-
   // Resolve mxc image URLs to authenticated blob URLs. Kept out of
   // `messages` so resolution doesn't mutate the message array and
   // re-trigger this effect in a feedback loop.
@@ -1325,42 +800,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     })
   }, [messages, pinnedDisplay, client])
 
-  // Pinned events (m.room.pinned_events) — resolve when state changes or the timeline may contain them
-  useEffect(() => {
-    const room = client.getRoom(roomId)
-    if (!room) return
-    refreshPinned()
-    const onState = (ev: sdk.MatrixEvent) => {
-      if (ev.getType() === sdk.EventType.RoomPinnedEvents) refreshPinned()
-    }
-    const onSwap = () => refreshPinned()
-    room.on(sdk.RoomStateEvent.Events, onState)
-    room.on(sdk.RoomEvent.CurrentStateUpdated, onSwap)
-    return () => {
-      room.off(sdk.RoomStateEvent.Events, onState)
-      room.off(sdk.RoomEvent.CurrentStateUpdated, onSwap)
-    }
-  }, [roomId, client, refreshPinned])
-
-  useEffect(() => {
-    if (pinnedEventIds.length === 0) return
-    refreshPinned()
-  }, [messages.length, pinnedEventIds.length, refreshPinned])
-
-  // Typing indicators
-  useEffect(() => {
-    const onTyping = (_event: sdk.MatrixEvent, member: sdk.RoomMember) => {
-      if (member.roomId !== roomId) return
-      const room = client.getRoom(roomId)
-      if (!room) return
-      const typing = room.getMembersWithMembership('join')
-        .filter((m) => m.typing && m.userId !== userId)
-        .map((m) => m.userId.replace(/^@/, '').split(':')[0])
-      setTypingUsers(typing)
-    }
-    client.on(sdk.RoomMemberEvent.Typing, onTyping)
-    return () => { client.off(sdk.RoomMemberEvent.Typing, onTyping) }
-  }, [roomId, userId, client])
 
   // Keep scroll-down button in sync after renders (not just on scroll events)
   useEffect(() => {
@@ -1499,27 +938,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     programmaticScrollUntilRef.current = performance.now() + (behavior === 'smooth' ? 500 : 100)
     scrollToEnd(messagesRef.current, behavior)
   }, [visibleMessages])
-
-  // Load pills — retry on sync (account data may not be in-memory until first SYNCING)
-  useEffect(() => {
-    let cancelled = false
-    const load = () => loadPills(client, roomId).then(p => { if (!cancelled) setPills(p) })
-
-    load()
-
-    const onSync = (state: string) => { if (state === 'SYNCING') load() }
-    const onAccountData = (event: sdk.MatrixEvent) => {
-      if (event.getType() === 'com.matrix-pwa.room-pills') load()
-    }
-
-    client.on(sdk.ClientEvent.Sync, onSync)
-    client.on(sdk.ClientEvent.AccountData, onAccountData)
-    return () => {
-      cancelled = true
-      client.off(sdk.ClientEvent.Sync, onSync)
-      client.off(sdk.ClientEvent.AccountData, onAccountData)
-    }
-  }, [roomId, client])
 
   // Scroll to bottom when own message is sent
   const scrollToBottom = useCallback(() => {
@@ -2182,7 +1600,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     } finally {
       setPinInFlight(false)
     }
-  }, [roomId])
+  }, [roomId, pinnedIdsRef, refreshPinnedRef])
   useEffect(() => {
     togglePinRef.current = togglePin
   }, [togglePin])
@@ -3088,368 +2506,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   )
 }
 
-function getMaxReadTs(room: sdk.Room, userId: string): number {
-  let max = 0
-  for (const member of room.getMembers()) {
-    if (member.userId === userId || member.membership !== 'join') continue
-    const readUpTo = room.getEventReadUpTo(member.userId)
-    if (!readUpTo) continue
-    const readEvent = room.findEventById(readUpTo)
-    if (!readEvent) continue
-    const ts = readEvent.getTs()
-    if (ts > max) max = ts
-  }
-  return max
-}
-
-
-/** Whether messages to this room are megolm-encrypted. Asks the crypto module
- *  (which also knows about rooms whose encryption state it has pinned), and
- *  falls back to the room's own state when crypto isn't up. */
-async function roomIsEncrypted(client: sdk.MatrixClient, roomId: string): Promise<boolean> {
-  try {
-    const crypto = client.getCrypto()
-    if (crypto) return await crypto.isEncryptionEnabledInRoom(roomId)
-  } catch {
-    // fall through to room state
-  }
-  return client.getRoom(roomId)?.hasEncryptionStateEvent() ?? false
-}
-
-function eventToMessage(
-  event: sdk.MatrixEvent,
-  userId: string,
-  maxReadTs: number,
-  room?: sdk.Room,
-  owners?: Set<string>,
-): Message {
-  const isFailure = event.isDecryptionFailure()
-  const isEncrypted = event.getType() === 'm.room.encrypted'
-  // Resolve the effective content, honoring two edit shapes:
-  // 1. This event was edited → use the replacement's m.new_content
-  // 2. This event IS the replacement (m.relates_to.rel_type=m.replace) →
-  //    use its own m.new_content directly (timeline rendered the edit as
-  //    a standalone bubble, e.g. streamed tool-progress updates).
-  // Custom fields like com.construct.tool_progress live in m.new_content;
-  // without this merge, only the top-level body (with `*` prefix) is read.
-  const rawContent = event.getContent() ?? {}
-  const replacing = (event as any).replacingEvent?.()
-  const isReplacementItself = rawContent?.['m.relates_to']?.rel_type === 'm.replace'
-  let content = rawContent
-  if (replacing) {
-    content = { ...rawContent, ...(replacing.getContent()?.['m.new_content'] ?? {}) }
-  } else if (isReplacementItself && rawContent?.['m.new_content']) {
-    content = { ...rawContent, ...(rawContent['m.new_content'] as Record<string, unknown>) }
-  }
-  let body = content?.body ?? ''
-  let imageUrl: string | undefined
-
-  if (isFailure || (isEncrypted && !body)) {
-    body = '🔒 Unable to decrypt'
-  } else if ((content?.msgtype === 'm.image' || content?.msgtype === 'm.file') && (content?.url || content?.file?.url)) {
-    body = content.body ?? ''
-  }
-
-  // An agent's ```location blocks become map cards; the text around them stays.
-  const rawHtml = !isFailure && content?.format === 'org.matrix.custom.html' && typeof content?.formatted_body === 'string'
-    ? content.formatted_body as string
-    : undefined
-  const placed = isFailure ? undefined : extractLocationBlocks(String(body), rawHtml)
-  if (placed?.locations.length) body = placed.body
-  let html = placed?.locations.length ? placed.html : rawHtml
-  // Same for a ```form block: it becomes a checklist under the text.
-  const asked = isFailure ? undefined : extractFormBlock(String(body), html)
-  if (asked?.form) ({ body, html } = asked)
-
-  let formattedBody: string | undefined
-  if (html) formattedBody = sanitizeHtml(html)
-
-  const sender = event.getSender() ?? ''
-  const isOwnMessage = sender === userId
-  const isRead = isOwnMessage && event.getTs() <= maxReadTs
-
-  const roomOwners = owners ?? getRoomOwners(room)
-  const isPeerMessage = !isOwnMessage && roomOwners.size > 0 && !roomOwners.has(sender)
-  const senderName = isPeerMessage
-    ? (room?.getMember(sender)?.rawDisplayName || shortUserId(sender))
-    : undefined
-  // Unlike senderName this is set for every message, peer or not: the meta row
-  // names the author for anything that isn't the user's own message.
-  const authorName = room?.getMember(sender)?.rawDisplayName || shortUserId(sender)
-
-  // Encrypted rooms carry the attachment as content.file (ciphertext url plus
-  // its key) instead of content.url; the mxc is the same kind of handle either way.
-  const mediaFile = !content?.url && typeof content?.file?.url === 'string' ? content.file as EncryptedFile : undefined
-  const mediaMxc: string | undefined = content?.url || mediaFile?.url || undefined
-  const imageMxc = content?.msgtype === 'm.image' ? mediaMxc : undefined
-  const fileMxc = content?.msgtype === 'm.file' ? mediaMxc : undefined
-  // With a caption, body is the caption and filename the original name;
-  // without one, body is the name.
-  const mediaFilename = typeof content?.filename === 'string' ? content.filename : undefined
-  const caption = (imageMxc || fileMxc) && mediaFilename && body && body !== mediaFilename ? body : undefined
-  const fileName = fileMxc ? (mediaFilename ?? content?.body ?? 'file') : undefined
-  const fileMime = fileMxc ? (content?.info?.mimetype ?? 'application/octet-stream') : undefined
-  const location = isFailure ? undefined : locationFromContent(content)
-
-  const rawCards = content?.['com.construct.cards']
-  const cards = Array.isArray(rawCards)
-    ? rawCards
-        .filter((c: any) => c && typeof c === 'object' && typeof c.title === 'string')
-        .map((c: any) => ({
-          title: String(c.title),
-          subtitle: typeof c.subtitle === 'string' ? c.subtitle : undefined,
-          description: typeof c.description === 'string' ? c.description : undefined,
-          image: typeof c.image === 'string' ? c.image : undefined,
-          fields: Array.isArray(c.fields)
-            ? c.fields
-                .filter((f: any) => f && typeof f.label === 'string' && typeof f.value === 'string')
-                .map((f: any) => ({ label: String(f.label), value: String(f.value) }))
-            : undefined,
-          price: typeof c.price === 'string' ? c.price : undefined,
-          url: typeof c.url === 'string' && /^https?:\/\//.test(c.url) ? c.url : undefined,
-          actions: Array.isArray(c.actions)
-            ? c.actions
-                .filter((a: any) => a && typeof a.label === 'string' && typeof a.url === 'string' && /^https?:\/\//.test(a.url))
-                .map((a: any) => ({ label: String(a.label), url: String(a.url) }))
-            : undefined,
-        }))
-    : undefined
-
-  const parseThread = (t: any): ConstructThread | null =>
-    t && typeof t === 'object' && typeof t.title === 'string' && typeof t.body === 'string'
-      ? { title: String(t.title), summary: typeof t.summary === 'string' ? t.summary : undefined, body: String(t.body) }
-      : null
-  const rawThreads = content?.['com.construct.threads'] ?? content?.['com.construct.thread']
-  const threads = Array.isArray(rawThreads)
-    ? (rawThreads.map(parseThread).filter(Boolean) as ConstructThread[])
-    : rawThreads ? ([parseThread(rawThreads)].filter(Boolean) as ConstructThread[]) : undefined
-
-  const rawToolProgress = content?.['com.construct.tool_progress']
-  const toolProgress: ToolProgressLine[] | undefined = Array.isArray(rawToolProgress)
-    ? rawToolProgress
-        .filter((l: any) => l && typeof l.emoji === 'string' && typeof l.tool === 'string')
-        .map((l: any) => ({
-          emoji: String(l.emoji),
-          tool: String(l.tool),
-          content: typeof l.content === 'string' ? l.content : undefined,
-          repeat: typeof l.repeat === 'number' ? l.repeat : undefined,
-          raw: `${l.emoji} ${l.tool}${l.content ? `: "${l.content}"` : '...'}`,
-        }))
-    : undefined
-
-  const subagent = parseSubagent(content?.['com.construct.subagent'])
-  const artifact = parseArtifact(content?.['com.construct.artifact'])
-  const browser = parseBrowserPage(content?.['com.construct.browser'])
-
-  const source = typeof content?.['com.construct.source'] === 'string'
-    ? String(content['com.construct.source'])
-    : undefined
-
-  const rawMachine = content?.['com.construct.machine']
-  const machine = rawMachine && typeof rawMachine === 'object'
-    ? {
-        kind: typeof (rawMachine as any).kind === 'string' ? String((rawMachine as any).kind) : undefined,
-        source: typeof (rawMachine as any).source === 'string' ? String((rawMachine as any).source) : undefined,
-      }
-    : rawMachine === true ? {} : undefined
-
-  const rawApproval = content?.['com.construct.approval']
-  const approval = rawApproval && typeof rawApproval === 'object'
-    && typeof rawApproval.body === 'string' && typeof rawApproval.title === 'string'
-    ? {
-        title: String(rawApproval.title),
-        lines: Number(rawApproval.lines) || String(rawApproval.body).split('\n').length,
-        body: String(rawApproval.body),
-      }
-    : undefined
-
-  return {
-    eventId: event.getId() ?? event.getTs().toString(),
-    sender: event.getSender() ?? '',
-    body,
-    formattedBody,
-    imageUrl,
-    imageMxc,
-    fileMxc,
-    mediaFile,
-    fileName,
-    fileMime,
-    caption,
-    location,
-    places: placed?.locations.length ? placed.locations : undefined,
-    form: asked?.form,
-    formResponse: isOwnMessage ? formResponseFromContent(content) : undefined,
-    cards: cards && cards.length > 0 ? cards : undefined,
-    threads: threads && threads.length > 0 ? threads : undefined,
-    approval,
-    toolProgress: toolProgress && toolProgress.length > 0 ? toolProgress : undefined,
-    subagent,
-    artifact,
-    browser,
-    timestamp: event.getTs(),
-    isOwnMessage,
-    isPeerMessage,
-    senderName,
-    authorName,
-    isDecryptionFailure: isFailure,
-    isRead,
-    source,
-    machine,
-    interim: content?.['com.construct.interim'] === true ? true : undefined,
-  }
-}
-
-const SUBAGENT_STATUSES = new Set(['running', 'completed', 'failed', 'stopped'])
-
-// com.construct.subagent, as the bot's subagent cards send it
-// (scripts/subagent-cards.mjs). Anything malformed is no card at all.
-function parseSubagent(value: unknown): SubagentCard | undefined {
-  if (!value || typeof value !== 'object') return undefined
-  const raw = value as Record<string, unknown>
-  if (typeof raw.id !== 'string' || typeof raw.description !== 'string') return undefined
-  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
-  const lines: ToolProgressLine[] = []
-  for (const item of Array.isArray(raw.lines) ? raw.lines : []) {
-    const l = item as Record<string, unknown> | null
-    if (!l || typeof l.emoji !== 'string' || typeof l.tool !== 'string') continue
-    lines.push({ emoji: l.emoji, tool: l.tool, content: typeof l.content === 'string' ? l.content : undefined })
-  }
-  return {
-    id: raw.id,
-    description: raw.description,
-    agentType: typeof raw.agentType === 'string' ? raw.agentType : undefined,
-    background: raw.background === true,
-    status: typeof raw.status === 'string' && SUBAGENT_STATUSES.has(raw.status) ? raw.status as SubagentCard['status'] : 'stopped',
-    lines,
-    toolUses: num(raw.toolUses) ?? lines.length,
-    tokens: num(raw.tokens),
-    durationMs: num(raw.durationMs),
-    startedAt: num(raw.startedAt),
-    summary: typeof raw.summary === 'string' && raw.summary.trim() ? raw.summary : undefined,
-  }
-}
-
-function buildReactionsMap(events: sdk.MatrixEvent[]): Record<string, Record<string, string[]>> {
-  const map: Record<string, Record<string, string[]>> = {}
-  for (const e of events) {
-    if (e.getType() !== 'm.reaction') continue
-    const rel = e.getContent()['m.relates_to']
-    if (!rel || rel.rel_type !== 'm.annotation') continue
-    const targetId = rel.event_id as string
-    const emoji = rel.key as string
-    const sender = e.getSender() ?? ''
-    if (!map[targetId]) map[targetId] = {}
-    if (!map[targetId][emoji]) map[targetId][emoji] = []
-    if (!map[targetId][emoji].includes(sender)) map[targetId][emoji].push(sender)
-  }
-  return map
-}
-
-function eventsToMessages(events: sdk.MatrixEvent[], userId: string, room: sdk.Room): Message[] {
-  const maxReadTs = getMaxReadTs(room, userId)
-  const owners = getRoomOwners(room)
-  const reactionsMap = buildReactionsMap(events)
-  const messageEvents = events
-    .filter((e) => e.getType() === 'm.room.message' || e.getType() === 'm.room.encrypted' || e.isDecryptionFailure())
-  // Fold m.replace edits into their target: render the newest edit's
-  // content inside the target bubble and hide the edit events themselves.
-  // Edits whose target sits outside the loaded window keep the newest
-  // edit as a standalone bubble so the content isn't lost.
-  const presentIds = new Set(messageEvents.map((e) => e.getId() ?? ''))
-  const latestEditByTarget = new Map<string, sdk.MatrixEvent>()
-  for (const e of messageEvents) {
-    const rel = e.getRelation()
-    if (rel?.rel_type === 'm.replace' && rel.event_id) latestEditByTarget.set(rel.event_id, e)
-  }
-  const standaloneEditIds = new Set(
-    [...latestEditByTarget.entries()]
-      .filter(([targetId]) => !presentIds.has(targetId))
-      .map(([, e]) => e.getId() ?? '')
-  )
-  return messageEvents
-    .filter((e) => {
-      const rel = e.getRelation()
-      if (rel?.rel_type !== 'm.replace' || !rel.event_id) return true
-      return standaloneEditIds.has(e.getId() ?? '')
-    })
-    .map((e) => {
-      const id = e.getId() ?? ''
-      const edit = latestEditByTarget.get(id)
-      let msg = eventToMessage(edit ?? e, userId, maxReadTs, room, owners)
-      if (edit) msg = { ...msg, eventId: id, timestamp: e.getTs() }
-      const reactions = reactionsMap[msg.eventId]
-      return reactions ? { ...msg, reactions } : msg
-    })
-}
-
-// `hr` earns its place: a `---` is how a reply marks a section break, and
-// stripping the tag silently collapsed two sections into one wall of text.
-const ALLOWED_TAGS = /^(p|br|hr|strong|b|em|i|u|s|del|code|pre|ul|ol|li|blockquote|h[1-6]|a|span|table|thead|tbody|tr|th|td)$/i
-const ALLOWED_ATTRS: Record<string, string[]> = { a: ['href', 'target', 'rel'], span: ['class'], code: ['class'] }
-// Class names are an allowlist, not free text: the bot marks up diff lines with
-// these and nothing else may borrow the app's styling.
-const ALLOWED_CLASSES = /^(diff|diff-add|diff-del|diff-meta|diff-ctx|diff-mark|cmd)$/
-
-function sanitizeHtml(html: string): string {
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  function clean(node: Node) {
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as Element
-      if (!ALLOWED_TAGS.test(el.tagName)) {
-        el.replaceWith(...Array.from(el.childNodes))
-        return
-      }
-      const allowed = ALLOWED_ATTRS[el.tagName.toLowerCase()] ?? []
-      for (const attr of Array.from(el.attributes)) {
-        if (!allowed.includes(attr.name)) el.removeAttribute(attr.name)
-      }
-      const cls = el.getAttribute('class')
-      if (cls !== null && !ALLOWED_CLASSES.test(cls)) el.removeAttribute('class')
-      if (el.tagName.toLowerCase() === 'a') {
-        const href = el.getAttribute('href') ?? ''
-        if (href.startsWith('javascript:')) el.removeAttribute('href')
-        el.setAttribute('target', '_blank')
-        el.setAttribute('rel', 'noopener noreferrer')
-      }
-      Array.from(el.childNodes).forEach(clean)
-    }
-  }
-  Array.from(doc.body.childNodes).forEach(clean)
-  return doc.body.innerHTML
-}
-
-function shortName(userId: string): string {
-  return userId.replace(/^@/, '').split(':')[0]
-}
-
-function sameDay(a: number, b: number): boolean {
-  const da = new Date(a), db = new Date(b)
-  return da.getFullYear() === db.getFullYear() &&
-    da.getMonth() === db.getMonth() &&
-    da.getDate() === db.getDate()
-}
-
-// "Today at 14:23" / "3 August at 14:23" — reuses formatDate so the day label
-// reads the same as the timeline's date dividers.
-function formatSentAt(ts: number): string {
-  const time = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  return `${formatDate(ts)} at ${time}`
-}
-
-function shortUserId(userId: string): string {
-  return userId.replace(/^@/, '').split(':')[0] ?? userId
-}
-
-function formatDate(ts: number): string {
-  const d = new Date(ts)
-  const now = new Date()
-  const diff = now.getTime() - d.getTime()
-  const days = Math.floor(diff / 86400000)
-  if (days === 0) return 'Today'
-  if (days === 1) return 'Yesterday'
-  return d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
-}
-
 // Memoized so that when RoomsLayout re-renders (e.g. on navigation),
 // the 1..N mounted ChatViews don't all re-render their entire message
 // lists synchronously. That reconciliation was causing a ~1s main-thread
@@ -3460,501 +2516,3 @@ export default memo(ChatView)
 function composerSizesItself(): boolean {
   return document.documentElement.classList.contains('mac-app') && window.CSS.supports('field-sizing', 'content')
 }
-
-// Fixed so the tiles can be laid out without measuring; CSS caps the width.
-const MAP_W = 264
-const MAP_H = 140
-const MAP_ZOOM = 16
-
-// A shared location: a map tile preview with a pin, and the coordinates under
-// it. Tap opens it in Google Maps.
-function LocationLink({ location }: { location: NonNullable<Message['location']> }) {
-  const tiles = useMemo(() => mapTiles(location, MAP_ZOOM, MAP_W, MAP_H), [location])
-  return (
-    <a
-      href={mapsUrl(location)}
-      className="msg-location"
-      target="_blank"
-      rel="noreferrer"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <span className="msg-location-map" style={{ width: MAP_W, height: MAP_H }} aria-hidden>
-        {tiles.map((t) => (
-          <img key={t.url} src={t.url} alt="" draggable={false} loading="lazy" style={{ left: t.x, top: t.y }} />
-        ))}
-        <span className="material-icons msg-location-pin">location_on</span>
-        <span className="msg-location-attribution">{MAP_ATTRIBUTION}</span>
-      </span>
-      <span className="msg-location-text">
-        <span className="msg-location-title">{location.description ?? 'Location'}</span>
-        <span className="msg-location-coords">
-          {formatCoords(location)}{location.accuracy != null && ` · ±${location.accuracy} m`}
-        </span>
-      </span>
-    </a>
-  )
-}
-
-// An agent's ```form: tick what applies, then Submit. Drawn with the lettered
-// list's rows (ChoiceList), a ticked one showing a check in its key; once
-// answered it collapses to your picks, read-only, as a list does.
-function FormCard({ form, answer, onSubmit }: {
-  form: ConstructForm
-  answer?: string
-  onSubmit: (picked: string[]) => void
-}) {
-  const [picked, setPicked] = useState<string[]>([])
-  // Locks the form from the tap until the answer comes back from the server;
-  // if it never does (the send failed), it opens up again.
-  const [sentAt, setSentAt] = useState(0)
-  useEffect(() => {
-    if (!sentAt || answer !== undefined) return
-    const t = setTimeout(() => setSentAt(0), 15_000)
-    return () => clearTimeout(t)
-  }, [sentAt, answer])
-  const done = answer !== undefined || sentAt > 0
-  const shown = answer !== undefined ? answer.split('\n') : picked
-  const toggle = (label: string) => {
-    if (done) return
-    setPicked((cur) => cur.includes(label) ? cur.filter((l) => l !== label) : [...cur, label])
-  }
-  return (
-    <div className={`msg-form${done ? ' msg-form--done' : ''}`} onClick={(e) => e.stopPropagation()}>
-      {form.question && <div className="msg-form-question">{form.question}</div>}
-      <div className={`msg-choices${done ? ' msg-choices--done' : ''}`} role="group">
-        {form.options.map((opt, i) => {
-          const on = shown.includes(opt.label)
-          return (
-            <button
-              key={opt.label}
-              type="button"
-              role="checkbox"
-              aria-checked={on}
-              disabled={done}
-              className={`msg-choice${on ? ' msg-choice--on' : ''}`}
-              onClick={() => toggle(opt.label)}
-            >
-              <span className="msg-choice-key" aria-hidden>
-                {on ? <span className="material-symbols-outlined msg-form-check">check</span> : choiceLetter(i)}
-              </span>
-              <span className="msg-form-text">
-                <span className="msg-choice-label">{opt.label}</span>
-                {opt.description && <span className="msg-form-description">{opt.description}</span>}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-      {done
-        ? answer === undefined && <div className="msg-form-status">Sending…</div>
-        : (
-          <button
-            type="button"
-            className="msg-form-submit"
-            disabled={!picked.length}
-            onClick={() => {
-              // Options order, not tap order: reads the way the question did.
-              const ordered = form.options.map((o) => o.label).filter((l) => picked.includes(l))
-              setSentAt(Date.now())
-              onSubmit(ordered)
-            }}
-          >
-            Submit
-          </button>
-        )}
-    </div>
-  )
-}
-
-// A bot message's [[…]] answers: a lettered list under its text. A tap sends
-// the option, as a pill would, and so does its letter key while no text field
-// has focus. Once answered it collapses to the pick; unanswered, it fades.
-function ChoiceList({ actions, open, picked, onPick }: {
-  actions: string[]
-  open: boolean
-  picked?: string
-  onPick: (label: string) => void
-}) {
-  return (
-    <div className={`msg-choices${open ? '' : ' msg-choices--done'}`} role="group" onClick={(e) => e.stopPropagation()}>
-      {actions.map((action, i) => (
-        <button
-          key={action}
-          type="button"
-          className={`msg-choice${action === picked ? ' msg-choice--on' : ''}`}
-          disabled={!open}
-          // Like the pills: a tap must not move focus to or from the composer.
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => onPick(action)}
-        >
-          <span className="msg-choice-key" aria-hidden>{choiceLetter(i)}</span>
-          <span className="msg-choice-label">{actionLabel(action)}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
-
-export interface MessageRowProps {
-  msg: Message
-  userId: string
-  /** Row shape, all precomputed by the parent from neighbouring messages. */
-  showDateDivider: boolean
-  senderSwitch: boolean
-  showPeerSender: boolean
-  isTool: boolean
-  prevIsTool: boolean
-  nextIsTool: boolean
-  canPin: boolean
-  /** Tool-group summary, for the one row that starts a group. */
-  toolSummary: string
-  toolLive: boolean
-  imageUrl?: string
-  fileUrl?: string
-  isPinned: boolean
-  pinInFlight: boolean
-  /** "Select text" from the action sheet re-enabled selection on this row. */
-  selecting: boolean
-  /** Only on the row that starts the tool group the run is adding to: the run,
-   *  so the chip can show the step in flight under its summary. */
-  liveRun: AgentRun | null
-  botTyping: boolean
-  onLiveChange: (live: boolean) => void
-  onOpenToolDialog: (eventId: string) => void
-  onOpenLightbox: (url: string, alt: string) => void
-  onOpenApproval: (approval: ConstructApproval) => void
-  /** The picks already sent for this row's form, newline-joined; undefined while it is open. */
-  formAnswer?: string
-  onSubmitForm: (eventId: string, form: ConstructForm, picked: string[]) => void
-  /** Set when this row's [[…]] buttons show as a lettered list: whether it still takes a pick. */
-  choiceOpen?: boolean
-  /** The option the reply after it picked, for a closed list. */
-  choicePicked?: string
-  onPickChoice: (label: string) => void
-  onRichClick: (e: React.MouseEvent<HTMLDivElement>) => void
-  onRichPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void
-  onReact: (eventId: string, emoji: string) => void
-  onCopy: (body: string) => void
-  onTogglePin: (eventId: string) => void
-  onInspect: (eventId: string) => void
-}
-
-/**
- * One row of the timeline.
- *
- * Memoised on purpose: the bot sends a tool-progress line every few seconds
- * during a run, and without this every arrival re-rendered every row in the
- * room — which rebuilds their code blocks and kills a scrollbar drag in
- * progress. Props are therefore primitives and stable callbacks only; anything
- * derived from neighbouring messages is computed by the parent so this compares
- * cheaply.
- */
-function MessageRowInner({
-  msg,
-  userId,
-  showDateDivider,
-  senderSwitch,
-  showPeerSender,
-  isTool,
-  prevIsTool,
-  nextIsTool,
-  canPin,
-  toolSummary,
-  toolLive,
-  imageUrl,
-  fileUrl,
-  isPinned,
-  pinInFlight,
-  selecting,
-  liveRun,
-  botTyping,
-  onLiveChange,
-  onOpenToolDialog,
-  onOpenLightbox,
-  onOpenApproval,
-  formAnswer,
-  onSubmitForm,
-  choiceOpen,
-  choicePicked,
-  onPickChoice,
-  onRichClick,
-  onRichPointerDown,
-  onReact,
-  onCopy,
-  onTogglePin,
-  onInspect,
-}: MessageRowProps) {
-  return (
-              <div
-                data-event-id={msg.eventId}
-                className={isTool ? `tool-progress-wrap${prevIsTool ? ' tool-progress-wrap-cont' : ''}${nextIsTool ? ' tool-progress-wrap-open' : ''}` : undefined}
-              >
-                {showDateDivider && (
-                  <div className="date-divider">
-                    <span>{formatDate(msg.timestamp)}</span>
-                  </div>
-                )}
-                <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}${msg.isPeerMessage ? ' peer' : ''}${senderSwitch ? ' sender-switch' : ''}${selecting ? ' message--selecting' : ''}`}>
-                  <div className="message-body">
-                    {/* Another member's request, not the bot's own voice — say whose. */}
-                    {msg.isPeerMessage && showPeerSender && (
-                      <div className="peer-sender">{msg.senderName}</div>
-                    )}
-                    {msg.isOwnMessage ? (
-                      <>
-                        <div className="message-pin-surface message-pin-surface--own">
-                          <div className={`bubble ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${imageUrl ? (msg.caption ? 'bubble-image-captioned' : 'bubble-image') : ''} ${msg.source === 'voice' ? 'bubble-voice' : ''}`}>
-                            {msg.source === 'voice' && (
-                              <span className="material-icons bubble-voice-icon" title="Voice input">mic</span>
-                            )}
-                            {imageUrl
-                              ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" onClick={e => { e.stopPropagation(); onOpenLightbox(imageUrl, msg.body || 'image') }} />
-                              : msg.location
-                              ? <LocationLink location={msg.location} />
-                              : fileUrl
-                                ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
-                                : msg.fileMxc && !fileUrl
-                                  ? <span className="msg-file msg-file-loading"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</span>
-                                  : msg.body}
-                            {/* Until the image loads, the body fallback above is already the caption. */}
-                            {msg.caption && (imageUrl || msg.fileMxc) && <div className="msg-caption">{msg.caption}</div>}
-                          </div>
-                        </div>
-                        <div className={`msg-status ${msg.isRead ? 'msg-status-read' : ''}`}>
-                          {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                            <span className="reaction-bar reaction-bar--own-inline">
-                              {Object.entries(msg.reactions).map(([emoji, senders]) => (
-                                <span key={emoji} className="reaction-pill--own">
-                                  {emoji}{senders.length > 1 && <span className="reaction-count">{senders.length}</span>}
-                                </span>
-                              ))}
-                            </span>
-                          )}
-                          <span className="material-icons">{msg.isRead ? 'done_all' : 'done'}</span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        {(() => {
-                          if (isTool) {
-                            const isGroupStart = !prevIsTool
-
-                            // Non-start messages in any group are hidden — summary shown at group start
-                            if (!isGroupStart) return null
-
-                            // All groups show as a summary chip (live group updates in real time)
-                            const chip = (
-                              <div
-                                className={`tool-progress tool-progress-collapsed${toolLive ? ' tool-progress-live' : ''}`}
-                                onClick={() => onOpenToolDialog(msg.eventId)}
-                              >
-                                <span className="tool-progress-tool">{toolSummary}</span>
-                                {toolLive && <span className="tool-progress-live-dot" />}
-                              </div>
-                            )
-                            // While the run is on, the group is just what it's
-                            // doing now ("Searching AppDelegate.swift"), changing
-                            // as it moves on; the summary of what it did takes
-                            // over once it's done — or if the run goes quiet.
-                            if (!liveRun) return chip
-                            return (
-                              <div className="tool-progress-now" onClick={() => onOpenToolDialog(msg.eventId)}>
-                                <AgentActivityBar run={liveRun} botTyping={botTyping} onLiveChange={onLiveChange} fallback={chip} />
-                              </div>
-                            )
-
-                            // dead code kept for type-checker
-                            const lines = parseToolProgressMessage(msg.body, msg)
-                            return (
-                              <div
-                                className={`message-pin-surface message-pin-surface--tool tool-progress${prevIsTool ? ' tool-progress-cont' : ''}${nextIsTool ? ' tool-progress-open' : ''}`}
-                               
-                              >
-                                {lines.map((l, idx) => (
-                                  <div key={idx} className="tool-progress-line">
-                                    <span className="tool-progress-emoji">{l.emoji}</span>
-                                    <span className="tool-progress-tool">{l.tool}</span>
-                                    {l.content !== undefined && (
-                                      <span className="tool-progress-content">{l.content}</span>
-                                    )}
-                                    {l.repeat !== undefined && (
-                                      <span className="tool-progress-repeat">×{l.repeat}</span>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )
-                          }
-                          const { text, actions } = parseActions(msg.body)
-                          const cleanHtml = msg.formattedBody
-                            ? stripActionMarkersInRichHtml(msg.formattedBody).trim()
-                            : undefined
-                          return (
-                            <>
-                              <div className="message-pin-surface">
-                                <div
-                                  className={`bot-text ${cleanHtml ? 'bot-text-rich' : ''} ${msg.isDecryptionFailure ? 'bubble-failed' : ''} ${msg.machine && !msg.subagent && !msg.artifact && !msg.browser ? 'bot-text-machine' : ''}${msg.subagent || msg.artifact || msg.browser ? ' bot-text-card' : ''}`}
-                                  onClick={cleanHtml ? onRichClick : undefined}
-                                  onPointerDown={cleanHtml ? onRichPointerDown : undefined}
-                                  title={msg.machine?.source ? `Machine message from ${msg.machine.source}` : undefined}
-                                >
-                                  {msg.subagent
-                                    ? <SubagentBlock card={msg.subagent} />
-                                    : msg.artifact
-                                    ? <ArtifactBlock artifact={msg.artifact} />
-                                    : msg.browser
-                                    ? <BrowserBlock page={msg.browser} />
-                                    : msg.threads
-                                    ? <div className="msg-threads">{msg.threads.map((t, i) => <ThreadBlock key={i} thread={t} />)}</div>
-                                    : msg.cards
-                                    ? <div className="msg-cards">
-                                        {msg.cards.map((card, ci) => {
-                                          const hasActions = card.actions && card.actions.length > 0
-                                          const hasFooter = hasActions || !!card.price
-                                          const isLinkCard = !hasFooter && !!card.url
-                                          const inner = (
-                                            <>
-                                              {card.image && <img className="msg-card-image" src={card.image} alt="" loading="lazy" />}
-                                              <div className="msg-card-body">
-                                                <div className="msg-card-title">{card.title}</div>
-                                                {card.subtitle && <div className="msg-card-subtitle">{card.subtitle}</div>}
-                                                {card.description && <div className="msg-card-description">{card.description}</div>}
-                                                {card.fields && card.fields.length > 0 && (
-                                                  <dl className="msg-card-fields">
-                                                    {card.fields.map((f, fi) => (
-                                                      <div key={fi} className="msg-card-field">
-                                                        <dt>{f.label}</dt>
-                                                        <dd>{f.value}</dd>
-                                                      </div>
-                                                    ))}
-                                                  </dl>
-                                                )}
-                                              </div>
-                                              {hasFooter && (
-                                                <div className="msg-card-footer">
-                                                  {card.price && <span className="msg-card-price">{card.price}</span>}
-                                                  {hasActions && (
-                                                    <div className="msg-card-actions">
-                                                      {card.actions!.map((a, ai) => (
-                                                        <a key={ai} className="msg-card-action" href={a.url} target="_blank" rel="noopener noreferrer">{a.label}</a>
-                                                      ))}
-                                                    </div>
-                                                  )}
-                                                </div>
-                                              )}
-                                            </>
-                                          )
-                                          return isLinkCard
-                                            ? <a key={ci} className="msg-card msg-card-link" href={card.url} target="_blank" rel="noopener noreferrer">{inner}</a>
-                                            : <div key={ci} className="msg-card">{inner}</div>
-                                        })}
-                                      </div>
-                                    : imageUrl
-                                    ? <img src={imageUrl} alt={msg.body || 'image'} className="msg-image" onClick={e => { e.stopPropagation(); onOpenLightbox(imageUrl, msg.body || 'image') }} />
-                                    : msg.location
-                                    ? <LocationLink location={msg.location} />
-                                    : fileUrl
-                                      ? <a href={fileUrl} download={msg.fileName} className="msg-file" target="_blank" rel="noreferrer"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</a>
-                                      : msg.fileMxc && !fileUrl
-                                        ? <span className="msg-file msg-file-loading"><span className="material-icons msg-file-icon">insert_drive_file</span>{msg.fileName}</span>
-                                        : cleanHtml
-                                          ? <div className="rich-html" dangerouslySetInnerHTML={{ __html: cleanHtml }} />
-                                          : text}
-                                  {msg.caption && !msg.cards && !msg.threads && (imageUrl || msg.fileMxc) && <div className="msg-caption">{msg.caption}</div>}
-                                  {msg.places && (
-                                    <div className="msg-places">
-                                      {msg.places.map((place, pi) => <LocationLink key={pi} location={place} />)}
-                                    </div>
-                                  )}
-                                  {msg.form && (
-                                    <FormCard
-                                      form={msg.form}
-                                      answer={formAnswer}
-                                      onSubmit={(picked) => onSubmitForm(msg.eventId, msg.form!, picked)}
-                                    />
-                                  )}
-                                  {choiceOpen !== undefined && (
-                                    <ChoiceList
-                                      actions={actions}
-                                      open={choiceOpen}
-                                      picked={choicePicked}
-                                      onPick={onPickChoice}
-                                    />
-                                  )}
-                                </div>
-                                {msg.approval && (
-                                  <button
-                                    className="approval-full-btn"
-                                    onClick={(e) => { e.stopPropagation(); onOpenApproval(msg.approval!) }}
-                                  >
-                                    <span className="material-icons approval-full-icon">unfold_more</span>
-                                    View all {msg.approval.lines} lines
-                                  </button>
-                                )}
-                              </div>
-                              {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                <div className="reaction-bar">
-                                  {Object.entries(msg.reactions).map(([emoji, senders]) => (
-                                    <button
-                                      key={emoji}
-                                      className={`reaction-btn${senders.includes(userId) ? ' reaction-btn--active' : ''}`}
-                                      onClick={() => onReact(msg.eventId, emoji)}
-                                    >
-                                      {emoji}<span className="reaction-count">{senders.length}</span>
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </>
-                          )
-                        })()}
-                      </>
-                    )}
-                    {canPin && (
-                      // Always rendered, only hidden: reserving the row's height
-                      // keeps messages from jumping on hover, and the reserved
-                      // space doubles as the gap between messages.
-                      // On touch it never shows: a long-press opens the same
-                      // actions in a sheet (see handleMessagesPointerDown).
-                      <div className="message-meta">
-                        <span className="message-meta-actions">
-                          <button
-                            type="button"
-                            className="message-meta-btn"
-                            aria-label="Copy message"
-                            onClick={() => onCopy(msg.body)}
-                          >
-                            <span className="material-symbols-outlined">content_copy</span>
-                          </button>
-                          <button
-                            type="button"
-                            className={`message-meta-btn${isPinned ? ' message-meta-btn--on' : ''}`}
-                            aria-label={isPinned ? 'Unpin message' : 'Pin message'}
-                            disabled={pinInFlight}
-                            onClick={() => { onTogglePin(msg.eventId) }}
-                          >
-                            <span className="material-symbols-outlined">keep</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="message-meta-btn"
-                            aria-label="Inspect event"
-                            onClick={() => onInspect(msg.eventId)}
-                          >
-                            <span className="material-symbols-outlined">data_object</span>
-                          </button>
-                        </span>
-                        <span className="message-meta-info">
-                          {/* Own messages: the bubble's side already says who
-                              sent it, so only the time is worth showing. */}
-                          {msg.isOwnMessage ? '' : <>{msg.authorName}{msg.authorName ? ' · ' : ''}</>}{formatSentAt(msg.timestamp)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-  )
-}
-
-export const MessageRow = memo(MessageRowInner)

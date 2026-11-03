@@ -21,6 +21,39 @@ export async function scrollbackWithRetry(client: sdk.MatrixClient, room: sdk.Ro
   }
 }
 
+// Agent rooms edit their messages many times a turn (streamed text, tool
+// progress), and each edit used to send its own read receipt, enough to get
+// the account rate-limited while watching a turn, so the next real send got a
+// 429. Send the first receipt now, then at most one per interval, for the
+// newest event that arrived in between.
+const RECEIPT_INTERVAL_MS = 5000
+const receiptCooldowns = new Map<string, { latest: sdk.MatrixEvent | null }>()
+
+export function sendReadReceiptThrottled(client: sdk.MatrixClient, event: sdk.MatrixEvent) {
+  const roomId = event.getRoomId()
+  // Skip local echoes: a receipt needs a server event id.
+  if (!roomId || !event.getId()?.startsWith('$')) return
+  const cooldown = receiptCooldowns.get(roomId)
+  if (cooldown) {
+    cooldown.latest = event
+    return
+  }
+  const state = { latest: null as sdk.MatrixEvent | null }
+  receiptCooldowns.set(roomId, state)
+  client.sendReadReceipt(event).catch(() => {})
+  const release = () => {
+    const next = state.latest
+    if (!next) {
+      receiptCooldowns.delete(roomId)
+      return
+    }
+    state.latest = null
+    client.sendReadReceipt(next).catch(() => {})
+    setTimeout(release, RECEIPT_INTERVAL_MS)
+  }
+  setTimeout(release, RECEIPT_INTERVAL_MS)
+}
+
 export function getRoomBotMeta(roomId: string, userId: string, client: sdk.MatrixClient): { name: string; mxcUrl: string | null } | null {
   const room = client.getRoom(roomId)
   if (!room) return null

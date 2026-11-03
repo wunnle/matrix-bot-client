@@ -69,7 +69,7 @@ import { sanitizeHtml } from '../lib/sanitizeHtml'
 import { threadMd } from '../lib/threadMarkdown'
 import { isBotToolProgress, parseToolProgressMessage, summarizeToolLines } from '../lib/toolProgress'
 import { getRoomModel, setRoomModel, isModelPickerTraffic } from '../lib/roomModel'
-import { scrollbackWithRetry, roomIsEncrypted } from '../lib/chatRoom'
+import { scrollbackWithRetry, roomIsEncrypted, sendReadReceiptThrottled } from '../lib/chatRoom'
 import { scrollToEnd, isOnScrollbar } from '../lib/scroll'
 import { getMaxReadTs, eventToMessage, eventsToMessages } from '../lib/eventToMessage'
 import { ArtifactOpenContext, BrowserOpenContext } from './chat/openContexts'
@@ -562,7 +562,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         // the badge climbed. Agent rooms hit this constantly: the bot replies
         // while you watch.
         if (isActiveRef.current && document.visibilityState === 'visible') {
-          client.sendReadReceipt(event).catch(() => {})
+          sendReadReceiptThrottled(client, event)
         }
       }
       setMessages((prev) => {

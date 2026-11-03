@@ -75,6 +75,8 @@ import { scrollToEnd, isOnScrollbar } from '../lib/scroll'
 import { getMaxReadTs, eventToMessage, eventsToMessages } from '../lib/eventToMessage'
 import { ArtifactOpenContext, BrowserOpenContext } from './chat/openContexts'
 import { MessageRow } from './chat/MessageRow'
+import { useRoomPills } from '../hooks/useRoomPills'
+import { useTypingUsers } from '../hooks/useTypingUsers'
 
 interface Props {
   roomId: string
@@ -150,6 +152,7 @@ function SortablePill({ pill, onActivate }: { pill: string; onActivate: () => vo
 }
 
 function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictationAutoSend }: Props) {
+  const client = getClient()
   // Read inside the timeline listener, which must not re-subscribe whenever
   // the active room changes.
   const isActiveRef = useRef(isActive)
@@ -169,7 +172,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [showEditor, setShowEditor] = useState(false)
-  const [pills, setPills] = useState<string[]>([])
+  const [pills, setPills] = useRoomPills(client, roomId)
   const [currentModel, setCurrentModel] = useState<string | null>(() => getRoomModel(roomId))
   // MouseSensor, not PointerSensor: a finger fires pointerdown too, and the
   // pointer sensor claims the drag before TouchSensor's long-press can — then
@@ -337,7 +340,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
   const [renderStart, setRenderStart] = useState(0)
-  const [typingUsers, setTypingUsers] = useState<string[]>([])
+  const typingUsers = useTypingUsers(client, roomId, userId)
   const [bot, setBot] = useState<{ name: string; avatarUrl: string | null } | null>(null)
   // When the bot started typing, for the page's "Thinking… 12s" strip; ticks
   // once a second while it lasts.
@@ -387,7 +390,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [pinnedDisplay, setPinnedDisplay] = useState<Message[]>([])
   const [pinnedExpanded, setPinnedExpanded] = useState(true)
 
-  const client = getClient()
   // A room with a page opens on it; the chat stays mounted underneath, so
   // switching back keeps its scroll position and live timeline.
   const viewKind = useRoomViewKind(client, roomId)
@@ -1023,20 +1025,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     refreshPinned()
   }, [messages.length, pinnedEventIds.length, refreshPinned])
 
-  // Typing indicators
-  useEffect(() => {
-    const onTyping = (_event: sdk.MatrixEvent, member: sdk.RoomMember) => {
-      if (member.roomId !== roomId) return
-      const room = client.getRoom(roomId)
-      if (!room) return
-      const typing = room.getMembersWithMembership('join')
-        .filter((m) => m.typing && m.userId !== userId)
-        .map((m) => m.userId.replace(/^@/, '').split(':')[0])
-      setTypingUsers(typing)
-    }
-    client.on(sdk.RoomMemberEvent.Typing, onTyping)
-    return () => { client.off(sdk.RoomMemberEvent.Typing, onTyping) }
-  }, [roomId, userId, client])
 
   // Keep scroll-down button in sync after renders (not just on scroll events)
   useEffect(() => {
@@ -1175,27 +1163,6 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     programmaticScrollUntilRef.current = performance.now() + (behavior === 'smooth' ? 500 : 100)
     scrollToEnd(messagesRef.current, behavior)
   }, [visibleMessages])
-
-  // Load pills — retry on sync (account data may not be in-memory until first SYNCING)
-  useEffect(() => {
-    let cancelled = false
-    const load = () => loadPills(client, roomId).then(p => { if (!cancelled) setPills(p) })
-
-    load()
-
-    const onSync = (state: string) => { if (state === 'SYNCING') load() }
-    const onAccountData = (event: sdk.MatrixEvent) => {
-      if (event.getType() === 'com.matrix-pwa.room-pills') load()
-    }
-
-    client.on(sdk.ClientEvent.Sync, onSync)
-    client.on(sdk.ClientEvent.AccountData, onAccountData)
-    return () => {
-      cancelled = true
-      client.off(sdk.ClientEvent.Sync, onSync)
-      client.off(sdk.ClientEvent.AccountData, onAccountData)
-    }
-  }, [roomId, client])
 
   // Scroll to bottom when own message is sent
   const scrollToBottom = useCallback(() => {

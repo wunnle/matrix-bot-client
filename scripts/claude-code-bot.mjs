@@ -552,16 +552,28 @@ async function syncArtifactIndex(roomId) {
 
 // The published page, uploaded beside its card so Construct can show it in-app.
 // Best effort: without it the card still opens the page on claude.ai.
+// matrix.org's media server answers 429/5xx in bursts, so a failed upload is
+// retried a few times before the card goes out without a copy.
+const SNAPSHOT_RETRY_MS = [2000, 5000, 15000]
 async function artifactSnapshot(roomId, file) {
   if (!file) return undefined
-  try {
-    const size = fs.statSync(file).size
-    if (size > SNAPSHOT_MAX_BYTES) return undefined
-    const media = await uploadMedia(roomId, fs.readFileSync(file), path.basename(file), 'text/html')
-    return { ...media, size }
-  } catch (e) {
-    log(`[${roomId}] no in-app copy of ${file}: ${e.message}`)
-    return undefined
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const size = fs.statSync(file).size
+      if (size > SNAPSHOT_MAX_BYTES) return undefined
+      const media = await uploadMedia(roomId, fs.readFileSync(file), path.basename(file), 'text/html')
+      return { ...media, size }
+    } catch (e) {
+      const status = e?.httpStatus
+      const transient = status === 429 || status >= 500 || status === undefined
+      if (!transient || attempt >= SNAPSHOT_RETRY_MS.length || e?.code === 'ENOENT') {
+        log(`[${roomId}] no in-app copy of ${file}: ${e.message}`)
+        return undefined
+      }
+      const wait = Math.max(SNAPSHOT_RETRY_MS[attempt], Number(e?.data?.retry_after_ms) || 0)
+      log(`[${roomId}] in-app copy upload failed (${e.message}), retrying in ${wait}ms`)
+      await new Promise((r) => setTimeout(r, wait))
+    }
   }
 }
 

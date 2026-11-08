@@ -351,7 +351,7 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
           </div>
           {shown.snapshot
             ? <ArtifactPreview key={shown.snapshot.mxc} snapshot={shown.snapshot} title={shown.title ?? 'Artifact'} />
-            : <p className="artifact-preview-note">There's no in-app copy of this page: it was published with supporting files, or posted as a plain link. Open it on claude.ai.</p>}
+            : <p className="artifact-preview-note">There's no in-app copy of this page: it was published with supporting files, its upload failed, or it was posted as a plain link. Open it on claude.ai.</p>}
         </div>
       ) : current === 'artifacts' ? (
         <div className="room-sidebar-body">

@@ -61,7 +61,9 @@ export async function spawnAgentRoom(
   // room is enough — and taking the first event wholesale opened a stale room
   // while the freshly spawned one sat unaccepted in the list.
   const known = new Set(
-    client.getRooms().filter((r) => r.getMyMembership() === 'invite').map((r) => r.roomId),
+    client.getRooms()
+      .filter((r) => r.getMyMembership() === 'invite' || r.getMyMembership() === 'join')
+      .map((r) => r.roomId),
   )
   const invited = waitForInvite(client, known)
   try {
@@ -84,8 +86,12 @@ function waitForInvite(
   let cancel = () => {}
   const promise = new Promise<string>((resolve, reject) => {
     const onMembership = (room: sdk.Room, membership: string) => {
-      if (membership !== 'invite') return
       if (known.has(room.roomId)) return
+      // Another open Construct (the Mac while you spawn from the phone)
+      // auto-accepts the invite, and if its join lands before this device
+      // syncs, the server reports the room as joined outright — no invite ever
+      // reaches us. Count a new agent room arriving joined as the spawn too.
+      if (membership !== 'invite' && !(membership === 'join' && isAgentRoom(client, room.roomId))) return
       stop()
       resolve(room.roomId)
     }

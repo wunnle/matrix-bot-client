@@ -114,8 +114,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard ProcessInfo.processInfo.isiOSAppOnMac,
               let vc = (scene as? UIWindowScene)?.windows.first?.rootViewController as? CAPBridgeViewController
         else { return }
+        if active, let webView = vc.webView { resetGestures(in: webView) }
         vc.webView?.evaluateJavaScript(
             "window.dispatchEvent(new CustomEvent('construct:app-active', { detail: \(active) }))")
+    }
+
+    /// Clicking a link opens the default browser mid-click, so the window loses
+    /// focus before WebKit's tap recognizers see the click end. One left
+    /// stuck in progress kept the page ignoring every later click. Turning each
+    /// recognizer off and on cancels whatever it was tracking.
+    private func resetGestures(in view: UIView) {
+        for recognizer in view.gestureRecognizers ?? [] where recognizer.isEnabled {
+            recognizer.isEnabled = false
+            recognizer.isEnabled = true
+        }
+        for subview in view.subviews { resetGestures(in: subview) }
     }
 }
 

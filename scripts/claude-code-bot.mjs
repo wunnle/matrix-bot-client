@@ -425,7 +425,7 @@ function autoApprove(roomId, request) {
   // Machine-flagged: nothing is being asked, so it must not toast, push to
   // the phone or count as unread — it's a record, not a question.
   const first = String(request.summary ?? '').split('\n')[0]
-  sendRoomText(roomId, `⚡ Auto-approved \`${request.toolName}\`: ${fencedBlock(first, 'cmd')}`, {
+  sendRoomText(roomId, `⚡ Auto-approved \`${request.toolName}\`:\n${fencedBlock(first, 'cmd')}`, {
     'com.construct.machine': { kind: 'notification', source: 'auto-approve' },
   }).catch(() => {})
   log(`[${roomId}] auto-approved ${request.toolName}`)
@@ -442,7 +442,7 @@ const deployGrants = createDeployGrants({ owner: OWNER_ID })
 function deployGrantApprove(roomId, request) {
   if (!deployGrants.covers(roomId, request)) return null
   const first = String(request.summary ?? '').split('\n')[0]
-  sendRoomText(roomId, `🚀 Covered by the deploy approval: ${fencedBlock(first, 'cmd')}`, {
+  sendRoomText(roomId, `🚀 Covered by the deploy approval:\n${fencedBlock(first, 'cmd')}`, {
     'com.construct.machine': { kind: 'notification', source: 'deploy-grant' },
   }).catch(() => {})
   log(`[${roomId}] deploy grant approved ${request.toolName}`)

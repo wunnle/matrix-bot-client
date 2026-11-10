@@ -249,7 +249,7 @@ function previewCommand(tokens) {
 const HOME = process.env.HOME ?? '/home/wunnle'
 const PREAPPROVED_SCRIPT_PATHS = new Set([
   `${HOME}/.openclaw/workspace/integrations/linear/linear.js`,
-  `${HOME}/.openclaw/workspace/scripts/ha_helper.py`,
+  `${HOME}/.hermes/scripts/ha_helper.py`,
   `${HOME}/matrix-pwa/scripts/room-rename.mjs`,
   `${HOME}/matrix-pwa/scripts/send-image.mjs`,
   `${HOME}/matrix-pwa/scripts/agent-review/session.mjs`,

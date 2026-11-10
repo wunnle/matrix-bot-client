@@ -13,7 +13,7 @@
  */
 import webpush from "web-push";
 import { apnsSend, apnsConfigured, isEnvMismatch } from "./_apns.js";
-import { recordNotify, activeClients, seenEventBefore } from "./live-activity.js";
+import { recordNotify, recordAlerted, activeClients, seenEventBefore } from "./live-activity.js";
 import { signedMediaUrl } from "./_media-sig.js";
 
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
@@ -222,6 +222,8 @@ export async function deliver(notification, { dedupeKey = notification.event_id,
   if (!room_id || reason) return { rejected: [], suppressed: reason ?? "no room" };
 
   const rejected = [];
+  // APNs devices that now show an alert for this room.
+  const alerted = [];
   // Counted so the trace can say a notification was skipped because the device
   // was already showing the room.
   let presenceSkipped = 0;
@@ -311,6 +313,7 @@ export async function deliver(notification, { dedupeKey = notification.event_id,
         if (r.status === 410 || (r.status === 400 && r.body.includes("BadDeviceToken"))) {
           rejected.push(pushkey);
         }
+        if (r.status === 200) alerted.push(pushkey);
         return;
       }
 
@@ -332,6 +335,9 @@ export async function deliver(notification, { dedupeKey = notification.event_id,
       }
     })
   );
+
+  // So reading the room on another device can clear these (live-activity.js).
+  await recordAlerted(room_id, alerted);
 
   // Leaves a trace of which branch ran for this message — see recordNotify.
   await recordNotify({

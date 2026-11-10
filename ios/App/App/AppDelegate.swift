@@ -37,14 +37,27 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     /// Silent `content-available` pushes, which iOS delivers here even under the
     /// scene lifecycle, launching a terminated app in the background to do so.
-    /// Only the server's "la-sync" push uses this: it lets a Live Activity the
-    /// server push-started register its update token without the user opening
-    /// the app. Capacitor's push plugin never implements this method (message
-    /// notifications reach it through the UNUserNotificationCenter delegate,
-    /// and they carry no content-available), so anything else is just finished.
+    /// Two server pushes use this. "la-sync" lets a Live Activity the server
+    /// push-started register its update token without the user opening the
+    /// app. "clear" removes a room's notifications once it has been read on
+    /// another device (clearSeenElsewhere in api/live-activity.js). Capacitor's
+    /// push plugin never implements this method (message notifications reach it
+    /// through the UNUserNotificationCenter delegate, and they carry no
+    /// content-available), so anything else is just finished.
     func application(_ application: UIApplication,
                      didReceiveRemoteNotification userInfo: [AnyHashable: Any],
                      fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        if userInfo["construct"] as? String == "clear", let roomId = userInfo["roomId"] as? String {
+            let center = UNUserNotificationCenter.current()
+            center.getDeliveredNotifications { delivered in
+                let ids = delivered
+                    .filter { $0.request.content.userInfo["roomId"] as? String == roomId }
+                    .map { $0.request.identifier }
+                center.removeDeliveredNotifications(withIdentifiers: ids)
+                completionHandler(ids.isEmpty ? .noData : .newData)
+            }
+            return
+        }
         guard userInfo["construct"] as? String == "la-sync", #available(iOS 16.2, *) else {
             completionHandler(.noData)
             return

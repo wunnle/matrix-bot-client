@@ -41,6 +41,14 @@ const LAST_EVENT_TYPE = "com.construct.last_event";
     recognised for as long as its window lasts, and traffic in that window is a
     handful of messages, so this is sized for a busy burst rather than tuned. */
 const SEEN_EVENT_LIMIT = 64;
+/** Which APNs devices were alerted for which room, and when, so reading the
+    room on another device can clear them (clearSeenElsewhere). Its own
+    document for the same reason as the two above. Shape:
+      { rooms: { "<roomId>": { "<apns token>": ts } } } */
+const ALERTED_TYPE = "com.construct.alerted";
+/** Older alerts aren't worth a silent push: iOS has usually grouped them away
+    or you've cleared them by hand. */
+const ALERTED_TTL_MS = 2 * 24 * 60 * 60 * 1000;
 
 // Activities are short-lived; a token outliving this is stale and its pushes
 // would be rejected by APNs anyway.
@@ -240,6 +248,7 @@ export default async function handler(req, res) {
         body: JSON.stringify({ clients }),
       });
       if (!r.ok) throw new Error(`heartbeat write failed: ${r.status}`);
+      await clearSeenElsewhere(entry);
     } catch (err) {
       return res.status(200).json({ ok: false, error: String(err?.message || err) });
     }
@@ -537,6 +546,74 @@ export async function seenEventBefore(eventId, withinMs) {
   } catch {
     return false;
   }
+}
+
+async function readAlerted() {
+  const r = await fetch(await accountDataUrl(ALERTED_TYPE), {
+    headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+  });
+  if (r.status === 404) return {};
+  if (!r.ok) throw new Error(`read alerted failed: ${r.status}`);
+  return ((await r.json()) ?? {}).rooms ?? {};
+}
+
+async function writeAlerted(rooms) {
+  const cutoff = Date.now() - ALERTED_TTL_MS;
+  for (const [roomId, devices] of Object.entries(rooms)) {
+    for (const [token, ts] of Object.entries(devices)) if (ts < cutoff) delete devices[token];
+    if (!Object.keys(devices).length) delete rooms[roomId];
+  }
+  await fetch(await accountDataUrl(ALERTED_TYPE), {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ rooms }),
+  });
+}
+
+/** Note that these APNs devices now show an alert for the room. Called by the
+    gateway after delivering (api/_push.js). Never throws: a lost record only
+    means that alert isn't cleared remotely. */
+export async function recordAlerted(roomId, tokens) {
+  if (!roomId || !tokens.length) return;
+  try {
+    const rooms = await readAlerted();
+    const now = Date.now();
+    rooms[roomId] = { ...(rooms[roomId] ?? {}) };
+    for (const t of tokens) rooms[roomId][t] = now;
+    await writeAlerted(rooms);
+  } catch {}
+}
+
+/** A client reports being in a room with recent input: alerts for that room
+    on your *other* APNs devices, delivered before that input, are now seen.
+    Send each a silent push that removes them (AppDelegate.swift, "clear").
+    Input after the alert is the test, not just a beat: a tab left open on a
+    room keeps beating, and would otherwise clear every new alert as it lands.
+
+    iOS rations silent pushes and skips apps you've swiped away, so this is
+    best effort. Never throws. */
+async function clearSeenElsewhere(entry) {
+  if (!entry.visible || !entry.roomId || entry.lastInputAt == null || !apnsConfigured()) return;
+  try {
+    const rooms = await readAlerted();
+    const devices = rooms[entry.roomId];
+    if (!devices) return;
+    const seen = Object.keys(devices).filter((t) => devices[t] < entry.lastInputAt);
+    // This device's own alerts are removed locally (clearRoomNotifications).
+    const targets = seen.filter((t) => t !== entry.pushkey);
+    if (!seen.length) return;
+    for (const t of seen) delete devices[t];
+    await writeAlerted(rooms);
+    await Promise.all(
+      targets.map((t) =>
+        apnsSendWithFallback(
+          t,
+          { aps: { "content-available": 1 }, construct: "clear", roomId: entry.roomId },
+          { pushType: "background", priority: 5 }
+        ).catch(() => {})
+      )
+    );
+  } catch {}
 }
 
 export async function recordNotify(info) {

@@ -20,6 +20,7 @@ import { getDictationAutoSend, setDictationAutoSend } from '../lib/clientSetting
 import { resolveRoomIdFromParam } from '../lib/roomAliases'
 import { isAgentRoom } from '../lib/roomMeta'
 import { startPresenceHeartbeat, setActiveRoom } from '../lib/presence'
+import { clearRoomNotifications } from '../lib/clearRoomNotifications'
 import { apiUrl } from '../lib/apiUrl'
 
 interface Props {
@@ -221,6 +222,18 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
   // message already on screen in whichever client you're using.
   useEffect(() => startPresenceHeartbeat(), [])
   useEffect(() => { setActiveRoom(activeRoomId) }, [activeRoomId])
+
+  // Opening a room, or coming back to the app on one, clears its
+  // notifications from this device.
+  useEffect(() => {
+    if (!activeRoomId) return
+    const clear = () => {
+      if (document.visibilityState === 'visible') void clearRoomNotifications(activeRoomId)
+    }
+    clear()
+    document.addEventListener('visibilitychange', clear)
+    return () => document.removeEventListener('visibilitychange', clear)
+  }, [activeRoomId])
 
   useEffect(() => {
     if (!clientReady) return

@@ -27,7 +27,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useSearchParams } from 'react-router-dom'
-import { getClient } from '../lib/matrix'
+import { getClient, sendErrorMessage } from '../lib/matrix'
 import { pinRoomEvent, unpinRoomEvent } from '../lib/pinRoomMessage'
 import { loadPills, savePills, isAgentRoom, agentRoomModels } from '../lib/roomMeta'
 import { resolveMediaUrl, type EncryptedMedia } from '../lib/mediaUrl'
@@ -1209,7 +1209,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       } as any)
     } catch (err: any) {
       if (clearedComposer) setInput(text) // restore input so message isn't lost
-      setSendError(err?.message ?? 'Failed to send')
+      setSendError(sendErrorMessage(err, 'Failed to send'))
       setTimeout(() => setSendError(''), 4000)
     } finally {
       setSending(false)
@@ -1324,7 +1324,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       // Put both back so nothing typed or picked is lost.
       setPending({ file, previewUrl })
       setInput(caption)
-      setSendError(err?.message ?? 'Failed to send file')
+      setSendError(sendErrorMessage(err, 'Failed to send file'))
       setTimeout(() => setSendError(''), 4000)
     } finally {
       setSending(false)

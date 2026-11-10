@@ -4,7 +4,7 @@ import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSe
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
-import { fetchJoinedRooms, getCachedRooms, lastPreviewMessage, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, type RoomSummary } from '../lib/matrix'
+import { fetchJoinedRooms, getCachedRooms, lastPreviewMessage, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, sendErrorMessage, type RoomSummary } from '../lib/matrix'
 import { seedAgentPills, backfillAgentPills } from '../lib/roomMeta'
 import { findSpawnHostRoom, spawnAgentRoom } from '../lib/spawnAgent'
 import SpawnSheet from './SpawnSheet'
@@ -612,7 +612,7 @@ export default function RoomList({
         await client.sendMessage(roomId, { msgtype: 'm.text', body: prompt } as never)
       }
     } catch (e) {
-      setInviteError((e as Error).message ?? 'Could not spawn a room')
+      setInviteError(sendErrorMessage(e, 'Could not spawn a room'))
     } finally {
       spawnGate.current.end()
       setSpawning(null)

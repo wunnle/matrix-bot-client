@@ -271,6 +271,51 @@ export async function destroyAndWipeStores(userId: string) {
   localStorage.removeItem(`construct:rooms:${userId}`)
 }
 
+// iOS WebKit drops every IndexedDB connection the page holds when it kills its
+// storage process, which it does to apps left in the background. Nothing
+// reconnects: the Rust crypto store keeps the dead handle, and every encrypt or
+// decrypt after that (sending, spawning) fails with "The database connection is
+// closing" until the page is reloaded.
+const LOST_STORAGE = /database connection is closing|Indexed Database server lost/i
+
+export function isStorageLostError(e: unknown): boolean {
+  return LOST_STORAGE.test(String((e as Error)?.message ?? e))
+}
+
+/**
+ * Shown in place of the raw DomException when a send hits the dead store.
+ * Not reloaded for you there: that would throw away the text you just typed.
+ */
+export function sendErrorMessage(e: unknown, fallback: string): string {
+  if (isStorageLostError(e)) return 'The app lost its local storage in the background. Reload it (Settings → Reload app) and try again.'
+  return (e as Error)?.message ?? fallback
+}
+
+const RELOAD_GUARD_KEY = 'construct:storage-lost-reload'
+
+/**
+ * Reloads the page to reopen the stores: right away when it is on screen,
+ * otherwise as it comes back, before anything is typed into it. At most once
+ * a minute, so a store that dies again on startup can't loop.
+ */
+export function recoverFromLostStorage() {
+  try {
+    const last = Number(sessionStorage.getItem(RELOAD_GUARD_KEY) ?? 0)
+    if (Date.now() - last < 60_000) return
+    sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()))
+  } catch { /* no sessionStorage — reload anyway */ }
+  if (document.visibilityState === 'visible') {
+    window.location.reload()
+    return
+  }
+  const onVisible = () => {
+    if (document.visibilityState !== 'visible') return
+    document.removeEventListener('visibilitychange', onVisible)
+    window.location.reload()
+  }
+  document.addEventListener('visibilitychange', onVisible)
+}
+
 async function doInit(auth: AuthState): Promise<RoomSummary[]> {
   // Persist room timeline to IndexedDB so subsequent loads skip the full sync wait
   let s: sdk.IndexedDBStore | null = null
@@ -281,6 +326,12 @@ async function doInit(auth: AuthState): Promise<RoomSummary[]> {
       localStorage: window.localStorage,
     })
     await s.startup()
+    // The sync store's connection dies at the same moment the crypto store's
+    // does, and unlike that one it says so.
+    s.on('closed', () => {
+      console.warn('IndexedDB connection lost, reloading')
+      recoverFromLostStorage()
+    })
   } catch (e) {
     console.warn('IndexedDB store init failed, falling back to in-memory:', e)
     s = null

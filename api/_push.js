@@ -251,8 +251,16 @@ export async function deliver(notification, { dedupeKey = notification.event_id,
   // chattingElsewhere) — an open PWA on the laptop used to silence the phone
   // completely.
   //
+  // Only clients with keyboard/pointer/touch input in the last 90s count, on
+  // every branch. "Visible" alone isn't presence: a desktop browser tab behind
+  // other windows stays visible for hours, and that used to mute every web
+  // push to that machine — and, via the rules below, the phone too.
+  //
   // Empty on any error, so an unreadable heartbeat notifies rather than mutes.
-  const active = (await activePromise).filter((c) => c.visible);
+  const ENGAGED_MS = 90 * 1000;
+  const active = (await activePromise).filter(
+    (c) => c.visible && c.lastInputAt != null && startedAt - c.lastInputAt < ENGAGED_MS
+  );
   const nativePushkeys = new Set(
     devices.map((d) => d.pushkey).filter((k) => k && !parseWebPushKey(k))
   );
@@ -260,19 +268,10 @@ export async function deliver(notification, { dedupeKey = notification.event_id,
   const showingRoom = (pushkey) =>
     active.some((c) => c.pushkey === pushkey && c.roomId === room_id);
   const inForeground = (pushkey) => active.some((c) => c.pushkey === pushkey);
-  // This room is open on another device that had keyboard/pointer input in
-  // the last 2 minutes: you're chatting there, so don't buzz this one. The
-  // input check is what keeps a tab left open on the laptop from muting the
-  // phone indefinitely.
-  const ENGAGED_MS = 2 * 60 * 1000;
+  // This room is open, and in use, on another device: you're chatting there,
+  // so don't buzz this one.
   const chattingElsewhere = (pushkey) =>
-    active.some(
-      (c) =>
-        c.pushkey !== pushkey &&
-        c.roomId === room_id &&
-        c.lastInputAt != null &&
-        startedAt - c.lastInputAt < ENGAGED_MS
-    );
+    active.some((c) => c.pushkey !== pushkey && c.roomId === room_id);
   // A native client that hasn't registered its APNs token yet can't be matched
   // to its pushkey. It is assumed to be the phone, so the room on its screen
   // stays quiet during the seconds between app launch and registration.

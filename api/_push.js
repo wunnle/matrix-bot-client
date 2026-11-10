@@ -253,22 +253,28 @@ export async function deliver(notification, { dedupeKey = notification.event_id,
   // chattingElsewhere) — an open PWA on the laptop used to silence the phone
   // completely.
   //
-  // Only clients with keyboard/pointer/touch input in the last 90s count, on
-  // every branch. "Visible" alone isn't presence: a desktop browser tab behind
-  // other windows stays visible for hours, and that used to mute every web
-  // push to that machine — and, via the rules below, the phone too.
+  // Except for a native app's own room, only clients with keyboard/pointer/
+  // touch input in the last 90s count. "Visible" alone isn't presence on a
+  // desktop: a browser tab behind other windows stays visible for hours, and
+  // that used to mute every web push to that machine — and, via the rules
+  // below, the phone too. A phone is different: it reports hidden the moment
+  // it locks or leaves the app, so visible there means you're looking at it,
+  // touching it or not — and notifying it then left alerts for the room on
+  // screen that nothing cleared. (The Mac app reports hidden after 2 minutes
+  // idle, see presence.ts.)
   //
   // Empty on any error, so an unreadable heartbeat notifies rather than mutes.
   const ENGAGED_MS = 90 * 1000;
-  const active = (await activePromise).filter(
-    (c) => c.visible && c.lastInputAt != null && startedAt - c.lastInputAt < ENGAGED_MS
+  const visible = (await activePromise).filter((c) => c.visible);
+  const active = visible.filter(
+    (c) => c.lastInputAt != null && startedAt - c.lastInputAt < ENGAGED_MS
   );
   const nativePushkeys = new Set(
     devices.map((d) => d.pushkey).filter((k) => k && !parseWebPushKey(k))
   );
   const isNativeClient = (c) => c.native || nativePushkeys.has(c.pushkey);
   const showingRoom = (pushkey) =>
-    active.some((c) => c.pushkey === pushkey && c.roomId === room_id);
+    visible.some((c) => c.pushkey === pushkey && c.roomId === room_id);
   const inForeground = (pushkey) => active.some((c) => c.pushkey === pushkey);
   // This room is open, and in use, on another device: you're chatting there,
   // so don't buzz this one.

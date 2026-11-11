@@ -203,8 +203,10 @@ async function readAlerts() {
 function view() {
   const store = loadStore()
   const byId = new Map(alerts.map((r) => [r.id, r]))
+  // ⏳ (ack "wait") keeps an alert needing him, as on the Homepage; other
+  // reactions mean seen.
   const needs = alerts
-    .filter((r) => !r.answered && !r.ack && !store.done[r.id] && !store.pending[r.id])
+    .filter((r) => !r.answered && (!r.ack || r.ack === 'wait') && !store.done[r.id] && !store.pending[r.id])
     .reverse()
   // A pending item shows its latest record when the alert is still in the
   // window, so a reaction or reply made since shows on it.

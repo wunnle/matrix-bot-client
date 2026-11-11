@@ -2317,6 +2317,14 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       return
     }
     pendingWorkerEnds.delete(roomId)
+    // Construct asks on the device before sending and marks the message, so
+    // a second "End this room?" here would be the same question twice.
+    // Typed from elsewhere, !end still gets the bot's own confirmation.
+    if (event.getContent()?.['com.construct.end_confirmed'] === true) {
+      pendingEnds.delete(roomId)
+      await endRoom(roomId, '👋 Ended. Spawn a new room when you need me again.')
+      return
+    }
     pendingEnds.add(roomId)
     await sendRoomText(roomId, 'End this room? I will leave and forget the session. The transcript stays on disk.\n\n[[Confirm end]] [[Cancel]]')
     return

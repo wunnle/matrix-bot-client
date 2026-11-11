@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import type { RoomNotification } from '../hooks/useRoomNotifications'
-import { actionLabel } from '../lib/actions'
+import { actionLabel, confirmRoomCommand } from '../lib/actions'
 import { getClient } from '../lib/matrix'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { hapticSend } from '../lib/haptics'
@@ -41,7 +41,7 @@ interface ToastCardProps {
   onDismiss: (roomId: string) => void
   onNavigate: (roomId: string, roomName: string) => void
   onHold: (roomId: string, held: boolean) => void
-  onRespond: (roomId: string, label: string) => Promise<void>
+  onRespond: (roomId: string, label: string, extra?: Record<string, unknown>) => Promise<void>
 }
 
 function ToastCard({ notification, onDismiss, onNavigate, onHold, onRespond }: ToastCardProps) {
@@ -64,11 +64,13 @@ function ToastCard({ notification, onDismiss, onNavigate, onHold, onRespond }: T
 
   const respond = async (label: string, at: number) => {
     if (sending || at - shownAtRef.current < ARM_DELAY_MS) return
+    const confirmed = confirmRoomCommand(label)
+    if (!confirmed) return
     hapticSend()
     const eventId = notification.eventId
     setAttempt({ eventId, label, failed: false, sent: false })
     try {
-      await onRespond(notification.roomId, label)
+      await onRespond(notification.roomId, label, confirmed)
       // A checkmark on the tapped button is the confirmation; the bot's own
       // "✅ Approved" reply is machine-flagged and doesn't toast.
       setAttempt({ eventId, label, failed: false, sent: true })
@@ -206,7 +208,7 @@ interface Props {
   onDismiss: (roomId: string) => void
   onNavigate: (roomId: string, roomName: string) => void
   onHold: (roomId: string, held: boolean) => void
-  onRespond: (roomId: string, label: string) => Promise<void>
+  onRespond: (roomId: string, label: string, extra?: Record<string, unknown>) => Promise<void>
 }
 
 export default function RoomToast({ toasts, onDismiss, onNavigate, onHold, onRespond }: Props) {

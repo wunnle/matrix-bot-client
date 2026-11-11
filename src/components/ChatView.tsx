@@ -34,7 +34,7 @@ import { resolveMediaUrl, type EncryptedMedia } from '../lib/mediaUrl'
 import { encryptAttachment, type EncryptedFile } from '../lib/attachmentCrypto.js'
 import { Capacitor } from '@capacitor/core'
 import { isMobileSafari } from '../lib/isMobileSafari'
-import { actionLabel, choiceIndexFromKey, parseActions, stripActionMarkersInRichHtml } from '../lib/actions'
+import { actionLabel, choiceIndexFromKey, confirmRoomCommand, parseActions, stripActionMarkersInRichHtml } from '../lib/actions'
 import { formatModel } from '../lib/modelLabel'
 import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
@@ -1178,6 +1178,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     { follow = true, extra }: { follow?: boolean, extra?: Record<string, unknown> } = {},
   ) => {
     if (!text.trim() || sending) return
+    const confirmed = confirmRoomCommand(text)
+    if (!confirmed) return
     hapticSend()
     // Keep the keyboard up only if the composer was already focused (i.e. the
     // user was typing and hit Enter/Send). Tapping a pill on a blurred input
@@ -1205,6 +1207,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         'com.construct.capabilities': ['actionable'],
         'com.construct.client': 'construct-web',
         'com.construct.version': __CONSTRUCT_VERSION__,
+        ...confirmed,
         ...extra,
       } as any)
     } catch (err: any) {

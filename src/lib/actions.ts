@@ -16,6 +16,26 @@ export function actionLabel(action: string): string {
   return model ? formatModel(model[1]) : action
 }
 
+/**
+ * Ending a room can't be undone from chat, so the app asks right where you
+ * tapped (or typed) `!end`, instead of a round trip for the bot's own
+ * "End this room?" message. The content key tells the bot the asking is done;
+ * a bot without support ignores it and asks again, which is the old flow.
+ * Returns the extra content to send with the message, or null when cancelled.
+ */
+export const END_CONFIRMED_KEY = 'com.construct.end_confirmed'
+export function confirmRoomCommand(text: string): Record<string, unknown> | null {
+  if (text.trim() !== '!end') return {}
+  let ok = true
+  try {
+    ok = window.confirm('End this room? The agent leaves and forgets the session. A clean worktree is removed, and its branch too if nothing on it is unmerged.')
+  } catch {
+    // No dialog available: fall back to the bot asking.
+    return {}
+  }
+  return ok ? { [END_CONFIRMED_KEY]: true } : null
+}
+
 // Doc examples like [[label]] or <code>[[button]]</code> — not real CTAs
 export function isActionPlaceholder(inner: string): boolean {
   const t = inner.trim().toLowerCase()

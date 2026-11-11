@@ -37,6 +37,7 @@ const rowDefaults: Omit<MessageRowProps, 'msg'> = {
   showDateDivider: false,
   senderSwitch: true,
   showPeerSender: false,
+  avatar: 'none',
   isTool: false,
   prevIsTool: false,
   nextIsTool: false,
@@ -277,6 +278,18 @@ export default function DesignLibrary() {
             <Row msg={MESSAGES.peer} showPeerSender />
             <Row msg={MESSAGES.machine} />
             <Row msg={MESSAGES.failed} />
+          </div>
+        </Frame>
+      </Section>
+
+      <Section title="Several agents" note="A room with more than one agent at the top power level (the Lobby): each agent's run starts with its avatar and name.">
+        <Frame className="dl-chat">
+          <div className="messages-inner">
+            <Row msg={own('dinner with irem 8pm today')} />
+            <Row msg={bot('Added: Dinner with İrem, today 20:00–21:00 (assumed 1 h).', { sender: '@alfred:kafagoz.com', authorName: 'Alfred' })} avatar="first" />
+            <Row msg={bot('Want me to add a place too?', { sender: '@alfred:kafagoz.com', authorName: 'Alfred' })} avatar="spacer" senderSwitch={false} />
+            <Row msg={own('and turn off the bedroom lights')} />
+            <Row msg={bot('Bedroom lights are off. Scruffy’s done.', { sender: '@scruffy:kafagoz.com', authorName: 'Scruffy' })} avatar="first" />
           </div>
         </Frame>
       </Section>

@@ -46,6 +46,7 @@ import { HeaderUsageBar } from './PlanUsageMeter'
 import { usePlanUsage, useCodexUsage } from '../hooks/usePlanUsage'
 import type { Message, RoomConfig, ConstructApproval, ConstructForm, SharedLocation } from '../types'
 import { useAgentRun } from '../hooks/useAgentActivity'
+import { useRoomAgents } from '../hooks/useRoomAgents'
 import { AgentActivityBar } from './AgentActivityBar'
 import MessageActionSheet from './MessageActionSheet'
 import ApprovalBar from './ApprovalBar'
@@ -283,6 +284,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const [renderStart, setRenderStart] = useState(0)
   const typingUsers = useTypingUsers(client, roomId, userId)
   const { bot, roomTopic, roomAvatarUrl } = useRoomHeaderInfo(client, roomId, userId)
+  const roomAgents = useRoomAgents(client, roomId, userId)
   // When the bot started typing, for the page's "Thinking… 12s" strip; ticks
   // once a second while it lasts.
   const thinking = typingUsers.length > 0
@@ -2075,6 +2077,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 showDateDivider={showDateDivider}
                 senderSwitch={!!(prev && !showDateDivider && (prev.isOwnMessage !== msg.isOwnMessage || prev.senderName !== msg.senderName))}
                 showPeerSender={!prev || showDateDivider || prev.senderName !== msg.senderName}
+                // Several agents in the room: each run of one agent's rows gets its
+                // avatar on the first row and an empty column after, so text lines up.
+                avatar={!roomAgents.multi || msg.isOwnMessage || msg.isPeerMessage
+                  ? 'none'
+                  : (!prev || showDateDivider || prev.isOwnMessage || prev.sender !== msg.sender) ? 'first' : 'spacer'}
+                avatarUrl={roomAgents.multi ? roomAgents.avatars[msg.sender] : undefined}
                 isTool={isTool}
                 prevIsTool={prevIsTool}
                 nextIsTool={nextIsTool}

@@ -15,6 +15,10 @@ export interface MessageRowProps {
   showDateDivider: boolean
   senderSwitch: boolean
   showPeerSender: boolean
+  /** Rooms with several agents: 'first' row of an agent's run shows its avatar and
+   *  name, 'spacer' keeps the column; 'none' everywhere else. */
+  avatar: 'none' | 'first' | 'spacer'
+  avatarUrl?: string
   isTool: boolean
   prevIsTool: boolean
   nextIsTool: boolean
@@ -68,6 +72,8 @@ function MessageRowInner({
   showDateDivider,
   senderSwitch,
   showPeerSender,
+  avatar,
+  avatarUrl,
   isTool,
   prevIsTool,
   nextIsTool,
@@ -108,7 +114,17 @@ function MessageRowInner({
                   </div>
                 )}
                 <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}${msg.isPeerMessage ? ' peer' : ''}${senderSwitch ? ' sender-switch' : ''}${selecting ? ' message--selecting' : ''}`}>
+                  {avatar !== 'none' && (
+                    <div className="msg-agent-avatar" aria-hidden="true">
+                      {avatar === 'first' && (avatarUrl
+                        ? <img src={avatarUrl} alt="" />
+                        : <span>{(msg.authorName || msg.sender.replace(/^@/, '')).slice(0, 1).toUpperCase()}</span>)}
+                    </div>
+                  )}
                   <div className="message-body">
+                    {avatar === 'first' && msg.authorName && (
+                      <div className="agent-sender">{msg.authorName}</div>
+                    )}
                     {/* Another member's request, not the bot's own voice — say whose. */}
                     {msg.isPeerMessage && showPeerSender && (
                       <div className="peer-sender">{msg.senderName}</div>

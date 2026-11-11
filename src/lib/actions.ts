@@ -8,6 +8,10 @@ import { formatModel } from './modelLabel'
 
 /** What a pill shows for an action; the action itself is still what's sent. */
 export function actionLabel(action: string): string {
+  // Room commands an agent offers as answers: read as what they do. The tap
+  // still sends the command itself.
+  if (action === '!end') return 'End this room'
+  if (action === '!end workers') return 'End worker rooms'
   const model = /^!model\s+(\S+)$/.exec(action)
   return model ? formatModel(model[1]) : action
 }

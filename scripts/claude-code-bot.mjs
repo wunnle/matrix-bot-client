@@ -287,11 +287,6 @@ client.on(sdk.RoomEvent.MyMembership, async (room, membership) => {
   }
 })
 
-// Rooms that have asked to end and are awaiting confirmation. Ending is not
-// reversible from chat, and !end sits next to !model on the pill row.
-const pendingEnds = new Set()
-// Parent rooms asked to end their finished workers: room id → worker room ids.
-const pendingWorkerEnds = new Map()
 // Rooms asked to turn on encryption, awaiting confirmation: it is permanent.
 const pendingEncrypts = new Set()
 
@@ -959,9 +954,10 @@ const QUICK_ANSWER_INSTRUCTION =
   'characters, e.g. [[Plan the wake word training (BEN-263)]]; Construct shows ' +
   'those as a lettered A, B, C list.'
 
-// A tapped [[!end]] posts `!end` as the owner, which runs the bot's own end
-// flow (confirm, then remove a clean worktree or keep a branch with commits).
-// Fixed text, for the same reason as the Live Activity one below.
+// A tapped [[!end]] posts `!end` as the owner, which archives the room; the
+// archive sweep ends it days later (removing a clean worktree, keeping a
+// branch with commits). Fixed text, for the same reason as the Live Activity
+// one below — so the wording below stays as it is.
 const END_INSTRUCTION =
   'When nothing is left in this room (the work is merged or deployed, it was ' +
   'a question with no code changes, or the user says they are done), always ' +
@@ -1394,12 +1390,51 @@ async function removeWorktree(dir, branch) {
   return { removed: true, branchDeleted }
 }
 
-// Statuses a worker room can be ended in from its parent with `!end workers`.
+// Statuses a worker room can be archived in from its parent with `!end workers`.
 const WORKER_ENDABLE = ['done', 'failed', 'stopped']
 
-// Forgets the session, cleans up its worktree, says goodbye and leaves. Shared
-// by !end and !end workers; returns what happened to the worktree, so a parent
-// ending several workers can list where each one's work went.
+// `!end` archives instead of ending, so it needs no confirmation: Construct
+// files an archived room under "Archived", and any message in it brings it
+// back with its session intact. A room left in the archive this long is ended
+// for real by the sweep below. The state event is what Construct reads; the
+// session's archivedAt is what the sweep reads, and survives a restart.
+const ARCHIVED_EVENT = 'com.construct.archived'
+const ARCHIVE_KEEP_DAYS = 5
+const ARCHIVE_KEEP_MS = ARCHIVE_KEEP_DAYS * 24 * 3600_000
+// Daily is plenty for a multi-day limit; a restart also runs one pass.
+const ARCHIVE_SWEEP_MS = 24 * 3600_000
+
+async function archiveRoom(roomId) {
+  const archivedAt = Date.now()
+  sessions[roomId] = { ...sessions[roomId], archivedAt }
+  saveSessions()
+  await client.sendStateEvent(roomId, ARCHIVED_EVENT, { archived_at: archivedAt }, '')
+    .catch((e) => log(`Archive state failed for ${roomId}: ${e.message}`))
+  log(`Archived ${roomId}`)
+  return new Date(archivedAt + ARCHIVE_KEEP_MS).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+async function unarchiveRoom(roomId) {
+  if (!sessions[roomId]?.archivedAt) return
+  const { archivedAt, ...kept } = sessions[roomId]
+  sessions[roomId] = kept
+  saveSessions()
+  // Empty content, not a redaction: Construct reads "no archived_at" as active.
+  await client.sendStateEvent(roomId, ARCHIVED_EVENT, {}, '')
+    .catch((e) => log(`Unarchive state failed for ${roomId}: ${e.message}`))
+  log(`Unarchived ${roomId}`)
+}
+
+async function sweepArchived() {
+  for (const [roomId, s] of Object.entries(sessions)) {
+    if (!s?.archivedAt || Date.now() - s.archivedAt < ARCHIVE_KEEP_MS || busy.has(roomId)) continue
+    await endRoom(roomId, `👋 Ended after ${ARCHIVE_KEEP_DAYS} days in the archive.`)
+      .catch((e) => log(`Archive sweep failed for ${roomId}: ${e.message}`))
+  }
+}
+
+// Forgets the session, cleans up its worktree, says goodbye and leaves. Used
+// by the archive sweep; returns what happened to the worktree.
 async function endRoom(roomId, goodbye) {
   const ended = sessions[roomId]
   delete sessions[roomId]
@@ -1807,6 +1842,9 @@ async function refreshProcesses() {
 }
 refreshProcesses()
 setInterval(refreshProcesses, PROCESS_POLL_MS)
+// First pass a minute in, once the session map and the room list have settled.
+setTimeout(sweepArchived, 60_000)
+setInterval(sweepArchived, ARCHIVE_SWEEP_MS)
 
 // Runs `first`, then whatever piled up while it ran, until the room is idle.
 // Queued messages are coalesced into one prompt instead of one turn each: two
@@ -2142,6 +2180,10 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
   }
   const fromOwner = mayAnswer(sender, SENDERS)
 
+  // Any message in an archived room brings it back, a parent agent's too:
+  // that is how a reused worker comes back into the list.
+  if (body !== '!end') await unarchiveRoom(roomId)
+
   // !auto [on|off|<duration>] — approve this room's own tool calls for a while.
   // Owner-only by the `!` guard above, per-room, and off unless asked for: a
   // loosening that applied everywhere, or outlived the job it was for, is the
@@ -2303,12 +2345,12 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
   }
 
-  // !end — unbind the room and leave it. Confirmed because it cannot be undone
-  // from chat and the button sits next to the others.
+  // !end — archive the room. No confirmation: it is undone by sending any
+  // message here, and only the sweep ends it for good, days later.
   if (body === '!end') {
-    questions.drop(roomId, 'Room is being ended.')
-    dropQueuedApprovals(roomId, 'Room is being ended.')
-    if (settleApproval(roomId, 'deny', 'Room is being ended.')) {
+    questions.drop(roomId, 'Room is being archived.')
+    dropQueuedApprovals(roomId, 'Room is being archived.')
+    if (settleApproval(roomId, 'deny', 'Room is being archived.')) {
       await sendRoomText(roomId, '🚫 Denied the pending approval. Send !end again once the turn stops.')
       return
     }
@@ -2316,77 +2358,40 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
       await sendRoomText(roomId, 'A turn is still running — try again once it finishes.')
       return
     }
-    pendingWorkerEnds.delete(roomId)
-    // Construct asks on the device before sending and marks the message, so
-    // a second "End this room?" here would be the same question twice.
-    // Typed from elsewhere, !end still gets the bot's own confirmation.
-    if (event.getContent()?.['com.construct.end_confirmed'] === true) {
-      pendingEnds.delete(roomId)
+    // A room with no session (sessions.json lost it) has nothing to come back
+    // to, so archiving it would only park an empty entry; end it outright.
+    if (!sessions[roomId]) {
       await endRoom(roomId, '👋 Ended. Spawn a new room when you need me again.')
       return
     }
-    pendingEnds.add(roomId)
-    await sendRoomText(roomId, 'End this room? I will leave and forget the session. The transcript stays on disk.\n\n[[Confirm end]] [[Cancel]]')
+    const until = await archiveRoom(roomId)
+    await sendRoomText(roomId,
+      `📦 Archived. Send a message here to bring it back; left alone, I end it on ${until}.`,
+      { 'com.construct.machine': { kind: 'ack', source: 'archive' } })
     return
   }
 
-  // !end workers — close this room's finished worker rooms from here, so the
+  // !end workers — archive this room's finished worker rooms from here, so the
   // parent can offer it as a button once it has integrated their work. Rooms
   // still working or blocked are named and left alone.
   if (body === '!end workers') {
-    const children = Object.entries(sessions).filter(([, s]) => s.parentRoomId === roomId)
+    const children = Object.entries(sessions).filter(([id, s]) => s.parentRoomId === roomId && !s.archivedAt)
     const finished = children.filter(([id, s]) => WORKER_ENDABLE.includes(s.agentStatus) && !busy.has(id))
     const running = children.filter(([id]) => !finished.some(([f]) => f === id))
     const names = (list) => list.map(([id, s]) => `- ${s.agentTitle ?? id}`).join('\n')
     const still = running.length ? `\n\nStill running, left open:\n${names(running)}` : ''
     if (!finished.length) {
-      await sendRoomText(roomId, `No finished worker rooms to end.${still}`)
+      await sendRoomText(roomId, `No finished worker rooms to archive.${still}`)
       return
     }
-    pendingEnds.delete(roomId)
-    pendingWorkerEnds.set(roomId, finished.map(([id]) => id))
-    await sendRoomText(roomId, `End ${finished.length} finished worker room${finished.length === 1 ? '' : 's'}?\n${names(finished)}${still}\n\n[[End them]] [[Keep them]]`)
+    let until = ''
+    for (const [id] of finished) {
+      until = await archiveRoom(id)
+      await sendRoomText(id, `📦 Archived from the parent room. Send a message here to bring it back; left alone, I end it on ${until}.`,
+        { 'com.construct.machine': { kind: 'ack', source: 'archive' } }).catch(() => {})
+    }
+    await sendRoomText(roomId, `📦 Archived ${finished.length} worker room${finished.length === 1 ? '' : 's'} until ${until}:\n${names(finished)}${still}`)
     return
-  }
-
-  if (pendingWorkerEnds.has(roomId) && fromOwner) {
-    const reply = body.toLowerCase()
-    if (reply === 'end them') {
-      const ids = pendingWorkerEnds.get(roomId)
-      pendingWorkerEnds.delete(roomId)
-      const lines = []
-      for (const id of ids) {
-        const s = sessions[id]
-        // Re-checked: a worker can be messaged back to work between the ask and the tap.
-        if (!s || busy.has(id) || !WORKER_ENDABLE.includes(s.agentStatus)) {
-          lines.push(`- ${s?.agentTitle ?? id}: left open, it is working again`)
-          continue
-        }
-        const leftover = await endRoom(id, '👋 Ended from the parent room.')
-        lines.push(`- ${s.agentTitle ?? id}${leftover ? `: ${leftover}` : ''}`)
-      }
-      await sendRoomText(roomId, `Ended the worker rooms:\n${lines.join('\n')}`)
-      return
-    }
-    if (reply === 'keep them') {
-      pendingWorkerEnds.delete(roomId)
-      await sendRoomText(roomId, 'Kept them — the worker rooms stay open.')
-      return
-    }
-  }
-
-  if (pendingEnds.has(roomId) && fromOwner) {
-    const reply = body.toLowerCase()
-    if (reply === 'confirm end') {
-      pendingEnds.delete(roomId)
-      await endRoom(roomId, '👋 Ended. Spawn a new room when you need me again.')
-      return
-    }
-    if (reply === 'cancel') {
-      pendingEnds.delete(roomId)
-      await sendRoomText(roomId, 'Cancelled — room is still active.')
-      return
-    }
   }
 
   // Provider questions and approval answers must be handled before the busy

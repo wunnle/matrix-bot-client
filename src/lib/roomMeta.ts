@@ -27,6 +27,9 @@ export async function savePills(client: MatrixClient, roomId: string, pills: str
 // m.room.create `type` set by the Claude Code bot when it spawns a room.
 // Keep in sync with AGENT_ROOM_TYPE in scripts/claude-code-bot.mjs.
 export const AGENT_ROOM_TYPE = 'com.construct.agent'
+// Room state the bot sets on !end ({ archived_at }) and empties when the room
+// is used again. Keep in sync with ARCHIVED_EVENT in the bot.
+export const ARCHIVED_EVENT = 'com.construct.archived'
 
 // The command set every agent room shares. Seeded on accept because the bot
 // cannot write them: pills live in the user's account data, writable only with

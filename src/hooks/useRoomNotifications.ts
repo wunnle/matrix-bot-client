@@ -193,7 +193,7 @@ export function useRoomNotifications(activeRoomId: string | null, clientReady: b
   /** A toast button: send its label to that room, exactly as tapping the pill
       in the chat would. The card confirms and dismisses itself; this throws
       so it can show the failure and stay up instead. */
-  const respond = useCallback(async (roomId: string, label: string, extra?: Record<string, unknown>) => {
+  const respond = useCallback(async (roomId: string, label: string) => {
     const client = getClient()
     answeringRef.current.add(roomId)
     // Same content as ChatView's sendMessage. The com.construct.* keys aren't
@@ -204,7 +204,6 @@ export function useRoomNotifications(activeRoomId: string | null, clientReady: b
       'com.construct.capabilities': ['actionable'],
       'com.construct.client': 'construct-web',
       'com.construct.version': __CONSTRUCT_VERSION__,
-      ...extra,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any).catch((err) => { answeringRef.current.delete(roomId); throw err })
     // No timer may close it mid-checkmark; the card's own dismiss follows.

@@ -264,6 +264,22 @@ export default function RoomList({
     try { canSpawn = findSpawnHostRoom(getClient()) !== null } catch { /* no client yet */ }
   }
 
+  // ⌘N asks for a new Claude room from anywhere, as the Claude tile would. The
+  // list stays mounted behind every tab and open room, so this always listens.
+  // Only reaches the page where the host doesn't keep ⌘N for itself (the Mac
+  // app does not; a desktop browser opens a window instead).
+  useEffect(() => {
+    if (!canSpawn || spawning !== null) return
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.repeat || e.isComposing) return
+      if (e.key.toLowerCase() !== 'n') return
+      e.preventDefault()
+      setAskingSpawn('claude')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [canSpawn, spawning])
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),

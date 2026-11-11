@@ -963,13 +963,16 @@ const QUICK_ANSWER_INSTRUCTION =
 // flow (confirm, then remove a clean worktree or keep a branch with commits).
 // Fixed text, for the same reason as the Live Activity one below.
 const END_INSTRUCTION =
-  'Offer [[!end]] among the quick answers only when nothing is left in this ' +
-  'room: the work is merged or deployed, it was a question with no code ' +
-  'changes, or the user says they are done. Never while changes are ' +
-  'uncommitted or unmerged, since work in a worktree is live nowhere until ' +
-  'it is merged. If you started worker rooms, offer [[!end workers]] once ' +
-  'you have integrated their work or no longer need it, and offer [[!end]] ' +
-  'for this room only after that.'
+  'When nothing is left in this room (the work is merged or deployed, it was ' +
+  'a question with no code changes, or the user says they are done), always ' +
+  'end your reply with options on the last line that include [[!end]], even ' +
+  'when you are not asking anything, e.g. [[!end]] [[Something else to do next]]. ' +
+  'Construct shows them as a lettered A, B, C list, with !end reading "End ' +
+  'this room". Never offer it while changes are uncommitted or unmerged, ' +
+  'since work in a worktree is live nowhere until it is merged. If you ' +
+  'started worker rooms, offer [[!end workers]] once you have integrated ' +
+  'their work or no longer need it, and offer [[!end]] for this room only ' +
+  'after that.'
 
 // The Live Activity channel: a lock-screen card with buttons, for moments worth
 // reaching the phone for. Part of the fixed instructions, so adding it changed

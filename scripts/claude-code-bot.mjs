@@ -1461,6 +1461,22 @@ async function endRoom(roomId, goodbye) {
   return leftover
 }
 
+// matrix.org caps how often one account creates rooms and answers /createRoom
+// with a 429 past it (2026-11-11: three spawns in ten minutes were refused).
+// Before that it can also hold the request open with no answer, and neither the
+// SDK nor fetch gives up on its own, so the spawn hung until a restart.
+const CREATE_ROOM_TIMEOUT_MS = 60 * 1000
+
+function createRoomFailure(e) {
+  if (e?.isRateLimitError?.()) {
+    let ms = null
+    try { ms = e.getRetryAfterMs() } catch {}
+    const wait = ms ? ` Try again in ${ms < 90_000 ? `${Math.ceil(ms / 1000)} s` : `~${Math.ceil(ms / 60_000)} min`}.` : ' Try again in a while.'
+    return `matrix.org is limiting how many rooms this bot can create.${wait}`
+  }
+  return e?.message ?? String(e)
+}
+
 // A quick name creates the room immediately; an optional title promise can rename it later.
 // Independent children supply their own title as name, with no extra model request.
 async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted = false, name: firstName = null, title = null, requireWorktree = false } = {}) {
@@ -1468,9 +1484,11 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted 
   // branch, and the room's topic has to carry the path we actually bind to.
   const slug = nextRoomName()
   let branch = null
+  let worktreeDir = null
   if (worktreeFrom) {
     const wt = await addWorktree(worktreeFrom, slug)
     if (wt) {
+      worktreeDir = wt.dest
       // Preserve where in the repo the spawn pointed, so `!spawn repo/api`
       // lands in the worktree's api/ rather than at its root.
       cwd = path.join(wt.dest, path.relative(worktreeFrom, cwd))
@@ -1480,7 +1498,7 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted 
   }
   if (requireWorktree && !branch) throw new Error('Could not create an isolated worktree; child not started')
   const name = firstName ?? slug
-  const { room_id } = await client.createRoom({
+  const creating = client.createRoom({
     name,
     // ⚠️ Pinned. matrix.org started defaulting to room version 12 on 2026-09-22,
     // and matrix-js-sdk 41.3.0 — what this bot and Construct both run — tops out
@@ -1534,6 +1552,23 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted 
       { type: MODELS_EVENT, state_key: '', content: modelsContent(provider) },
     ],
   })
+  let room_id
+  let timer
+  try {
+    ({ room_id } = await Promise.race([creating, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(
+        `matrix.org did not answer the room creation within ${CREATE_ROOM_TIMEOUT_MS / 1000} s. Try again in a while.`)), CREATE_ROOM_TIMEOUT_MS)
+    })]))
+  } catch (e) {
+    // The worktree was cut for a room that does not exist; it holds nothing yet.
+    if (worktreeDir) {
+      const removed = await removeWorktree(worktreeDir, branch)
+      log(`Spawn ${slug} failed; worktree ${removed.removed ? 'removed' : `kept (${removed.reason})`}`)
+    }
+    throw new Error(createRoomFailure(e))
+  } finally {
+    clearTimeout(timer)
+  }
   // Neither is awaited: the invite is already out, and the room is usable with
   // the cast's first icon and the prompt's first words until these land.
   const face = avatarFor(provider, room_id)

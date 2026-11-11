@@ -32,7 +32,11 @@ import { LINEAR_INDEX_EVENT, issueKeys, withMentions } from './linear-index.mjs'
 import { ARTIFACT_INDEX_EVENT, SNAPSHOT_MAX_BYTES, artifactContent, artifactEdit, artifactIndex, createArtifactRegistry } from './artifact-cards.mjs'
 import { browserContent, browserUrl } from './browser-cards.mjs'
 
-const STORE_DIR = path.resolve(import.meta.dirname, '.claude-bot-store')
+// Overridable so a second instance (e.g. against a test homeserver) keeps its
+// session, crypto store and counters apart from the production bot's.
+const STORE_DIR = process.env.AGENT_STORE_DIR
+  ? path.resolve(process.env.AGENT_STORE_DIR)
+  : path.resolve(import.meta.dirname, '.claude-bot-store')
 fs.mkdirSync(STORE_DIR, { recursive: true })
 
 const sdk = await import('matrix-js-sdk')
@@ -1273,8 +1277,10 @@ function modelLabel(model) {
 // Agent rooms are numbered rather than named after their directory: the avatar
 // marks them, the header chip shows the model, and the topic carries where the
 // room works, so the name only has to be short and unambiguous in a narrow tile.
-const ROOM_PREFIX = 'BenderDev'
-const ROOM_NAME_RE = /^BenderDev-(\d+)$/
+// A second instance needs its own prefix: its counter starts fresh, and a
+// reused name would collide with this one's agent/<name> branches and worktrees.
+const ROOM_PREFIX = process.env.AGENT_ROOM_PREFIX ?? 'BenderDev'
+const ROOM_NAME_RE = new RegExp(`^${ROOM_PREFIX}-(\\d+)$`)
 // Names this bot generated before the current scheme. Only these get rewritten
 // on startup; a name a human picked is never touched.
 const LEGACY_NAME_RE = /^(agent: |⌁ )/

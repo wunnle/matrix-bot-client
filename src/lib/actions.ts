@@ -54,10 +54,12 @@ const TRAILING_TOKENS = /(?:\s*\[\[[^\]\n]{1,80}\]\])+\s*$/
 /**
  * Whether a message's [[…]] buttons show as a lettered list under it (see
  * ChoiceList in ChatView) rather than as pills. All answers do; bot commands —
- * !model, /luna — stay pills, since their pickers have their own UI.
+ * !model, /luna — stay pills, since their pickers have their own UI. !end is
+ * the exception: agents offer it as the last answer of a finished room.
  */
+const LIST_COMMANDS = new Set(['!end', '!end workers'])
 export function isChoiceList(actions: string[]): boolean {
-  return actions.length > 0 && !actions.some((a) => /^[!/]/.test(a))
+  return actions.length > 0 && !actions.some((a) => /^[!/]/.test(a) && !LIST_COMMANDS.has(a))
 }
 
 export function choiceLetter(index: number): string {

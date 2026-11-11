@@ -226,6 +226,9 @@ export default async function handler(req, res) {
         native: req.body?.native === true,
         // false when the client reports going to the background.
         visible: req.body?.visible !== false,
+        // The window has keyboard focus: a desktop tab you're working in, not
+        // one left open behind other windows. Absent from older builds.
+        focused: typeof req.body?.focused === "boolean" ? req.body.focused : null,
         // Server clock, from the client's relative idle time.
         lastInputAt:
           typeof req.body?.idleMs === "number" && req.body.idleMs >= 0
@@ -501,6 +504,7 @@ export async function activeClients(ms) {
       native: v.native === true,
       roomId: v.roomId ?? null,
       visible: v.visible !== false,
+      focused: typeof v.focused === "boolean" ? v.focused : null,
       lastInputAt: typeof v.lastInputAt === "number" ? v.lastInputAt : null,
       ts: v.ts,
     }));

@@ -51,7 +51,9 @@ export function clientId(): string {
     arrive. */
 let macApp = false
 let macAppActive = true
-const MAC_IDLE_MS = 2 * 60 * 1000
+// Matches the gateway's "working on another device" window (api/_push.js), so
+// waiting a few minutes on an agent's reply here doesn't buzz the phone.
+const MAC_IDLE_MS = 5 * 60 * 1000
 const macAway = () => macApp && (!macAppActive || Date.now() - lastInputAt > MAC_IDLE_MS)
 
 /** `leaving`: the app is going to the background. Reports it hidden, so this
@@ -80,6 +82,9 @@ async function beat(leaving = false) {
         // A visible web client toasts messages for other rooms itself, so the
         // gateway skips its push entirely (api/matrix-push.js).
         visible: !leaving,
+        // Focused plus recent input means you're working here, which quiets
+        // the other devices for every room (api/_push.js).
+        focused: !leaving && document.hasFocus(),
         // Relative, so the phone and laptop clocks never have to agree. Lets
         // the gateway quiet the phone for a room you're chatting in here.
         idleMs: Date.now() - lastInputAt,
@@ -141,8 +146,10 @@ export function startPresenceHeartbeat(): () => void {
     void beat()
   }
   const onAppActive = (e: Event) => setActive((e as CustomEvent<boolean>).detail)
-  const onFocus = () => setActive(true)
-  const onBlur = () => setActive(false)
+  // Elsewhere focus is reported too (the `focused` field), so a browser window
+  // losing focus un-quiets the phone straight away rather than a beat later.
+  const onFocus = () => { if (macApp) setActive(true); else void beat() }
+  const onBlur = () => { if (macApp) setActive(false); else void beat() }
   window.addEventListener('construct:app-active', onAppActive)
   window.addEventListener('focus', onFocus)
   window.addEventListener('blur', onBlur)

@@ -280,6 +280,21 @@ export async function deliver(notification, { dedupeKey = notification.event_id,
   // so don't buzz this one.
   const chattingElsewhere = (pushkey) =>
     active.some((c) => c.pushkey !== pushkey && c.roomId === room_id);
+  // You're working on another device: its window is focused and had input in
+  // the last few minutes. Quiet for every room, not just the open one: that
+  // device shows (or toasts) them itself. The 90s rule alone buzzed the phone
+  // for the reply to whatever you just asked, because waiting for an agent
+  // means minutes without touching anything. Needs a pushkey, so a native
+  // client mid-launch (possibly the phone itself) never counts.
+  const WORKING_MS = 5 * 60 * 1000;
+  const working = visible.filter(
+    (c) =>
+      c.focused === true &&
+      c.pushkey &&
+      c.lastInputAt != null &&
+      startedAt - c.lastInputAt < WORKING_MS
+  );
+  const workingElsewhere = (pushkey) => working.some((c) => c.pushkey !== pushkey);
   // A native client that hasn't registered its APNs token yet can't be matched
   // to its pushkey. It is assumed to be the phone, so the room on its screen
   // stays quiet during the seconds between app launch and registration.
@@ -302,7 +317,12 @@ export async function deliver(notification, { dedupeKey = notification.event_id,
         if (!apnsConfigured()) {
           return; // APNs not configured — don't reject, token may be valid later
         }
-        if (showingRoom(pushkey) || unregisteredNativeHere || chattingElsewhere(pushkey)) {
+        if (
+          showingRoom(pushkey) ||
+          unregisteredNativeHere ||
+          chattingElsewhere(pushkey) ||
+          workingElsewhere(pushkey)
+        ) {
           presenceSkipped += 1;
           return;
         }
@@ -326,7 +346,7 @@ export async function deliver(notification, { dedupeKey = notification.event_id,
       // Skipped here rather than in the service worker: on iOS a push that
       // shows nothing counts as silent, and Safari revokes the subscription
       // for those. Not sending it at all is safe.
-      if (inForeground(pushkey) || chattingElsewhere(pushkey)) {
+      if (inForeground(pushkey) || chattingElsewhere(pushkey) || workingElsewhere(pushkey)) {
         presenceSkipped += 1;
         return;
       }

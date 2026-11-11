@@ -5,7 +5,7 @@ import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@d
 import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
 import { fetchJoinedRooms, getCachedRooms, lastPreviewMessage, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, sendErrorMessage, type RoomSummary } from '../lib/matrix'
-import { seedAgentPills, backfillAgentPills } from '../lib/roomMeta'
+import { seedAgentPills, backfillAgentPills, ARCHIVED_EVENT } from '../lib/roomMeta'
 import { findSpawnHostRoom, spawnAgentRoom } from '../lib/spawnAgent'
 import SpawnSheet from './SpawnSheet'
 import { agentTree } from '../lib/agentTree'
@@ -249,9 +249,16 @@ export default function RoomList({
   // are chat rows below them, most recently active first.
   const tileRooms = useMemo(() => joinedRooms.filter((r) => !r.agent), [joinedRooms])
   const agentRooms = useMemo(
-    () => agentTree(joinedRooms.filter((r) => r.agent).sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0))),
+    () => agentTree(joinedRooms.filter((r) => r.agent && !r.archived).sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0))),
     [joinedRooms],
   )
+  // Archived with !end: out of the way, below the agents, folded by default.
+  // A message in one brings it back up; left alone the bot ends it.
+  const archivedRooms = useMemo(
+    () => agentTree(joinedRooms.filter((r) => r.agent && r.archived).sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0))),
+    [joinedRooms],
+  )
+  const [showArchived, setShowArchived] = useState(false)
   const agentStates = useRoomAgentStates(clientReady, joinedRoomIds, auth.userId)
 
   // Only offered when there is somewhere to send `!spawn` — the command needs a
@@ -400,7 +407,7 @@ export default function RoomList({
     const onEvent = (event: sdk.MatrixEvent, room: sdk.Room | undefined) => {
       if (!room) return
       const type = event.getType()
-      if (type === 'com.construct.agent.lineage' || type === 'm.room.avatar') {
+      if (type === 'com.construct.agent.lineage' || type === 'm.room.avatar' || type === ARCHIVED_EVENT) {
         setRooms(prev => prev.map(r => r.roomId === room.roomId ? toRoomSummary(room, auth.userId) : r))
         return
       }
@@ -538,9 +545,9 @@ export default function RoomList({
           let patched = false
           const next = prev.map((r) => {
             const f = byId.get(r.roomId)
-            if (!f || (f.agent === r.agent && f.lastMessage === r.lastMessage && f.lastTs === r.lastTs)) return r
+            if (!f || (f.agent === r.agent && f.archived === r.archived && f.lastMessage === r.lastMessage && f.lastTs === r.lastTs)) return r
             patched = true
-            return { ...r, agent: f.agent, lastMessage: f.lastMessage, lastTs: f.lastTs }
+            return { ...r, agent: f.agent, archived: f.archived, lastMessage: f.lastMessage, lastTs: f.lastTs }
           })
           return patched ? next : prev
         }
@@ -724,6 +731,30 @@ export default function RoomList({
                 />
               </>
             )}
+          </section>
+        )}
+        {archivedRooms.length > 0 && (
+          <section className="room-rows room-rows--archived" aria-label="Archived">
+            <button
+              type="button"
+              className="room-rows-title room-rows-toggle"
+              aria-expanded={showArchived}
+              onClick={() => setShowArchived((v) => !v)}
+            >
+              <span className="material-symbols-outlined" aria-hidden>{showArchived ? 'expand_more' : 'chevron_right'}</span>
+              Archived · {archivedRooms.length}
+            </button>
+            {showArchived && archivedRooms.map((room) => (
+              <AgentRoomRow
+                key={room.roomId}
+                room={room}
+                isActive={room.roomId === activeRoomId}
+                avatar={roomAvatars[room.roomId]?.url}
+                hasNotification={notifications.some(n => n.roomId === room.roomId)}
+                agent={agentStates[room.roomId]}
+                onSelect={onSelectRoom}
+              />
+            ))}
           </section>
         )}
         {askingSpawn && (

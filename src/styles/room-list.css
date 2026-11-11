@@ -205,6 +205,18 @@
   text-transform: uppercase;
   color: var(--text-muted);
 }
+.room-rows-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.room-rows-toggle .material-symbols-outlined { font-size: 18px; margin-left: -4px; }
+.room-rows--archived .room-row { opacity: 0.65; }
 .room-row {
   --tree-indent: 36px;
   position: relative;

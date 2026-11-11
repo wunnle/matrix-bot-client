@@ -1,7 +1,7 @@
 import * as sdk from 'matrix-js-sdk'
 import type { AuthState } from '../types'
 import { loadAuth } from './auth'
-import { AGENT_ROOM_TYPE, seedAgentPills } from './roomMeta'
+import { AGENT_ROOM_TYPE, ARCHIVED_EVENT, seedAgentPills } from './roomMeta'
 import { isBotAgentInvite } from './agentInvite'
 import { loggingFetch, startConnectionLog } from './connectionLog'
 
@@ -64,6 +64,8 @@ export interface RoomSummary {
   lastTs?: number
   /** A Claude Code / Codex agent room: listed as a chat row, not an app tile. */
   agent?: boolean
+  /** Archived with !end: listed under "Archived" until a message brings it back. */
+  archived?: boolean
   parentAgentRoomId?: string
   parentAgentName?: string
   agentTreeDepth?: number
@@ -226,6 +228,8 @@ export function toRoomSummary(room: sdk.Room, userId: string): RoomSummary {
     lastMessage: last?.body,
     lastTs: last?.ts,
     agent: room.currentState.getStateEvents('m.room.create', '')?.getContent()?.type === AGENT_ROOM_TYPE,
+    // The bot sets it on !end and empties it when the room is used again.
+    archived: room.currentState.getStateEvents(ARCHIVED_EVENT, '')?.getContent()?.archived_at != null,
     // An unjoined room has no readable timeline, so a count would be meaningless.
     unreadCount: invited ? 0 : getRoomUnreadCount(room, userId),
     avatarMxc,

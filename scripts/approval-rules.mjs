@@ -340,9 +340,11 @@ const SECRET_PATTERNS = [
   // The bot's Matrix session, in every checkout and worktree. Its bot.log is
   // the one file left out: it is the only log on this Pi, agents debugging the
   // bot read it constantly, and a scan found no tokens in it — what it records
-  // was already posted in a room. The directory itself still counts, so a
-  // recursive search of it asks.
-  /(^|\/)\.claude-bot-store(\/(?!bot\.log$)|$)/,
+  // was already posted in a room. media/ is left out too: it holds only the
+  // images and files Sinan sends, saved there for the agent to Read, so asking
+  // to read one is asking permission to look at what he just sent. The store
+  // directory itself still counts, so a recursive search of it asks.
+  /(^|\/)\.claude-bot-store(\/(?!bot\.log$|media(\/[^/]+)?$)|$)/,
   // ~/.vercel-bender-token and any sibling token file.
   new RegExp(`^${HOME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/\\.vercel[^/]*(/|$)`),
   // Another process's environment — the bot's holds its tokens.

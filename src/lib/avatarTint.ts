@@ -67,7 +67,7 @@ function sample(url: string): Promise<string | null> {
       // Too few coloured pixels: a grey or monochrome avatar has no hue to borrow.
       if (!pixels || weight / pixels < 0.06) { resolve(null); return }
       const hue = Math.round(((Math.atan2(y, x) * 180) / Math.PI + 360) % 360)
-      const sat = Math.round(Math.min(70, Math.max(35, (satSum / weight) * 100)))
+      const sat = Math.round(Math.min(75, Math.max(55,(satSum / weight) * 100)))
       resolve(`${hue} ${sat}%`)
     }
     img.onerror = () => resolve(null)

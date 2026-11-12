@@ -286,10 +286,10 @@ export default function DesignLibrary() {
         <Frame className="dl-chat">
           <div className="messages-inner">
             <Row msg={own('dinner with irem 8pm today')} />
-            <Row msg={bot('Added: Dinner with İrem, today 20:00–21:00 (assumed 1 h).', { sender: '@alfred:kafagoz.com', authorName: 'Alfred' })} avatar="first" />
-            <Row msg={bot('Want me to add a place too?', { sender: '@alfred:kafagoz.com', authorName: 'Alfred' })} avatar="spacer" senderSwitch={false} />
+            <Row msg={bot('Added: Dinner with İrem, today 20:00–21:00 (assumed 1 h).', { sender: '@alfred:kafagoz.com', authorName: 'Alfred' })} avatar="first" agentTint="210 60%" />
+            <Row msg={bot('Want me to add a place too?', { sender: '@alfred:kafagoz.com', authorName: 'Alfred' })} avatar="spacer" senderSwitch={false} agentTint="210 60%" />
             <Row msg={own('and turn off the bedroom lights')} />
-            <Row msg={bot('Bedroom lights are off. Scruffy’s done.', { sender: '@scruffy:kafagoz.com', authorName: 'Scruffy' })} avatar="first" />
+            <Row msg={bot('Bedroom lights are off. Scruffy’s done.', { sender: '@scruffy:kafagoz.com', authorName: 'Scruffy' })} avatar="first" agentTint="25 65%" />
           </div>
         </Frame>
       </Section>

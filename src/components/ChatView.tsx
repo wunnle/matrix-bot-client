@@ -2083,6 +2083,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                   ? 'none'
                   : (!prev || showDateDivider || prev.isOwnMessage || prev.sender !== msg.sender) ? 'first' : 'spacer'}
                 avatarUrl={roomAgents.multi ? roomAgents.avatars[msg.sender] : undefined}
+                agentTint={roomAgents.multi && !msg.isOwnMessage && !msg.isPeerMessage ? roomAgents.tints[msg.sender] : undefined}
                 isTool={isTool}
                 prevIsTool={prevIsTool}
                 nextIsTool={nextIsTool}

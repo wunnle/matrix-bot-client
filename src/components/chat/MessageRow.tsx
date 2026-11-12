@@ -19,6 +19,8 @@ export interface MessageRowProps {
    *  name, 'spacer' keeps the column; 'none' everywhere else. */
   avatar: 'none' | 'first' | 'spacer'
   avatarUrl?: string
+  /** Rooms with several agents: "H S%" from the agent's avatar, tints its bubbles. */
+  agentTint?: string
   isTool: boolean
   prevIsTool: boolean
   nextIsTool: boolean
@@ -74,6 +76,7 @@ function MessageRowInner({
   showPeerSender,
   avatar,
   avatarUrl,
+  agentTint,
   isTool,
   prevIsTool,
   nextIsTool,
@@ -113,7 +116,8 @@ function MessageRowInner({
                     <span>{formatDate(msg.timestamp)}</span>
                   </div>
                 )}
-                <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}${msg.isPeerMessage ? ' peer' : ''}${senderSwitch ? ' sender-switch' : ''}${selecting ? ' message--selecting' : ''}`}>
+                <div className={`message ${msg.isOwnMessage ? 'own' : 'other'}${msg.isPeerMessage ? ' peer' : ''}${senderSwitch ? ' sender-switch' : ''}${selecting ? ' message--selecting' : ''}${agentTint ? ' message--tinted' : ''}`}
+                  style={agentTint ? { ['--agent-tint' as string]: agentTint } : undefined}>
                   {avatar !== 'none' && (
                     <div className="msg-agent-avatar" aria-hidden="true">
                       {avatar === 'first' && (avatarUrl

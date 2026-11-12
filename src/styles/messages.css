@@ -128,6 +128,14 @@
   padding: 10px 14px;
 }
 
+/* Rooms with several agents: each agent's bubble takes a faint wash of its
+   avatar's hue (--agent-tint is "H S%", set per row), so who's talking reads
+   from the bubble too, not only the avatar on the first row of a run. */
+.message.other.message--tinted:not(.peer) .bot-text:not(.bot-text-machine, .bot-text-card) {
+  background: hsl(var(--agent-tint) 60% / 0.09);
+}
+.message--tinted .agent-sender { color: hsl(var(--agent-tint) 72%); }
+
 /* A peer: someone other than you and other than the room's owner (the member
    at the top power level). They make requests in a room you share, so they read
    as someone talking — indented and attributed — rather than as the bot's own

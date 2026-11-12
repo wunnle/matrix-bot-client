@@ -1800,7 +1800,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
                 up; don't repeat it in the header. */}
             <span className={`chat-subtitle${typingUsers.length > 0 && !agentActivity ? ' chat-subtitle--thinking' : ''}`}>
               {typingUsers.length > 0 && !agentActivity
-                ? `${bot?.name ?? 'Bot'} is thinking…`
+                ? `${roomAgents.multi ? typingUsers.join(' & ') : (bot?.name ?? 'Bot')} is thinking…`
                 : (roomTopic || (bot?.name ?? null))}
             </span>
           </div>

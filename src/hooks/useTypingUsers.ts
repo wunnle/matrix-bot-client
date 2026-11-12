@@ -11,7 +11,8 @@ export function useTypingUsers(client: sdk.MatrixClient, roomId: string, userId:
       if (!room) return
       const typing = room.getMembersWithMembership('join')
         .filter((m) => m.typing && m.userId !== userId)
-        .map((m) => m.userId.replace(/^@/, '').split(':')[0])
+        // Display names: a room with several agents says which one is thinking.
+        .map((m) => m.name || m.userId.replace(/^@/, '').split(':')[0])
       setTypingUsers(typing)
     }
     client.on(sdk.RoomMemberEvent.Typing, onTyping)

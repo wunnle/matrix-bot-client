@@ -132,7 +132,7 @@
    avatar's hue (--agent-tint is "H S%", set per row), so who's talking reads
    from the bubble too, not only the avatar on the first row of a run. */
 .message.other.message--tinted:not(.peer) .bot-text:not(.bot-text-machine, .bot-text-card) {
-  background: hsl(var(--agent-tint) 55% / 0.15);
+  background: hsl(var(--agent-tint) 55% / 0.11);
 }
 .message--tinted .agent-sender { color: hsl(var(--agent-tint) 72%); }
 

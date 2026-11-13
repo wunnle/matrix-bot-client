@@ -20,7 +20,10 @@ const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matri
 const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN;
 // The claudebot/codexbot account (scripts/claude-code-bot.mjs). It speaks in
 // every agent room under one display name, so its pushes are titled by room.
-export const AGENT_BOT_IDS = new Set(["@bender-2:matrix.org"]);
+// AGENT_BOT_IDS (comma-separated) overrides it per deployment.
+export const AGENT_BOT_IDS = new Set(
+  (process.env.AGENT_BOT_IDS || "@bender-2:matrix.org").split(",").map((s) => s.trim()).filter(Boolean)
+);
 
 // Room avatars are resolved live from the homeserver — the account's own token
 // is a member of every room it receives pushes for. Cached in-memory so warm

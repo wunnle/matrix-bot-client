@@ -26,9 +26,12 @@ export function validMediaSig(mxc, sig) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-/** A signed https://construct.kafagoz.com/api/media link, or null. */
+/** A signed media link, or null. MEDIA_BASE_URL points it at whichever
+    deployment can fetch this homeserver's media: Vercel's for matrix.org, the
+    Pi's (construct-api) for kafagoz.com. */
 export function signedMediaUrl(mxc) {
   const sig = mxc && mediaSig(mxc);
   if (!sig) return null;
-  return `https://construct.kafagoz.com/api/media?mxc=${encodeURIComponent(mxc)}&sig=${sig}`;
+  const base = process.env.MEDIA_BASE_URL || "https://construct.kafagoz.com/api/media";
+  return `${base}?mxc=${encodeURIComponent(mxc)}&sig=${sig}`;
 }

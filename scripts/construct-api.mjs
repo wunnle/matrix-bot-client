@@ -55,6 +55,11 @@ const defaults = {
   INTENT_SECRET: hermes.CONSTRUCT_INTENT_SECRET,
   MEDIA_ALLOWED_SERVERS: "kafagoz.com",
   DEVICE_TOKEN_USERS: "@wunnle:kafagoz.com",
+  // Notification avatars (api/_push.js) link here, so the phone fetches them
+  // from the Pi over the tailnet rather than from Vercel.
+  MEDIA_BASE_URL: "https://bender.tale-bellatrix.ts.net:6443/_construct/api/media",
+  // The agent bot posts in every agent room; titles go by room for it.
+  AGENT_BOT_IDS: "@bender:kafagoz.com",
   PORT: "8781",
 };
 for (const [k, v] of Object.entries({ ...defaults, ...local })) {
@@ -68,8 +73,59 @@ if (!process.env.APNS_PRIVATE_KEY) console.warn("APNS_* not set: cards can't be 
 /** Routes served here. The rest (maps, Linear, Discord, frame checks) need
     keys that live only in Vercel and don't touch the homeserver. */
 const ROUTES = new Set([
-  "activity", "live-activity", "send-message", "send-file", "wait-reply", "widget",
+  "activity", "live-activity", "send-message", "send-file", "wait-reply", "widget", "media",
 ]);
+
+/**
+ * The push gateway for Tuwunel's pushers (BEN-384), the same matrix-push.js
+ * Vercel runs, so presence muting, dedupe, clear-on-read and avatars read the
+ * local account. Tuwunel reaches it over the tailnet:
+ *   https://bender.tale-bellatrix.ts.net:6443/_construct/_matrix/push/v1/notify
+ * which its ip_range_denylist allows for the Pi's own tailnet /32 only
+ * (~/projects/selfhost-matrix/tuwunel.toml).
+ *
+ * The spec gives the gateway no authentication, so only devices that are
+ * really @wunnle's pushers to this gateway are delivered to; anything else on
+ * the tailnet can't push to an arbitrary token through it. Listed live from
+ * Tuwunel, cached briefly.
+ */
+const NOTIFY_PATH = "/_matrix/push/v1/notify";
+let pusherCache = { keys: null, at: 0 };
+async function ownPushkeys() {
+  if (pusherCache.keys && Date.now() - pusherCache.at < 60_000) return pusherCache.keys;
+  const r = await fetch(`${process.env.MATRIX_HOMESERVER.replace(/\/$/, "")}/_matrix/client/v3/pushers`, {
+    headers: { Authorization: `Bearer ${process.env.MATRIX_ACCESS_TOKEN}` },
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!r.ok) throw new Error(`pushers: HTTP ${r.status}`);
+  const { pushers = [] } = await r.json();
+  const keys = new Set(
+    pushers.filter((p) => p.kind === "http" && p.data?.url?.endsWith(`/_construct${NOTIFY_PATH}`)).map((p) => p.pushkey)
+  );
+  pusherCache = { keys, at: Date.now() };
+  return keys;
+}
+
+async function notify(req, res) {
+  if (req.method !== "POST") return res.status(405).end();
+  req.body = await parseBody(req);
+  // The bot's encrypted-room path (?from=bot) authenticates itself.
+  if (req.query?.from !== "bot") {
+    const n = req.body?.notification;
+    if (!n) return res.status(400).json({ rejected: [] });
+    const devices = n.devices ?? [];
+    let keys = await ownPushkeys();
+    // A pusher registered seconds ago may not be in the cache yet.
+    if (devices.some((d) => !keys.has(d.pushkey))) { pusherCache.at = 0; keys = await ownPushkeys(); }
+    const dropped = devices.length - devices.filter((d) => keys.has(d.pushkey)).length;
+    if (dropped) console.log(`notify: dropped ${dropped} unknown pushkey(s)`);
+    n.devices = devices.filter((d) => keys.has(d.pushkey));
+    // Never report an unknown key as rejected: it isn't ours to unregister.
+    if (!n.devices.length) return res.status(200).json({ rejected: [] });
+  }
+  const { fn } = await handlerFor("matrix-push");
+  await fn(req, res);
+}
 
 const { deviceTokenKey, signDeviceToken } = await import("../api/_device-token.js");
 const KEY = deviceTokenKey(process.env);
@@ -177,6 +233,7 @@ const server = http.createServer(async (req, res) => {
   });
   try {
     if (path === "/device-token") return await deviceToken(req, res);
+    if (path === NOTIFY_PATH) return await notify(req, res);
     const route = path.match(/^\/api\/([a-z-]+)$/)?.[1];
     if (!route || !ROUTES.has(route)) return res.status(404).json({ error: "not found" });
     const { fn, rawBody } = await handlerFor(route);

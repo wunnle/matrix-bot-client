@@ -26,6 +26,12 @@ export function piApiBase(): string | null {
   return `${hs.replace(/\/$/, '')}/_construct`
 }
 
+/** The push gateway this account's pushers point at: the Pi for a self-hosted
+    account (BEN-384), Vercel for matrix.org. */
+export function pushGatewayUrl(): string {
+  return `${piApiBase() ?? API_ORIGIN}/_matrix/push/v1/notify`
+}
+
 /**
  * A URL for one of Construct's /api endpoints.
  *

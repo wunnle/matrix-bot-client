@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { clientId, setPresencePushkey } from '../lib/presence'
+import { pushGatewayUrl } from '../lib/apiUrl'
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 
@@ -83,7 +84,7 @@ export function usePushNotifications(enabled: boolean, onOpenRoom?: (roomId: str
             pushkey: token,
             lang: "en",
             data: {
-              url: "https://construct.kafagoz.com/_matrix/push/v1/notify",
+              url: pushGatewayUrl(),
               format: "event_notification",
             },
           }),

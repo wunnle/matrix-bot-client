@@ -159,6 +159,22 @@ const server = http.createServer(async (req, res) => {
   // tailscale serve may or may not strip the /_construct mount.
   const path = url.pathname.replace(/^\/_construct(?=\/)/, "");
   vercelize(req, res, url);
+  // One line per request, no credentials: the method, path, status and, for
+  // a JSON body, its action and activityId. Handlers often answer 200 with
+  // {ok:false, error} (see live-activity.js), so log that error too.
+  const t0 = Date.now();
+  const json = res.json;
+  let replyError = null;
+  res.json = (obj) => {
+    if (obj && obj.ok === false && obj.error) replyError = String(obj.error).slice(0, 200);
+    return json(obj);
+  };
+  res.on("finish", () => {
+    if (req.method === "OPTIONS") return;
+    const b = req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body) ? req.body : {};
+    const tags = [b.action ?? b.op, b.activityId ?? b.id].filter((v) => typeof v === "string").join(" ");
+    console.log(`${req.method} ${path} ${res.statusCode} ${Date.now() - t0}ms${tags ? ` [${tags}]` : ""}${replyError ? ` error: ${replyError}` : ""}`);
+  });
   try {
     if (path === "/device-token") return await deviceToken(req, res);
     const route = path.match(/^\/api\/([a-z-]+)$/)?.[1];

@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core'
 import { getClient, intentCredential } from './matrix'
 import { resolveMediaBase64 } from './mediaUrl'
 import { API_ORIGIN } from './apiUrl'
+import { loadAuth } from './auth'
 
 /**
  * Live Activity (Dynamic Island / lock screen) bridge — native iOS only.
@@ -46,7 +47,8 @@ interface LiveActivityPlugin {
   update(options: LiveActivityState & { activityId: string }): Promise<void>
   // No activityId → ends every activity.
   end(options?: { activityId?: string }): Promise<void>
-  saveIntentConfig(options: { secret: string; apiBase: string; room: string }): Promise<void>
+  // homeserver/userId: native builds before BEN-376 ignore them.
+  saveIntentConfig(options: { secret: string; apiBase: string; room: string; homeserver?: string; userId?: string }): Promise<void>
   donateShareTargets(options: { rooms: { roomId: string; name: string; avatar?: string }[]; remove?: string[] }): Promise<void>
   // Separate from the donation above: the Live Activity needs an avatar on disk
   // for *every* room, not just the ones enabled for sharing.
@@ -69,15 +71,21 @@ const plugin = registerPlugin<LiveActivityPlugin>('LiveActivity')
  * The credential is the signed-in Matrix access token (see intentCredential);
  * the native side sends it as `x-intent-secret` unchanged. Call once on
  * launch, after login. No-op off native or before login.
+ *
+ * The homeserver and user id let a reply to a room on the signed-in account's
+ * own server go straight to that homeserver with the same token, instead of
+ * through Vercel, which can't reach a tailnet-only server (BEN-376).
  */
 export async function saveIntentConfig(room: string): Promise<void> {
   if (!Capacitor.isNativePlatform()) return
   const secret = intentCredential()
   if (!secret) return
+  const auth = loadAuth()
   await plugin.saveIntentConfig({
     secret,
     apiBase: API_ORIGIN,
     room,
+    ...(auth?.homeserver && auth.userId ? { homeserver: auth.homeserver, userId: auth.userId } : {}),
   }).catch(() => {})
 }
 

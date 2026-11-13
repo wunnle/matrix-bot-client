@@ -8,6 +8,7 @@ import AppIntents
 import UniformTypeIdentifiers
 import Intents
 import WidgetKit
+import CryptoKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -264,10 +265,8 @@ final class NotificationActionRouter: NSObject, UNUserNotificationCenterDelegate
         let d = IntentConfig.defaults
         // Only set once the app has run; a reply before first launch is dropped.
         guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return }
-        let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
         let target = room ?? d.string(forKey: IntentConfig.room) ?? "!DpRWqhWOHJAxyvjOGI:matrix.org"
-        _ = await intentPost("\(apiBase)/api/send-message", secret: secret,
-                             body: ["room": target, "text": trimmed, "source": "notification"])
+        await sendRoomText(room: target, text: trimmed, source: "notification", secret: secret)
     }
 }
 
@@ -361,6 +360,9 @@ enum IntentConfig {
     static let secret = "construct.intentSecret"
     static let apiBase = "construct.apiBase"
     static let room = "construct.defaultRoom"
+    // The signed-in account's homeserver base URL and user id (BEN-376).
+    static let homeserver = "construct.homeserver"
+    static let userId = "construct.userId"
 
     /// Shared across the app and its extensions. Falls back to `.standard` if the
     /// App Group container is somehow unavailable.
@@ -790,6 +792,66 @@ private func intentPost(_ urlString: String, secret: String, body: [String: Any]
     await intentPostResponse(urlString, secret: secret, body: body)?.body
 }
 
+/// The server part of a Matrix id ("!x:kafagoz.com" / "@u:kafagoz.com").
+private func matrixServerName(_ id: String) -> String? {
+    guard let i = id.firstIndex(of: ":") else { return nil }
+    let s = id[id.index(after: i)...]
+    return s.isEmpty ? nil : String(s)
+}
+
+/// Post a reply into a room from a background intent (notification reply,
+/// Shortcut, Live Activity button).
+///
+/// A room on the signed-in account's own server is sent straight to that
+/// homeserver with the account's token (BEN-376): Vercel can't reach the
+/// tailnet-only kafagoz.com server, and it only accepts matrix.org tokens.
+/// The phone reaches the homeserver the same way the app does. The event is
+/// the one api/send-message.js builds, including its transaction id, so a
+/// repeated button tap is still dropped by the homeserver. Any other room
+/// goes through Vercel's send-message as before.
+private func sendRoomText(room rawRoom: String, text: String, source: String,
+                          activityId: String? = nil, secret: String) async {
+    let d = IntentConfig.defaults
+    let room = rawRoom.removingPercentEncoding ?? rawRoom
+    let activity = activityId.flatMap { !$0.isEmpty && $0.count <= 64 ? $0 : nil }
+    if let homeserver = d.string(forKey: IntentConfig.homeserver), !homeserver.isEmpty,
+       let userId = d.string(forKey: IntentConfig.userId),
+       let ownServer = matrixServerName(userId), matrixServerName(room) == ownServer {
+        let txnId: String
+        if let activity {
+            let digest = SHA256.hash(data: Data("\(room)\n\(activity)\n\(text)".utf8))
+            txnId = "la-" + String(digest.map { String(format: "%02x", $0) }.joined().prefix(32))
+        } else {
+            txnId = UUID().uuidString
+        }
+        var event: [String: Any] = [
+            "msgtype": "m.text",
+            "body": text,
+            "com.construct.capabilities": ["actionable"],
+            "com.construct.client": "construct-web",
+            "com.construct.source": source,
+        ]
+        if let activity { event["com.construct.activity_id"] = activity }
+        let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        let base = homeserver.hasSuffix("/") ? String(homeserver.dropLast()) : homeserver
+        guard let encRoom = room.addingPercentEncoding(withAllowedCharacters: unreserved),
+              let url = URL(string: "\(base)/_matrix/client/v3/rooms/\(encRoom)/send/m.room.message/\(txnId)"),
+              let body = try? JSONSerialization.data(withJSONObject: event) else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        req.httpBody = body
+        req.timeoutInterval = 12
+        _ = try? await URLSession.shared.data(for: req)
+        return
+    }
+    let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
+    var body: [String: Any] = ["room": room, "text": text, "source": source]
+    if let activity { body["activityId"] = activity }
+    _ = await intentPost("\(apiBase)/api/send-message", secret: secret, body: body)
+}
+
 private func intentPostResponse(_ urlString: String, secret: String,
                                 body: [String: Any]) async -> (status: Int, body: [String: Any]?)? {
     guard let url = URL(string: urlString),
@@ -846,11 +908,9 @@ struct AskConstructIntent: AppIntent {
         guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else {
             throw $message.needsValueError("Open Construct once to enable Shortcut sending.")
         }
-        let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
         let room = d.string(forKey: IntentConfig.room) ?? "!DpRWqhWOHJAxyvjOGI:matrix.org"
 
-        _ = await intentPost("\(apiBase)/api/send-message", secret: secret,
-                             body: ["room": room, "text": message, "source": "shortcut"])
+        await sendRoomText(room: room, text: message, source: "shortcut", secret: secret)
         return .result()
     }
 }
@@ -889,13 +949,11 @@ struct QuickReplyIntent: AppIntent, LiveActivityIntent {
         guard !trimmed.isEmpty else { return .result() }
         let d = IntentConfig.defaults
         guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else { return .result() }
-        let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
         let room = roomId.isEmpty
             ? (d.string(forKey: IntentConfig.room) ?? "!DpRWqhWOHJAxyvjOGI:matrix.org")
             : roomId
-        _ = await intentPost("\(apiBase)/api/send-message", secret: secret,
-                             body: ["room": room, "text": trimmed, "source": "live-activity",
-                                    "activityId": activityId])
+        await sendRoomText(room: room, text: trimmed, source: "live-activity",
+                           activityId: activityId, secret: secret)
         return .result()
     }
 }
@@ -1357,6 +1415,15 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         if let s = call.getString("secret") { d.set(s, forKey: IntentConfig.secret) }
         if let a = call.getString("apiBase") { d.set(a, forKey: IntentConfig.apiBase) }
         if let r = call.getString("room") { d.set(r, forKey: IntentConfig.room) }
+        // Set together or cleared together, so a stale pair never outlives a
+        // sign-in to another server.
+        if let h = call.getString("homeserver"), let u = call.getString("userId") {
+            d.set(h, forKey: IntentConfig.homeserver)
+            d.set(u, forKey: IntentConfig.userId)
+        } else {
+            d.removeObject(forKey: IntentConfig.homeserver)
+            d.removeObject(forKey: IntentConfig.userId)
+        }
         call.resolve()
         // Activation already registered tokens with whatever was stored then —
         // on a cold launch that can be a stale credential the server refuses.

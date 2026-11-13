@@ -5,7 +5,7 @@ import { loadAuth } from './auth'
  *
  * Vercel checks a Matrix token by asking its homeserver, which it can't do for
  * the tailnet-only kafagoz.com server. So a client signed in there asks the Pi
- * instead: scripts/construct-device-token.mjs, mounted at /_construct on the
+ * instead: scripts/construct-api.mjs, mounted at /_construct on the
  * same tailnet host as the homeserver. The Pi checks the Matrix token with the
  * homeserver and returns a signed token that Vercel can verify by itself (see
  * api/_device-token.js). It lasts 30 days and is renewed on launch once it's

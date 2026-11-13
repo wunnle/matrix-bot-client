@@ -5,7 +5,7 @@
  * Vercel checks a client's Matrix token by asking the homeserver who it
  * belongs to. The self-hosted kafagoz.com server is tailnet-only, so that
  * check can't run for its tokens. Instead, the Pi runs
- * scripts/construct-device-token.mjs on the tailnet. It checks the token with
+ * scripts/construct-api.mjs on the tailnet. It checks the token with
  * the local homeserver and hands back one of these, signed with a key that
  * both sides derive from INTENT_SECRET. Vercel only checks the signature and
  * the expiry. It never sees the Matrix token.

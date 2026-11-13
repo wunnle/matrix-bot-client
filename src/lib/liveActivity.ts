@@ -2,7 +2,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core'
 import { getClient, matrixAccessToken } from './matrix'
 import { deviceToken } from './deviceToken'
 import { resolveMediaBase64 } from './mediaUrl'
-import { API_ORIGIN } from './apiUrl'
+import { API_ORIGIN, piApiBase } from './apiUrl'
 import { loadAuth } from './auth'
 
 /**
@@ -101,7 +101,7 @@ export async function saveIntentConfig(room: string): Promise<void> {
   const auth = loadAuth()
   const base = {
     matrixToken,
-    apiBase: API_ORIGIN,
+    apiBase: piApiBase() ?? API_ORIGIN,
     room,
     ...(auth?.homeserver && auth.userId ? { homeserver: auth.homeserver, userId: auth.userId } : {}),
   }

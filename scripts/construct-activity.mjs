@@ -30,14 +30,16 @@
 // tap arrives in that room as a message tagged com.construct.activity_id.
 //
 // Installed as ~/.local/bin/construct-activity (a symlink here). Talks to
-// /api/activity with CONSTRUCT_INTENT_SECRET from ~/.hermes/.env, which never
+// the Pi's /api/activity with CONSTRUCT_INTENT_SECRET from ~/.hermes/.env, which never
 // appears on the command line. Prints the server's JSON reply; exits non-zero
 // when the call failed.
 import fs from 'node:fs'
 import os from 'node:os'
 import { parseArgs } from 'node:util'
 
-const API = process.env.CONSTRUCT_API ?? 'https://construct.kafagoz.com/api/activity'
+// The Pi's own API (scripts/construct-api.mjs): the phone is on kafagoz.com,
+// whose cards Vercel can't serve (BEN-379).
+const API = process.env.CONSTRUCT_API ?? 'http://127.0.0.1:8781/api/activity'
 const ENV_FILE = `${os.homedir()}/.hermes/.env`
 
 function die(message) {

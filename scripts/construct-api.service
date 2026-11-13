@@ -1,0 +1,24 @@
+# Construct's /api on the Pi for the kafagoz.com account (BEN-379) — systemd user unit.
+# Also mints device tokens (BEN-378). See scripts/construct-api.mjs.
+#
+# Install:
+#   ln -sf ~/matrix-pwa/scripts/construct-api.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now construct-api
+#   tailscale serve --bg --https=6443 --set-path=/_construct http://127.0.0.1:8781
+#
+# Deploy a change to scripts/construct-api.mjs or api/*.js: systemctl --user restart construct-api
+# Logs: journalctl --user-unit=construct-api -f
+
+[Unit]
+Description=Construct API on the Pi (kafagoz.com, tailnet only)
+After=network-online.target tuwunel.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/env node %h/matrix-pwa/scripts/construct-api.mjs
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

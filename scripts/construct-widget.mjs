@@ -29,14 +29,15 @@
 // needs Sinan now, use construct-activity.
 //
 // Installed as ~/.local/bin/construct-widget (a symlink here). Talks to
-// /api/widget with CONSTRUCT_INTENT_SECRET from ~/.hermes/.env, which never
+// the Pi's /api/widget with CONSTRUCT_INTENT_SECRET from ~/.hermes/.env, which never
 // appears on the command line. Prints the server's JSON reply; exits non-zero
 // when the call failed.
 import fs from 'node:fs'
 import os from 'node:os'
 import { parseArgs } from 'node:util'
 
-const API = process.env.CONSTRUCT_WIDGET_API ?? 'https://construct.kafagoz.com/api/widget'
+// The Pi's own API (scripts/construct-api.mjs), like construct-activity (BEN-379).
+const API = process.env.CONSTRUCT_WIDGET_API ?? 'http://127.0.0.1:8781/api/widget'
 const ENV_FILE = `${os.homedir()}/.hermes/.env`
 
 function die(message) {

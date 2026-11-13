@@ -269,8 +269,35 @@ async function wipeCryptoStores() {
   await wipeIndexedDbs((name) => name.includes('crypto'))
 }
 
+// Which session (user|device) the crypto store was last opened for. Absent on
+// installs from before this existed, which then keep their store untouched.
+const CRYPTO_OWNER_KEY = 'construct:crypto-owner'
+const CRYPTO_RELOAD_KEY = 'construct:crypto-reload'
+
+function readCryptoOwner(): string | null {
+  try { return localStorage.getItem(CRYPTO_OWNER_KEY) } catch { return null }
+}
+
+function writeCryptoOwner(owner: string): boolean {
+  try { localStorage.setItem(CRYPTO_OWNER_KEY, owner); return true } catch { return false }
+}
+
+/** Reloads the page at most once a minute; false when it just did. */
+function reloadOnceForCrypto(): boolean {
+  try {
+    const last = Number(sessionStorage.getItem(CRYPTO_RELOAD_KEY) ?? 0)
+    if (Date.now() - last < 60_000) return false
+    sessionStorage.setItem(CRYPTO_RELOAD_KEY, String(Date.now()))
+  } catch { return false }
+  window.location.reload()
+  return true
+}
+
 export async function destroyAndWipeStores(userId: string) {
   destroyClient()
+  // The delete below can be blocked by the stopped client's open connection;
+  // this makes the next sign-in wipe it again before opening it.
+  writeCryptoOwner('stale')
   await wipeIndexedDbs((name) => name.includes('crypto') || name.startsWith(`construct:store:${userId}`))
   localStorage.removeItem(`construct:rooms:${userId}`)
 }
@@ -355,15 +382,36 @@ async function doInit(auth: AuthState): Promise<RoomSummary[]> {
 
   const storageKey = getCryptoStorageKey(auth.userId, auth.deviceId)
 
+  // The Rust crypto store is one IndexedDB database whatever the account, so
+  // signing in as someone else (e.g. moving from matrix.org to the Pi server)
+  // finds the old account's keys in it and initRustCrypto refuses. Wiping it
+  // after that failure doesn't work: the failed attempt (or the signed-out
+  // client) still holds a connection, the delete is blocked, and the retry
+  // throws again, so the rooms never load. Wipe it before anything opens it,
+  // whenever the store belongs to a different session than this one.
+  const owner = `${auth.userId}|${auth.deviceId}`
+  const storedOwner = readCryptoOwner()
+  if (storedOwner && storedOwner !== owner) await wipeCryptoStores()
+
   try {
     await c.initRustCrypto({ storageKey })
   } catch (e) {
     console.warn('E2EE init failed, wiping crypto stores and retrying:', e)
     await wipeCryptoStores()
-    // Reuse the same client — creating a new one would overwrite the
-    // module-level `client` and leave consumers holding a stale reference
-    await c.initRustCrypto({ storageKey })
+    try {
+      // Reuse the same client — creating a new one would overwrite the
+      // module-level `client` and leave consumers holding a stale reference
+      await c.initRustCrypto({ storageKey })
+    } catch (e2) {
+      // Most likely the wipe was blocked by this page's own open connection
+      // to a store from before the owner was recorded. Mark the store stale
+      // and reload once: on a fresh page the wipe above runs before anything
+      // opens the database.
+      if (writeCryptoOwner('stale') && reloadOnceForCrypto()) return new Promise<RoomSummary[]>(() => {})
+      throw e2
+    }
   }
+  writeCryptoOwner(owner)
 
   return new Promise<RoomSummary[]>((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Sync timed out')), 30000)

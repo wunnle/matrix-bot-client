@@ -1,7 +1,6 @@
 // A page room's agent: a Hermes profile with only that room's tools (an MCP
 // server), started once per typed message and resumed by session name so
-// follow-ups work. Shared by the page-room services (scripts/discord-room,
-// later scripts/watchlist).
+// follow-ups work. Used by the page-room services (scripts/watchlist).
 //
 // Nothing stays running between messages: one call is ~230 MB for ~20 s on
 // the Pi (measured 2026-10-15; ~14 s of it is Hermes starting). Calls from

@@ -49,7 +49,6 @@ const kb = (text, key) => { const m = new RegExp(`^${key}:\\s+(\\d+)`, 'm').exec
 const serviceNames = {
   'claude-code-bot.service': 'Coding room host',
   'watchlist.service': 'Watchlist',
-  'discord-room.service': 'Discord',
   'calendar-lab-bot.service': 'Calendar Lab',
   'invoice-bot.service': 'Invoices',
   'lore2-prod.service': 'Lore',
@@ -66,9 +65,7 @@ export function createProcessSampler({ procRoot = '/proc', home = path.join(os.h
   let previous = new Map()
   let previousAt = 0
   const pageRooms = {
-    'watchlist.service': json(path.join(os.homedir(), '.config/watchlist/room.json'))?.roomId,
-    'discord-room.service': json(path.join(os.homedir(), '.config/discord-room/room.json'))?.roomId,
-  }
+    'watchlist.service': json(path.join(os.homedir(), '.config/watchlist/room.json'))?.roomId,  }
   return ({ roots: explicitRoots = [], roomName = () => null } = {}) => {
     const now = Date.now()
     const processes = []

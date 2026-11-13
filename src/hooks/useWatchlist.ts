@@ -25,7 +25,7 @@ export function useWatchlist(client: sdk.MatrixClient, roomId: string) {
 
   // Listens on the client, not the room object: the page can open before the
   // room is joined or synced, and a room-level listener attached to nothing
-  // never fired again (same fix as useDiscordRoom).
+  // never fired again.
   useEffect(() => {
     let last: string | null = null
     const read = () => {

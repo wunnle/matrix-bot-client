@@ -168,6 +168,25 @@ const GUARDED_BINS = {
   // Only ever used here to make a scratch script runnable; the path check in
   // bashIsSafe keeps it inside the sandbox roots.
   chmod: /-R\b|--recursive\b/,
+  // `crontab -l` prints the table; anything else (-r, -e, a file) replaces it.
+  crontab: /^(?!\s*-l\s*$)/,
+}
+
+// Hermes verbs that only print. The session-start note tells every agent to
+// query these rather than recall them, so asking for each one was asking for
+// the instruction to be followed. `--profile X` / `-p X` picks whose state.
+const HERMES_READS = new Set(['status', 'cron list', 'webhook list', 'sessions list',
+  'profile list', 'model list', 'skills list', 'memory status'])
+function hermesIsReadOnly(args) {
+  const words = []
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--profile' || args[i] === '-p') { i++; continue }
+    if (/^--profile=/.test(args[i])) continue
+    words.push(args[i])
+  }
+  if (words.includes('--help') || words.includes('-h')) return true
+  const verbs = words.filter((w) => !w.startsWith('-'))
+  return HERMES_READS.has(verbs.slice(0, 2).join(' ')) || (verbs.length === 1 && verbs[0] === 'status')
 }
 // Bins whose non-flag arguments are paths that must land in a sandbox root.
 const PATH_ARG_BINS = new Set(['chmod', 'mkdir', 'touch', 'cp', 'ln'])
@@ -908,7 +927,36 @@ export function stripHeredocs(cmd) {
 export function resolveSubstitutions(cmd, cwd) {
   if (/<\(|>\(/.test(cmd)) return null   // process substitution: not worth modelling
   let out = ''
+  // Only a backtick the shell would run is a substitution. Markdown in a
+  // `linear comment --body "… \`file.py\` …"` escapes them, and inside single
+  // quotes they are plain text; both used to ask on every Linear comment.
+  // Double quotes are tracked so a `'` inside them is not taken for a quote.
+  let quote = null
   for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i]
+    if (quote === "'") {
+      out += c
+      if (c === "'") quote = null
+      continue
+    }
+    if (quote === "$'") {
+      // ANSI-C quoting: a backslash escapes, including the closing quote.
+      if (c === '\\' && i + 1 < cmd.length) { out += c + cmd[++i]; continue }
+      out += c
+      if (c === "'") quote = null
+      continue
+    }
+    if (c === '\\' && i + 1 < cmd.length) {
+      // `\`` and `\$` are literal. The escaped character is dropped from the
+      // rewritten command so nothing downstream mistakes it for syntax.
+      const next = cmd[++i]
+      out += next === '`' || next === '$' ? '_' : c + next
+      continue
+    }
+    if (quote === '"' && c === '"') { quote = null; out += c; continue }
+    if (!quote && c === '"') { quote = '"'; out += c; continue }
+    if (!quote && c === '$' && cmd[i + 1] === "'") { quote = "$'"; out += "$'"; i++; continue }
+    if (!quote && c === "'") { quote = "'"; out += c; continue }
     // `$((n+60))` is arithmetic, not a command. Inert unless it nests a real
     // substitution, which is then not worth picking apart.
     if (cmd.startsWith('$((', i)) {
@@ -993,12 +1041,28 @@ export function redirectTargetsAllowed(seg, cwd, effCwd = cwd) {
   return targets.every((t) => t === '/dev/null' || isSandboxPathFrom(t, effCwd, cwd))
 }
 
+// The text of a Linear comment or issue is prose, and prose names paths: a
+// comment saying "backup in `~/.hermes/backups/x`" read as a read of a secret
+// and asked. A quoted --body/--description/--title given to `linear` is blanked
+// before the checks, unless it holds something the shell would run: `$(…)` or
+// a live backtick in double quotes is how a secret would reach the comment.
+const LINEAR_TEXT = /--(body|description|title)(=|\s+)("(?:[^"\\]|\\[\s\S])*"|'[^']*')/g
+export function blankLinearText(cmd) {
+  return cmd.replace(LINEAR_TEXT, (m, flag, sep, value, at) => {
+    const before = cmd.slice(Math.max(0, cmd.lastIndexOf('\n', at)), at)
+    const lead = before.split(/[;&|]/).pop()
+    if (!/(^|[\s(])linear\s/.test(lead)) return m
+    if (value[0] === '"' && /(^|[^\\])(\\\\)*(\$\(|`)/.test(value)) return m
+    return `--${flag}${sep}"TEXT"`
+  })
+}
+
 export function bashIsSafe(command, cwd) {
   let cmd = (command ?? '').trim()
   if (!cmd) return false
   // Variables first, so every check below sees the paths and programs the shell
   // will actually use.
-  cmd = expandVariables(stripHeredocs(cmd))
+  cmd = blankLinearText(expandVariables(stripHeredocs(cmd)))
   // Reading is otherwise free, and `cat` is on the allowlist — so without this
   // every credential on the machine could be read with no prompt.
   if (commandTouchesSecret(cmd, cwd)) return false
@@ -1102,6 +1166,7 @@ export function bashIsSafe(command, cwd) {
       if (DEST_ONLY_BINS.has(base) && args.length < 2) return false
       return paths.length > 0 && paths.every((p) => isSandboxPathFrom(p, effCwd, cwd))
     }
+    if (base === 'hermes') return hermesIsReadOnly(tokens.slice(1))
     const guard = GUARDED_BINS[base]
     if (guard) return !guard.test(tokens.slice(1).join(' '))
     const subs = SAFE_SUBCOMMANDS[base]

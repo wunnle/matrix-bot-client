@@ -581,9 +581,17 @@ const NAMED_READERS = new Set(['cat', 'head', 'tail', 'grep', 'egrep', 'fgrep', 
 // the ways round them: `ls | xargs cat`, `cat $(ls)`, `grep -r token`, an awk
 // `getline` or a sed `r` reading a file named inside the program text.
 function readsUnnamed(seg) {
-  if (hasExpansion(outsideSingleQuotes(seg))) return true
   let words = stripKeywords(argWords(seg))
   while (words.length && ASSIGNMENT.test(words[0])) words = words.slice(1)
+  // find lists names and opens nothing; GUARDED_BINS refuses the flags that run
+  // or write. A `$s` is only a -name pattern or a start directory, so a loop
+  // variable is fine; `$(…)` is still refused, as is -files0-from, which reads
+  // a file and echoes its lines back in error messages.
+  // `cd ~/.hermes; find skills -name x` used to ask.
+  if (words[0] === 'find') {
+    return /\$\(|`/.test(outsideSingleQuotes(seg)) || words.some((w) => w.startsWith('-files0-from'))
+  }
+  if (hasExpansion(outsideSingleQuotes(seg))) return true
   if (!words.length) return false
   const base = words[0]
   if (!NAMED_READERS.has(base)) return true
@@ -611,6 +619,12 @@ function fileOperands(seg) {
   while (words.length && ASSIGNMENT.test(words[0])) words = words.slice(1)
   const base = words[0]
   if (!base || NO_FILES.has(base)) return []
+  // find's operands are its start directories, which end where the expression
+  // begins; `-type d -name "$s"` names no file.
+  if (base === 'find') {
+    const end = words.slice(1).findIndex((w) => /^[-(!]/.test(w))
+    return end === -1 ? words.slice(1) : words.slice(1, 1 + end)
+  }
   let operands = []
   let endOfFlags = false
   const args = words.slice(1)

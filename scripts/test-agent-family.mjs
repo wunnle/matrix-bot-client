@@ -84,6 +84,23 @@ assert.equal(wakeSessions.lead.agentWakePending,true,'pending wake is persisted 
 const flaky = createAgentFamily({sessions:wakeSessions,save(){},spawn(){},start(){},publish:async()=>{},notify:async()=>{throw Error('offline')},wake:id=>woken.push(id)})
 await assert.rejects(()=>flaky.report('b','blocked','Quota'),/offline/)
 assert.equal(woken.length,3,'a failed notice still wakes the parent')
+// A done child waits for busy siblings; the last to finish wakes the parent once.
+const batch = {lead:{}, a:{parentRoomId:'lead',agentTitle:'A'}, b:{parentRoomId:'lead',agentTitle:'B'}, c:{parentRoomId:'lead',agentTitle:'C'}}
+const batchWoken = []
+const batching = createAgentFamily({sessions:batch,save(){},spawn(){},start(){},publish:async()=>{},notify:async()=>{},wake:id=>batchWoken.push(id)})
+await batching.working('a'); await batching.working('b'); await batching.working('c')
+await batching.report('a','done','A finished')
+assert.deepEqual(batchWoken,[],'a done child does not wake while siblings work')
+assert.equal(batch.lead.agentWakePending,undefined)
+await batching.report('b','failed','B broke')
+assert.deepEqual(batchWoken,['lead'],'a failure wakes at once')
+delete batch.lead.agentWakePending; batch.lead.agentReports = batch.lead.agentReports.filter(r => r.status === 'done')
+await batching.report('c','stopped','Stopped by the user.')
+assert.deepEqual(batchWoken,['lead','lead'],'the last sibling stopping delivers the waiting done report')
+const quiet = {lead:{}, a:{parentRoomId:'lead',agentTitle:'A'}}
+const quietWoken = []
+await createAgentFamily({sessions:quiet,save(){},spawn(){},start(){},publish:async()=>{},notify:async()=>{},wake:id=>quietWoken.push(id)}).report('a','stopped','Stopped by the user.')
+assert.deepEqual(quietWoken,[],'a stop with nothing waiting still does not wake')
 // A room the bot is resuming after a restart is not paused by recovery.
 const resumed = {lead:{}, mid:{parentRoomId:'lead',agentStatus:'working'}, idle:{parentRoomId:'lead',agentStatus:'working'}}
 const resumePauses = []

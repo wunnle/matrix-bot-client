@@ -2137,13 +2137,16 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
         : path.basename(cwd)
       const named = spawned.name !== spawned.slug ? ` "${spawned.name}"` : ''
       await sendRoomText(roomId, `Spawned ${encrypted ? 'an encrypted room' : 'a room'}${named} for ${where} on ${modelLabel(model)} — check your invites.`)
-      // A typed prompt has nobody to deliver it but us: say what was asked, so
-      // the room's history starts with it, and start on it.
-      if (typedPrompt && !appPrompt) {
-        await sendRoomText(spawned.room_id, `Started from \`!spawn\`:\n\n${typedPrompt.split('\n').map((l) => `> ${l}`).join('\n')}`, {
+      // Deliver the prompt ourselves, typed or from the app: say what was
+      // asked, so the room's history starts with it, and start on it. The app
+      // used to post it as the user's first message after accepting the
+      // invite, which depended on it spotting the invite in time — on a fast
+      // homeserver the join could land first and the prompt was silently lost.
+      if (prompt) {
+        await sendRoomText(spawned.room_id, `Started with:\n\n${prompt.split('\n').map((l) => `> ${l}`).join('\n')}`, {
           'com.construct.machine': { kind: 'task', source: 'claude-spawn' },
         }).catch((e) => log(`Could not post the spawn prompt: ${e.message}`))
-        void drainRoom(spawned.room_id, null, typedPrompt)
+        void drainRoom(spawned.room_id, null, prompt)
       }
       // A requested worktree that git refused still spawns, in the shared tree.
       if (sharing.length > 0 && root && !spawned.branch) {

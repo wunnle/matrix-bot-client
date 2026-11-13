@@ -27,6 +27,14 @@ export async function savePills(client: MatrixClient, roomId: string, pills: str
 // m.room.create `type` set by the Claude Code bot when it spawns a room.
 // Keep in sync with AGENT_ROOM_TYPE in scripts/claude-code-bot.mjs.
 export const AGENT_ROOM_TYPE = 'com.construct.agent'
+// m.room.create `type` of the private room Construct opens with the bot to send
+// `!spawn` into (see spawnAgent.ts). Never shown in the room list.
+export const SPAWN_HOST_TYPE = 'com.construct.spawn_host'
+
+/** Rooms Construct uses as plumbing and keeps out of the room list. */
+export function isHiddenRoom(room: { currentState: { getStateEvents(type: string, key: string): { getContent(): { type?: unknown } } | null } }): boolean {
+  return room.currentState.getStateEvents('m.room.create', '')?.getContent()?.type === SPAWN_HOST_TYPE
+}
 // Room state the bot sets on !end ({ archived_at }) and empties when the room
 // is used again. Keep in sync with ARCHIVED_EVENT in the bot.
 export const ARCHIVED_EVENT = 'com.construct.archived'

@@ -1,7 +1,7 @@
 import * as sdk from 'matrix-js-sdk'
 import type { AuthState } from '../types'
 import { loadAuth } from './auth'
-import { AGENT_ROOM_TYPE, ARCHIVED_EVENT, seedAgentPills } from './roomMeta'
+import { AGENT_ROOM_TYPE, ARCHIVED_EVENT, isHiddenRoom, seedAgentPills } from './roomMeta'
 import { isBotAgentInvite } from './agentInvite'
 import { loggingFetch, startConnectionLog } from './connectionLog'
 
@@ -186,6 +186,7 @@ function getRooms(c: sdk.MatrixClient, userId: string): RoomSummary[] {
     .filter((room) => {
       const createEvent = room.currentState.getStateEvents('m.room.create', '')
       if (createEvent?.getContent()?.type === 'm.space') return false
+      if (isHiddenRoom(room)) return false
       const membership = room.getMyMembership()
       return membership === 'join' || membership === 'invite'
     })

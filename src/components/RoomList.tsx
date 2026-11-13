@@ -5,8 +5,8 @@ import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@d
 import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
 import { fetchJoinedRooms, getCachedRooms, lastPreviewMessage, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, sendErrorMessage, type RoomSummary } from '../lib/matrix'
-import { seedAgentPills, backfillAgentPills, ARCHIVED_EVENT } from '../lib/roomMeta'
-import { findSpawnHostRoom, spawnAgentRoom } from '../lib/spawnAgent'
+import { seedAgentPills, backfillAgentPills, ARCHIVED_EVENT, isHiddenRoom } from '../lib/roomMeta'
+import { canSpawnFrom, ensureSpawnHostRoom, spawnAgentRoom } from '../lib/spawnAgent'
 import SpawnSheet from './SpawnSheet'
 import { agentTree } from '../lib/agentTree'
 import { createSpawnGate, type AgentProvider } from '../lib/spawnCommand'
@@ -268,7 +268,7 @@ export default function RoomList({
   // that would keep a cached value honest.
   let canSpawn = false
   if (clientReady) {
-    try { canSpawn = findSpawnHostRoom(getClient()) !== null } catch { /* no client yet */ }
+    try { canSpawn = canSpawnFrom(getClient()) } catch { /* no client yet */ }
   }
 
   // ⌘N asks for a new Claude room from anywhere, as the Claude tile would. The
@@ -516,6 +516,7 @@ export default function RoomList({
       setRooms((prev) => {
         const without = prev.filter((r) => r.roomId !== room.roomId)
         if (membership !== 'join' && membership !== 'invite') return without
+        if (isHiddenRoom(room)) return without
         // Anything new — joined or invited — appends, so it never displaces
         // rooms the user has already arranged.
         return [...without, toRoomSummary(room, auth.userId)]
@@ -616,7 +617,7 @@ export default function RoomList({
     setSpawning(provider)
     try {
       const client = getClient()
-      const host = findSpawnHostRoom(client)
+      const host = await ensureSpawnHostRoom(client)
       if (!host) {
         setInviteError('No room to spawn from — open an agent room first.')
         return
@@ -626,14 +627,9 @@ export default function RoomList({
       // BenderDev-N); accepting here rather than leaving the ghost invite tile
       // behind is the whole point of the button — one tap, one room.
       const name = client.getRoom(roomId)?.name ?? 'agent'
-      const joined = await handleAcceptInvite(roomId, name)
-      // The prompt goes in as your own first message, so the agent starts on it
-      // and the room's history opens with what you asked. Gated on the join
-      // call, not getMyMembership(): sync hasn't caught up when joinRoom
-      // resolves, so that still read "invite" and the prompt was dropped.
-      if (prompt && joined) {
-        await client.sendMessage(roomId, { msgtype: 'm.text', body: prompt } as never)
-      }
+      // The prompt is not sent from here: the bot got it with `!spawn`, posts it
+      // as the room's first message and starts on it.
+      await handleAcceptInvite(roomId, name)
     } catch (e) {
       setInviteError(sendErrorMessage(e, 'Could not spawn a room'))
     } finally {

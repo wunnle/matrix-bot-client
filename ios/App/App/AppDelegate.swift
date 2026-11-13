@@ -363,6 +363,10 @@ enum IntentConfig {
     // The signed-in account's homeserver base URL and user id (BEN-376).
     static let homeserver = "construct.homeserver"
     static let userId = "construct.userId"
+    // The account's Matrix access token, for sending straight to its homeserver.
+    // `secret` is only for Construct's /api and may be a Pi-minted device
+    // token that the homeserver doesn't accept (BEN-378).
+    static let matrixToken = "construct.matrixToken"
 
     /// Shared across the app and its extensions. Falls back to `.standard` if the
     /// App Group container is somehow unavailable.
@@ -840,7 +844,9 @@ private func sendRoomText(room rawRoom: String, text: String, source: String,
         var req = URLRequest(url: url)
         req.httpMethod = "PUT"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        // `secret` may be a device token for Construct's /api (BEN-378).
+        let matrixToken = d.string(forKey: IntentConfig.matrixToken).flatMap { $0.isEmpty ? nil : $0 } ?? secret
+        req.setValue("Bearer \(matrixToken)", forHTTPHeaderField: "Authorization")
         req.httpBody = body
         req.timeoutInterval = 12
         _ = try? await URLSession.shared.data(for: req)
@@ -1424,7 +1430,14 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             d.removeObject(forKey: IntentConfig.homeserver)
             d.removeObject(forKey: IntentConfig.userId)
         }
-        call.resolve()
+        if let t = call.getString("matrixToken") {
+            d.set(t, forKey: IntentConfig.matrixToken)
+        } else {
+            d.removeObject(forKey: IntentConfig.matrixToken)
+        }
+        // Tells the web side this build keeps the Matrix token separately, so
+        // it's safe to hand over a device token as `secret` (BEN-378).
+        call.resolve(["matrixToken": true])
         // Activation already registered tokens with whatever was stored then —
         // on a cold launch that can be a stale credential the server refuses.
         // Re-register everything under the new one now, not on next launch.

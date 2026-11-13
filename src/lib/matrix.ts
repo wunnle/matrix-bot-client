@@ -1,6 +1,7 @@
 import * as sdk from 'matrix-js-sdk'
 import type { AuthState } from '../types'
 import { loadAuth } from './auth'
+import { deviceToken } from './deviceToken'
 import { AGENT_ROOM_TYPE, ARCHIVED_EVENT, isHiddenRoom, seedAgentPills } from './roomMeta'
 import { isBotAgentInvite } from './agentInvite'
 import { loggingFetch, startConnectionLog } from './connectionLog'
@@ -21,12 +22,18 @@ export function getClient(): sdk.MatrixClient {
 
 /**
  * Credential for Construct's own /api intent endpoints, sent as the
- * `x-intent-secret` header: the signed-in user's Matrix access token, which the
- * server checks with the homeserver (api/_auth.js). Falls back to the stored
- * login, since some callers run on launch before the client is initialized.
- * null when signed out.
+ * `x-intent-secret` header. On a homeserver Vercel can't reach (kafagoz.com),
+ * that's the device token the Pi minted (see deviceToken.ts). Otherwise it's
+ * the signed-in user's Matrix access token, which the server checks with the
+ * homeserver (api/_auth.js). null when signed out.
  */
 export function intentCredential(): string | null {
+  return deviceToken() ?? matrixAccessToken()
+}
+
+/** The signed-in user's Matrix access token. Falls back to the stored login,
+    since some callers run on launch before the client is initialized. */
+export function matrixAccessToken(): string | null {
   try {
     return getClient().getAccessToken()
   } catch {

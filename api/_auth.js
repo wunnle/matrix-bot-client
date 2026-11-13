@@ -15,8 +15,12 @@
  *     account as MATRIX_ACCESS_TOKEN. The native side stores whatever
  *     saveIntentConfig hands it, so the header name stays the same and the
  *     Swift code needs no change.
+ *   • A client signed in on the tailnet-only kafagoz.com server sends a device
+ *     token the Pi minted for it (BEN-378), because Vercel can't ask that
+ *     server about a Matrix token. See _device-token.js.
  */
 import crypto from "crypto";
+import { deviceTokenKey, verifyDeviceToken } from "./_device-token.js";
 
 const SECRET = process.env.INTENT_SECRET;
 const HOMESERVER = process.env.MATRIX_HOMESERVER || "https://matrix-client.matrix.org";
@@ -65,10 +69,14 @@ async function isOwnerToken(token) {
   return true;
 }
 
-/** True when the request carries the bot secret or the owner's Matrix token. */
+const DEVICE_KEY = deviceTokenKey();
+
+/** True when the request carries the bot secret, a device token minted on the
+    Pi (see _device-token.js), or the owner's Matrix token. */
 export async function authorized(req) {
   const presented = req.headers["x-intent-secret"];
   if (typeof presented !== "string" || !presented) return false;
   if (sameSecret(presented)) return true;
+  if (verifyDeviceToken(DEVICE_KEY, presented)) return true;
   return isOwnerToken(presented);
 }

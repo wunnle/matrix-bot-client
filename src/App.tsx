@@ -10,6 +10,7 @@ import DebugOverlay from './components/DebugOverlay'
 import { Keyboard } from '@capacitor/keyboard'
 import { usePushNotifications } from './hooks/usePushNotifications'
 import { saveIntentConfig, isMacApp, macZoom } from './lib/liveActivity'
+import { refreshDeviceToken, clearDeviceToken } from './lib/deviceToken'
 import './App.css'
 
 // Default room the "Ask Construct" Shortcut targets (Bender).
@@ -30,7 +31,8 @@ export default function App() {
     const stored = loadAuth()
     if (stored) setAuth(stored)
     setReady(true)
-    void saveIntentConfig(DEFAULT_INTENT_ROOM)
+    // The device token first, so the native side gets it in the same launch.
+    void refreshDeviceToken().finally(() => saveIntentConfig(DEFAULT_INTENT_ROOM))
     // Running as an iPad app on a Mac: scale the mobile-first UI up and stop the
     // phantom software keyboard's accessory bar from popping up over inputs.
     void isMacApp().then(mac => {
@@ -64,12 +66,14 @@ export default function App() {
   function handleLogin(a: AuthState) {
     setAuth(a)
     navigate('/rooms')
+    void refreshDeviceToken().finally(() => saveIntentConfig(DEFAULT_INTENT_ROOM))
   }
 
   function handleSignOut() {
     const userId = auth?.userId ?? ''
     destroyAndWipeStores(userId).catch(() => {})
     clearAuth()
+    clearDeviceToken()
     setAuth(null)
     navigate('/')
   }

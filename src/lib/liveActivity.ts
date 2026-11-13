@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
-import { getClient, intentCredential } from './matrix'
+import { getClient, matrixAccessToken } from './matrix'
+import { deviceToken } from './deviceToken'
 import { resolveMediaBase64 } from './mediaUrl'
 import { API_ORIGIN } from './apiUrl'
 import { loadAuth } from './auth'
@@ -47,8 +48,11 @@ interface LiveActivityPlugin {
   update(options: LiveActivityState & { activityId: string }): Promise<void>
   // No activityId → ends every activity.
   end(options?: { activityId?: string }): Promise<void>
-  // homeserver/userId: native builds before BEN-376 ignore them.
-  saveIntentConfig(options: { secret: string; apiBase: string; room: string; homeserver?: string; userId?: string }): Promise<void>
+  // homeserver/userId: native builds before BEN-376 ignore them. matrixToken:
+  // builds before BEN-378 ignore it and resolve with nothing.
+  saveIntentConfig(options: {
+    secret: string; apiBase: string; room: string; homeserver?: string; userId?: string; matrixToken?: string
+  }): Promise<{ matrixToken?: boolean } | undefined>
   donateShareTargets(options: { rooms: { roomId: string; name: string; avatar?: string }[]; remove?: string[] }): Promise<void>
   // Separate from the donation above: the Live Activity needs an avatar on disk
   // for *every* room, not just the ones enabled for sharing.
@@ -65,28 +69,48 @@ interface LiveActivityPlugin {
 // doesn't exist yet (see CLAUDE.md).
 const plugin = registerPlugin<LiveActivityPlugin>('LiveActivity')
 
+/** Set once the native side has said it keeps the Matrix token separately
+    (BEN-378), so later launches hand it the device token in one call. */
+const NATIVE_SPLIT_KEY = 'construct:native-matrix-token'
+const nativeSplit = (): boolean => {
+  try { return localStorage.getItem(NATIVE_SPLIT_KEY) === '1' } catch { return false }
+}
+
 /**
- * Hand the background "Ask Construct" App Intent what it needs (it runs
- * without the webview): its API credential, API base, and default room.
- * The credential is the signed-in Matrix access token (see intentCredential);
- * the native side sends it as `x-intent-secret` unchanged. Call once on
- * launch, after login. No-op off native or before login.
+ * Hand the native side what its background code needs (it runs without the
+ * webview): the API credential, API base, and default room. The native side
+ * and its extensions send `secret` as `x-intent-secret` to Construct's /api
+ * routes unchanged. Call once on launch, after login. No-op off native or
+ * before login.
  *
- * The homeserver and user id let a reply to a room on the signed-in account's
- * own server go straight to that homeserver with the same token, instead of
+ * The homeserver, user id and Matrix token let a reply to a room on the
+ * signed-in account's own server go straight to that homeserver instead of
  * through Vercel, which can't reach a tailnet-only server (BEN-376).
+ *
+ * `secret` is the Pi-minted device token when there is one (BEN-378), but only
+ * for a native build that keeps `matrixToken` separately and says so in its
+ * reply. Older builds send `secret` to the homeserver for those replies too,
+ * so they keep getting the Matrix token: handing them the device token would
+ * break taps in kafagoz.com rooms.
  */
 export async function saveIntentConfig(room: string): Promise<void> {
   if (!Capacitor.isNativePlatform()) return
-  const secret = intentCredential()
-  if (!secret) return
+  const matrixToken = matrixAccessToken()
+  if (!matrixToken) return
+  const device = deviceToken()
   const auth = loadAuth()
-  await plugin.saveIntentConfig({
-    secret,
+  const base = {
+    matrixToken,
     apiBase: API_ORIGIN,
     room,
     ...(auth?.homeserver && auth.userId ? { homeserver: auth.homeserver, userId: auth.userId } : {}),
-  }).catch(() => {})
+  }
+  const split = nativeSplit()
+  const r = await plugin.saveIntentConfig({ ...base, secret: device && split ? device : matrixToken }).catch(() => undefined)
+  if (!split && r?.matrixToken === true) {
+    try { localStorage.setItem(NATIVE_SPLIT_KEY, '1') } catch { /* storage unavailable */ }
+    if (device) await plugin.saveIntentConfig({ ...base, secret: device }).catch(() => {})
+  }
 }
 
 /**

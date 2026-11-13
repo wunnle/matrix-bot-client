@@ -1,0 +1,22 @@
+# Mints Construct device tokens for kafagoz.com clients (BEN-378) — systemd user unit.
+#
+# Install:
+#   ln -sf ~/matrix-pwa/scripts/construct-device-token.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now construct-device-token
+#   tailscale serve --bg --https=6443 --set-path=/_construct http://127.0.0.1:8781
+#
+# Logs: journalctl --user-unit=construct-device-token -f
+
+[Unit]
+Description=Construct device-token minter (tailnet only)
+After=network-online.target tuwunel.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/env node %h/matrix-pwa/scripts/construct-device-token.mjs
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

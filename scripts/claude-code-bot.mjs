@@ -789,6 +789,35 @@ function handleBrowse(req, res) {
   })
 }
 
+// construct-rename: an agent retitles its own room as its work changes. Sent
+// by the bot because it holds the power level in every room it created, and
+// its client already knows the homeserver.
+const ROOM_NAME_MAX = 60
+function handleRename(req, res) {
+  let raw = ''
+  req.on('data', (c) => { raw += c })
+  req.on('end', async () => {
+    const reply = (status, payload) => {
+      res.writeHead(status, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(payload))
+    }
+    let payload
+    try { payload = JSON.parse(raw) } catch { return reply(400, { error: 'malformed request' }) }
+    const { roomId } = payload ?? {}
+    const name = typeof payload?.name === 'string' ? payload.name.replace(/\s+/g, ' ').trim().slice(0, ROOM_NAME_MAX) : ''
+    if (typeof roomId !== 'string' || !name) return reply(400, { error: 'roomId and a name are required' })
+    if (client.getRoom(roomId)?.getMyMembership() !== 'join') return reply(404, { error: `not in ${roomId}` })
+    try {
+      await client.sendStateEvent(roomId, 'm.room.name', { name }, '')
+      log(`[${roomId}] renamed → ${name}`)
+      reply(200, { name })
+    } catch (e) {
+      log(`[${roomId}] could not rename to ${name}: ${e.message}`)
+      reply(502, { error: e.message })
+    }
+  })
+}
+
 // Scheduled jobs (systemd timers such as scripts/agent-review) start turns here
 // with no message to answer. Each job owns one room, found by its key and
 // spawned on first use, and every run starts a fresh session so a weekly job
@@ -866,6 +895,7 @@ function startApprovalBroker() {
     if (req.method === 'POST' && req.url === '/agent-family') return handleAgentFamily(req, res)
     if (req.method === 'POST' && req.url.startsWith('/send-image')) return handleSendImage(req, res)
     if (req.method === 'POST' && req.url.startsWith('/browse')) return handleBrowse(req, res)
+    if (req.method === 'POST' && req.url.startsWith('/rename')) return handleRename(req, res)
     if (req.method !== 'POST' || !req.url.startsWith('/approve')) {
       res.writeHead(404).end()
       return
@@ -940,7 +970,7 @@ function startApprovalBroker() {
 const RENAME_UNTIL_TURN = 2
 const RENAME_INSTRUCTION =
   'This room is still using its placeholder name. If the subject of this ' +
-  'conversation is now clear, invoke the room-rename skill to retitle it ' +
+  'conversation is now clear, retitle it with `construct-rename "<name>"` ' +
   'before you answer, and mention the new name in one short closing line. ' +
   'If it is not yet clear, skip it silently and just answer.'
 
@@ -1047,6 +1077,18 @@ const browserInstruction = (roomId) =>
   'command it prints, and read the screenshot. Some sites refuse to be ' +
   'embedded; the tab then offers to open them in a browser.'
 
+// The room name is how Sinan tells his rooms apart on the phone, so it should
+// track the work, not just the first message (the RENAME_INSTRUCTION nudge
+// stops after turn two). Fixed text, for the same reason as the others.
+const ROOM_NAME_INSTRUCTION =
+  'The room name is how the user tells rooms apart in the room list, so keep ' +
+  'it saying what you are working on. Rename it with `construct-rename ' +
+  '"<name>"` (no approval needed) when you start a task and whenever the work ' +
+  'moves to something else. When the work has a Linear issue, put its id ' +
+  'first, e.g. "BEN-359 Scruffy captures" or "BEN-359 + BEN-364 Captures"; ' +
+  'otherwise two or three words saying the task, not the tooling. Keep it ' +
+  'under 40 characters. Do not rename for a passing side question.'
+
 // Runs one turn through the room's provider, resuming its session if it has one.
 // Everything provider-specific — how a turn is invoked, how instructions are
 // injected, how the resumable id comes back — lives behind the adapter.
@@ -1067,7 +1109,7 @@ function runTurn(roomId, prompt) {
 
   // Room policy, not provider policy: what the agent should be told about this
   // room. The adapter decides where these end up.
-  const instructions = [QUICK_ANSWER_INSTRUCTION, END_INSTRUCTION, liveActivityInstruction(roomId), LOCATION_INSTRUCTION, FORM_INSTRUCTION, browserInstruction(roomId)]
+  const instructions = [QUICK_ANSWER_INSTRUCTION, END_INSTRUCTION, liveActivityInstruction(roomId), LOCATION_INSTRUCTION, FORM_INSTRUCTION, browserInstruction(roomId), ROOM_NAME_INSTRUCTION]
   // Only Claude rooms have the tool; telling Codex about it would be a lie.
   if (provider.name === 'claude') instructions.push(ARTIFACT_INSTRUCTION, FAMILY_INSTRUCTION)
   // The rename nudge rides on the prompt, not the instructions: it drops out

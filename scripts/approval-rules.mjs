@@ -218,7 +218,8 @@ const PREAPPROVED_BINS = new Set(['linear', 'obsidian'])
 // `construct-browse` posts a page card into the agent's own room, and
 // `construct-preview` puts a local port on Sinan's private tailnet with
 // `tailscale serve` (never Funnel, so never the public internet) and opens it.
-const HELPER_BINS = new Set(['wait-for', 'page-grep', 'page', 'linear-gql', 'construct-activity', 'construct-browse', 'construct-preview'])
+// `construct-rename` sets the name of the agent's own room, through the bot.
+const HELPER_BINS = new Set(['wait-for', 'page-grep', 'page', 'linear-gql', 'construct-activity', 'construct-browse', 'construct-preview', 'construct-rename'])
 function isHelperBin(token) {
   return !token.includes('/') && HELPER_BINS.has(token)
 }

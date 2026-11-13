@@ -106,6 +106,20 @@ export async function readRegistry() {
 
 export const writeRegistry = (reg) => writeDoc(REGISTRY_TYPE, reg);
 
+/** Runs registry read-modify-writes one at a time within this process.
+    A start holds its copy of the registry across several APNs round trips,
+    and the phone registers the new card's token in the meantime. Without
+    this, the start's final write erased that token, and the app, having had
+    a 200, never sent it again (seen on the Pi, where each push opens a fresh
+    connection, BEN-379). On Vercel this only covers calls landing on the
+    same warm instance; the Pi runs one long-lived process, so it covers all. */
+let registryQueue = Promise.resolve();
+function serialized(fn) {
+  const run = registryQueue.then(fn, fn);
+  registryQueue = run.catch(() => {});
+  return run;
+}
+
 /* ── Content-state ────────────────────────────────────────────────────── */
 
 export function str(value, field, max, { required = false } = {}) {
@@ -536,7 +550,8 @@ async function prune(reg) {
  * The bot-facing operation behind POST /api/activity. Starts `id` if it isn't
  * running, updates it if it is, ends it when `end` is set.
  */
-export async function upsertActivity(input) {
+export const upsertActivity = (input) => serialized(() => upsertActivityNow(input));
+async function upsertActivityNow(input) {
   if (!apnsConfigured()) throw new ActivityError(500, "APNs not configured");
   const id = input.id;
   if (typeof id !== "string" || !ID_PATTERN.test(id)) {
@@ -670,7 +685,8 @@ export async function upsertActivity(input) {
 /** The app reporting an activity's update token (it rotates). Creates the
     entry for activities the app started itself (the debug overlay), and
     delivers any update that arrived before the token did. */
-export async function registerToken(activityId, token) {
+export const registerToken = (activityId, token) => serialized(() => registerTokenNow(activityId, token));
+async function registerTokenNow(activityId, token) {
   const reg = await readRegistry();
   const now = Date.now();
   const known = !!reg.activities[activityId];
@@ -711,7 +727,8 @@ export async function registerToken(activityId, token) {
 }
 
 /** The app saying an activity ended on the device. */
-export async function forgetActivity(activityId) {
+export const forgetActivity = (activityId) => serialized(() => forgetActivityNow(activityId));
+async function forgetActivityNow(activityId) {
   const reg = await readRegistry();
   if (!reg.activities[activityId]) return { ok: true, removed: 0 };
   delete reg.activities[activityId];
@@ -736,7 +753,8 @@ export function reconcileDrops(activities, liveIds, now = Date.now()) {
 /** The app listing every activity still alive on the device; everything else
     goes. Entries started in the last minute are kept even when unlisted: a
     push-to-start can still be on its way to the device. */
-export async function reconcile(liveIds) {
+export const reconcile = (liveIds) => serialized(() => reconcileNow(liveIds));
+async function reconcileNow(liveIds) {
   const reg = await readRegistry();
   const now = Date.now();
   const drop = reconcileDrops(reg.activities, liveIds, now);

@@ -1,5 +1,6 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import type { Message } from '../types'
+import type { RoomStatus } from '../lib/roomStatus'
 
 /**
  * What the room's bot appears to be doing right now, derived from what is
@@ -123,6 +124,8 @@ export interface AgentRun {
   detail?: string
   startedAt: number
   lastSignalAt: number
+  /** The bot said so (room status), so no silence makes it stale. */
+  live?: boolean
 }
 
 /**
@@ -133,15 +136,54 @@ export interface AgentRun {
  *
  * @param messages full room timeline, oldest first
  */
-export function useAgentRun(messages: Message[]): AgentRun | null {
-  return useMemo(() => agentRunFrom(messages), [messages])
+export function useAgentRun(messages: Message[], status?: RoomStatus | null): AgentRun | null {
+  return useMemo(() => agentRunFrom(messages, status), [messages, status])
 }
 
 /** The fields a run is derived from — all a caller without full Messages needs. */
 export type RunMessage = Pick<Message, 'isOwnMessage' | 'isPeerMessage' | 'toolProgress' | 'interim' | 'machine' | 'timestamp'>
 
-/** useAgentRun without the hook, for callers outside a room (the room grid). */
-export function agentRunFrom(messages: RunMessage[]): AgentRun | null {
+/**
+ * useAgentRun without the hook, for callers outside a room (the room grid).
+ * Where the bot publishes what its turn is doing (room status), that is the
+ * answer; the timeline is only read for the tool line's detail, which room
+ * state doesn't carry (it is unencrypted). Elsewhere it is inferred.
+ */
+export function agentRunFrom(messages: RunMessage[], status?: RoomStatus | null): AgentRun | null {
+  const told = runFromStatus(messages, status)
+  return told === undefined ? inferRun(messages) : told
+}
+
+/** The run as the bot reports it; undefined when it doesn't (Hermes, older bots). */
+function runFromStatus(messages: RunMessage[], status: RoomStatus | null | undefined): AgentRun | null | undefined {
+  if (!status || status.activity === undefined) return undefined
+  const a = status.activity
+  if (!a) {
+    // Idle — unless you've written since it said so, and its turn is about to
+    // start: until it does, the timeline's guess is all there is.
+    const lastOwn = messages.findLast((m) => m.isOwnMessage)
+    return lastOwn && lastOwn.timestamp > status.at ? undefined : null
+  }
+  const run = { startedAt: a.turnSince, lastSignalAt: status.at, live: true }
+  if (status.approval) {
+    return { ...run, phase: 'thinking', label: 'Waiting for you', startedAt: status.approval.since || status.at }
+  }
+  if (a.phase === 'background') return { ...run, phase: 'working', label: 'Background work' }
+  if (a.phase === 'thinking') return { ...run, phase: 'thinking', label: 'Thinking' }
+  const tool = a.tool ?? ''
+  // The newest tool line, for what this tool is acting on.
+  let detail: string | undefined
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const lines = messages[i].toolProgress
+    if (!lines?.length || !isBotMessage(messages[i])) continue
+    const line = lines[lines.length - 1]
+    if (line.tool === tool) detail = line.content
+    break
+  }
+  return { ...run, phase: 'working', label: tool ? labelForTool(tool) : 'Working', detail }
+}
+
+function inferRun(messages: RunMessage[]): AgentRun | null {
   // Everything below is a function of "the run that started at the user's last
   // message", so find that anchor once.
   let anchor = -1
@@ -198,7 +240,7 @@ export function agentActivityAt(
   // The bot's typing flag is the one signal it sends on purpose for the whole
   // turn (and the server expires it if the bot dies), so while it is up the run
   // is live however long it takes. Without it, fall back to inference.
-  if (!botTyping) {
+  if (!botTyping && !base.live) {
     const silentFor = now - base.lastSignalAt
     if (silentFor > STALE_MS) return null
     if (base.phase === 'thinking' && silentFor > SILENT_GRACE_MS) return null

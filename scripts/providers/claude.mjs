@@ -379,7 +379,7 @@ export const claude = {
   // background work is still running; the run then resolves with `delivered`
   // set when its last answer already went out that way. Without it, the
   // process is held to one answer as before.
-  run({ roomId, prompt, cwd, model, sessionId, instructions = [], family, approval, onProgress, onText, onReply, onSubagent, onArtifact, timeoutMs, onSession }) {
+  run({ roomId, prompt, cwd, model, sessionId, instructions = [], family, approval, onProgress, onText, onReply, onSubagent, onArtifact, onToolsDone, timeoutMs, onSession }) {
     const args = [
       '-p',
       // stream-json in print mode refuses to run without --verbose.
@@ -469,6 +469,7 @@ export const claude = {
       // then is it narration; the last block is the reply itself, which the
       // `result` event repeats and the caller posts as the turn's answer.
       let pendingText = null
+      const openTools = new Set()
 
       // Callbacks may not sink the turn: a room that can't be told about
       // progress still gets its answer.
@@ -510,6 +511,19 @@ export const claude = {
           clearTimeout(timer)
           try { onReply({ text: event.result ?? '(no output)', isError: event.is_error }) } catch {}
           return
+        }
+        // The main agent's tool calls still out. When the last one's result
+        // comes back the model has the turn again, which `onToolsDone` reports.
+        // Before the subagent tracker, which may claim a subagent call's result.
+        if (event.type === 'user' && !event.parent_tool_use_id && openTools.size) {
+          const content = event.message?.content
+          for (const block of Array.isArray(content) ? content : []) {
+            if (block?.type === 'tool_result') openTools.delete(block.tool_use_id)
+          }
+          if (!openTools.size) { try { onToolsDone?.() } catch {} }
+        }
+        for (const block of mainAgentBlocks(event)) {
+          if (block?.type === 'tool_use' && block.id) openTools.add(block.id)
         }
         // Before the subagent tracker, which keeps a subagent's events to itself.
         artifacts?.(event)

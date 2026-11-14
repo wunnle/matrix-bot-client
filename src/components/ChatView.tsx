@@ -400,7 +400,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // Any typing member counts as "the run is alive": the room's bot isn't
   // separable from a peer by user id here (getRoomBotMeta only takes the first
   // other member), and a peer typing only keeps the row up a little longer.
-  const agentRun = useAgentRun(messages)
+  const agentRun = useAgentRun(messages, roomStatus.status)
   // Only whether the strip is showing, not its ticking contents — the clock
   // lives in AgentActivityBar so a tick doesn't repaint the timeline.
   const [agentActivity, setAgentActivity] = useState(false)

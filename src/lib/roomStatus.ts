@@ -1,7 +1,7 @@
 /**
  * What an agent room is doing, as the bot publishes it in room state
- * (scripts/room-status.mjs): the approval card waiting on you, if any, and the
- * Linear issue(s) the agent says it is working on.
+ * (scripts/room-status.mjs): the approval card waiting on you, if any, the
+ * Linear issue(s) the agent says it is working on, and what its turn is doing.
  *
  * Read from state, not from the newest message, so tool lines, subagent cards
  * or a late reply can neither hide a waiting card nor bring an answered one back.
@@ -17,10 +17,26 @@ export interface RoomStatusApproval {
   since: number
 }
 
+/** What the running turn is doing, as the bot knows it. */
+export interface RoomActivity {
+  /** 'thinking' = the model has the turn; 'tool' = a tool is running;
+   *  'background' = it answered, background work still running. */
+  phase: 'thinking' | 'tool' | 'background'
+  /** The tool's progress name ("terminal", "edit"), while one runs. */
+  tool?: string
+  /** Epoch ms this phase began. */
+  since: number
+  /** Epoch ms the turn began. */
+  turnSince: number
+}
+
 export interface RoomStatus {
   approval: RoomStatusApproval | null
   /** As the agent set them with construct-issue; empty when it hasn't. */
   issues: string[]
+  /** null = no turn running; undefined = this bot doesn't say (yet), so
+   *  the timeline is all there is to go by. */
+  activity: RoomActivity | null | undefined
   /** Epoch ms of the state event: anything newer than this, it hasn't heard of. */
   at: number
 }
@@ -41,7 +57,21 @@ export function parseRoomStatus(content: unknown, at: number): RoomStatus {
   const issues = Array.isArray(c.issues)
     ? [...new Set(c.issues.filter((k): k is string => typeof k === 'string' && ISSUE.test(k)))]
     : []
-  return { approval, issues, at }
+  return { approval, issues, activity: 'activity' in c ? parseActivity(c.activity) : undefined, at }
+}
+
+const PHASES = new Set(['thinking', 'tool', 'background'])
+
+function parseActivity(value: unknown): RoomActivity | null {
+  const a = value as Record<string, unknown> | null | undefined
+  if (!a || typeof a.phase !== 'string' || !PHASES.has(a.phase)) return null
+  const since = typeof a.since === 'number' ? a.since : 0
+  return {
+    phase: a.phase as RoomActivity['phase'],
+    tool: a.phase === 'tool' && typeof a.tool === 'string' && a.tool ? a.tool : undefined,
+    since,
+    turnSince: typeof a.turn_since === 'number' ? a.turn_since : since,
+  }
 }
 
 // The teams actually used, as in roomMedia.ts: a generic [A-Z]+-\d+ also

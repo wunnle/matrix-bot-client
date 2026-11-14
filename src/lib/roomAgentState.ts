@@ -104,7 +104,7 @@ export function roomAgentState(room: sdk.Room, userId: string, now: number): Roo
   if (blocked?.blocked) return { kind: 'blocked' }
 
   const botTyping = room.getMembers().some((m) => m.userId !== userId && m.typing)
-  const activity = agentActivityAt(agentRunFrom(messages), botTyping, Math.floor(now / 1000))
+  const activity = agentActivityAt(agentRunFrom(messages, status), botTyping, Math.floor(now / 1000))
   if (activity) return { kind: 'working', label: activity.label }
   // Some turns aren't started by a message of yours — a background task
   // finishing wakes the agent up after its last reply — so there is no run to

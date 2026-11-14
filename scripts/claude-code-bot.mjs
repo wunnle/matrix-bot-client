@@ -378,6 +378,38 @@ function updateRoomStatus(roomId, patch) {
   return write
 }
 
+// What the room's turn is doing (see room-status.mjs), so Construct's activity
+// bar and the room tile say what is actually happening rather than inferring a
+// "Thinking" from your last message. A run of quick tools changes it several
+// times a second, so writes go out at most every ACTIVITY_GAP_MS, the latest
+// value winning; the first change after a quiet spell goes out at once.
+const ACTIVITY_GAP_MS = 2000
+const activityNow = new Map()      // roomId -> activity | null, as last set
+const activityWritten = new Map()  // roomId -> the value last sent
+const activityTimers = new Map()   // roomId -> the gap before the next write
+function setActivity(roomId, next) {
+  const cur = activityNow.get(roomId) ?? null
+  if (!next && !cur) return
+  if (next && cur && next.phase === cur.phase && (next.tool ?? null) === (cur.tool ?? null)) return
+  const now = Date.now()
+  activityNow.set(roomId, next ? {
+    phase: next.phase,
+    ...(next.tool ? { tool: next.tool } : {}),
+    since: now,
+    turn_since: cur?.turn_since ?? now,
+  } : null)
+  if (!activityTimers.has(roomId)) writeActivity(roomId)
+}
+function writeActivity(roomId) {
+  const value = activityNow.get(roomId) ?? null
+  activityWritten.set(roomId, value)
+  void updateRoomStatus(roomId, { activity: value })
+  activityTimers.set(roomId, setTimeout(() => {
+    activityTimers.delete(roomId)
+    if ((activityNow.get(roomId) ?? null) !== activityWritten.get(roomId)) writeActivity(roomId)
+  }, ACTIVITY_GAP_MS))
+}
+
 // Codex can pause a turn to ask for structured input. These are not approvals:
 // any offered option is an answer, and free text is accepted only when Codex
 // says "other" is allowed. One card per room prevents replies crossing wires.
@@ -1225,6 +1257,7 @@ function runTurn(roomId, prompt) {
     },
     onProgress: (progress) => {
       resumeTyping(roomId)
+      setActivity(roomId, { phase: 'tool', tool: progress.tool })
       sendToolProgress(roomId, progress).catch((e) => log(`Could not post tool progress: ${e.message}`))
     },
     // What the agent says between tool calls. A real message, not machine
@@ -1233,6 +1266,7 @@ function runTurn(roomId, prompt) {
     onText: (text) => {
       if (stopped.has(roomId)) return
       resumeTyping(roomId)
+      setActivity(roomId, { phase: 'thinking' })
       sendRoomText(roomId, text, { 'com.construct.interim': true })
         .catch((e) => log(`Could not post interim text: ${e.message}`))
     },
@@ -1241,12 +1275,20 @@ function runTurn(roomId, prompt) {
     onReply: ({ text }) => {
       if (stopped.has(roomId)) return
       awaitingBackground.add(roomId)
+      setActivity(roomId, { phase: 'background' })
       client.sendTyping(roomId, false).catch(() => {})
       sendRoomText(roomId, text).catch((e) => log(`Could not post reply: ${e.message}`))
     },
     // A subagent's card, re-sent as it works; providers without subagents
     // never call it.
-    onSubagent: (card) => { cards.update(card) },
+    onSubagent: (card) => {
+      cards.update(card)
+      if (card.status === 'running') setActivity(roomId, { phase: 'tool', tool: 'agent' })
+    },
+    // Every tool the main agent started has returned: the model has the turn
+    // again. Providers that can't tell leave the last tool showing until the
+    // next thing happens.
+    onToolsDone: () => setActivity(roomId, { phase: 'thinking' }),
     onArtifact: (page) => {
       postArtifact(roomId, page).catch((e) => log(`Could not post artifact card: ${e.message}`))
     },
@@ -2004,6 +2046,7 @@ async function drainRoom(roomId, first, firstPrompt = null) {
   // Typing is cosmetic: a rate limit/outage must never abort the turn or
   // leave this room permanently busy before the cleanup block is installed.
   await client.sendTyping(roomId, true, 30000).catch(() => {})
+  setActivity(roomId, { phase: 'thinking' })
   const keepAlive = setInterval(() => {
     if (!awaitingBackground.has(roomId)) client.sendTyping(roomId, true, 30000).catch(() => {})
   }, 25000)
@@ -2107,6 +2150,7 @@ async function drainRoom(roomId, first, firstPrompt = null) {
     awaitingBackground.delete(roomId)
     busy.delete(roomId)
     if (sessions[roomId]?.turnRunning) { delete sessions[roomId].turnRunning; saveSessions() }
+    setActivity(roomId, null)
     await client.sendTyping(roomId, false).catch(() => {})
   }
 }
@@ -2757,7 +2801,9 @@ function clearStaleApprovals() {
   for (const room of client.getRooms()) {
     if (room.getMyMembership() !== 'join') continue
     const content = room.currentState.getStateEvents(ROOM_STATUS_EVENT, '')?.getContent()
-    if (parseRoomStatus(content).approval) void updateRoomStatus(room.roomId, { approval: null })
+    // Nor does a turn: one this restart cut off sets its own again when it resumes.
+    const { approval, activity } = parseRoomStatus(content)
+    if (approval || activity) void updateRoomStatus(room.roomId, { approval: null, activity: null })
   }
 }
 clearStaleApprovals()

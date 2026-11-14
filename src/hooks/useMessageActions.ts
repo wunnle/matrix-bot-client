@@ -4,10 +4,11 @@ import { isChoiceList, parseActions, pickedChoice } from '../lib/actions'
 import { approvalChoices, parseApprovalCard } from '../lib/approval'
 import { isBotToolProgress } from '../lib/toolProgress'
 import { isModelPicker } from '../lib/roomModel'
+import type { RoomStatus } from '../lib/roomStatus'
 
 /** What the newest bot message asks of you: its [[…]] answers, and which of
  *  the approval bar, the model menu, a lettered list or the pill row shows them. */
-export function useMessageActions(messages: Message[]) {
+export function useMessageActions(messages: Message[], status?: RoomStatus | null) {
   // Action pills reflect the last message only: once you reply (or the bot
   // says anything after), the previous message's [[buttons]] should clear.
   // Tool lines and mid-turn narration don't count as "saying anything" — the
@@ -27,15 +28,31 @@ export function useMessageActions(messages: Message[]) {
     () => (lastActionMessage ? parseActions(lastActionMessage.body).actions : []),
     [lastActionMessage],
   )
-  // That message, when it is an approval card: it gets the approval bar in
-  // place of the pill row.
+  // The card waiting on you gets the approval bar in place of the pill row.
+  // Where the bot publishes the room's status, that says which card it is, and
+  // whether any is. A card newer than the status is one the bot hasn't
+  // recorded yet (the write lags the post, or failed), so the newest message
+  // still counts then. Without a status (Hermes rooms, older bots), the newest
+  // message is all there is to go by.
   const pendingApproval = useMemo(() => {
-    if (!lastActionMessage) return null
-    const { approve, deny, always, session, auto } = approvalChoices(lastActions)
-    const card = approve ? parseApprovalCard(lastActionMessage.body) : null
-    if (!approve || !card) return null
-    return { msg: lastActionMessage, card, approve, deny, always, session, auto }
-  }, [lastActionMessage, lastActions])
+    const asCard = (m: Message | null | undefined) => {
+      if (!m) return null
+      const { approve, deny, always, session, auto } = approvalChoices(parseActions(m.body).actions)
+      const card = approve ? parseApprovalCard(m.body) : null
+      if (!approve || !card) return null
+      return { msg: m, card, approve, deny, always, session, auto }
+    }
+    const latest = asCard(lastActionMessage)
+    if (!status) return latest
+    if (status.approval) {
+      const id = status.approval.eventId
+      return asCard(messages.findLast((m) => m.eventId === id)) ?? latest
+    }
+    return latest && latest.msg.timestamp > status.at ? latest : null
+  }, [messages, lastActionMessage, status])
+  // An answered card's buttons are not reply pills either.
+  const answeredCard = !pendingApproval && !!lastActionMessage &&
+    !!approvalChoices(lastActions).approve && !!parseApprovalCard(lastActionMessage.body)
   // That message, when it is a model picker — the agent bot's answer to !model
   // ("Model: …" + [[!model <id>]]) or Hermes' to !switch ("Pick model:" +
   // [[/luna]]): the model menu lists its options, and the timeline hides it.
@@ -69,7 +86,7 @@ export function useMessageActions(messages: Message[]) {
   const openChoices = lastActionMessage && choiceLists[lastActionMessage.eventId] ? lastActions : null
   // The reply buttons the pill row shows: none when the model menu or the
   // lettered list stands in for them.
-  const pillActions = modelPicker || openChoices ? [] : lastActions
+  const pillActions = modelPicker || openChoices || answeredCard ? [] : lastActions
 
   return { lastActionMessage, pendingApproval, modelPicker, choiceLists, choiceReplies, openChoices, pillActions }
 }

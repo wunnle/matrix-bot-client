@@ -3,6 +3,7 @@ import { agentActivityAt, agentRunFrom, type RunMessage } from '../hooks/useAgen
 import { AGENT_BLOCKED_EVENT } from '../hooks/useAgentBlocked'
 import { parseActions } from './actions'
 import { getRoomOwners } from './roomOwners'
+import { ROOM_STATUS_EVENT, parseRoomStatus } from './roomStatus'
 
 /**
  * What a room tile should say about its agent, derived from the room as the
@@ -86,9 +87,16 @@ export function roomAgentState(room: sdk.Room, userId: string, now: number): Roo
     break
   }
 
+  // The bot's own word on whether a card is waiting, when it gives one; a card
+  // newer than that word is one it hasn't recorded yet (see useMessageActions).
+  const statusEvent = room.currentState.getStateEvents(ROOM_STATUS_EVENT as keyof sdk.StateEvents, '')
+  const status = statusEvent ? parseRoomStatus(statusEvent.getContent(), statusEvent.getTs()) : null
+  if (status?.approval) return { kind: 'approval' }
+
   if (last && !last.isOwnMessage) {
     const { actions } = parseActions(last.body)
-    if (actions.some((a) => a.toLowerCase() === 'approve')) return { kind: 'approval' }
+    const isCard = actions.some((a) => a.toLowerCase() === 'approve')
+    if (isCard && (!status || last.timestamp > status.at)) return { kind: 'approval' }
     if (last.body.startsWith('❓')) return { kind: 'question' }
   }
 

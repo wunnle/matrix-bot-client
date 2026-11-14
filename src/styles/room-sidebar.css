@@ -85,7 +85,8 @@
   background: var(--bg-active);
 }
 .room-sidebar-tab {
-  padding: 5px 10px;
+  padding: 5px 8px;
+  white-space: nowrap;
   border-radius: 7px;
   font-size: 13px;
   font-weight: 500;
@@ -408,3 +409,74 @@ button.room-sidebar-link {
   background: var(--accent);
   box-shadow: 0 0 0 2px var(--bg);
 }
+
+/* The Room tab: the agent's state up top, then what it is working on. */
+.room-overview { padding-top: 12px; }
+.room-overview-status {
+  --status: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--status);
+  border-radius: 10px;
+}
+.room-overview-status--approval { --status: var(--agent-approval); background: color-mix(in srgb, var(--agent-approval) 10%, transparent); }
+.room-overview-status--blocked { --status: var(--agent-blocked); background: color-mix(in srgb, var(--agent-blocked) 10%, transparent); }
+.room-overview-status--working { --status: var(--agent-working); }
+.room-overview-status-icon { flex: none; font-size: 20px; color: var(--status); }
+.room-overview-status--working .room-overview-status-icon { animation: room-overview-spin 1.2s linear infinite; }
+@keyframes room-overview-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .room-overview-status--working .room-overview-status-icon { animation: none; }
+}
+.room-overview-status-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.room-overview-status-title { font-size: 14px; font-weight: 600; color: var(--text-strong); }
+.room-overview-status-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.room-overview-status-action {
+  flex: none;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: var(--status);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+.room-overview-issue {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+.room-overview-issue:hover { background: var(--bg-hover); }
+.room-overview-issue-head { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+.room-overview-issue-head .room-sidebar-key { margin-right: 0; }
+.room-overview-issue-state { margin-left: auto; white-space: nowrap; }
+.room-overview-issue-title { font-size: 14px; font-weight: 500; color: var(--text-strong); line-height: 1.35; }
+.room-overview-issue-meta { font-size: 12px; color: var(--text-muted); }
+.room-overview-note { margin: 2px 8px 0; font-size: 12px; color: var(--text-faint); }
+.room-overview-shared {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: left;
+}
+.room-overview-shared:hover { background: var(--bg-hover); color: var(--text); }

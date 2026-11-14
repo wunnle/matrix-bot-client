@@ -31,6 +31,7 @@ import { roomTitle, fallbackTitle } from './room-title.mjs'
 import { LINEAR_INDEX_EVENT, issueKeys, withMentions } from './linear-index.mjs'
 import { ARTIFACT_INDEX_EVENT, SNAPSHOT_MAX_BYTES, artifactContent, artifactEdit, artifactIndex, createArtifactRegistry } from './artifact-cards.mjs'
 import { browserContent, browserUrl } from './browser-cards.mjs'
+import { ROOM_STATUS_EVENT, normalizeIssues, parseRoomStatus, patchRoomStatus } from './room-status.mjs'
 
 // Overridable so a second instance (e.g. against a test homeserver) keeps its
 // session, crypto store and counters apart from the production bot's.
@@ -308,6 +309,8 @@ const approvals = createApprovalQueue({
   // Waiting calls go through the same auto-mode and deploy-grant rules as new
   // ones, so turning either on from a card covers what queued up behind it too.
   autoAnswer: (roomId, request) => standingAnswer(roomId, request),
+  // The card is gone; Construct's approval bar goes with it (room-status.mjs).
+  onSettled: (roomId) => updateRoomStatus(roomId, { approval: null }),
   present: (roomId, request, abandon) => {
     const { toolName, summary, full, lang, allowSession = false, vetoReason, agentType } = request
     // "Approve + auto" only while auto mode is off: when it is on, this card is
@@ -339,12 +342,41 @@ const approvals = createApprovalQueue({
           },
         }
       : {}
-    sendRoomText(roomId, body, extra).catch((e) => {
+    sendRoomText(roomId, body, extra).then((sent) => {
+      // Only while this card is still the one waiting: an answer can land
+      // before the send comes back, and must not be undone by it.
+      if (!sent?.event_id || approvals.current(roomId) !== request) return
+      updateRoomStatus(roomId, {
+        approval: { event_id: sent.event_id, tool: toolName, agent: agentType, since: Date.now() },
+      })
+    }, (e) => {
       // If we can't ask, we must not proceed as though we had.
       abandon(`Could not post the approval request: ${e.message}`)
     })
   },
 })
+
+// The room's status as last written here, per room: a write's echo can lag
+// behind the next change, so that one builds on this, not on sync. Writes go
+// out one at a time per room, in order, so a clear never lands before the set
+// it follows. Best effort: Construct falls back to reading the newest message.
+const roomStatuses = new Map()
+const roomStatusWrites = new Map() // roomId -> the chain of writes
+function updateRoomStatus(roomId, patch) {
+  const base = roomStatuses.get(roomId)
+    ?? client.getRoom(roomId)?.currentState.getStateEvents(ROOM_STATUS_EVENT, '')?.getContent()
+  const next = patchRoomStatus(base, patch)
+  if (!next) return Promise.resolve(false)
+  roomStatuses.set(roomId, next)
+  const write = (roomStatusWrites.get(roomId) ?? Promise.resolve())
+    .then(() => client.sendStateEvent(roomId, ROOM_STATUS_EVENT, next, ''))
+    .then(() => true, (e) => {
+      log(`[${roomId}] could not update the room status: ${e.message}`)
+      return false
+    })
+  roomStatusWrites.set(roomId, write)
+  return write
+}
 
 // Codex can pause a turn to ask for structured input. These are not approvals:
 // any offered option is an answer, and free text is accepted only when Codex
@@ -818,6 +850,31 @@ function handleRename(req, res) {
   })
 }
 
+// construct-issue: the Linear issue(s) an agent says its room is working on,
+// for the room's status (room-status.mjs). An empty list clears it, and
+// Construct goes back to the ids in the room name.
+function handleIssue(req, res) {
+  let raw = ''
+  req.on('data', (c) => { raw += c })
+  req.on('end', async () => {
+    const reply = (status, payload) => {
+      res.writeHead(status, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(payload))
+    }
+    let payload
+    try { payload = JSON.parse(raw) } catch { return reply(400, { error: 'malformed request' }) }
+    const { roomId } = payload ?? {}
+    if (typeof roomId !== 'string' || !Array.isArray(payload?.issues)) return reply(400, { error: 'roomId and an issues list are required' })
+    const issues = normalizeIssues(payload.issues)
+    if (issues.length !== payload.issues.length) return reply(400, { error: `not issue ids: ${payload.issues.join(' ')}` })
+    if (client.getRoom(roomId)?.getMyMembership() !== 'join') return reply(404, { error: `not in ${roomId}` })
+    const changed = await updateRoomStatus(roomId, { issues })
+    // false is "nothing to change" or a failed write; the log says which.
+    if (changed) log(`[${roomId}] issues → ${issues.join(' ') || '(none)'}`)
+    reply(200, { issues })
+  })
+}
+
 // Scheduled jobs (systemd timers such as scripts/agent-review) start turns here
 // with no message to answer. Each job owns one room, found by its key and
 // spawned on first use, and every run starts a fresh session so a weekly job
@@ -896,6 +953,7 @@ function startApprovalBroker() {
     if (req.method === 'POST' && req.url.startsWith('/send-image')) return handleSendImage(req, res)
     if (req.method === 'POST' && req.url.startsWith('/browse')) return handleBrowse(req, res)
     if (req.method === 'POST' && req.url.startsWith('/rename')) return handleRename(req, res)
+    if (req.method === 'POST' && req.url.startsWith('/issue')) return handleIssue(req, res)
     if (req.method !== 'POST' || !req.url.startsWith('/approve')) {
       res.writeHead(404).end()
       return
@@ -1087,7 +1145,10 @@ const ROOM_NAME_INSTRUCTION =
   'moves to something else. When the work has a Linear issue, put its id ' +
   'first, e.g. "BEN-359 Scruffy captures" or "BEN-359 + BEN-364 Captures"; ' +
   'otherwise two or three words saying the task, not the tooling. Keep it ' +
-  'under 40 characters. Do not rename for a passing side question.'
+  'under 40 characters. Do not rename for a passing side question. When the ' +
+  'work has a Linear issue, also run `construct-issue BEN-359 [BEN-364]` (no ' +
+  'approval needed; `construct-issue --clear` when the work moves off it): ' +
+  'the room\'s side panel shows that issue.'
 
 // Runs one turn through the room's provider, resuming its session if it has one.
 // Everything provider-specific — how a turn is invoked, how instructions are
@@ -2688,6 +2749,18 @@ function loadBlockedState() {
   }
 }
 loadBlockedState()
+
+// Approval cards live in this process's memory: whatever a room's status says
+// was waiting died with the last one, and its hook has already given up. Left
+// standing, Construct would keep offering Approve on a card nobody awaits.
+function clearStaleApprovals() {
+  for (const room of client.getRooms()) {
+    if (room.getMyMembership() !== 'join') continue
+    const content = room.currentState.getStateEvents(ROOM_STATUS_EVENT, '')?.getContent()
+    if (parseRoomStatus(content).approval) void updateRoomStatus(room.roomId, { approval: null })
+  }
+}
+clearStaleApprovals()
 
 // Rooms the last process died in mid-turn — usually the deploy flow restarting
 // this service from inside one of them. Their final message never went out, so

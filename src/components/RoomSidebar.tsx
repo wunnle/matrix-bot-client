@@ -10,6 +10,8 @@ import BrowserPanel from './BrowserPanel'
 const LINEAR_PATH = 'M2.886 4.18A11.982 11.982 0 0 1 11.99 0C18.624 0 24 5.376 24 12.009c0 3.64-1.62 6.903-4.18 9.105L2.887 4.18ZM1.817 5.626l16.556 16.556c-.524.33-1.075.62-1.65.866L.951 7.277c.247-.575.537-1.126.866-1.65ZM.322 9.163l14.515 14.515c-.71.172-1.443.282-2.195.322L0 11.358a12 12 0 0 1 .322-2.195Zm-.17 4.862 9.823 9.824a12.02 12.02 0 0 1-9.824-9.824Z'
 const GITHUB_PATH = 'M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'
 
+const linearUrl = (key: string) => `https://linear.app/wunnle/issue/${key}`
+
 const day = (ts: number) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 // A date-only yyyy-mm-dd is that day wherever you are, not UTC midnight.
 const targetDay = (date: string) => day(new Date(`${date}T12:00:00`).getTime())
@@ -27,6 +29,36 @@ function ago(iso: string): string {
 
 // Linear's own state colours, when they are colours.
 const stateColor = (s?: LinearState) => (s?.color && /^#[0-9a-f]{3,8}$/i.test(s.color) ? s.color : 'var(--text-muted)')
+
+const since = (ts: number) => {
+  const mins = Math.floor((Date.now() - ts) / 60000)
+  return mins < 1 ? 'just now' : mins < 60 ? `for ${mins}m` : `for ${Math.floor(mins / 60)}h ${mins % 60}m`
+}
+
+/** The Room tab's headline: what the agent needs from you, or what it is doing. */
+function OverviewStatus({ overview, onJump }: { overview: RoomOverview; onJump: (eventId: string) => void }) {
+  const { approval, blocked, working } = overview
+  const [kind, icon, title, sub] = approval
+    ? ['approval', 'lock', 'Waiting for your approval',
+        [approval.tool, approval.agent && `from ${approval.agent}`, approval.target].filter(Boolean).join(' · ')]
+    : blocked
+      ? ['blocked', 'block', 'Stuck on its usage limit', blocked]
+      : working
+        ? ['working', 'progress_activity', working.label, [working.detail, since(working.startedAt)].filter(Boolean).join(' · ')]
+        : ['idle', 'pause_circle', 'Idle', 'Not running anything']
+  return (
+    <section className={`room-overview-status room-overview-status--${kind}`} aria-live="polite">
+      <span className="material-symbols-outlined room-overview-status-icon" aria-hidden="true">{icon}</span>
+      <div className="room-overview-status-text">
+        <span className="room-overview-status-title">{title}</span>
+        {sub && <span className="room-overview-status-sub">{sub}</span>}
+      </div>
+      {approval && (
+        <button type="button" className="room-overview-status-action" onClick={() => onJump(approval.eventId)}>Show</button>
+      )}
+    </section>
+  )
+}
 
 /** A project's progress as Linear draws it: a ring in its status colour. */
 function ProgressRing({ percent, color }: { percent: number; color: string }) {
@@ -53,7 +85,24 @@ function ProgressRing({ percent, color }: { percent: number; color: string }) {
  * at a time, from the copy the bot keeps (claude.ai itself can't be framed).
  * The Browser tab opens any page beside the chat (BrowserPanel).
  */
-export type SidebarTab = 'artifacts' | 'browser' | 'shared'
+export type SidebarTab = 'room' | 'artifacts' | 'browser' | 'shared'
+
+/**
+ * The Room tab: what the agent is doing now and what it is working on, from
+ * room state (useRoomStatus, useAgentBlocked) and the run in the timeline.
+ */
+export interface RoomOverview {
+  /** The approval card waiting on you. */
+  approval: { tool: string; agent?: string; target?: string; eventId: string } | null
+  /** Why the agent is stuck (its usage limit), when it is. */
+  blocked: string | null
+  /** The run in flight. */
+  working: { label: string; detail?: string; startedAt: number } | null
+  /** The Linear issues the room is about. */
+  issues: string[]
+  /** 'agent' when it said so (construct-issue), 'name' when read from the room name. */
+  issuesFrom: 'agent' | 'name' | null
+}
 
 // The panel's width on wide screens, dragged by its left edge and remembered.
 // A page and a list want different widths, so each keeps its own; unset, the
@@ -75,8 +124,10 @@ function clampWidth(w: number): number {
   return Math.round(Math.max(MIN_WIDTH, Math.min(w, window.innerWidth - CHAT_MIN)))
 }
 
-export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, onLoadMore, onJump, onOpenImage, onClose, motion, onMotionEnd, tab, onTab, openArtifact, onOpenArtifact, browserUrl, onBrowserUrl, roomId, linearSample }: {
+export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, onLoadMore, onJump, onOpenImage, onClose, motion, onMotionEnd, tab, onTab, openArtifact, onOpenArtifact, browserUrl, onBrowserUrl, roomId, linearSample, overview }: {
   media: RoomMedia
+  /** The Room tab's contents; without it there is no Room tab. */
+  overview?: RoomOverview
   /** Resolved image/file URLs by event id. */
   mediaUrls: Record<string, string>
   hasMore: boolean
@@ -103,7 +154,10 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
 }) {
   // No artifacts, no Artifacts tab.
   const hasArtifacts = media.artifacts.length > 0
-  const current: SidebarTab = tab === 'browser' ? 'browser' : hasArtifacts && tab === 'artifacts' ? 'artifacts' : 'shared'
+  const current: SidebarTab = tab === 'browser' ? 'browser'
+    : hasArtifacts && tab === 'artifacts' ? 'artifacts'
+    : overview && (tab === 'room' || (tab === 'artifacts' && !hasArtifacts)) ? 'room'
+    : 'shared'
   const shown = current === 'artifacts' && openArtifact !== null
     ? media.artifacts.find((a) => a.id === openArtifact) ?? media.artifacts[0]
     : null
@@ -168,7 +222,16 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
     return [...groups.entries()]
   }, [media.links])
 
-  const linear = useLinearInfo(media, linearSample)
+  // The Room tab's issues are looked up with the rest, in the same request.
+  const overviewIssues = overview?.issues
+  const lookup = useMemo(() => {
+    const known = new Set(media.refs.map((r) => r.label))
+    const extra: RoomRef[] = (overviewIssues ?? []).filter((k) => !known.has(k)).map((k) => ({
+      kind: 'linear', label: k, url: linearUrl(k), eventId: '', timestamp: 0,
+    }))
+    return extra.length ? { ...media, refs: [...media.refs, ...extra] } : media
+  }, [media, overviewIssues])
+  const linear = useLinearInfo(lookup, linearSample)
   // Issues under their projects, as agents hang under their parents in the
   // room list: each project (linked, or known from an issue's details) with its
   // issues, then the issues without one and the PRs, newest first throughout.
@@ -276,6 +339,17 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
   // Artifacts have their own tab; the Shared one is empty without the rest.
   const empty = isEmptyRoomMedia({ ...media, artifacts: [] })
 
+  // For the Room tab: the newest PRs, and a one-line count of the rest.
+  const prs = media.refs.filter((r) => r.kind === 'github').slice(0, 3)
+  const sharedCounts = ([
+    [media.refs.length + media.projects.length, 'issue & PR', 'issues & PRs'],
+    [media.notes.length, 'note', 'notes'],
+    [media.links.length, 'link', 'links'],
+    [media.images.length, 'image', 'images'],
+    [media.files.length, 'file', 'files'],
+    [media.places.length, 'place', 'places'],
+  ] as const).filter(([n]) => n > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`)
+
   return (
     <aside
       ref={asideRef}
@@ -304,6 +378,15 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
       />
       <div className="room-sidebar-header">
         <div className="room-sidebar-tabs" role="tablist" aria-label="Side panel">
+          {overview && (
+            <button
+              type="button" role="tab" aria-selected={current === 'room'}
+              className={`room-sidebar-tab${current === 'room' ? ' room-sidebar-tab--on' : ''}`}
+              onClick={() => onTab('room')}
+            >
+              Room
+            </button>
+          )}
           {hasArtifacts && (
             <button
               type="button" role="tab" aria-selected={current === 'artifacts'}
@@ -331,7 +414,73 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
         <button type="button" className="room-sidebar-close" aria-label="Close" onClick={onClose}>✕</button>
       </div>
 
-      {current === 'browser' ? (
+      {current === 'room' && overview ? (
+        <div className="room-sidebar-body room-overview">
+          <OverviewStatus overview={overview} onJump={onJump} />
+
+          {overview.issues.length > 0 && (
+            <section className="room-sidebar-section">
+              <h3>Working on</h3>
+              {overview.issues.map((key) => {
+                const issue = linear.issues[key]
+                const project = issue?.project ? linear.projects[issue.project] : undefined
+                return (
+                  <a key={key} className="room-overview-issue" href={linearUrl(key)} target="_blank" rel="noopener noreferrer">
+                    <span className="room-overview-issue-head">
+                      <svg className="room-sidebar-ref-icon" viewBox="0 0 24 24" aria-hidden="true"><path d={LINEAR_PATH} /></svg>
+                      <span className="room-sidebar-key">{key}</span>
+                      {issue && (
+                        <span className="room-overview-issue-state">
+                          <span className="room-sidebar-dot" style={{ background: stateColor(issue.state) }} />
+                          {issue.state.name}
+                        </span>
+                      )}
+                    </span>
+                    <span className="room-overview-issue-title">{issue?.title ?? 'Loading from Linear…'}</span>
+                    {issue && (
+                      <span className="room-overview-issue-meta">
+                        {[project?.name, issue.priorityLabel, issue.assignee, `updated ${ago(issue.updatedAt)}`].filter(Boolean).join(' · ')}
+                      </span>
+                    )}
+                  </a>
+                )
+              })}
+              {overview.issuesFrom === 'name' && <p className="room-overview-note">From the room name</p>}
+            </section>
+          )}
+
+          {(media.artifacts.length > 0 || browserUrl || prs.length > 0) && (
+            <section className="room-sidebar-section">
+              <h3>Latest</h3>
+              {media.artifacts[0] && row(`artifact:${media.artifacts[0].id}`, media.artifacts[0].eventId, {
+                onOpen: () => { onOpenArtifact(media.artifacts[0].id); onTab('artifacts') },
+                title: media.artifacts[0].title ?? 'Artifact',
+                sub: `Artifact · ${day(media.artifacts[0].timestamp)}`,
+                icon: <span className="material-symbols-outlined room-sidebar-note-icon" aria-hidden="true">article</span>,
+              })}
+              {browserUrl && (
+                <div className="room-sidebar-row">
+                  <span className="material-symbols-outlined room-sidebar-note-icon" aria-hidden="true">public</span>
+                  <div className="room-sidebar-row-text">
+                    <button type="button" className="room-sidebar-link" onClick={() => onTab('browser')} title={browserUrl}>
+                      {browserUrl.replace(/^https?:\/\/(www\.)?/, '')}
+                    </button>
+                    <div className="room-sidebar-meta"><span>Open in the Browser tab</span></div>
+                  </div>
+                </div>
+              )}
+              {prs.map((r) => refRow(r))}
+            </section>
+          )}
+
+          {sharedCounts.length > 0 && (
+            <button type="button" className="room-overview-shared" onClick={() => onTab('shared')}>
+              <span>{sharedCounts.join(' · ')}</span>
+              <span className="material-icons" aria-hidden="true">chevron_right</span>
+            </button>
+          )}
+        </div>
+      ) : current === 'browser' ? (
         <BrowserPanel url={browserUrl} onUrl={onBrowserUrl} roomId={roomId} />
       ) : shown ? (
         <div className="artifact-view">

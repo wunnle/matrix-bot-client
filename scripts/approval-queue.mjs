@@ -16,7 +16,10 @@
 // by returning a { decision, reason }. It is consulted as each one comes up:
 // auto mode switched on while a card was showing must also cover the calls
 // queued behind it, not only the ones that arrive later.
-export function createApprovalQueue({ timeoutMs, maxQueued = 5, present, onTimeout, autoAnswer }) {
+// `onSettled(roomId, request)` hears that the card on screen is gone — answered,
+// timed out or released — before the next one (if any) is shown, so whatever
+// mirrors "a card is waiting" can clear it.
+export function createApprovalQueue({ timeoutMs, maxQueued = 5, present, onTimeout, autoAnswer, onSettled }) {
   // roomId -> { id, resolve, timer, toolName, request }. One question on screen at a
   // time: two cards in a room are ambiguous, because [[Approve]] names no card.
   const pending = new Map()
@@ -31,6 +34,7 @@ export function createApprovalQueue({ timeoutMs, maxQueued = 5, present, onTimeo
     const { id, resolve, request } = entry
     const timer = setTimeout(() => {
       pending.delete(roomId)
+      onSettled?.(roomId, request)
       onTimeout?.(roomId, request.toolName)
       resolve({ decision: 'deny', reason: 'Timed out waiting for approval.' })
       next(roomId)
@@ -86,6 +90,7 @@ export function createApprovalQueue({ timeoutMs, maxQueued = 5, present, onTimeo
     if (!current) return false
     clearTimeout(current.timer)
     pending.delete(roomId)
+    onSettled?.(roomId, current.request)
     current.resolve({ decision, reason })
     // Whoever was behind it has been waiting in silence; ask them now.
     next(roomId)

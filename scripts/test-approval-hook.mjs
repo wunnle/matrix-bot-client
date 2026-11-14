@@ -76,6 +76,8 @@ const CASES = [
   ['/tmp/construct-activity start --id x --title y', 'deny'],             // not the PATH one
   ['construct-browse https://example.com --title Docs', 'allow'],
   ['construct-rename "BEN-359 Scruffy captures"', 'allow'],
+  ['construct-issue BEN-359 BEN-364', 'allow'],
+  ['construct-issue --clear', 'allow'],
   ['construct-preview 5173 --title "Dev server"', 'allow'],
   ['construct-preview off 5173', 'allow'],
   // With -- it starts a command, which is judged on its own.

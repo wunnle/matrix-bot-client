@@ -155,5 +155,20 @@ await check('calls queued behind a card are auto-answered once auto mode is on',
   assert.equal(aq.settle(R, 'allow', 'x'), false, 'nothing is left on screen')
 })
 
-console.log(failed ? `\n${failed} failed` : '\n10/10 approval queue assertions passed')
+await check('onSettled hears each card leave the screen, before the next is shown', async () => {
+  const events = []
+  const sq = createApprovalQueue({
+    timeoutMs: 50,
+    present: (roomId, request) => events.push(`show ${request.toolName}`),
+    onSettled: (roomId, request) => events.push(`gone ${request.toolName}`),
+  })
+  const a = sq.ask(R, { toolName: 'A' })
+  const b = sq.ask(R, { toolName: 'B' })
+  sq.settle(R, 'allow', 'ok')
+  await a
+  await b // B times out
+  assert.deepEqual(events, ['show A', 'gone A', 'show B', 'gone B'])
+})
+
+console.log(failed ? `\n${failed} failed` : '\n11/11 approval queue assertions passed')
 process.exit(failed ? 1 : 0)

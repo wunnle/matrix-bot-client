@@ -40,7 +40,7 @@ import { useSpeechDictation } from '../hooks/useSpeechDictation'
 import { useToast } from '../hooks/useToast'
 import { useVisualViewportResize } from '../hooks/useVisualViewport'
 import RoomEditor from './RoomEditor'
-import RoomSidebar, { type SidebarTab } from './RoomSidebar'
+import RoomSidebar, { type RoomOverview, type SidebarTab } from './RoomSidebar'
 import { collectRoomMedia } from '../lib/roomMedia'
 import { HeaderUsageBar } from './PlanUsageMeter'
 import { usePlanUsage, useCodexUsage } from '../hooks/usePlanUsage'
@@ -55,6 +55,7 @@ import { artifactIdOf, parseArtifact } from '../lib/artifact'
 import { parseBrowserPage, storedPage, storePage } from '../lib/browser'
 import { useArtifactIndex, useArtifactsUpdatedAt } from '../hooks/useArtifactIndex'
 import { useLinearIndex } from '../hooks/useLinearIndex'
+import { useRoomStatus } from '../hooks/useRoomStatus'
 import { formAnswerBody, FORM_RESPONSE_KEY } from '../lib/form'
 import { locationContent } from '../lib/location'
 import LocationPicker from './LocationPicker'
@@ -245,7 +246,9 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     void copyTextToClipboard(text).then(() => showToast('Copied'))
   }, [showToast])
 
-  const { lastActionMessage, pendingApproval, modelPicker, choiceLists, choiceReplies, openChoices, pillActions } = useMessageActions(messages)
+  // What the bot says the room is doing: the approval card waiting, the issue.
+  const roomStatus = useRoomStatus(client, roomId)
+  const { lastActionMessage, pendingApproval, modelPicker, choiceLists, choiceReplies, openChoices, pillActions } = useMessageActions(messages, roomStatus.status)
   // The header chip's dropdown, holding the command it sent. It opens at once
   // and loads for as long as that command is still the last word.
   const [modelMenuRequest, setModelMenuRequest] = useState<string | null>(null)
@@ -1626,11 +1629,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       ?.querySelector(`[data-event-id="${window.CSS.escape(msg.eventId)}"]`)
       ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
-  // The side panel of what was shared here. A column on wide screens, which
-  // stays open across rooms and launches; a sheet on the phone, closed each time.
-  const [showSidebar, setShowSidebar] = useState(
-    () => window.matchMedia(WIDE).matches && localStorage.getItem(SIDEBAR_KEY) === '1',
-  )
+  // The room's side panel. A column on wide screens, open unless you closed it
+  // (remembered across rooms and launches); a sheet on the phone, closed each time.
+  const [showSidebar, setShowSidebar] = useState(() => {
+    if (!window.matchMedia(WIDE).matches) return false
+    try { return localStorage.getItem(SIDEBAR_KEY) !== '0' } catch { return true }
+  })
   // It slides in when opened and out when closed, staying mounted until it is
   // gone ('out'). Not when it was already open on arrival, and not at all with
   // reduced motion. The timer ends it if the animation never runs (a hidden tab).
@@ -1646,12 +1650,14 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     return () => clearTimeout(timer)
   }, [sidebarMotion])
   const sidebarMounted = showSidebar || sidebarMotion === 'out'
-  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('artifacts')
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('room')
   const toggleSidebar = (open: boolean) => {
-    // Opening starts on Artifacts (the tab only exists when the room has any).
-    if (open) setSidebarTab('artifacts')
+    // Opening starts on the Room tab: what the agent is doing.
+    if (open) setSidebarTab('room')
     setShowSidebar(open)
-    if (window.matchMedia(WIDE).matches) localStorage.setItem(SIDEBAR_KEY, open ? '1' : '0')
+    if (window.matchMedia(WIDE).matches) {
+      try { localStorage.setItem(SIDEBAR_KEY, open ? '1' : '0') } catch { /* not remembered */ }
+    }
   }
   const loadedMedia = useMemo(() => (sidebarMounted ? collectRoomMedia(messages) : null), [sidebarMounted, messages])
   // Artifacts whose cards are further back than the loaded messages, found
@@ -1686,6 +1692,15 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       : loadedMedia),
     [loadedMedia, indexedArtifacts, indexedIssues],
   )
+  const roomOverview = useMemo<RoomOverview>(() => ({
+    approval: pendingApproval
+      ? { tool: pendingApproval.card.tool, agent: pendingApproval.card.agent, target: pendingApproval.card.target, eventId: pendingApproval.msg.eventId }
+      : null,
+    blocked: agentBlocked ? blockedHeadline(agentBlocked.reason) : null,
+    working: agentRun ? { label: agentRun.label, detail: agentRun.detail, startedAt: agentRun.startedAt } : null,
+    issues: roomStatus.issues,
+    issuesFrom: roomStatus.issuesFrom,
+  }), [pendingApproval, agentBlocked, agentRun, roomStatus])
   // Artifacts open on their own tab, newest first unless one was picked
   // (undefined: the newest; null: the list).
   const [openArtifact, setOpenArtifact] = useState<string | null | undefined>(undefined)
@@ -1741,12 +1756,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       client.off(sdk.MatrixEventEvent.Decrypted, consider)
     }
   }, [client, roomId, showArtifact, showBrowser])
-  // Each room opens on Artifacts and its newest page: reset while rendering the
-  // new room, not in an effect after it.
+  // Each room opens on the Room tab, its newest artifact ready behind
+  // Artifacts: reset while rendering the new room, not in an effect after it.
   const [artifactRoom, setArtifactRoom] = useState(roomId)
   if (artifactRoom !== roomId) {
     setArtifactRoom(roomId)
-    setSidebarTab('artifacts')
+    setSidebarTab('room')
     setOpenArtifact(undefined)
     setBrowserPage(storedPage(roomId))
     setArtifactsSeenAt(storedSeen(roomId))
@@ -2507,6 +2522,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
         browserUrl={browserPage ?? latestSentPage}
         onBrowserUrl={changeBrowserPage}
         roomId={roomId}
+        overview={roomOverview}
       />
     )}
     </div>

@@ -9,7 +9,7 @@ import type { LinearInfo } from '../lib/linearInfo'
 import { MessageRow, type MessageRowProps } from '../components/chat/MessageRow'
 import ApprovalBar from '../components/ApprovalBar'
 import { AgentActivityBar } from '../components/AgentActivityBar'
-import RoomSidebar from '../components/RoomSidebar'
+import RoomSidebar, { type RoomOverview } from '../components/RoomSidebar'
 import { AgentRoomRow, InviteTile, SortableRoomCard, SpawnTile } from '../components/RoomList'
 import { agentTree } from '../lib/agentTree'
 import { AVATAR_BG, CANDIDATES, SHADES, SPRITES, spriteSvg } from './sprites'
@@ -151,6 +151,23 @@ const LINEAR_SAMPLE: LinearInfo = {
     'dd7fa7cb6ef3': { name: 'Colonist Copilot', url: 'https://linear.app/wunnle/project/colonist-copilot-dd7fa7cb6ef3', status: { name: 'Planned', color: '#d7d8db', type: 'planned' }, progress: 50, targetDate: '2026-11-15' },
   },
 }
+
+const OVERVIEW_SAMPLES: RoomOverview[] = [
+  {
+    approval: { tool: 'Bash', target: 'git push origin agent/room-status', eventId: '$card' },
+    blocked: null,
+    working: { label: 'Running a command', startedAt: NOW - 4 * 60_000 },
+    issues: ['BEN-336'],
+    issuesFrom: 'agent',
+  },
+  {
+    approval: null,
+    blocked: null,
+    working: { label: 'Editing', detail: 'RoomSidebar.tsx', startedAt: NOW - 70 * 60_000 },
+    issues: ['BEN-335', 'BEN-263'],
+    issuesFrom: 'name',
+  },
+]
 
 const room = (name: string, extra: Partial<RoomSummary> = {}): RoomSummary =>
   ({ roomId: `!${name}`, name, unreadCount: 0, membership: 'join', ...extra })
@@ -346,6 +363,31 @@ export default function DesignLibrary() {
             <button className="pill pill-add">+</button>
           </div>
         </Frame>
+      </Section>
+
+      <Section title="Room panel" note="The side panel's first tab: what the agent needs from you or is doing (from the bot's room status), the issue it is working on, and the newest things it made. An approval waiting, then a run in progress with the issue read from the room name.">
+        {OVERVIEW_SAMPLES.map((overview, i) => (
+          <Frame key={i} className="dl-shared">
+            <RoomSidebar
+              media={SHARED}
+              mediaUrls={SHARED_URLS}
+              hasMore={false}
+              loadingMore={false}
+              onLoadMore={noop}
+              onJump={noop}
+              onOpenImage={noop}
+              onClose={noop}
+              tab="room"
+              onTab={noop}
+              openArtifact={null}
+              onOpenArtifact={noop}
+              browserUrl={null}
+              onBrowserUrl={noop}
+              linearSample={LINEAR_SAMPLE}
+              overview={overview}
+            />
+          </Frame>
+        ))}
       </Section>
 
       <Section title="Shared panel" note="Links, images, files, places, Linear issues and projects and PRs from the loaded messages: with Linear's details, and without them (no key, or Linear down).">

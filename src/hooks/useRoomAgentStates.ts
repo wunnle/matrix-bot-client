@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import { getClient } from '../lib/matrix'
 import { AGENT_BLOCKED_EVENT } from './useAgentBlocked'
+import { ROOM_STATUS_EVENT } from '../lib/roomStatus'
 import { roomAgentState, sameAgentState, type RoomAgentState } from '../lib/roomAgentState'
 
 // Runs go stale on the clock, not on events, so re-derive everything this
@@ -60,7 +61,7 @@ export function useRoomAgentStates(
     const onDecrypted = (e: sdk.MatrixEvent) => mark(e.getRoomId())
     const onTyping = (_e: sdk.MatrixEvent, member: sdk.RoomMember) => mark(member.roomId)
     const onState = (e: sdk.MatrixEvent) => {
-      if (e.getType() === AGENT_BLOCKED_EVENT) mark(e.getRoomId())
+      if (e.getType() === AGENT_BLOCKED_EVENT || e.getType() === ROOM_STATUS_EVENT) mark(e.getRoomId())
     }
     const onVisible = () => { if (document.visibilityState === 'visible') markAll() }
 

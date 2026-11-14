@@ -10,8 +10,26 @@
 // nothing matches as a substring. Within a tier, the most recently active item
 // wins, then the shorter title.
 
+/**
+ * Lowercase, accents off, Turkish-forgiving: İ/I/ı all become i, Ş → s,
+ * Ğ → g, Ç → c, Ö → o, Ü → u. Character for character, so an index into the
+ * folded string is the same index into the original — Highlight and snippet
+ * rely on that to mark the match in the text as written.
+ */
+export function fold(s) {
+  let out = ''
+  for (const c of String(s ?? '')) {
+    // ı has no decomposition; İ lowercases to i + a combining dot.
+    const f = c === 'ı' || c === 'İ' ? 'i' : c.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    // Keep the length: anything that folds to nothing or to several chars
+    // (ligatures) stays one char per char of the original.
+    out += f.length === c.length ? f : c.toLowerCase().length === c.length ? c.toLowerCase() : c
+  }
+  return out
+}
+
 function norm(s) {
-  return String(s ?? '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').trim()
+  return fold(s).trim()
 }
 
 function isSubsequence(needle, hay) {
@@ -57,7 +75,7 @@ export function snippet(text, query, max = 90) {
   const flat = String(text).replace(/\s+/g, ' ').trim()
   if (flat.length <= max) return flat
   const q = norm(query)
-  const lower = flat.toLowerCase()
+  const lower = fold(flat)
   let at = lower.indexOf(q)
   if (at < 0) at = q.split(/\s+/).map((w) => lower.indexOf(w)).find((i) => i >= 0) ?? 0
   // A little lead-in before the match, so it reads as a sentence.

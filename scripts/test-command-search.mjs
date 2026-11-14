@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { matchTier, rankCommands, textMatches, snippet } from '../src/lib/commandSearch.js'
+import { fold, matchTier, rankCommands, textMatches, snippet } from '../src/lib/commandSearch.js'
 
 const rooms = [
   { title: 'BEN-359 Scruffy captures', recency: 100 },
@@ -41,5 +41,18 @@ const long = 'Lorem ipsum dolor sit amet, '.repeat(10) + 'the palette shipped to
 const s = snippet(long, 'palette', 60)
 assert.ok(s.includes('palette') && s.startsWith('…') && s.endsWith('…') && s.length <= 62, s)
 assert.equal(snippet('short\nline', 'x'), 'short line')
+
+// Turkish: dotted/dotless i and the cedilla/breve letters fold to plain Latin,
+// either way round, keeping the length so highlights line up.
+assert.equal(matchTier('irem', 'İrem'), 4)
+assert.equal(matchTier('sapka', 'Şapka'), 4)
+assert.equal(matchTier('ırmak', 'Irmak'), 4)
+assert.equal(matchTier('IRMAK', 'ırmak'), 4)
+assert.equal(matchTier('şapka', 'sapka'), 4)
+assert.equal(matchTier('cig kofte', 'Çiğ köfte'), 4)
+assert.equal(textMatches('irem', 'İREM geliyor mu?'), true)
+assert.equal(fold('İrem Şapka Iğdır').length, 'İrem Şapka Iğdır'.length)
+assert.equal(fold('İrem Şapka Iğdır'), 'irem sapka igdir')
+assert.ok(snippet('x '.repeat(80) + 'İrem dedi ki ' + 'y '.repeat(80), 'irem', 40).includes('İrem'))
 
 console.log('command search: prefix > word > substring > loose, recency tiebreak OK')

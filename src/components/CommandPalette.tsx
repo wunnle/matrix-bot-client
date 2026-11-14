@@ -1,6 +1,6 @@
 import { Fragment, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { rankCommands } from '../lib/commandSearch'
+import { fold, rankCommands } from '../lib/commandSearch'
 import { sheetHost } from '../lib/roomView'
 import { isPaletteShortcut } from '../lib/paletteKeys'
 
@@ -210,9 +210,10 @@ export default function CommandPalette({ commands, searchMessages, onClose }: {
 
 /** The title with the typed text marked: the whole query, else each word. */
 function Highlight({ text, query }: { text: string; query: string }): ReactNode {
-  const q = query.trim().toLowerCase()
+  const q = fold(query.trim())
   if (!q) return text
-  const lower = text.toLowerCase()
+  // Same length as text, so the indexes below mark the original letters.
+  const lower = fold(text)
   const words = lower.includes(q) ? [q] : q.split(/\s+/).filter(Boolean)
   const marks: [number, number][] = []
   for (const w of words) {

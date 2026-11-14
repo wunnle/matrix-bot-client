@@ -82,6 +82,7 @@ import { useTypingUsers } from '../hooks/useTypingUsers'
 import { useRoomHeaderInfo } from '../hooks/useRoomHeaderInfo'
 import { usePinnedMessages } from '../hooks/usePinnedMessages'
 import { useMessageActions } from '../hooks/useMessageActions'
+import { fold } from '../lib/commandSearch'
 
 interface Props {
   roomId: string
@@ -1117,8 +1118,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       setSuggestions([])
       return
     }
-    const q = input.toLowerCase()
-    setSuggestions(all.filter((s) => s.toLowerCase().includes(q)).slice(0, 5))
+    const q = fold(input)
+    setSuggestions(all.filter((s) => fold(s).includes(q)).slice(0, 5))
   }, [input, config])
 
   const onAutoSend = useCallback((text: string) => {

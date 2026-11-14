@@ -12,7 +12,8 @@ const LINEAR_WORKSPACE = 'wunnle'
 
 interface Entry { key: string; eventId: string; at: number }
 
-function parse(content: unknown): Entry[] {
+/** The index's entries, malformed ones dropped. Also read by the ⌘K palette. */
+export function parseLinearIndex(content: unknown): Entry[] {
   const list = (content as { issues?: unknown } | null)?.issues
   if (!Array.isArray(list)) return []
   return list.flatMap((raw) => {
@@ -41,7 +42,7 @@ export function useLinearIndex(client: sdk.MatrixClient, roomId: string, enabled
   return useMemo(() => {
     if (!enabled) return []
     const have = new Set(loadedKey.split(' '))
-    return parse(indexEvent?.getContent())
+    return parseLinearIndex(indexEvent?.getContent())
       .filter((e) => !have.has(e.key))
       .map((e) => ({
         kind: 'linear' as const,

@@ -1,0 +1,60 @@
+// Ranking for the ⌘K palette (CommandPalette.tsx). Plain JS so the node tests
+// in scripts/test-command-search.mjs can import it without a build step.
+//
+// Tiers, best first:
+//   4  the title starts with the query ("ben-3" → "BEN-359 Scruffy captures")
+//   3  a word in the title starts with it ("scruf" → "BEN-359 Scruffy …")
+//   2  the title (or a keyword) contains it, or every word of the query
+//   1  loose: the query's letters appear in order ("bscr" → "BEN-359 Scruffy")
+// Loose matches are noise next to real ones, so they only come back when
+// nothing matches as a substring. Within a tier, the most recently active item
+// wins, then the shorter title.
+
+function norm(s) {
+  return String(s ?? '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').trim()
+}
+
+function isSubsequence(needle, hay) {
+  let i = 0
+  for (let j = 0; j < hay.length && i < needle.length; j++) if (hay[j] === needle[i]) i++
+  return i === needle.length
+}
+
+/** 0 when the item does not match at all. */
+export function matchTier(query, title, keywords = []) {
+  const q = norm(query)
+  if (!q) return 1
+  const t = norm(title)
+  if (t.startsWith(q)) return 4
+  if (t.split(/[\s\-_·/:]+/).some((w) => w && w.startsWith(q))) return 3
+  const fields = [t, ...keywords.map(norm)]
+  if (fields.some((f) => f.includes(q))) return 2
+  const words = q.split(/\s+/).filter(Boolean)
+  const all = fields.join(' ')
+  if (words.length > 1 && words.every((w) => all.includes(w))) return 2
+  const squashed = q.replace(/\s+/g, '')
+  if (fields.some((f) => isSubsequence(squashed, f))) return 1
+  return 0
+}
+
+/**
+ * Items matching `query`, best first. An item is {title, keywords?, recency?}
+ * plus whatever the caller needs; `recency` is a timestamp (higher = newer).
+ */
+export function rankCommands(items, query, limit = 50) {
+  const scored = []
+  for (const item of items) {
+    const tier = matchTier(query, item.title, item.keywords)
+    if (tier > 0) scored.push({ item, tier })
+  }
+  const strong = scored.some((s) => s.tier >= 2)
+  return scored
+    .filter((s) => !strong || s.tier >= 2)
+    .sort((a, b) =>
+      b.tier - a.tier
+      || (b.item.recency ?? 0) - (a.item.recency ?? 0)
+      || a.item.title.length - b.item.title.length
+      || a.item.title.localeCompare(b.item.title))
+    .slice(0, limit)
+    .map((s) => s.item)
+}

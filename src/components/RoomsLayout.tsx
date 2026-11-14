@@ -190,6 +190,12 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     navigate(next === 'chats' ? lastChatsPath.current : `/${next}`, { replace: true })
   }, [tab, navigate])
 
+  // The palette's tab actions: go there, but unlike re-tapping the tab, never
+  // close the open room on the way.
+  const switchTab = useCallback((next: Tab) => {
+    if (next !== tab) handleSelectTab(next)
+  }, [tab, handleSelectTab])
+
   const handleBack = useCallback(() => {
     if (activeRoomIdRef.current) lastBack = { room: activeRoomIdRef.current, at: Date.now() }
     navigate('/rooms', { replace: true })
@@ -340,6 +346,8 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
               onReady={handleReady}
               notifications={notifications}
               onDismissNotification={dismiss}
+              onSelectTab={switchTab}
+              onCloseRoom={handleBack}
             />
           </div>
           {tab === 'usage' && <Usage />}

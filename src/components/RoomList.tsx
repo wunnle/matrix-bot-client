@@ -19,6 +19,10 @@ import { parseActions } from '../lib/actions'
 import { useRoomAgentStates } from '../hooks/useRoomAgentStates'
 import type { RoomAgentState } from '../lib/roomAgentState'
 import type { RoomNotification } from '../hooks/useRoomNotifications'
+import CommandPalette, { type Command } from './CommandPalette'
+import { MOD_KEY, isPaletteShortcut } from '../lib/paletteKeys'
+import { LINEAR_INDEX_EVENT, parseLinearIndex } from '../hooks/useLinearIndex'
+import type { Tab } from './TabBar'
 
 interface Props {
   auth: AuthState
@@ -27,6 +31,10 @@ interface Props {
   onReady: () => void
   notifications: RoomNotification[]
   onDismissNotification: (roomId: string) => void
+  /** For the palette's tab actions. */
+  onSelectTab: (tab: Tab) => void
+  /** Closes the open room, back to the list. */
+  onCloseRoom: () => void
 }
 
 // Exported, like the rows below, for the design library (src/design).
@@ -219,6 +227,8 @@ export default function RoomList({
   onReady,
   notifications,
   onDismissNotification,
+  onSelectTab,
+  onCloseRoom,
 }: Props) {
   const cached = getCachedRooms(auth.userId)
   const savedOrder = getRoomOrder(auth.userId)
@@ -286,6 +296,21 @@ export default function RoomList({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [canSpawn, spawning])
+
+  // ⌘K / Ctrl+K opens the palette from anywhere: like ⌘N, this list is
+  // mounted behind every tab and open room. Capture phase, so a field that
+  // stops its own keydowns can't swallow it. Once open, the palette's own
+  // capture listener (added after this one) sees the next ⌘K and closes it.
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || !isPaletteShortcut(e)) return
+      e.preventDefault()
+      setPaletteOpen(true)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -650,10 +675,90 @@ export default function RoomList({
     })
   }
 
+  // Built only while the palette is open; cheap, and always current.
+  function paletteCommands(): Command[] {
+    const commands: Command[] = []
+    for (const room of joinedRooms) {
+      const agent = agentStates[room.roomId]
+      commands.push({
+        id: `room:${room.roomId}`,
+        kind: 'room',
+        title: room.name,
+        subtitle: (agent && agentStatusLabel(agent)) || (room.archived ? 'Archived' : previewLine(room.lastMessage)) || undefined,
+        recency: room.lastTs ?? 0,
+        avatar: roomAvatars[room.roomId]?.url ?? roomInitial(room.name),
+        run: () => onSelectRoom(room.roomId, room.name),
+      })
+    }
+    for (const room of invites) {
+      commands.push({
+        id: `invite:${room.roomId}`,
+        kind: 'room',
+        title: room.name,
+        subtitle: 'Invitation — opening accepts it',
+        recency: room.lastTs ?? 0,
+        avatar: roomInitial(room.name),
+        run: () => { void handleAcceptInvite(room.roomId, room.name) },
+      })
+    }
+    // Linear issues from the bot's per-room index (scripts/linear-index.mjs):
+    // each opens the room working on it — the one named after it, else the one
+    // that mentioned it last. Left out when that room is named after it, since
+    // the room's own row already answers the search.
+    let client: ReturnType<typeof getClient> | null = null
+    if (clientReady) { try { client = getClient() } catch { /* not started */ } }
+    if (client) {
+      const best = new Map<string, { room: RoomSummary; at: number; named: boolean }>()
+      for (const room of joinedRooms) {
+        const content = client.getRoom(room.roomId)?.currentState.getStateEvents(LINEAR_INDEX_EVENT, '')?.getContent()
+        for (const { key, at } of parseLinearIndex(content)) {
+          const named = room.name.toUpperCase().startsWith(key)
+          const prev = best.get(key)
+          if (!prev || (named && !prev.named) || (named === prev.named && at > prev.at)) best.set(key, { room, at, named })
+        }
+      }
+      for (const [key, { room, at, named }] of best) {
+        if (named) continue
+        commands.push({
+          id: `issue:${key}`,
+          kind: 'issue',
+          title: key,
+          subtitle: `In ${room.name}`,
+          recency: at,
+          icon: 'tag',
+          run: () => onSelectRoom(room.roomId, room.name),
+        })
+      }
+    }
+    if (canSpawn && spawning === null) {
+      commands.push(
+        { id: 'new-claude', kind: 'action', title: 'New Claude Code room', keywords: ['spawn', 'agent', 'create'], icon: 'add', shortcut: MOD_KEY === '⌘' ? '⌘N' : undefined, run: () => setAskingSpawn('claude') },
+        { id: 'new-codex', kind: 'action', title: 'New Codex room', keywords: ['spawn', 'agent', 'create'], icon: 'add', run: () => setAskingSpawn('codex') },
+      )
+    }
+    if (activeRoomId) {
+      commands.push({ id: 'close-room', kind: 'action', title: 'Close room', subtitle: 'Back to the room list', keywords: ['back', 'list'], icon: 'arrow_back', run: onCloseRoom })
+    }
+    commands.push(
+      { id: 'tab-chats', kind: 'action', title: 'Chats', subtitle: 'Tab', keywords: ['rooms', 'home'], icon: 'forum', run: () => onSelectTab('chats') },
+      { id: 'tab-usage', kind: 'action', title: 'Usage', subtitle: 'Tab', keywords: ['limits', 'plan', 'quota'], icon: 'speed', run: () => onSelectTab('usage') },
+      { id: 'tab-settings', kind: 'action', title: 'Settings', subtitle: 'Tab', keywords: ['preferences', 'account', 'sign out'], icon: 'settings', run: () => onSelectTab('settings') },
+    )
+    commands.push({ id: 'reload', kind: 'action', title: 'Reload Construct', keywords: ['refresh', 'update'], icon: 'refresh', run: () => window.location.reload() })
+    return commands
+  }
+
   return (
     <div className="room-list">
 
       <div className="room-list-body">
+        {/* The touch way in to ⌘K, for the phone. */}
+        <button type="button" className="room-search" onClick={() => setPaletteOpen(true)}>
+          <span className="material-symbols-outlined" aria-hidden>search</span>
+          <span className="room-search-label">Search</span>
+          <kbd className="room-search-keys" aria-hidden>{MOD_KEY === '⌘' ? '⌘K' : 'Ctrl K'}</kbd>
+        </button>
+        {paletteOpen && <CommandPalette commands={paletteCommands()} onClose={() => setPaletteOpen(false)} />}
         {loading && (
           <div className="room-grid">
             {[...Array(6)].map((_, i) => (

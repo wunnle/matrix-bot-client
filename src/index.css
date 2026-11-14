@@ -19,6 +19,7 @@
 @import './styles/message-cards.css';
 @import './styles/room-editor.css';
 @import './styles/spawn-sheet.css';
+@import './styles/command-palette.css';
 @import './styles/mic-demo.css';
 @import './styles/room-toast.css';
 @import './styles/notification-center.css';

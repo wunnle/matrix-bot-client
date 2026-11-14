@@ -1,0 +1,207 @@
+/* ⌘K palette (CommandPalette.tsx) and its touch entry in the room list. */
+
+/* The room list's search field: a button dressed as one, since what it opens
+   is the real field. */
+.room-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  margin: 2px 12px 0;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.room-search .material-symbols-outlined { font-size: 20px; }
+.room-search-label { flex: 1; }
+.room-search-keys,
+.cmdk kbd {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: 11px/18px system-ui, -apple-system, sans-serif;
+  color: var(--text-muted);
+  text-align: center;
+}
+@media (hover: hover) {
+  .room-search:hover { background: var(--bg-hover); color: var(--text); }
+}
+/* No keyboard shortcut to advertise on a touch screen. */
+@media (hover: none) { .room-search-keys { display: none; } }
+
+.cmdk-overlay {
+  position: fixed;
+  /* Tracks the visual viewport like .room-editor-overlay, so the list ends
+     above the phone's keyboard rather than behind it. */
+  top: var(--vv-top, 0px);
+  left: 0;
+  right: 0;
+  height: var(--vv-height, var(--app-height, 100dvh));
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: max(12vh, calc(env(safe-area-inset-top) + 12px)) 16px 16px;
+  background: rgba(0, 0, 0, 0.55);
+  animation: fadeIn 0.12s ease;
+}
+.cmdk {
+  width: min(640px, 100%);
+  max-height: min(100%, 560px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  animation: cmdkIn 0.14s ease;
+}
+@keyframes cmdkIn {
+  from { transform: translateY(-6px) scale(0.985); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+.cmdk-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 0 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.cmdk-field > .material-symbols-outlined { font-size: 22px; }
+.cmdk-input {
+  flex: 1;
+  min-width: 0;
+  height: 54px;
+  border: none;
+  background: transparent;
+  color: var(--text-strong);
+  /* 16px+ so iOS doesn't zoom in on focus. */
+  font: 17px/1.3 system-ui, -apple-system, sans-serif;
+  outline: none;
+}
+.cmdk-input::placeholder { color: var(--text-muted); }
+.cmdk-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 6px;
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+.cmdk-esc {
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 18px;
+}
+.cmdk-close-icon { display: none; font-size: 20px; }
+@media (hover: hover) { .cmdk-close:hover { background: var(--bg-hover); color: var(--text); } }
+/* A phone has no Esc key: show a plain close instead. */
+@media (hover: none) {
+  .cmdk-esc { display: none; }
+  .cmdk-close-icon { display: block; }
+}
+
+.cmdk-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 6px;
+}
+.cmdk-empty {
+  padding: 28px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.cmdk-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cmdk-row--active { background: var(--bg-active); }
+.cmdk-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--bg-hover);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+.cmdk-icon img { width: 100%; height: 100%; object-fit: cover; }
+.cmdk-icon .material-symbols-outlined { font-size: 19px; }
+.cmdk-icon--action { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+.cmdk-icon--issue { background: var(--accent-dim); color: var(--accent-hover); }
+.cmdk-row--active .cmdk-icon--action { color: var(--text); }
+.cmdk-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cmdk-title,
+.cmdk-subtitle {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cmdk-title { color: var(--text-strong); font-size: 15px; line-height: 1.35; }
+.cmdk-title mark {
+  background: none;
+  color: var(--accent-hover);
+  font-weight: 600;
+}
+.cmdk-subtitle { color: var(--text-muted); font-size: 13px; line-height: 1.35; }
+.cmdk-kind {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.cmdk-row--active .cmdk-kind { color: var(--text-muted); }
+.cmdk-shortcut { flex-shrink: 0; }
+
+.cmdk-footer {
+  display: flex;
+  gap: 16px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.cmdk-footer span { display: flex; align-items: center; gap: 4px; }
+@media (hover: none) { .cmdk-footer { display: none; } }
+
+/* Phone: the panel takes the width it is given and starts nearer the top,
+   leaving the rest of the screen for the keyboard. */
+@media (max-width: 600px) {
+  .cmdk-overlay { padding: calc(env(safe-area-inset-top) + 8px) 8px 8px; }
+  .cmdk { border-radius: 14px; }
+}

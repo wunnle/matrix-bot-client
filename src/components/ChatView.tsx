@@ -1153,6 +1153,28 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     setCameraPrompt(true)
   }, [isActive, roomId, searchParams])
 
+  // ?event=$id — a message picked in the ⌘K palette: scroll to it and flash it
+  // once it has rendered. Messages arrive in stages on a cold open, so this
+  // keeps looking for a few seconds. The first look waits out the open's own
+  // scroll-to-bottom, which would undo ours.
+  const eventParam = isActive ? searchParams.get('event') : null
+  useEffect(() => {
+    if (!eventParam) return
+    let tries = 0
+    const timer = setInterval(() => {
+      const row = messagesRef.current?.querySelector<HTMLElement>(`[data-event-id="${window.CSS.escape(eventParam)}"]`)
+      if (!row && ++tries < 16) return
+      clearInterval(timer)
+      setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('event'); return next }, { replace: true })
+      if (!row) { showToast('Not in the loaded part of the chat'); return }
+      row.scrollIntoView({ block: 'center' })
+      row.classList.remove('message--found')
+      void row.offsetWidth
+      row.classList.add('message--found')
+    }, 250)
+    return () => clearInterval(timer)
+  }, [eventParam, setSearchParams, showToast])
+
   // ?listen=true (or 1) — start dictation after navigation; strip the param (active room only)
   useEffect(() => {
     if (!isActive) return

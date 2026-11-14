@@ -7,18 +7,18 @@
   align-items: center;
   gap: 8px;
   height: 36px;
-  margin: 2px 12px 0;
-  padding: 0 10px;
+  margin: 4px 12px 2px;
+  padding: 0 12px;
   border-radius: 10px;
   background: var(--bg-input);
   color: var(--text-muted);
   font: inherit;
-  font-size: 15px;
+  font-size: 14px;
   text-align: left;
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
 }
-.room-search .material-symbols-outlined { font-size: 20px; }
+.room-search .material-symbols-outlined { font-size: 18px; }
 .room-search-label { flex: 1; }
 .room-search-keys,
 .cmdk kbd {
@@ -54,8 +54,8 @@
   animation: fadeIn 0.12s ease;
 }
 .cmdk {
-  width: min(640px, 100%);
-  max-height: min(100%, 560px);
+  width: min(600px, 100%);
+  max-height: min(100%, 580px);
   display: flex;
   flex-direction: column;
   background: var(--bg-surface);
@@ -73,21 +73,21 @@
 .cmdk-field {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 10px 0 16px;
+  gap: 12px;
+  padding: 4px 14px 4px 20px;
   border-bottom: 1px solid var(--border);
   color: var(--text-muted);
 }
-.cmdk-field > .material-symbols-outlined { font-size: 22px; }
+.cmdk-field > .material-symbols-outlined { font-size: 20px; }
 .cmdk-input {
   flex: 1;
   min-width: 0;
-  height: 54px;
+  height: 52px;
   border: none;
   background: transparent;
   color: var(--text-strong);
   /* 16px+ so iOS doesn't zoom in on focus. */
-  font: 17px/1.3 system-ui, -apple-system, sans-serif;
+  font: 16px/1.3 system-ui, -apple-system, sans-serif;
   outline: none;
 }
 .cmdk-input::placeholder { color: var(--text-muted); }
@@ -123,10 +123,18 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 6px;
+  padding: 4px 10px 10px;
+}
+.cmdk-section {
+  padding: 14px 12px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 .cmdk-empty {
-  padding: 28px 12px;
+  padding: 36px 12px;
   text-align: center;
   color: var(--text-muted);
   font-size: 14px;
@@ -134,9 +142,9 @@
 .cmdk-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 48px;
-  padding: 6px 10px;
+  gap: 14px;
+  min-height: 52px;
+  padding: 8px 12px;
   border-radius: 10px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -144,20 +152,20 @@
 .cmdk-row--active { background: var(--bg-active); }
 .cmdk-icon {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   background: var(--bg-hover);
   color: var(--text);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
 }
 .cmdk-icon img { width: 100%; height: 100%; object-fit: cover; }
-.cmdk-icon .material-symbols-outlined { font-size: 19px; }
+.cmdk-icon .material-symbols-outlined { font-size: 17px; }
 .cmdk-icon--action { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
 .cmdk-icon--issue { background: var(--accent-dim); color: var(--accent-hover); }
 .cmdk-row--active .cmdk-icon--action { color: var(--text); }
@@ -166,6 +174,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 .cmdk-title,
 .cmdk-subtitle {
@@ -173,28 +182,31 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.cmdk-title { color: var(--text-strong); font-size: 15px; line-height: 1.35; }
+.cmdk-title { color: var(--text-strong); font-size: 14px; line-height: 1.35; }
 .cmdk-title mark {
   background: none;
   color: var(--accent-hover);
   font-weight: 600;
 }
-.cmdk-subtitle { color: var(--text-muted); font-size: 13px; line-height: 1.35; }
-.cmdk-kind {
+.cmdk-subtitle { color: var(--text-muted); font-size: 12px; line-height: 1.35; }
+.cmdk-row--message .cmdk-title { color: var(--text); }
+.cmdk-meta {
   flex-shrink: 0;
-  font-size: 12px;
+  align-self: flex-start;
+  padding-top: 2px;
+  font-size: 11px;
   color: var(--text-faint);
 }
-.cmdk-row--active .cmdk-kind { color: var(--text-muted); }
+.cmdk-row--active .cmdk-meta { color: var(--text-muted); }
 .cmdk-shortcut { flex-shrink: 0; }
 
 .cmdk-footer {
   display: flex;
-  gap: 16px;
-  padding: 8px 16px;
+  gap: 18px;
+  padding: 10px 20px;
   border-top: 1px solid var(--border);
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: 11px;
+  color: var(--text-faint);
 }
 .cmdk-footer span { display: flex; align-items: center; gap: 4px; }
 @media (hover: none) { .cmdk-footer { display: none; } }
@@ -204,4 +216,11 @@
 @media (max-width: 600px) {
   .cmdk-overlay { padding: calc(env(safe-area-inset-top) + 8px) 8px 8px; }
   .cmdk { border-radius: 14px; }
+}
+
+/* A message opened from ⌘K: a brief glow where it landed (ChatView ?event=). */
+[data-event-id].message--found { animation: messageFound 1.6s ease-out; }
+@keyframes messageFound {
+  from, 30% { background: var(--accent-dim); }
+  to { background: transparent; }
 }

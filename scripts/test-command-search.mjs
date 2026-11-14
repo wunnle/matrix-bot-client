@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { matchTier, rankCommands } from '../src/lib/commandSearch.js'
+import { matchTier, rankCommands, textMatches, snippet } from '../src/lib/commandSearch.js'
 
 const rooms = [
   { title: 'BEN-359 Scruffy captures', recency: 100 },
@@ -32,5 +32,14 @@ assert.equal(matchTier('xyz', 'Hermes'), 0)
 assert.deepEqual(titles('').slice(0, 2), ['Hermes', 'BEN-364 Captures cleanup'])
 // Accents and case.
 assert.equal(matchTier('cafe', 'Café plans'), 4)
+
+// Messages: whole query or every word, never loose.
+assert.equal(textMatches('deploy', 'Merged and deployed.'), true)
+assert.equal(textMatches('vercel ready', 'Vercel says the build is READY'), true)
+assert.equal(textMatches('mgd', 'Merged and deployed.'), false)
+const long = 'Lorem ipsum dolor sit amet, '.repeat(10) + 'the palette shipped today ' + 'and more words after it. '.repeat(8)
+const s = snippet(long, 'palette', 60)
+assert.ok(s.includes('palette') && s.startsWith('…') && s.endsWith('…') && s.length <= 62, s)
+assert.equal(snippet('short\nline', 'x'), 'short line')
 
 console.log('command search: prefix > word > substring > loose, recency tiebreak OK')

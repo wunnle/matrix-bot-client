@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import CommandPalette, { type Command } from '../components/CommandPalette'
 import { MOD_KEY, isPaletteShortcut } from '../lib/paletteKeys'
+import { snippet, textMatches } from '../lib/commandSearch'
+import { shortWhen } from '../lib/messageSearch'
 
 // Dev only (main.tsx mounts it for ?palette under `vite`): the ⌘K palette over
 // a stand-in room list, no Matrix login. &open starts it open, &q= types into
@@ -49,6 +51,15 @@ export default function PaletteHarness() {
     { id: 'reload', kind: 'action', title: 'Reload Construct', keywords: ['refresh'], icon: 'refresh', run: pick('reload') },
   ]
 
+  const messages = [
+    { room: 'BEN-359 Scruffy captures', sender: 'Claude', ago: 85, text: 'Merged and deployed. Vercel says READY for the capture fix.' },
+    { room: 'Hermes', sender: 'Sinan', ago: 200, text: 'can you deploy the digest change before the morning run?' },
+    { room: 'BEN-385 Sandbox spotlight', sender: 'Claude', ago: 2000, text: '…the palette ranks prefix matches first, then deployed experiments by recency.' },
+  ]
+  const searchMessages = (q: string): Command[] => messages
+    .filter((m) => textMatches(q, m.text))
+    .map((m, i) => ({ id: `msg:${i}`, kind: 'message', title: snippet(m.text, q), subtitle: `${m.room} · ${m.sender}`, meta: shortWhen(now - m.ago * min), avatar: m.room[0], run: pick(`message in ${m.room}`) }))
+
   // Typed in after mount, as a person would, so &q= exercises onChange.
   useEffect(() => {
     const q = params.get('q')
@@ -70,7 +81,7 @@ export default function PaletteHarness() {
         </button>
         <p style={{ padding: 16, color: 'var(--text-muted)' }} data-testid="picked">{picked || 'Nothing picked'}</p>
       </div></div>
-      {open && <CommandPalette commands={commands} onClose={() => setOpen(false)} />}
+      {open && <CommandPalette commands={commands} searchMessages={searchMessages} onClose={() => setOpen(false)} />}
     </div>
   )
 }

@@ -38,6 +38,39 @@ export function matchTier(query, title, keywords = []) {
 }
 
 /**
+ * For free text like a message: the whole query, or every word of it, appears
+ * somewhere. No loose matching — in a page of text nearly anything is a
+ * subsequence of something.
+ */
+export function textMatches(query, text) {
+  const q = norm(query)
+  if (!q) return false
+  const t = norm(text)
+  return t.includes(q) || q.split(/\s+/).every((w) => t.includes(w))
+}
+
+/**
+ * The part of `text` around the first match, on one line, at most `max`
+ * characters, with an ellipsis where it was cut.
+ */
+export function snippet(text, query, max = 90) {
+  const flat = String(text).replace(/\s+/g, ' ').trim()
+  if (flat.length <= max) return flat
+  const q = norm(query)
+  const lower = flat.toLowerCase()
+  let at = lower.indexOf(q)
+  if (at < 0) at = q.split(/\s+/).map((w) => lower.indexOf(w)).find((i) => i >= 0) ?? 0
+  // A little lead-in before the match, so it reads as a sentence.
+  let start = Math.max(0, at - Math.floor(max / 4))
+  if (start > 0) {
+    const space = flat.indexOf(' ', start)
+    if (space > 0 && space < at) start = space + 1
+  }
+  const end = Math.min(flat.length, start + max)
+  return `${start > 0 ? '…' : ''}${flat.slice(start, end).trim()}${end < flat.length ? '…' : ''}`
+}
+
+/**
  * Items matching `query`, best first. An item is {title, keywords?, recency?}
  * plus whatever the caller needs; `recency` is a timestamp (higher = newer).
  */

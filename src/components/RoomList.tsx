@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
@@ -23,11 +23,12 @@ import CommandPalette, { type Command } from './CommandPalette'
 import { MOD_KEY, isPaletteShortcut } from '../lib/paletteKeys'
 import { LINEAR_INDEX_EVENT, parseLinearIndex } from '../hooks/useLinearIndex'
 import type { Tab } from './TabBar'
+import { searchLoadedMessages, shortWhen } from '../lib/messageSearch'
 
 interface Props {
   auth: AuthState
   activeRoomId: string | null
-  onSelectRoom: (roomId: string, roomName: string) => void
+  onSelectRoom: (roomId: string, roomName: string, eventId?: string) => void
   onReady: () => void
   notifications: RoomNotification[]
   onDismissNotification: (roomId: string) => void
@@ -675,6 +676,26 @@ export default function RoomList({
     })
   }
 
+  // Messages in what this device has loaded; stable so the palette's memo holds.
+  const searchMessages = useCallback((query: string): Command[] => {
+    if (!clientReady) return []
+    let client: ReturnType<typeof getClient>
+    try { client = getClient() } catch { return [] }
+    const names = new Map(joinedRooms.map((r) => [r.roomId, r.name]))
+    return searchLoadedMessages(client, [...names.keys()], query).map((hit) => {
+      const roomName = names.get(hit.roomId) ?? ''
+      return {
+        id: `msg:${hit.eventId}`,
+        kind: 'message' as const,
+        title: hit.text,
+        subtitle: `${roomName} · ${hit.sender}`,
+        meta: shortWhen(hit.ts),
+        avatar: roomAvatars[hit.roomId]?.url ?? roomInitial(roomName),
+        run: () => onSelectRoom(hit.roomId, roomName, hit.eventId),
+      }
+    })
+  }, [clientReady, joinedRooms, roomAvatars, onSelectRoom])
+
   // Built only while the palette is open; cheap, and always current.
   function paletteCommands(): Command[] {
     const commands: Command[] = []
@@ -758,7 +779,7 @@ export default function RoomList({
           <span className="room-search-label">Search</span>
           <kbd className="room-search-keys" aria-hidden>{MOD_KEY === '⌘' ? '⌘K' : 'Ctrl K'}</kbd>
         </button>
-        {paletteOpen && <CommandPalette commands={paletteCommands()} onClose={() => setPaletteOpen(false)} />}
+        {paletteOpen && <CommandPalette commands={paletteCommands()} searchMessages={searchMessages} onClose={() => setPaletteOpen(false)} />}
         {loading && (
           <div className="room-grid">
             {[...Array(6)].map((_, i) => (

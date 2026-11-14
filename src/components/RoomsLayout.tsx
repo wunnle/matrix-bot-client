@@ -147,10 +147,11 @@ export default function RoomsLayout({ auth, onSignOut }: Props) {
     }
   }
 
-  const handleSelectRoom = useCallback((id: string, name: string) => {
+  // `eventId`: scroll to and flash that message once the room is open (⌘K hits).
+  const handleSelectRoom = useCallback((id: string, name: string, eventId?: string) => {
     setRoomNames((prev) => (prev[id] === name ? prev : { ...prev, [id]: name }))
     lastBack = null
-    navigate(`/rooms/${encodeURIComponent(id)}`)
+    navigate(`/rooms/${encodeURIComponent(id)}${eventId ? `?event=${encodeURIComponent(eventId)}` : ''}`)
   }, [navigate])
 
   // Backing out of a room is a decision; nothing may undo it silently. The

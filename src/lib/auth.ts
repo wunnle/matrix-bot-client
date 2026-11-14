@@ -1,16 +1,21 @@
 import type { AuthState } from '../types'
+import { rememberServer } from './servers'
 
 const AUTH_KEY = 'matrix_auth'
 
 export function saveAuth(auth: AuthState): void {
   localStorage.setItem(AUTH_KEY, JSON.stringify(auth))
+  rememberServer(auth.homeserver)
 }
 
 export function loadAuth(): AuthState | null {
   const raw = localStorage.getItem(AUTH_KEY)
   if (!raw) return null
   try {
-    return JSON.parse(raw)
+    const auth: AuthState = JSON.parse(raw)
+    // Teach devices that were logged in before short names existed.
+    if (auth?.homeserver) rememberServer(auth.homeserver)
+    return auth
   } catch {
     return null
   }

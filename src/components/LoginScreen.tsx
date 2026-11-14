@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { matrixLogin, saveAuth } from '../lib/auth'
+import { DEFAULT_SERVER, resolveServer } from '../lib/servers'
 import type { AuthState } from '../types'
 
 interface Props {
@@ -7,7 +8,7 @@ interface Props {
 }
 
 export default function LoginScreen({ onLogin }: Props) {
-  const [homeserver, setHomeserver] = useState('https://matrix.org')
+  const [homeserver, setHomeserver] = useState(DEFAULT_SERVER)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -18,7 +19,7 @@ export default function LoginScreen({ onLogin }: Props) {
     setError('')
     setLoading(true)
     try {
-      const auth = await matrixLogin(homeserver, username, password)
+      const auth = await matrixLogin(resolveServer(homeserver), username, password)
       saveAuth(auth)
       onLogin(auth)
     } catch (err: any) {
@@ -37,11 +38,14 @@ export default function LoginScreen({ onLogin }: Props) {
       </div>
       <form onSubmit={handleSubmit}>
         <label>
-          Homeserver
+          Server
           <input
-            type="url"
+            type="text"
             value={homeserver}
             onChange={e => setHomeserver(e.target.value)}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             required
           />
         </label>

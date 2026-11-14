@@ -167,6 +167,20 @@ const OVERVIEW_SAMPLES: RoomOverview[] = [
     issues: ['BEN-335', 'BEN-263'],
     issuesFrom: 'name',
   },
+  {
+    approval: null,
+    blocked: 'Paused until 14:00',
+    working: null,
+    issues: ['BEN-336'],
+    issuesFrom: 'agent',
+  },
+  {
+    approval: null,
+    blocked: null,
+    working: null,
+    issues: [],
+    issuesFrom: null,
+  },
 ]
 
 const room = (name: string, extra: Partial<RoomSummary> = {}): RoomSummary =>
@@ -365,7 +379,7 @@ export default function DesignLibrary() {
         </Frame>
       </Section>
 
-      <Section title="Room panel" note="The side panel's first tab: what the agent needs from you or is doing (from the bot's room status), the issue it is working on, and the newest things it made. An approval waiting, then a run in progress with the issue read from the room name.">
+      <Section title="Room panel" note="The side panel's first tab: what the agent needs from you or is doing (from the bot's room status), the issue it is working on, and the newest things it made. An approval waiting, a run in progress with the issue read from the room name, a usage-limit pause, and an idle room with no issue.">
         {OVERVIEW_SAMPLES.map((overview, i) => (
           <Frame key={i} className="dl-shared">
             <RoomSidebar

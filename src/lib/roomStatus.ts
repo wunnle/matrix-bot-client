@@ -37,6 +37,8 @@ export interface RoomStatus {
   /** null = no turn running; undefined = this bot doesn't say (yet), so
    *  the timeline is all there is to go by. */
   activity: RoomActivity | null | undefined
+  /** The newest plan event (its steps are encrypted there); null = no plan. */
+  planEventId: string | null
   /** Epoch ms of the state event: anything newer than this, it hasn't heard of. */
   at: number
 }
@@ -57,7 +59,26 @@ export function parseRoomStatus(content: unknown, at: number): RoomStatus {
   const issues = Array.isArray(c.issues)
     ? [...new Set(c.issues.filter((k): k is string => typeof k === 'string' && ISSUE.test(k)))]
     : []
-  return { approval, issues, activity: 'activity' in c ? parseActivity(c.activity) : undefined, at }
+  const plan = c.plan as Record<string, unknown> | null | undefined
+  const planEventId = plan && typeof plan.event_id === 'string' && plan.event_id.startsWith('$') ? plan.event_id : null
+  return { approval, issues, activity: 'activity' in c ? parseActivity(c.activity) : undefined, planEventId, at }
+}
+
+/** An agent's plan, as construct-plan sets it (scripts/room-plan.mjs). */
+export const PLAN_EVENT = 'com.construct.plan'
+
+export interface PlanStep {
+  text: string
+  state: 'todo' | 'now' | 'done'
+}
+
+export function parsePlanSteps(content: unknown): PlanStep[] {
+  const steps = (content as { steps?: unknown } | null)?.steps
+  if (!Array.isArray(steps)) return []
+  return steps
+    .filter((s): s is { text: string; state?: unknown } => !!s && typeof s.text === 'string' && !!s.text.trim())
+    .slice(0, 10)
+    .map((s) => ({ text: s.text.trim(), state: s.state === 'now' || s.state === 'done' ? s.state : 'todo' }))
 }
 
 const PHASES = new Set(['thinking', 'tool', 'background'])

@@ -425,13 +425,27 @@ button.room-sidebar-link {
 }
 .room-overview-status--approval { --status: var(--agent-approval); background: color-mix(in srgb, var(--agent-approval) 10%, transparent); }
 .room-overview-status--blocked { --status: var(--agent-blocked); background: color-mix(in srgb, var(--agent-blocked) 10%, transparent); }
-.room-overview-status--working { --status: var(--agent-working); }
 .room-overview-status-icon { flex: none; font-size: 20px; color: var(--status); }
-.room-overview-status--working .room-overview-status-icon { animation: room-overview-spin 1.2s linear infinite; }
-@keyframes room-overview-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .room-overview-status--working .room-overview-status-icon { animation: none; }
+/* The agent's plan: done steps fade, the current one stands out. */
+.room-overview-plan { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.room-overview-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text);
 }
+.room-overview-step-icon { flex: none; font-size: 18px; color: var(--text-muted); }
+.room-overview-step-text { min-width: 0; overflow-wrap: anywhere; }
+.room-overview-step--done { color: var(--text-muted); }
+.room-overview-step--done .room-overview-step-text { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--text-muted) 50%, transparent); }
+.room-overview-step--done .room-overview-step-icon { color: var(--agent-working); }
+.room-overview-step--now { background: color-mix(in srgb, var(--agent-working) 10%, transparent); color: var(--text-strong); font-weight: 600; }
+.room-overview-step--now .room-overview-step-icon { color: var(--agent-working); }
+.room-overview-step-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .room-overview-status-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .room-overview-status-title { font-size: 14px; font-weight: 600; color: var(--text-strong); }
 .room-overview-status-sub {

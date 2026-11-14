@@ -32,6 +32,7 @@ import { LINEAR_INDEX_EVENT, issueKeys, withMentions } from './linear-index.mjs'
 import { ARTIFACT_INDEX_EVENT, SNAPSHOT_MAX_BYTES, artifactContent, artifactEdit, artifactIndex, createArtifactRegistry } from './artifact-cards.mjs'
 import { browserContent, browserUrl } from './browser-cards.mjs'
 import { ROOM_STATUS_EVENT, normalizeIssues, parseRoomStatus, patchRoomStatus } from './room-status.mjs'
+import { PLAN_EVENT, applyPlanOp } from './room-plan.mjs'
 
 // Overridable so a second instance (e.g. against a test homeserver) keeps its
 // session, crypto store and counters apart from the production bot's.
@@ -907,6 +908,45 @@ function handleIssue(req, res) {
   })
 }
 
+// construct-plan: the agent's plan for the room (room-plan.mjs). Each change
+// goes out as a new plan event, and the room status points at it. Kept in the
+// session so a restart picks up where the plan was. One change at a time per
+// room, so two quick ticks can't both start from the same steps.
+const planWrites = new Map()
+function handlePlan(req, res) {
+  let raw = ''
+  req.on('data', (c) => { raw += c })
+  req.on('end', () => {
+    const reply = (status, payload) => {
+      res.writeHead(status, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(payload))
+    }
+    let payload
+    try { payload = JSON.parse(raw) } catch { return reply(400, { error: 'malformed request' }) }
+    const { roomId, op } = payload ?? {}
+    if (typeof roomId !== 'string' || !op || typeof op !== 'object') return reply(400, { error: 'roomId and a change are required' })
+    if (client.getRoom(roomId)?.getMyMembership() !== 'join') return reply(404, { error: `not in ${roomId}` })
+    const run = (planWrites.get(roomId) ?? Promise.resolve()).then(async () => {
+      const result = applyPlanOp(sessions[roomId]?.plan, op)
+      if (result.error) return reply(400, { error: result.error })
+      const { steps } = result
+      let pointer = null
+      if (steps.length) {
+        const sent = await client.sendEvent(roomId, PLAN_EVENT, {
+          steps,
+          'com.construct.machine': { kind: 'notification', source: 'plan' },
+        })
+        pointer = { event_id: sent.event_id }
+      }
+      if (sessions[roomId]) { sessions[roomId].plan = steps; saveSessions() }
+      await updateRoomStatus(roomId, { plan: pointer })
+      log(`[${roomId}] plan → ${steps.length ? steps.map((s) => s.state[0]).join('') : '(none)'}`)
+      reply(200, { steps })
+    }).catch((e) => reply(500, { error: e.message }))
+    planWrites.set(roomId, run)
+  })
+}
+
 // Scheduled jobs (systemd timers such as scripts/agent-review) start turns here
 // with no message to answer. Each job owns one room, found by its key and
 // spawned on first use, and every run starts a fresh session so a weekly job
@@ -986,6 +1026,7 @@ function startApprovalBroker() {
     if (req.method === 'POST' && req.url.startsWith('/browse')) return handleBrowse(req, res)
     if (req.method === 'POST' && req.url.startsWith('/rename')) return handleRename(req, res)
     if (req.method === 'POST' && req.url.startsWith('/issue')) return handleIssue(req, res)
+    if (req.method === 'POST' && req.url.startsWith('/plan')) return handlePlan(req, res)
     if (req.method !== 'POST' || !req.url.startsWith('/approve')) {
       res.writeHead(404).end()
       return
@@ -1182,6 +1223,16 @@ const ROOM_NAME_INSTRUCTION =
   'approval needed; `construct-issue --clear` when the work moves off it): ' +
   'the room\'s side panel shows that issue.'
 
+const PLAN_INSTRUCTION =
+  'For a task with several steps, once you have understood what is asked and ' +
+  'before you start changing things, set a short plan of 3 to 6 steps with ' +
+  '`construct-plan "Read the hook code" "Publish the phase" "Ship"` (no approval ' +
+  'needed). The room\'s side panel shows it, so keep it current: ' +
+  '`construct-plan --done 2` as steps finish, `--now 3` to move on, `--add ' +
+  '"step"` for something new; set a fresh plan when the work changes direction ' +
+  'and `construct-plan --clear` when it no longer applies. Write steps as short ' +
+  'outcomes, not tool calls. Skip it for questions and one-step changes.'
+
 // Runs one turn through the room's provider, resuming its session if it has one.
 // Everything provider-specific — how a turn is invoked, how instructions are
 // injected, how the resumable id comes back — lives behind the adapter.
@@ -1202,7 +1253,7 @@ function runTurn(roomId, prompt) {
 
   // Room policy, not provider policy: what the agent should be told about this
   // room. The adapter decides where these end up.
-  const instructions = [QUICK_ANSWER_INSTRUCTION, END_INSTRUCTION, liveActivityInstruction(roomId), LOCATION_INSTRUCTION, FORM_INSTRUCTION, browserInstruction(roomId), ROOM_NAME_INSTRUCTION]
+  const instructions = [QUICK_ANSWER_INSTRUCTION, END_INSTRUCTION, liveActivityInstruction(roomId), LOCATION_INSTRUCTION, FORM_INSTRUCTION, browserInstruction(roomId), ROOM_NAME_INSTRUCTION, PLAN_INSTRUCTION]
   // Only Claude rooms have the tool; telling Codex about it would be a lie.
   if (provider.name === 'claude') instructions.push(ARTIFACT_INSTRUCTION, FAMILY_INSTRUCTION)
   // The rename nudge rides on the prompt, not the instructions: it drops out

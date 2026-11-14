@@ -4,8 +4,12 @@
 //   {
 //     "approval": { "event_id": "$card", "tool": "Bash", "agent": "Explore", "since": 1731600000000 } | null,
 //     "issues": ["BEN-123"],
-//     "activity": { "phase": "tool", "tool": "terminal", "since": 1731600000000, "turn_since": 1731599990000 } | null
+//     "activity": { "phase": "tool", "tool": "terminal", "since": 1731600000000, "turn_since": 1731599990000 } | null,
+//     "plan": { "event_id": "$plan" } | null
 //   }
+//
+// `plan` points at the newest com.construct.plan event (room-plan.mjs), which
+// holds the steps; they are the agent's words, so they stay out of state.
 //
 // `activity` is what the turn is doing right now, as the bot knows it: the
 // model working ("thinking"), a tool running ("tool", by its progress name),
@@ -35,7 +39,12 @@ export function parseRoomStatus(content) {
       }
     : null
   const issues = normalizeIssues(content?.issues)
-  return { approval, issues, activity: parseActivity(content?.activity) }
+  return { approval, issues, activity: parseActivity(content?.activity), plan: parsePlanPointer(content?.plan) }
+}
+
+// The newest plan event (room-plan.mjs); its steps live there, encrypted.
+function parsePlanPointer(p) {
+  return p && typeof p.event_id === 'string' && p.event_id.startsWith('$') ? { event_id: p.event_id } : null
 }
 
 const PHASES = new Set(['thinking', 'tool', 'background'])
@@ -74,5 +83,6 @@ export function patchRoomStatus(content, patch) {
   if ('approval' in patch) next.approval = patch.approval ? parseRoomStatus({ approval: patch.approval }).approval : null
   if ('issues' in patch) next.issues = normalizeIssues(patch.issues)
   if ('activity' in patch) next.activity = parseActivity(patch.activity)
+  if ('plan' in patch) next.plan = parsePlanPointer(patch.plan)
   return JSON.stringify(next) === JSON.stringify(before) ? null : next
 }

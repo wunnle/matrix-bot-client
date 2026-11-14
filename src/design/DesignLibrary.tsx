@@ -156,28 +156,38 @@ const OVERVIEW_SAMPLES: RoomOverview[] = [
   {
     approval: { tool: 'Bash', target: 'git push origin agent/room-status', eventId: '$card' },
     blocked: null,
-    working: { label: 'Running a command', startedAt: NOW - 4 * 60_000 },
+    plan: [
+      { text: 'Publish the plan from the bot', state: 'done' },
+      { text: 'Show it in the Room tab', state: 'now' },
+      { text: 'Ship', state: 'todo' },
+    ],
     issues: ['BEN-336'],
     issuesFrom: 'agent',
   },
   {
     approval: null,
     blocked: null,
-    working: { label: 'Editing', detail: 'RoomSidebar.tsx', startedAt: NOW - 70 * 60_000 },
+    plan: [
+      { text: 'Read how the sidebar collects issues', state: 'done' },
+      { text: 'Group refs by project', state: 'done' },
+      { text: 'Draw the progress ring', state: 'now' },
+      { text: 'Add samples to the design library', state: 'todo' },
+      { text: 'Deploy and check on the phone', state: 'todo' },
+    ],
     issues: ['BEN-335', 'BEN-263'],
     issuesFrom: 'name',
   },
   {
     approval: null,
     blocked: 'Paused until 14:00',
-    working: null,
+    plan: null,
     issues: ['BEN-336'],
     issuesFrom: 'agent',
   },
   {
     approval: null,
     blocked: null,
-    working: null,
+    plan: null,
     issues: [],
     issuesFrom: null,
   },
@@ -379,7 +389,7 @@ export default function DesignLibrary() {
         </Frame>
       </Section>
 
-      <Section title="Room panel" note="The side panel's first tab: what the agent needs from you or is doing (from the bot's room status), the issue it is working on, and the newest things it made. An approval waiting, a run in progress with the issue read from the room name, a usage-limit pause, and an idle room with no issue.">
+      <Section title="Room panel" note="The side panel's first tab: an alert when the agent needs you (an approval, a usage-limit pause), its plan (construct-plan), the issue it is working on, and the newest things it made. An approval mid-plan, a longer plan with the issue read from the room name, a pause, and an empty room.">
         {OVERVIEW_SAMPLES.map((overview, i) => (
           <Frame key={i} className="dl-shared">
             <RoomSidebar

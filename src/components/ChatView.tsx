@@ -56,6 +56,7 @@ import { parseBrowserPage, storedPage, storePage } from '../lib/browser'
 import { useArtifactIndex, useArtifactsUpdatedAt } from '../hooks/useArtifactIndex'
 import { useLinearIndex } from '../hooks/useLinearIndex'
 import { useRoomStatus } from '../hooks/useRoomStatus'
+import { useRoomPlan } from '../hooks/useRoomPlan'
 import { formAnswerBody, FORM_RESPONSE_KEY } from '../lib/form'
 import { locationContent } from '../lib/location'
 import LocationPicker from './LocationPicker'
@@ -248,6 +249,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
 
   // What the bot says the room is doing: the approval card waiting, the issue.
   const roomStatus = useRoomStatus(client, roomId)
+  const roomPlan = useRoomPlan(client, roomId, roomStatus.status?.planEventId ?? null)
   const { lastActionMessage, pendingApproval, modelPicker, choiceLists, choiceReplies, openChoices, pillActions } = useMessageActions(messages, roomStatus.status)
   // The header chip's dropdown, holding the command it sent. It opens at once
   // and loads for as long as that command is still the last word.
@@ -609,6 +611,13 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
           setRoomModel(roomId, tagged)
           setCurrentModel(tagged)
         }
+      }
+      // Only messages are bubbles (eventsToMessages): a decrypted plan or
+      // other custom event drops its "Unable to decrypt" placeholder.
+      if (!event.isDecryptionFailure() && event.getType() !== 'm.room.message') {
+        const id = event.getId() ?? ''
+        setMessages((prev) => (prev.some((m) => m.eventId === id) ? prev.filter((m) => m.eventId !== id) : prev))
+        return
       }
       const maxReadTs = room_ ? getMaxReadTs(room_, userId) : 0
       const decrypted = eventToMessage(event, userId, maxReadTs, room_ ?? undefined)
@@ -1697,10 +1706,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       ? { tool: pendingApproval.card.tool, agent: pendingApproval.card.agent, target: pendingApproval.card.target, eventId: pendingApproval.msg.eventId }
       : null,
     blocked: agentBlocked ? blockedHeadline(agentBlocked.reason) : null,
-    working: agentRun ? { label: agentRun.label, detail: agentRun.detail, startedAt: agentRun.startedAt } : null,
+    plan: roomPlan,
     issues: roomStatus.issues,
     issuesFrom: roomStatus.issuesFrom,
-  }), [pendingApproval, agentBlocked, agentRun, roomStatus])
+  }), [pendingApproval, agentBlocked, roomPlan, roomStatus])
   // Artifacts open on their own tab, newest first unless one was picked
   // (undefined: the newest; null: the list).
   const [openArtifact, setOpenArtifact] = useState<string | null | undefined>(undefined)

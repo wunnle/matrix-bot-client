@@ -3,6 +3,7 @@ import type * as React from 'react'
 import { isEmptyRoomMedia, type RoomLink, type RoomMedia, type RoomProject, type RoomRef } from '../lib/roomMedia'
 import { useLinearInfo, type LinearInfo, type LinearState } from '../lib/linearInfo'
 import { mapsUrl, formatCoords } from '../lib/location'
+import type { PlanStep } from '../lib/roomStatus'
 import ArtifactPreview from './ArtifactPreview'
 import BrowserPanel from './BrowserPanel'
 
@@ -30,22 +31,15 @@ function ago(iso: string): string {
 // Linear's own state colours, when they are colours.
 const stateColor = (s?: LinearState) => (s?.color && /^#[0-9a-f]{3,8}$/i.test(s.color) ? s.color : 'var(--text-muted)')
 
-const since = (ts: number) => {
-  const mins = Math.floor((Date.now() - ts) / 60000)
-  return mins < 1 ? 'just now' : mins < 60 ? `for ${mins}m` : `for ${Math.floor(mins / 60)}h ${mins % 60}m`
-}
-
-/** The Room tab's headline: what the agent needs from you, or what it is doing. */
+/** The Room tab's alert: what the agent needs from you, when it needs
+ *  something. What it is doing shows in the chat already. */
 function OverviewStatus({ overview, onJump }: { overview: RoomOverview; onJump: (eventId: string) => void }) {
-  const { approval, blocked, working } = overview
+  const { approval, blocked } = overview
+  if (!approval && !blocked) return null
   const [kind, icon, title, sub] = approval
     ? ['approval', 'lock', 'Waiting for your approval',
         [approval.tool, approval.agent && `from ${approval.agent}`, approval.target].filter(Boolean).join(' · ')]
-    : blocked
-      ? ['blocked', 'block', 'Stuck on its usage limit', blocked]
-      : working
-        ? ['working', 'progress_activity', working.label, [working.detail, since(working.startedAt)].filter(Boolean).join(' · ')]
-        : ['idle', 'pause_circle', 'Idle', 'Not running anything']
+    : ['blocked', 'block', 'Stuck on its usage limit', blocked]
   return (
     <section className={`room-overview-status room-overview-status--${kind}`} aria-live="polite">
       <span className="material-symbols-outlined room-overview-status-icon" aria-hidden="true">{icon}</span>
@@ -96,8 +90,8 @@ export interface RoomOverview {
   approval: { tool: string; agent?: string; target?: string; eventId: string } | null
   /** Why the agent is stuck (its usage limit), when it is. */
   blocked: string | null
-  /** The run in flight. */
-  working: { label: string; detail?: string; startedAt: number } | null
+  /** The agent's plan (construct-plan), when it set one. */
+  plan: PlanStep[] | null
   /** The Linear issues the room is about. */
   issues: string[]
   /** 'agent' when it said so (construct-issue), 'name' when read from the room name. */
@@ -417,6 +411,25 @@ export default function RoomSidebar({ media, mediaUrls, hasMore, loadingMore, on
       {current === 'room' && overview ? (
         <div className="room-sidebar-body room-overview">
           <OverviewStatus overview={overview} onJump={onJump} />
+
+          {overview.plan && (
+            <section className="room-sidebar-section">
+              <h3>Plan</h3>
+              <ol className="room-overview-plan">
+                {overview.plan.map((step, i) => (
+                  <li key={i} className={`room-overview-step room-overview-step--${step.state}`}>
+                    <span className="material-symbols-outlined room-overview-step-icon" aria-hidden="true">
+                      {step.state === 'done' ? 'check_circle' : step.state === 'now' ? 'radio_button_partial' : 'radio_button_unchecked'}
+                    </span>
+                    <span className="room-overview-step-text">
+                      {step.text}
+                      {step.state !== 'todo' && <span className="room-overview-step-sr">{step.state === 'done' ? ' (done)' : ' (in progress)'}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
 
           {overview.issues.length > 0 && (
             <section className="room-sidebar-section">

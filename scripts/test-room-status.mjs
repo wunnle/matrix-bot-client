@@ -15,7 +15,7 @@ const check = (name, fn) => {
   }
 }
 
-const NOTHING = { approval: null, issues: [], activity: null }
+const NOTHING = { approval: null, issues: [], activity: null, plan: null }
 
 check('empty or malformed content reads as nothing pending, no issues, no turn', () => {
   assert.deepStrictEqual(parseRoomStatus(undefined), NOTHING)
@@ -41,8 +41,8 @@ check('activity keeps its phase, tool and times, and nothing else', () => {
 
 check('a patch touches only the keys it names', () => {
   const base = { approval: { event_id: '$a', tool: 'Bash', since: 1 }, issues: ['BEN-1'] }
-  assert.deepStrictEqual(patchRoomStatus(base, { issues: ['BEN-2'] }), { approval: base.approval, issues: ['BEN-2'], activity: null })
-  assert.deepStrictEqual(patchRoomStatus(base, { approval: null }), { approval: null, issues: ['BEN-1'], activity: null })
+  assert.deepStrictEqual(patchRoomStatus(base, { issues: ['BEN-2'] }), { approval: base.approval, issues: ['BEN-2'], activity: null, plan: null })
+  assert.deepStrictEqual(patchRoomStatus(base, { approval: null }), { approval: null, issues: ['BEN-1'], activity: null, plan: null })
   const busy = patchRoomStatus(base, { activity: { phase: 'thinking', since: 2, turn_since: 2 } })
   assert.deepStrictEqual(busy.activity, { phase: 'thinking', since: 2, turn_since: 2 })
   assert.deepStrictEqual(busy.issues, ['BEN-1'])

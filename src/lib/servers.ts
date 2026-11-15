@@ -1,15 +1,24 @@
-// Short server names ("bender") remembered per device. The real addresses
-// live only in this device's localStorage, never in the (public) bundle.
+// Short server names ("bender") remembered per device in localStorage.
+// The default server is built in, so a new device can sign in to it without
+// typing an address. It is reachable only on the tailnet, so having it in the
+// public bundle is fine.
 const SERVERS_KEY = 'matrix_servers'
 
 export const DEFAULT_SERVER = 'bender'
+const BUILT_IN: Record<string, string> = {
+  [DEFAULT_SERVER]: 'https://bender.tale-bellatrix.ts.net:6443',
+}
 
-function load(): Record<string, string> {
+function stored(): Record<string, string> {
   try {
     return JSON.parse(localStorage.getItem(SERVERS_KEY) || '{}') || {}
   } catch {
     return {}
   }
+}
+
+function load(): Record<string, string> {
+  return { ...BUILT_IN, ...stored() }
 }
 
 /** Short name for a server URL: the first label of its host name. */
@@ -23,8 +32,8 @@ export function serverName(url: string): string {
 
 export function rememberServer(url: string): void {
   const name = serverName(url)
-  const servers = load()
-  if (servers[name] === url) return
+  if (load()[name] === url) return
+  const servers = stored()
   servers[name] = url
   try {
     localStorage.setItem(SERVERS_KEY, JSON.stringify(servers))

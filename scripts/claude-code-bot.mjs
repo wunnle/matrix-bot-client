@@ -2881,6 +2881,7 @@ clearStaleApprovals()
 // left alone: its parent has the answer, and a second report would repeat it.
 // Read before recovery, which would otherwise pause the children among them.
 const RESTART_PROMPT = '(Machine notice, not a user message.) The bot service restarted while your previous turn was running, so that turn was cut off and its final message never reached the user. Check where you got to, finish anything left, and send your report.'
+const RESTART_LINE = '🔄 Bot restarted — picking up where I left off.'
 const RESUME_STAGGER_MS = 5000
 const interrupted = Object.keys(sessions).filter((id) => {
   const s = sessions[id]
@@ -2905,6 +2906,10 @@ function resumeInterruptedTurns() {
     // A message got in first; its turn picks the session up instead.
     if (busy.has(id)) return log(`Not resuming ${id}: a new turn is already running`)
     log(`Resuming the turn a restart cut off in ${id}`)
+    // Visible, so the room says why it woke up on its own. Sent without a push:
+    // the agent's report a moment later is the one worth a notification.
+    void client.sendMessage(id, withModel(id, { msgtype: 'm.text', body: RESTART_LINE }))
+      .catch(e => log(`Could not post restart line: ${e.message}`))
     void drainRoom(id, null, prompt)
   }, RESUME_STAGGER_MS * (i + 1)))
 }

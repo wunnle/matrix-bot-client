@@ -73,7 +73,7 @@ import { threadMd } from '../lib/threadMarkdown'
 import { isBotToolProgress, parseToolProgressMessage, summarizeToolLines } from '../lib/toolProgress'
 import { getRoomModel, setRoomModel, isModelPickerTraffic } from '../lib/roomModel'
 import { scrollbackWithRetry, roomIsEncrypted, sendReadReceiptThrottled } from '../lib/chatRoom'
-import { scrollToEnd, isOnScrollbar } from '../lib/scroll'
+import { scrollToEnd, isOnScrollbar, loadScrollAnchor, saveScrollAnchor, readScrollAnchor, applyScrollAnchor, type ScrollAnchor } from '../lib/scroll'
 import { getMaxReadTs, eventToMessage, eventsToMessages } from '../lib/eventToMessage'
 import { ArtifactOpenContext, BrowserOpenContext } from './chat/openContexts'
 import { MessageRow } from './chat/MessageRow'
@@ -98,6 +98,8 @@ interface Props {
 const PAGE_SIZE = 30
 // Scrollback pages in a row that add nothing visible before the fill gives up.
 const MAX_EMPTY_FILLS = 60
+// Pages of history fetched looking for where you left a room before giving up.
+const MAX_RESTORE_PAGES = 10
 const RENDER_LIMIT = 60 // kept for isActive reset logic only
 const MSG_CAP = 200 // max messages kept in state; old ones dropped from the front
 // How long a room with nothing cached waits on the server before the spinner
@@ -443,6 +445,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     isFirstLoad.current = true
     stickToBottomRef.current = true
     lastTailEventIdRef.current = undefined
+    pendingAnchorRef.current = loadScrollAnchor(roomId)
+    restorePagesRef.current = 0
     setHasMore(true)
     setMessages([])
     setRenderStart(0)
@@ -849,6 +853,14 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // Last scrollTop seen while the room was visible. A display:none list can
   // report (or clamp to) 0, so read the position from here when it is shown again.
   const lastScrollTopRef = useRef(0)
+  // Where you left this room on a previous mount (see loadScrollAnchor), still
+  // to be put back. Cleared once applied, or once you scroll by hand: from then
+  // on where you are wins. While it is set, nothing overwrites the saved copy,
+  // so a cold open that lands at the end first doesn't erase it.
+  const pendingAnchorRef = useRef<ScrollAnchor | null>(null)
+  const restorePagesRef = useRef(0)
+  const heldAnchorRef = useRef<{ anchor: ScrollAnchor; until: number } | null>(null)
+  const saveAnchorTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   // Until then, your own new message doesn't pull the list to the end. Set by
   // quick-command sends; see sendMessage.
   const quietSendUntilRef = useRef(0)
@@ -863,6 +875,12 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       const list = messagesRef.current
       if (!list || list.offsetHeight === 0) return
       if (stickToBottomRef.current && !loadingMoreRef.current) scrollToEnd(list)
+      // Images above a just-restored spot finish loading and push it down;
+      // hold it in place until you scroll or the moment passes.
+      else if (heldAnchorRef.current && performance.now() < heldAnchorRef.current.until) {
+        programmaticScrollUntilRef.current = performance.now() + 100
+        applyScrollAnchor(list, heldAnchorRef.current.anchor)
+      }
     })
     observer.observe(inner)
     return () => observer.disconnect()
@@ -913,7 +931,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     /* eslint-enable react-hooks/immutability, react-hooks/set-state-in-effect */
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        scrollToEnd(messagesRef.current)
+        // A cold open may have restored where you left off in the meantime.
+        if (stickToBottomRef.current) scrollToEnd(messagesRef.current)
       })
     })
   }, [isActive, messages.length])
@@ -923,6 +942,23 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // render at the top of the scroll container before being scrolled down.
   useLayoutEffect(() => {
     if (visibleMessages.length === 0) return
+
+    // Back to where you left this room last time, once its row has rendered.
+    const saved = pendingAnchorRef.current
+    const list = messagesRef.current
+    if (saved && list && list.clientHeight > 0 && applyScrollAnchor(list, saved)) {
+      pendingAnchorRef.current = null
+      heldAnchorRef.current = { anchor: saved, until: performance.now() + 3000 }
+      scrollAnchorRef.current = null
+      loadingMoreRef.current = false
+      stickToBottomRef.current = false
+      isFirstLoad.current = false
+      lastTailEventIdRef.current = visibleMessages[visibleMessages.length - 1].eventId
+      lastScrollTopRef.current = list.scrollTop
+      programmaticScrollUntilRef.current = performance.now() + 200
+      setShowScrollDown(true)
+      return
+    }
 
     // Restore scroll anchor synchronously after prepending older messages.
     // This runs before paint, avoiding the RAF race that caused position jumps.
@@ -1029,6 +1065,21 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     void loadMore(true)
   }, [isActive, initializing, loadingMore, hasMore, visibleMessages, loadMore])
 
+  // The saved spot can be older than what the cache holds after a reload: page
+  // back for it, but only so far. Past that, give up and stay at the end.
+  useEffect(() => {
+    const saved = pendingAnchorRef.current
+    if (!saved || !isActive || initializing || loadingMore) return
+    if (messages.some((m) => m.eventId === saved.eventId)) return
+    if (!hasMore || restorePagesRef.current >= MAX_RESTORE_PAGES) {
+      pendingAnchorRef.current = null
+      return
+    }
+    restorePagesRef.current++
+    void loadMore(true)
+  }, [isActive, initializing, loadingMore, hasMore, messages, loadMore])
+  useEffect(() => () => clearTimeout(saveAnchorTimerRef.current), [])
+
   // Slide render window up when user scrolls to top of rendered slice
   // How far a code block is scrolled sideways is state the DOM does not keep
   // for us. Any render that replaces a message's markup — a streamed edit, an
@@ -1100,10 +1151,24 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const isNearBottom = el.scrollHeight - scrollTop - el.clientHeight < 150
     // Ignore scroll events fired by our own programmatic scrollIntoView
     // so we don't see the mid-animation position as "user scrolled up".
-    if (performance.now() >= programmaticScrollUntilRef.current) {
+    const byHand = performance.now() >= programmaticScrollUntilRef.current
+    if (byHand) {
       stickToBottomRef.current = isNearBottom
+      pendingAnchorRef.current = null
+      heldAnchorRef.current = null
     } else if (isNearBottom) {
       stickToBottomRef.current = true
+    }
+    // Remember the spot for the next mount (a reload, or after this room has
+    // dropped out of the few kept mounted). Debounced: finding the anchor row
+    // walks the rendered rows.
+    if (!pendingAnchorRef.current) {
+      clearTimeout(saveAnchorTimerRef.current)
+      saveAnchorTimerRef.current = setTimeout(() => {
+        const list = messagesRef.current
+        if (!list || list.clientHeight === 0 || pendingAnchorRef.current) return
+        saveScrollAnchor(roomId, stickToBottomRef.current ? null : readScrollAnchor(list))
+      }, 150)
     }
     setShowScrollDown(!isNearBottom)
     if (scrollTop < 80 && !loadingMore && hasMore) {
@@ -1161,6 +1226,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   const eventParam = isActive ? searchParams.get('event') : null
   useEffect(() => {
     if (!eventParam) return
+    // A message you asked for outranks where you left off.
+    pendingAnchorRef.current = null
     let tries = 0
     const timer = setInterval(() => {
       const row = messagesRef.current?.querySelector<HTMLElement>(`[data-event-id="${window.CSS.escape(eventParam)}"]`)

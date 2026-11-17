@@ -137,6 +137,11 @@ export function suppressReason(content) {
   if (content.body.split("\n").filter((l) => l.trim()).every((l) => TOOL_PROGRESS_LINE.test(l.trim()))) {
     return "thinking";
   }
+  // Nothing but fenced code: the lock screen could only say "[code]". The
+  // in-app toast still shows it, with a snippet of the code.
+  if (/```/.test(content.body) && !content.body.replace(/```[\s\S]*?(?:```|$)/g, "").trim()) {
+    return "code only";
+  }
   return null;
 }
 

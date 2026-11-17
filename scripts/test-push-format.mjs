@@ -68,6 +68,11 @@ assert.equal(suppressReason(content), null)
 assert.equal(suppressReason({ body: '🔧 Bash: "ls"', 'com.construct.machine': { kind: 'notification' } }), 'machine')
 assert.equal(suppressReason({ body: '🔧 Bash: "npm test"\n📖 Read: "src/a.ts"' }), 'thinking')
 assert.equal(suppressReason({ algorithm: 'm.megolm.v1.aes-sha2', ciphertext: 'x' }), 'no body')
+assert.equal(suppressReason({ body: '```bash\n$ git status\n M a.ts\n```' }), 'code only')
+assert.equal(suppressReason({ body: '```\na\n```\n\n```\nb\n```\n' }), 'code only')
+assert.equal(suppressReason({ body: '```\nunterminated' }), 'code only')
+assert.equal(suppressReason({ body: 'Build failed:\n```\nerr\n```' }), null)
+assert.equal(suppressReason({ body: '```\nerr\n```\n[[Retry]]' }), null)
 assert.deepEqual(await deliver({ ...n, content: { body: '🔧 Bash: "ls"' }, devices: [{ pushkey: 'tok' }] }),
   { rejected: [], suppressed: 'thinking' })
 

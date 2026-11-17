@@ -492,6 +492,13 @@ export const claude = {
           if (!tasks && idle && !closing) end()
           return
         }
+        // The id is known from the first init, not just the result: a turn the
+        // bot is restarted out of (often the deploy restarting it from inside
+        // that very turn) must still leave the room something to resume.
+        if (event.type === 'system' && event.subtype === 'init' && event.session_id && event.session_id !== sessionId) {
+          sessionId = event.session_id
+          onSession?.(sessionId)
+        }
         // The CLI starting a turn on its own, to answer a background report.
         if (event.type === 'system' && event.subtype === 'init' && idle) { idle = false; arm() }
         if (event.type === 'result') {

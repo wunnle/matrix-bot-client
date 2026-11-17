@@ -1791,6 +1791,16 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted 
 }
 
 const startTs = Date.now()
+// Set the moment the service is told to stop. Turns cut off from then on keep
+// their turnRunning marker, so the next process tells their rooms and resumes
+// them (see resumeInterruptedTurns) instead of going silent until spoken to.
+let shuttingDown = false
+async function stopForSignal(signal) {
+  shuttingDown = true
+  log(`Stopping (${signal})…`)
+  await client.stopClient()
+  process.exit(0)
+}
 // Rooms with a turn in flight — Claude Code turns are not concurrency-safe per session.
 const busy = new Set()
 // Busy rooms whose agent has answered and is only waiting on background work.
@@ -2200,7 +2210,9 @@ async function drainRoom(roomId, first, firstPrompt = null) {
     queued.delete(roomId)
     awaitingBackground.delete(roomId)
     busy.delete(roomId)
-    if (sessions[roomId]?.turnRunning) { delete sessions[roomId].turnRunning; saveSessions() }
+    // A turn that ended because the service is stopping did not finish: its
+    // marker stays so the next process resumes it.
+    if (!shuttingDown && sessions[roomId]?.turnRunning) { delete sessions[roomId].turnRunning; saveSessions() }
     setActivity(roomId, null)
     await client.sendTyping(roomId, false).catch(() => {})
   }
@@ -2897,8 +2909,4 @@ resumeInterruptedTurns()
 log(`Listening… default cwd: ${DEFAULT_CWD}, model: ${DEFAULT_MODEL}.`)
 log('Send "!spawn [path] [model]" to create an agent room; "!model [name]" inside one to switch.')
 
-process.on('SIGINT', async () => {
-  log('Stopping…')
-  await client.stopClient()
-  process.exit(0)
-})
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, stopForSignal)

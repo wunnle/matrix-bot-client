@@ -337,6 +337,16 @@ process.env.FAKE_CLAUDE_MODE = 'hang'
   assert.ok(res.error, 'a cancelled turn resolves with an error')
   assert.equal(claude.cancel('!stop'), false)
 }
+// A turn killed before its result (the bot restarting mid-turn) has still
+// handed over its session id, so the room's next turn resumes it.
+{
+  const seen = []
+  const pending = claude.run({ ...base, roomId: '!killed', timeoutMs: 10000, onSession: (id) => seen.push(id) })
+  await new Promise((r) => setTimeout(r, 200))
+  claude.cancel('!killed')
+  await pending
+  assert.deepEqual(seen, ['s-hang'])
+}
 
 fs.rmSync(dir, { recursive: true, force: true })
 console.log('claude provider: ok')

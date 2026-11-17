@@ -100,6 +100,8 @@ const PAGE_SIZE = 30
 const MAX_EMPTY_FILLS = 60
 // Pages of history fetched looking for where you left a room before giving up.
 const MAX_RESTORE_PAGES = 10
+// Closer to the end than this counts as "at the end" when saving where you are.
+const AT_END_PX = 40
 const RENDER_LIMIT = 60 // kept for isActive reset logic only
 const MSG_CAP = 200 // max messages kept in state; old ones dropped from the front
 // How long a room with nothing cached waits on the server before the spinner
@@ -859,7 +861,11 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // so a cold open that lands at the end first doesn't erase it.
   const pendingAnchorRef = useRef<ScrollAnchor | null>(null)
   const restorePagesRef = useRef(0)
-  const heldAnchorRef = useRef<{ anchor: ScrollAnchor; until: number } | null>(null)
+  // Where you are, as an anchor (see readScrollAnchor); null at the end.
+  const currentAnchorRef = useRef<ScrollAnchor | null>(null)
+  // An anchor just put back, kept in place while content above it settles
+  // (images loading, messages decrypting, history paging in) until you scroll.
+  const heldAnchorRef = useRef<ScrollAnchor | null>(null)
   const saveAnchorTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   // Until then, your own new message doesn't pull the list to the end. Set by
   // quick-command sends; see sendMessage.
@@ -876,10 +882,10 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       if (!list || list.offsetHeight === 0) return
       if (stickToBottomRef.current && !loadingMoreRef.current) scrollToEnd(list)
       // Images above a just-restored spot finish loading and push it down;
-      // hold it in place until you scroll or the moment passes.
-      else if (heldAnchorRef.current && performance.now() < heldAnchorRef.current.until) {
+      // hold it in place until you scroll.
+      else if (heldAnchorRef.current) {
         programmaticScrollUntilRef.current = performance.now() + 100
-        applyScrollAnchor(list, heldAnchorRef.current.anchor)
+        applyScrollAnchor(list, heldAnchorRef.current)
       }
     })
     observer.observe(inner)
@@ -900,11 +906,17 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     wasActiveRef.current = true
     if (!justBecameActive) return
     // First activation mounts pinned, so this only fires on a return visit.
-    if (!stickToBottomRef.current) {
+    // Back to the row you were on, not the raw scrollTop: while the room was
+    // hidden, old messages can drop off the top (MSG_CAP) and rows can change
+    // height, which moved a pixel position somewhere else.
+    if (!stickToBottomRef.current || currentAnchorRef.current) {
+      stickToBottomRef.current = false
       const container = messagesRef.current
       if (container) {
         programmaticScrollUntilRef.current = performance.now() + 200
-        container.scrollTop = lastScrollTopRef.current
+        const anchor = currentAnchorRef.current
+        if (anchor && applyScrollAnchor(container, anchor)) heldAnchorRef.current = anchor
+        else container.scrollTop = lastScrollTopRef.current
       }
       setShowScrollDown(true)
       return
@@ -948,7 +960,8 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     const list = messagesRef.current
     if (saved && list && list.clientHeight > 0 && applyScrollAnchor(list, saved)) {
       pendingAnchorRef.current = null
-      heldAnchorRef.current = { anchor: saved, until: performance.now() + 3000 }
+      heldAnchorRef.current = saved
+      currentAnchorRef.current = saved
       scrollAnchorRef.current = null
       loadingMoreRef.current = false
       stickToBottomRef.current = false
@@ -986,6 +999,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
     if (!shouldScroll) return
     const behavior: ScrollBehavior = (!isFirstLoad.current && tailChanged && tail.isOwnMessage) ? 'smooth' : 'instant'
     isFirstLoad.current = false
+    heldAnchorRef.current = null
     programmaticScrollUntilRef.current = performance.now() + (behavior === 'smooth' ? 500 : 100)
     scrollToEnd(messagesRef.current, behavior)
   }, [visibleMessages])
@@ -993,6 +1007,7 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
   // Scroll to bottom when own message is sent
   const scrollToBottom = useCallback(() => {
     stickToBottomRef.current = true
+    heldAnchorRef.current = null
     scrollToEnd(messagesRef.current)
   }, [])
 
@@ -1160,15 +1175,17 @@ function ChatView({ roomId, isActive, roomName, config, userId, onBack, dictatio
       stickToBottomRef.current = true
     }
     // Remember the spot for the next mount (a reload, or after this room has
-    // dropped out of the few kept mounted). Debounced: finding the anchor row
-    // walks the rendered rows.
+    // dropped out of the few kept mounted). Read on every scroll, so switching
+    // rooms straight after scrolling keeps the latest spot; only the storage
+    // write is debounced.
     if (!pendingAnchorRef.current) {
+      // Tighter than the 150px that keeps you following new messages: a
+      // spot just above the end is still a spot, not "the end".
+      const atEnd = el.scrollHeight - scrollTop - el.clientHeight < AT_END_PX
+      const anchor = atEnd ? null : readScrollAnchor(el)
+      currentAnchorRef.current = anchor
       clearTimeout(saveAnchorTimerRef.current)
-      saveAnchorTimerRef.current = setTimeout(() => {
-        const list = messagesRef.current
-        if (!list || list.clientHeight === 0 || pendingAnchorRef.current) return
-        saveScrollAnchor(roomId, stickToBottomRef.current ? null : readScrollAnchor(list))
-      }, 150)
+      saveAnchorTimerRef.current = setTimeout(() => saveScrollAnchor(roomId, anchor), 150)
     }
     setShowScrollDown(!isNearBottom)
     if (scrollTop < 80 && !loadingMore && hasMore) {

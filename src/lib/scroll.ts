@@ -49,14 +49,22 @@ export function saveScrollAnchor(roomId: string, anchor: ScrollAnchor | null) {
   } catch { /* storage unavailable */ }
 }
 
-/** The first message row whose bottom is below the list's top edge. */
+/**
+ * The first message row whose bottom is below the list's top edge. Rows are in
+ * document order, so binary search: this runs on every scroll event.
+ */
 export function readScrollAnchor(list: HTMLElement): ScrollAnchor | null {
   const top = list.getBoundingClientRect().top
-  for (const row of list.querySelectorAll<HTMLElement>('[data-event-id]')) {
-    const rect = row.getBoundingClientRect()
-    if (rect.bottom > top) return { eventId: row.dataset.eventId!, offset: rect.top - top }
+  const rows = list.querySelectorAll<HTMLElement>('[data-event-id]')
+  let lo = 0
+  let hi = rows.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (rows[mid].getBoundingClientRect().bottom > top) hi = mid
+    else lo = mid + 1
   }
-  return null
+  const row = rows[lo]
+  return row ? { eventId: row.dataset.eventId!, offset: row.getBoundingClientRect().top - top } : null
 }
 
 /** Put the anchor row back where it was. False when the row is not rendered. */

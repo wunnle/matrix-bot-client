@@ -2851,7 +2851,11 @@ function loadBlockedState() {
       .getStateEvents(BLOCKED_EVENT, '')?.getContent()
     if (content?.blocked) {
       blockedRooms.set(roomId, { reason: content.reason, resetsAt: content.resets_at ?? null })
-      if (sessions[roomId]?.pendingPrompt && isQuotaBlockedState(content)) familyBlockedProviders.add(sessions[roomId].provider ?? DEFAULT_PROVIDER)
+      // Only a window still running holds the whole provider. A room left
+      // blocked past its reset (nobody tapped Continue) stays blocked itself,
+      // but must not stop every other room of that provider from resuming:
+      // one from Nov 13 silently cancelled every restart resume for days.
+      if (sessions[roomId]?.pendingPrompt && isQuotaBlockedState(content) && content.resets_at > Date.now()) familyBlockedProviders.add(sessions[roomId].provider ?? DEFAULT_PROVIDER)
     }
   }
 }

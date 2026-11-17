@@ -9,6 +9,7 @@ assert.ok(drain.indexOf('parentWaker.take(roomId)') < drain.indexOf('} finally {
 assert.ok(drain.lastIndexOf('delete sessions[roomId].turnRunning') > drain.indexOf('} finally {'),'only a turn that ran to completion clears its restart marker')
 assert.match(drain,/if \(!shuttingDown && sessions\[roomId\]\?\.turnRunning\)/,'a turn the service stop cut off keeps its restart marker')
 assert.match(bot,/for \(const signal of \['SIGINT', 'SIGTERM'\]\) process\.on\(signal, stopForSignal\)/,'systemd stops (SIGTERM) set shuttingDown too')
-assert.ok(bot.indexOf('const interrupted =') < bot.indexOf('await agentFamily.recover('),'interrupted turns are read before recovery pauses children')
+assert.match(bot,/isQuotaBlockedState\(content\) && content\.resets_at > Date\.now\(\)\) familyBlockedProviders\.add/,'a room blocked past its reset does not hold back every restart resume')
+assert.ok(bot.indexOf('const interrupted =') <bot.indexOf('await agentFamily.recover('),'interrupted turns are read before recovery pauses children')
 assert.ok(bot.lastIndexOf('resumeInterruptedTurns()') > bot.lastIndexOf('startApprovalBroker()'),'resumed turns can ask for approvals')
 console.log('agent outcome ordering: durable report before answer publication and recovery cleanup; wakes and restart resumes stay serial')

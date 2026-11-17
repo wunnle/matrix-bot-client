@@ -27,7 +27,7 @@ import { fetchPlanUsage, sameUsage, fetchCodexUsage, sameCodexUsage } from './pl
 import { encryptAttachment, decryptAttachment } from '../src/lib/attachmentCrypto.js'
 import { notifyEncrypted, wantsPush } from './bot-push.mjs'
 import { createCardPoster } from './subagent-cards.mjs'
-import { roomTitle, fallbackTitle } from './room-title.mjs'
+import { roomTitle } from './room-title.mjs'
 import { LINEAR_INDEX_EVENT, issueKeys, withMentions } from './linear-index.mjs'
 import { ARTIFACT_INDEX_EVENT, SNAPSHOT_MAX_BYTES, artifactContent, artifactEdit, artifactIndex, createArtifactRegistry } from './artifact-cards.mjs'
 import { browserContent, browserUrl } from './browser-cards.mjs'
@@ -1679,7 +1679,7 @@ function createRoomFailure(e) {
   return e?.message ?? String(e)
 }
 
-// A quick name creates the room immediately; an optional title promise can rename it later.
+// The room is created under its slug; an optional title promise renames it later.
 // Independent children supply their own title as name, with no extra model request.
 async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted = false, name: firstName = null, title = null, requireWorktree = false } = {}) {
   // The slug is needed before the room exists: it names the worktree and its
@@ -1772,7 +1772,7 @@ async function spawnRoom(cwd, model, provider, worktreeFrom = null, { encrypted 
     clearTimeout(timer)
   }
   // Neither is awaited: the invite is already out, and the room is usable with
-  // the cast's first icon and the prompt's first words until these land.
+  // the cast's first icon and its slug until these land.
   const face = avatarFor(provider, room_id)
   if (face && face !== avatarMxc[provider][0]) {
     void client.sendStateEvent(room_id, 'm.room.avatar', { url: face }, '')
@@ -2329,7 +2329,7 @@ client.on(sdk.RoomEvent.Timeline, async (event, room, toStartOfTimeline) => {
     }
     pendingSpawns.delete(`${roomId}:${cwd}`)
     try {
-      const spawned = await spawnRoom(cwd, model, provider, sharing.length > 0 ? root : null, { encrypted, name: prompt ? fallbackTitle(prompt) : null, title })
+      const spawned = await spawnRoom(cwd, model, provider, sharing.length > 0 ? root : null, { encrypted, title })
       const where = spawned.branch
         ? `a worktree of ${path.basename(cwd)} on \`${spawned.branch}\``
         : path.basename(cwd)

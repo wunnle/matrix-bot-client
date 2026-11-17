@@ -1,9 +1,10 @@
 // A name for a room spawned with a prompt (!spawn … -- <prompt>, or the app's
 // "What are we building?"), so it is named for its work from the start
-// instead of BenderDev-N until the agent renames it. Same rules as the
-// room-rename skill: about two words, at most 24 characters, the task not the
-// tooling. The room is created under the prompt's first words and renamed when
-// Haiku answers (~6 s); a slow or failed call just leaves the first words.
+// instead of its default slug (PiDev-N). Same rules as the room-rename skill:
+// about two words, at most 24 characters, the task not the tooling. The room
+// is created under the slug and renamed when Haiku answers (~6-10 s). A slow
+// or failed call leaves the slug for the agent to rename itself: the prompt's
+// first words ("When I Launch") read as a name nobody chose.
 import { spawn } from 'node:child_process'
 
 const MAX = 24
@@ -34,15 +35,7 @@ function fitWords(text) {
   return out || text.slice(0, MAX)
 }
 
-// The prompt's first few words, for when no model answers in time.
-export function fallbackTitle(request) {
-  const words = String(request).replace(/[^\p{L}\p{N}\s-]/gu, ' ').split(/\s+/).filter(Boolean).slice(0, 3)
-  if (!words.length) return null
-  const text = words.map((w) => w[0].toLocaleUpperCase('tr') + w.slice(1)).join(' ')
-  return fitWords(text)
-}
-
-// Never throws and never takes longer than `timeoutMs`.
+// Never throws and never takes longer than `timeoutMs`; null when no name came back.
 export function roomTitle(request, { timeoutMs = 15000, log = () => {} } = {}) {
   return new Promise((resolve) => {
     let out = ''
@@ -51,8 +44,8 @@ export function roomTitle(request, { timeoutMs = 15000, log = () => {} } = {}) {
       if (done) return
       done = true
       clearTimeout(timer)
-      if (!title && why) log(`Room title fell back to the prompt: ${why}`)
-      resolve(title ?? fallbackTitle(request))
+      if (!title && why) log(`No room title, keeping the default name: ${why}`)
+      resolve(title)
     }
     // No user settings (their hooks would run), no tools, no MCP: a one-shot
     // question on the account's own login, which --bare would not use.

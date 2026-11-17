@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cleanTitle, fallbackTitle, titlePrompt } from './room-title.mjs'
+import { cleanTitle, titlePrompt } from './room-title.mjs'
 
 assert.equal(cleanTitle('Digest Calendar\n'), 'Digest Calendar')
 assert.equal(cleanTitle('"Playlist Temizleme."'), 'Playlist Temizleme')
@@ -9,10 +9,6 @@ assert.equal(cleanTitle('Not logged in · Please run /login'), null)
 assert.equal(cleanTitle(''), null)
 assert.equal(cleanTitle('Kitchen Calendar E-Ink Display Comparison'), 'Kitchen Calendar E-Ink', 'cut at a word under 24')
 assert.equal(cleanTitle('Supercalifragilisticexpialidocious'), 'Supercalifragilisticexpi', 'one long word is cut hard')
-
-assert.equal(fallbackTitle('can you check why the morning digest skipped'), 'Can You Check')
-assert.equal(fallbackTitle('ışıkları kapat, lütfen!'), 'Işıkları Kapat Lütfen', 'Turkish casing')
-assert.equal(fallbackTitle('!!! ???'), null)
 
 const p = titlePrompt('fix "it"\nnow')
 assert.ok(p.includes('Request: "fix \\"it\\"\\nnow"'), 'the request is quoted, not spliced into the instructions')

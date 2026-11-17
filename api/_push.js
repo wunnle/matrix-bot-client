@@ -125,6 +125,9 @@ export function parseWebPushKey(pushkey) {
 
 // Tool progress / thinking message — never notifies.
 const TOOL_PROGRESS_LINE = /^(?:\*\s*)?\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\(×\d+\))?|\.\.\.)\s*$/u;
+// "💻 terminal" with nothing after it. Emoji-led only, so prose like "OK done"
+// above a code block still notifies.
+const TOOL_HEAD_LINE = /^[^\x00-\x7F]\S?\s+\w[\w./-]*$/u;
 
 /** Why this content must not notify, or null when it should. */
 export function suppressReason(content) {
@@ -139,8 +142,12 @@ export function suppressReason(content) {
   }
   // Nothing but fenced code: the lock screen could only say "[code]". The
   // in-app toast still shows it, with a snippet of the code.
-  if (/```/.test(content.body) && !content.body.replace(/```[\s\S]*?(?:```|$)/g, "").trim()) {
-    return "code only";
+  if (/```/.test(content.body)) {
+    const prose = content.body.replace(/```[\s\S]*?(?:```|$)/g, "").split("\n").map((l) => l.trim()).filter(Boolean);
+    if (!prose.length) return "code only";
+    // Hermes's terminal progress on markdown platforms: a bare "💻 terminal"
+    // header over the fenced command (gateway/run_turn_runner.py).
+    if (prose.every((l) => TOOL_HEAD_LINE.test(l) || TOOL_PROGRESS_LINE.test(l))) return "thinking";
   }
   return null;
 }

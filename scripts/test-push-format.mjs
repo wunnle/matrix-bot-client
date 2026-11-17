@@ -73,6 +73,10 @@ assert.equal(suppressReason({ body: '```\na\n```\n\n```\nb\n```\n' }), 'code onl
 assert.equal(suppressReason({ body: '```\nunterminated' }), 'code only')
 assert.equal(suppressReason({ body: 'Build failed:\n```\nerr\n```' }), null)
 assert.equal(suppressReason({ body: '```\nerr\n```\n[[Retry]]' }), null)
+assert.equal(suppressReason({ body: '💻 terminal\n```\nls -la ...\n```' }), 'thinking')
+assert.equal(suppressReason({ body: '⚙️ terminal\n```\nls\n```' }), 'thinking')
+assert.equal(suppressReason({ body: 'OK done\n```\nls\n```' }), null)
+assert.equal(suppressReason({ body: '💻 terminal' }), null)
 assert.deepEqual(await deliver({ ...n, content: { body: '🔧 Bash: "ls"' }, devices: [{ pushkey: 'tok' }] }),
   { rejected: [], suppressed: 'thinking' })
 

@@ -354,6 +354,59 @@ const CASES = [
   ['hermes webhook rm ha-wake', 'deny'],
   ['hermes -p bender sessions delete 123 --yes', 'deny'],
   ['hermes cron pause abc', 'deny'],
+  // Scheme-less loopback/LAN URLs are GETs to this Pi's own services.
+  ['curl -s 127.0.0.1:8796/api/chats | jq -c ".[:2]"', 'allow'],
+  ['curl -s "127.0.0.1:8796/api/chat/905373492431@s.whatsapp.net" | head -c 600', 'allow'],
+  ['curl -s localhost:8798/watchlist/api/items', 'allow'],
+  ['curl -s -X POST -d \'{"id":"tt1"}\' 192.168.1.113:8799/watchlist/api/add', 'deny'],
+  ['curl -s -A "Mozilla/5.0" -o /etc/x 127.0.0.1:1/', 'deny'],
+  ['curl -s file:///home/wunnle/.ssh/id_rsa', 'deny'],
+  ['curl -s file:///etc/hostname', 'deny'],
+  // ~/.hermes/state is bookkeeping, except its OAuth session and any *.env.
+  ['tail -n 60 /home/wunnle/.hermes/state/whatsapp/flows.jsonl | jq -c .', 'allow'],
+  ['jq -c . /home/wunnle/.hermes/state/whatsapp/status.json', 'allow'],
+  ['cat ~/.hermes/state/google-calendar-personal-oauth-session.json', 'deny'],
+  ['cat ~/.hermes/state/obsidian_note_watcher.env', 'deny'],
+  ['cat ~/.hermes/state/*', 'deny'],
+  ['grep -r token ~/.hermes/state', 'deny'],
+  ['cat ~/.hermes/backups/x.json', 'deny'],
+  ['cat ~/projects/selfhost-matrix/bot.env', 'deny'],
+  // dmesg reads; clearing the ring buffer asks.
+  ['dmesg | tail -8', 'allow'],
+  ['dmesg -T | grep usb', 'allow'],
+  ['dmesg -C', 'deny'],
+  ['dmesg --clear', 'deny'],
+  // tailscale: status reads, set/up/serve configure.
+  ['tailscale status', 'allow'],
+  ['tailscale status --json | jq ".Self.PrimaryRoutes | length"', 'allow'],
+  ['tailscale debug prefs | jq ".AdvertiseRoutes | length"', 'allow'],
+  ['tailscale dns status', 'allow'],
+  ['tailscale serve status', 'allow'],
+  ['tailscale set --advertise-routes=10.0.0.0/8', 'deny'],
+  ['tailscale serve --bg --https=18792 http://127.0.0.1:8792', 'deny'],
+  ['tailscale up', 'deny'],
+  ['tailscale debug set-expire --in 1m', 'deny'],
+  // adb: reads of the TV box are free, anything that changes it asks.
+  ['A="adb -s 192.168.1.122:5555"; $A shell dumpsys dreams | grep -iE "component|dreaming"', 'allow'],
+  ['adb -s 192.168.1.122:5555 shell pm list packages -3 | sort', 'allow'],
+  ['adb -s 192.168.1.122:5555 logcat -d -v time | grep Waking', 'deny'],   // logcat without `shell` isn't on the list
+  ['adb -s 192.168.1.122:5555 shell logcat -d -v time | grep Waking', 'allow'],
+  ['adb -s 192.168.1.122:5555 shell appops get dev.bender.launcher TURN_SCREEN_ON', 'allow'],
+  ['adb -s 192.168.1.122:5555 shell settings get secure screensaver_enabled', 'allow'],
+  ['adb devices', 'allow'],
+  ['adb -s 192.168.1.122:5555 shell logcat -c', 'deny'],
+  ['adb -s 192.168.1.122:5555 shell logcat', 'deny'],
+  ['adb -s 192.168.1.122:5555 shell settings put secure x 1', 'deny'],
+  ['adb -s 192.168.1.122:5555 shell dumpsys battery set level 5', 'deny'],
+  ['adb -s 192.168.1.122:5555 shell input keyevent 3', 'deny'],
+  ['adb -s 192.168.1.122:5555 shell wm size 1080x1920', 'deny'],
+  ['adb -s 192.168.1.122:5555 shell "dumpsys x; reboot"', 'deny'],
+  ['adb -s 192.168.1.122:5555 shell dumpsys\\;reboot', 'deny'],
+  ['adb -s 192.168.1.122:5555 install -r x.apk', 'deny'],
+  ['adb reboot', 'deny'],
+  // A lone quoted assignment runs nothing — unless its value expands or its name steers a program.
+  ['A="x $(touch /etc/x)"; echo $A', 'deny'],
+  ['PATH="/tmp/evil"; ls', 'deny'],
 ]
 
 let failed = 0
@@ -457,6 +510,13 @@ for (const [file, expected] of [
   ['/home/wunnle/.hermes/profiles/colonist/SOUL.md', 'deny'],
   ['/home/wunnle/.hermes/skills/x/.env', 'deny'],
   ['/home/wunnle/Documents/Obsidian/People/Someone.md', 'deny'],
+  // Claude Code's own worktrees inside a repo are throwaway checkouts too.
+  ['/home/wunnle/matrix-pwa/.claude/worktrees/scroll-memory/src/components/ChatView.tsx', 'allow'],
+  ['/home/wunnle/matrix-pwa/.claude/worktrees/scroll-memory/.git', 'deny'],
+  ['/home/wunnle/matrix-pwa/.claude/worktrees/../settings.json', 'deny'],
+  ['/home/wunnle/matrix-pwa/.claude/settings.json', 'deny'],
+  ['/home/wunnle/.claude/worktrees/x/settings.json', 'deny'],
+  ['/home/wunnle/matrix-pwa/src/app.ts', 'deny'],
 ]) {
   const got = ask('Write', { file_path: file, content: 'x' })
   if (got !== expected) { failed++; console.log(`FAIL  Write ${file}: want ${expected}, got ${got}`) }

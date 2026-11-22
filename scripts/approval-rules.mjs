@@ -59,8 +59,66 @@ function httpIsRead(tokens, effCwd, cwd) {
     const at = args.findIndex((a) => a === '-O' || a === '--output-document')
     if (at === -1 ? !isSandboxPathFrom('.', effCwd, cwd) : !outputTargetOk(args[at + 1], effCwd, cwd)) return false
   }
-  // No URL at all is not a fetch — it is some other use of the tool.
-  return args.some((t) => /^['"]?[a-z]+:\/\//i.test(t))
+  // file:// is a local read with no secret check behind it — `curl
+  // file:///home/…/.ssh/id_rsa` named no path the secret rules recognise.
+  if (args.some((t) => /^['"]?file:/i.test(t))) return false
+  // No URL at all is not a fetch — it is some other use of the tool. curl takes
+  // a scheme-less `127.0.0.1:8796/api/x` as http, and that is how agents query
+  // this Pi's own services; without it every such GET read as "sends data off
+  // this machine". Only loopback and LAN-style IPs, so a stray argument such as
+  // a user agent's `Mozilla/5.0` still doesn't count as a URL.
+  return args.some((t) => /^['"]?([a-z]+:\/\/|(localhost|\d{1,3}(\.\d{1,3}){3})(:\d+)?(\/|['"]?$))/i.test(t))
+}
+
+// adb against the TV box. Reads are most of what agents do with it — dumpsys,
+// logcat, package lists — and each one cost a tap. Everything that installs,
+// pushes, reboots, sends keys or changes a setting still asks.
+const ADB_GLOBAL_FLAGS_WITH_ARG = new Set(['-s', '-t', '-H', '-P', '-L'])
+const ADB_READS = new Set(['devices', 'get-state', 'get-serialno', 'get-devpath', 'version'])
+// `adb shell <verb>`: verb → which second word makes it a read (null: any).
+const ADB_SHELL_READS = {
+  getprop: null, ps: null, uptime: null, id: null, df: null, uname: null, ls: null, cat: null, getenforce: null,
+  pm: ['list', 'path', 'dump'],
+  appops: ['get', 'query-op'],
+  settings: ['get', 'list'],
+  content: ['query'],
+  dumpsys: null,
+  logcat: null,
+  wm: ['size', 'density'],
+}
+// dumpsys hands its arguments to the service, and a few services take commands
+// that way (`dumpsys battery set level 5`, `dumpsys deviceidle force-idle`).
+const DUMPSYS_MUTATES = /^(set|reset|unplug|enable|disable|step|force\S*|whitelist|tempwhitelist|except-idle-whitelist|clear|add|remove|put|delete)$/
+function adbIsRead(tokens) {
+  let at = 1
+  while (at < tokens.length && tokens[at].startsWith('-')) {
+    at += ADB_GLOBAL_FLAGS_WITH_ARG.has(tokens[at]) ? 2 : 1
+  }
+  const sub = tokens[at]
+  if (ADB_READS.has(sub)) return true
+  if (sub !== 'shell') return false
+  const rest = tokens.slice(at + 1)
+  // The remote side runs its own shell: a quote or metacharacter here would let
+  // a second command ride along inside one argument.
+  if (!rest.length || rest.some((t) => /[;&|`$()<>"'\\]/.test(t))) return false
+  const [verb, second] = rest
+  if (!(verb in ADB_SHELL_READS)) return false
+  const allowed = ADB_SHELL_READS[verb]
+  if (allowed && !allowed.includes(second)) return false
+  if (verb === 'wm') return rest.length === 2           // `wm size 1080x1920` sets it
+  if (verb === 'logcat') return rest.includes('-d') && !rest.some((t) => /^(-c|--clear|-G|-P|--prune|-f|--file)$/.test(t))
+  if (verb === 'dumpsys') return !rest.slice(1).some((t) => DUMPSYS_MUTATES.test(t))
+  return true
+}
+
+// tailscale's read-only verbs, and the read-only half of the ones that also
+// configure (`serve status` vs `serve --bg …`, `debug prefs` vs the rest).
+const TAILSCALE_READS = new Set(['status', 'ip', 'version', 'netcheck', 'whois', 'ping'])
+const TAILSCALE_SPLIT = { serve: ['status'], funnel: ['status'], dns: ['status', 'query'], debug: ['prefs', 'netmap'] }
+function tailscaleIsRead(tokens) {
+  const words = tokens.slice(1).filter((t) => !t.startsWith('-'))
+  if (TAILSCALE_READS.has(words[0])) return true
+  return Boolean(TAILSCALE_SPLIT[words[0]]?.includes(words[1]))
 }
 
 // True when the turn is running inside the projects tree, where the extra
@@ -121,7 +179,7 @@ const SAFE_BASH_BINS = new Set([
   'netstat', 'ip', 'ifconfig', 'route', 'arp', 'lsblk', 'lscpu', 'lsusb',
   'lspci', 'mount', 'vmstat', 'iostat', 'nproc', 'groups', 'users',
   'getent', 'locale', 'dig', 'host', 'nslookup', 'ping', 'traceroute',
-  'timedatectl', 'hostnamectl', 'localectl', 'vcgencmd',
+  'timedatectl', 'hostnamectl', 'localectl', 'vcgencmd', 'dmesg',
   // Stream editors used as filters. `sed -i` edits in place and `awk` can open
   // files for writing, so both are guarded below rather than trusted outright.
   'awk', 'gawk', 'seq',
@@ -170,6 +228,8 @@ const GUARDED_BINS = {
   chmod: /-R\b|--recursive\b/,
   // `crontab -l` prints the table; anything else (-r, -e, a file) replaces it.
   crontab: /^(?!\s*-l\s*$)/,
+  // dmesg reads the kernel ring buffer; these clear it or change console logging.
+  dmesg: /(^|\s)(-[a-zA-Z]*[cCDEn]|--(clear|read-clear|console-off|console-on|console-level))\b/,
 }
 
 // Hermes verbs that only print. The session-start note tells every agent to
@@ -350,12 +410,20 @@ const SECRET_PATTERNS = [
   /(^|\/)\.gnupg(\/|$)/,
   /(^|\/)\.aws(\/|$)/,
   /(^|\/)\.config\/gh(\/|$)/,
+  // Any other `*.env` file: `bot.env`, `obsidian_note_watcher.env`. The rule
+  // above only knew files named exactly `.env`.
+  /(^|\/)[^/]+\.env$/,
   // Hermes keeps its keys in .env files (caught above), auth.json (caught
-  // below) and these three directories: OAuth clients and tokens, the OAuth
-  // session state, and backups of all of the above. The rest of ~/.hermes is
-  // scripts, skills, logs and room config that agents read constantly, and
-  // counting the whole tree as a secret made every Hermes job a run of taps.
-  /(^|\/)\.hermes\/(credentials|state|backups)(\/|$)/,
+  // below) and these two directories: OAuth clients and tokens, and backups of
+  // all of the above. The rest of ~/.hermes is scripts, skills, logs and room
+  // config that agents read constantly, and counting the whole tree as a secret
+  // made every Hermes job a run of taps.
+  /(^|\/)\.hermes\/(credentials|backups)(\/|$)/,
+  // ~/.hermes/state is mostly the agents' own bookkeeping — WhatsApp flows,
+  // presence, card timestamps — and was a quarter of all prompts while it
+  // counted as a secret. Only its OAuth session file holds a credential; any
+  // future token or auth file dropped there is caught by name.
+  /(^|\/)\.hermes\/state\/[^/]*(oauth|token|cred|secret|auth|session)[^/]*$/i,
   // auth.json and its backups (auth.json.bak-…), in ~/.codex and every Hermes profile.
   /(^|\/)auth\.json(\.[^/]*)?$/,
   // The bot's Matrix session, in every checkout and worktree. Its bot.log is
@@ -415,7 +483,7 @@ function globToRegex(glob) {
 // against where the secrets are: the fixed ones in $HOME, and the ones that can
 // sit in any directory, placed under the glob's own literal prefix.
 const HOME_SECRET_PROBES = ['.hermes/.env', '.hermes/profiles/p/.env', '.hermes/auth.json',
-  '.hermes/profiles/p/auth.json', '.hermes/credentials/c.json', '.hermes/state/s', '.ssh/id_rsa','.ssh/id_ed25519',
+  '.hermes/profiles/p/auth.json', '.hermes/credentials/c.json', '.hermes/state/oauth-session.json','.ssh/id_rsa','.ssh/id_ed25519',
   '.gnupg/k', '.aws/credentials', '.config/gh/hosts.yml', '.netrc', '.vercel-bender-token',
   '.codex/auth.json', '.claude/.credentials.json', '.npmrc', '.pgpass'].map((p) => `${HOME}/${p}`)
 const LOCAL_SECRET_PROBES = ['.env', '.env.local', 'x/.env', '.claude-bot-store/s.json',
@@ -698,6 +766,16 @@ export function toolReadsSecret(toolName, input, cwd) {
   return isSecretPath(i.file_path ?? i.notebook_path ?? i.path, dir)
 }
 
+function isClaudeWorktreePath(resolved, home) {
+  if (!resolved.startsWith(`${home}/`)) return false
+  const m = /^(.+)\/\.claude\/worktrees\/([^/]+)\/./.exec(resolved)
+  if (!m || m[1] === home || m[2] === '..' || m[2] === '.') return false
+  // The checkout's own `.git` pointer stays out: rewriting it re-points the
+  // worktree at another repo.
+  const inside = resolved.slice(m[0].length - 1)
+  return !/^\.git(\/|$)/.test(inside)
+}
+
 // True for paths the agent may write without asking: its own directory, the
 // room worktrees, and scratch space.
 export function isSandboxPath(target, cwd) {
@@ -705,6 +783,11 @@ export function isSandboxPath(target, cwd) {
   // and every home-directory write would look like a write inside the worktree.
   const home = process.env.HOME ?? '/home/wunnle'
   const resolved = path.resolve(cwd, target.replace(/^~(?=\/|$)/, home))
+  // Claude Code's own worktrees (EnterWorktree) live in the repo they branch
+  // from, at `<repo>/.claude/worktrees/<name>/`. They are the same throwaway
+  // branch checkouts as the room worktrees, just placed elsewhere. Not one at
+  // $HOME/.claude, which is Claude's settings rather than a repo.
+  if (isClaudeWorktreePath(resolved, home)) return true
   return [cwd, ...SCRATCH_ROOTS].some((rootIsh) => {
     const root = path.resolve(rootIsh)
     return resolved === root || resolved.startsWith(root + path.sep)
@@ -1107,6 +1190,11 @@ export function bashIsSafe(command, cwd) {
       effCwd = cd.to
       return true
     }
+    // `A="adb -s host:5555"` on its own runs nothing, and expandVariables has
+    // already put its value wherever `$A` is used. Split on spaces it looked
+    // like a call to `-s`. Only a plain quoted value, nothing that expands.
+    const lone = /^\s*([A-Za-z_][A-Za-z0-9_]*)=("[^"$`\\]*"|'[^']*')\s*$/.exec(seg)
+    if (lone) return !UNSAFE_ASSIGN.test(lone[1])
     // Shell keywords: `done`/`fi` name no program, a `for` header names none
     // either, and a `while`/`until`/`if` header is judged as the command it runs.
     let tokens = stripKeywords(seg.split(/\s+/))
@@ -1138,6 +1226,8 @@ export function bashIsSafe(command, cwd) {
       base = tokens[0].split('/').pop()
     }
     if (base === 'curl' || base === 'wget') return httpIsRead(tokens, effCwd, cwd)
+    if (base === 'adb') return adbIsRead(tokens)
+    if (base === 'tailscale') return tailscaleIsRead(tokens)
     if (CHROMIUM_BINS.has(base)) return chromiumIsRender(tokens, effCwd, cwd)
     if (isHelperBin(tokens[0])) return true
     if (SAFE_BASH_BINS.has(base) || PREAPPROVED_BINS.has(base)) {

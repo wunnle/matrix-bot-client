@@ -468,6 +468,7 @@ for (const [tool, input, expected, why] of [
   ['Read', { file_path: '/home/wunnle/.hermes/scripts/note_add.py' }, 'allow', 'hermes script'],
   ['Grep', { pattern: 'x', path: '/home/wunnle/.hermes/skills' }, 'allow', 'grep hermes skills'],
   ['Skill', { skill: 'artifact-design' }, 'allow', 'guidance-only skill'],
+  ['ToolSearch', { query: 'select:Monitor', max_results: 1 }, 'allow', 'loading a tool schema'],
   ['Skill', { skill: 'deploy' }, 'deny', 'deploy skill still asks'],
 ]) {
   const got = ask(tool, input)

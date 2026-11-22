@@ -129,7 +129,9 @@ function inProjects(cwd) {
   return here === root || here.startsWith(root + path.sep)
 }
 // Read-only inspection of the local checkout — no side effects worth a prompt.
-export const AUTO_ALLOW = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'NotebookRead', 'WebSearch', 'WebFetch'])
+// ToolSearch only loads a deferred tool's schema into the turn; calling that
+// tool afterwards is still judged on its own.
+export const AUTO_ALLOW = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'NotebookRead', 'WebSearch', 'WebFetch', 'ToolSearch'])
 // Writes are fine in the room's own directory and in scratch space (see
 // isSandboxPath); anywhere else they need a human.
 export const PATH_SCOPED = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit'])

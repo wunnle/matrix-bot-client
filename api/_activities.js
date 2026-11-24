@@ -750,23 +750,30 @@ export function reconcileDrops(activities, liveIds, now = Date.now()) {
     .map(([id]) => id);
 }
 
-/** The app listing every activity still alive on the device; everything else
-    goes. Entries started in the last minute are kept even when unlisted: a
-    push-to-start can still be on its way to the device. */
+/** The app listing every activity still alive on the device. Cards it leaves
+    out are only *marked* (`unlistedAt`), never deleted (2026-11-24): the
+    reconcile also comes from the Mac install ("Mac (native)", the iPhone app
+    running on the Mac). Its Activity.activities never holds the phone's cards,
+    so its empty list wiped every phone card older than 5 minutes. With the
+    entry gone, a later `end` had no token to push to, and sleep, morning and
+    event cards stayed frozen on the lock screen. Keeping an entry costs at
+    most a push to a dead token, and TTL cleanup still removes it. */
 export const reconcile = (liveIds) => serialized(() => reconcileNow(liveIds));
 async function reconcileNow(liveIds) {
   const reg = await readRegistry();
   const now = Date.now();
   const drop = reconcileDrops(reg.activities, liveIds, now);
+  for (const id of liveIds) if (reg.activities[id]) delete reg.activities[id].unlistedAt;
   for (const id of drop) {
-    delete reg.activities[id];
-    note(reg, "reconcile: not on phone", id);
+    if (reg.activities[id].unlistedAt) continue;
+    reg.activities[id].unlistedAt = now;
+    note(reg, "reconcile: unlisted (kept)", id);
   }
   // Diagnostics: what the phone says is on it, each time the app opens. The
   // only direct evidence of which cards actually exist on the device.
-  reg.lastReconcile = { at: now, activityIds: liveIds.slice(0, 20), removed: drop };
+  reg.lastReconcile = { at: now, activityIds: liveIds.slice(0, 20), unlisted: drop };
   await writeRegistry(reg);
-  return { ok: true, removed: drop.length };
+  return { ok: true, removed: 0, unlisted: drop.length };
 }
 
 /** For diagnostics and `construct-activity list`. No tokens. */

@@ -759,13 +759,16 @@ private func startLiveActivityDemoOnce() {
 }
 #endif
 
-/// Tells the server which activities are still on screen; it drops every
-/// update token not in the list (an empty list clears them all). The safety
+/// Tells the server which activities are still on screen; it marks every
+/// card not in the list as unlisted (it no longer deletes them). The safety
 /// net behind the per-activity "end": an activity dismissed while the app was
 /// closed vanishes from `Activity.activities`, so its id is gone and nothing
 /// else would ever end it.
 @available(iOS 16.2, *)
 private func reconcileLiveActivityTokens() async {
+    // The Mac install never holds the phone's cards, so its list would read
+    // as "everything ended" (2026-11-24: stuck sleep/morning cards).
+    if ProcessInfo.processInfo.isiOSAppOnMac { return }
     let live = Activity<ConstructActivityAttributes>.activities
         .filter(\.isLive)
         .map(\.attributes.activityId)

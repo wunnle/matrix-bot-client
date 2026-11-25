@@ -138,6 +138,18 @@ export async function declineInvite(roomId: string): Promise<void> {
   await getClient().leave(roomId)
 }
 
+// The SDK never trims a room's live timeline: every event since the app
+// started stays in it, and agent rooms add hundreds an hour (each streamed
+// edit is one). Badges, previews and tile states are recomputed on incoming
+// events, so scanning whole timelines made each event cost more the longer
+// the app ran, until it stopped responding. Those scans only need the tail.
+export const SCAN_WINDOW = 1000
+
+export function recentEvents(room: sdk.Room): sdk.MatrixEvent[] {
+  const events = room.getLiveTimeline().getEvents()
+  return events.length > SCAN_WINDOW ? events.slice(-SCAN_WINDOW) : events
+}
+
 // A single tool-progress line, e.g. `⏺ Read: "src/App.tsx"` — agent rooms emit
 // streams of these and they are not something you need to come back and read.
 const TOOL_PROGRESS_LINE = /^(?:\*\s*)?\S\S?\s+\w[\w./-]*(?::\s+".{0,80}"(?:\s+\(×\d+\))?|\.\.\.)\s*$/u
@@ -170,7 +182,7 @@ function countsAsUnread(event: sdk.MatrixEvent, userId: string): boolean {
 // Count unread messages using the local read receipt position rather than
 // the server-side notification count, which can stay stale across restarts.
 export function getRoomUnreadCount(room: sdk.Room, userId: string): number {
-  const timeline = room.getLiveTimeline().getEvents()
+  const timeline = recentEvents(room)
   const readUpTo = room.getEventReadUpTo(userId)
   if (!readUpTo) {
     return timeline.filter(e => countsAsUnread(e, userId)).length
@@ -188,15 +200,18 @@ export function getRoomUnreadCount(room: sdk.Room, userId: string): number {
   return timeline.slice(readIdx + 1).filter(e => countsAsUnread(e, userId)).length
 }
 
+function listedRooms(c: sdk.MatrixClient): sdk.Room[] {
+  return c.getRooms().filter((room) => {
+    const createEvent = room.currentState.getStateEvents('m.room.create', '')
+    if (createEvent?.getContent()?.type === 'm.space') return false
+    if (isHiddenRoom(room)) return false
+    const membership = room.getMyMembership()
+    return membership === 'join' || membership === 'invite'
+  })
+}
+
 function getRooms(c: sdk.MatrixClient, userId: string): RoomSummary[] {
-  return c.getRooms()
-    .filter((room) => {
-      const createEvent = room.currentState.getStateEvents('m.room.create', '')
-      if (createEvent?.getContent()?.type === 'm.space') return false
-      if (isHiddenRoom(room)) return false
-      const membership = room.getMyMembership()
-      return membership === 'join' || membership === 'invite'
-    })
+  return listedRooms(c)
     .map((room) => toRoomSummary(room, userId))
     .sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -207,10 +222,16 @@ export function toRoomSummaries(c: sdk.MatrixClient, userId: string): RoomSummar
   return getRooms(c, userId)
 }
 
+/** Which rooms the list holds and your membership in each, as one cheap string
+    that changes only when that does. No timeline is read. */
+export function listedRoomsKey(c: sdk.MatrixClient): string {
+  return listedRooms(c).map((r) => `${r.roomId}|${r.getMyMembership()}`).sort().join('\n')
+}
+
 // The newest message worth previewing: its latest edit, and not an agent's
 // tool-progress line or an edit event standing alone.
 export function lastPreviewMessage(room: sdk.Room): { body: string; ts: number } | undefined {
-  const timeline = room.getLiveTimeline().getEvents()
+  const timeline = recentEvents(room)
   for (let i = timeline.length - 1; i >= 0; i--) {
     const e = timeline[i]
     if (e.getType() !== 'm.room.message') continue

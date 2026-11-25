@@ -4,7 +4,7 @@ import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSe
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { AuthState } from '../types'
-import { fetchJoinedRooms, getCachedRooms, lastPreviewMessage, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, sendErrorMessage, type RoomSummary } from '../lib/matrix'
+import { fetchJoinedRooms, getCachedRooms, lastPreviewMessage, cacheRooms, getClient, getRoomOrder, getRemoteRoomOrder, setRoomOrder, cacheRoomOrder, applyRoomOrder, ROOM_ORDER_EVENT, getRoomUnreadCount, isInvite, acceptInvite, toRoomSummary, toRoomSummaries, listedRoomsKey, sendErrorMessage, type RoomSummary } from '../lib/matrix'
 import { seedAgentPills, backfillAgentPills, ARCHIVED_EVENT, isHiddenRoom } from '../lib/roomMeta'
 import { canSpawnFrom, ensureSpawnHostRoom, spawnAgentRoom } from '../lib/spawnAgent'
 import SpawnSheet from './SpawnSheet'
@@ -537,6 +537,7 @@ export default function RoomList({
     if (!clientReady) return
     let client: ReturnType<typeof getClient>
     try { client = getClient() } catch { return }
+    let lastKey: string | null = null
 
     const onMembership = (room: sdk.Room, membership: string) => {
       setRooms((prev) => {
@@ -561,10 +562,19 @@ export default function RoomList({
         backfilledRef.current = true
         backfillAgentPills(client).catch(() => {})
       }
+      // Syncs land every few seconds while agents stream. Rebuilding every
+      // row reads every room's timeline, so do it on the first sync (to patch
+      // a list painted from the cache) and then only when the set of rooms or
+      // a membership changes; per-event listeners keep the rows current.
+      const key = listedRoomsKey(client)
+      if (key === lastKey) return
+      lastKey = key
       const fresh = toRoomSummaries(client, auth.userId)
       setRooms((prev) => {
+        // fresh is sorted by name and prev is in your order, so compare as sets.
+        const had = new Set(prev.map((r) => `${r.roomId}|${r.membership}`))
         const changed = fresh.length !== prev.length
-          || fresh.some((r, i) => r.roomId !== prev[i]?.roomId || r.membership !== prev[i]?.membership)
+          || fresh.some((r) => !had.has(`${r.roomId}|${r.membership}`))
         if (!changed) {
           // Same rooms: refresh what a row shows, which a list painted from
           // the cache (or written before agent rows existed) may lack.

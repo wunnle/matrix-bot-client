@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import * as sdk from 'matrix-js-sdk'
 import type { IRoomTimelineData } from 'matrix-js-sdk'
-import { getClient, getRoomUnreadCount, isThinkingMessage } from '../lib/matrix'
+import { getClient, getRoomUnreadCount, isThinkingMessage, recentEvents } from '../lib/matrix'
 import { parseActions } from '../lib/actions'
 
 // How long a toast stays up. One offering [[pills]] is waiting on an answer,
@@ -76,8 +76,7 @@ function toNotification(room: sdk.Room, event: sdk.MatrixEvent, receivedAt: numb
 }
 
 function notifFromRoom(room: sdk.Room, userId: string): RoomNotification | null {
-  const events = room.getLiveTimeline().getEvents()
-  const lastMsg = [...events].reverse().find(
+  const lastMsg = recentEvents(room).findLast(
     e => (e.getType() === 'm.room.message') && !e.isDecryptionFailure() && e.getSender() !== userId
   )
   if (!lastMsg) return null

@@ -2,6 +2,7 @@ import type * as sdk from 'matrix-js-sdk'
 import { agentActivityAt, agentRunFrom, type RunMessage } from '../hooks/useAgentActivity'
 import { AGENT_BLOCKED_EVENT } from '../hooks/useAgentBlocked'
 import { parseActions } from './actions'
+import { recentEvents } from './matrix'
 import { getRoomOwners } from './roomOwners'
 import { ROOM_STATUS_EVENT, parseRoomStatus } from './roomStatus'
 
@@ -49,7 +50,7 @@ function isToolLine(l: unknown): l is { emoji: string; tool: string } {
 function timelineMessages(room: sdk.Room, userId: string): TimelineMessage[] {
   const owners = getRoomOwners(room)
   const out: TimelineMessage[] = []
-  for (const event of room.getLiveTimeline().getEvents()) {
+  for (const event of recentEvents(room)) {
     // Still-encrypted events read as m.room.encrypted until they decrypt.
     if (event.getType() !== 'm.room.message') continue
     const content = effectiveContent(event)

@@ -78,6 +78,11 @@ assert.deepEqual(mainAgentBlocks({ type: 'user', message: { content: [] } }), []
   call('g', { file_path: '/x/index.html', files: { 'app.js': '/x/app.js' } }); result('g', published('https://claude.ai/artifact/M', 1))
   call('h', { file_path: '/x/notes.md' }); result('h', published('https://claude.ai/artifact/N', 1))
   assert.deepEqual(pages.slice(-2).map((p) => p.file), [undefined, undefined])
+  // A Design canvas's artboards, each published alone with `root`: one artboard isn't the canvas.
+  call('i', { url: 'https://claude.ai/artifact/D', root: 'canvas', file_path: 'canvas/project/Style-Margin.dc.html' }); result('i', published('https://claude.ai/artifact/D', 5))
+  call('j', { url: 'https://claude.ai/artifact/D', root: 'canvas', file_path: 'canvas/index.html' }); result('j', published('https://claude.ai/artifact/D', 6))
+  call('k', { file_path: '/x/board.dc.html' }); result('k', published('https://claude.ai/artifact/E', 1))
+  assert.deepEqual(pages.slice(-3).map((p) => p.file), [undefined, undefined, undefined])
   const before = pages.length
   // Not pages: reads, asset uploads, failures, and results for other tools.
   call('d', { action: 'read', url: 'https://claude.ai/artifact/X' }); result('d', 'https://claude.ai/artifact/X …')

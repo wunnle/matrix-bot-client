@@ -335,8 +335,12 @@ export function createArtifactWatcher({ cwd = '', onArtifact } = {}) {
       const version = Number(ARTIFACT_VERSION.exec(text)?.[1]) || undefined
       const description = typeof input.description === 'string' && input.description.trim() ? input.description.trim() : undefined
       // The page as published, for a copy Construct can show in-app. Only a
-      // single .html page is the whole thing; one with supporting files isn't.
-      const file = typeof input.file_path === 'string' && /\.html?$/i.test(input.file_path) && !input.files && !input.type_url
+      // single .html page is the whole thing; one with supporting files isn't,
+      // nor is a data file of an Artifact made from a type (a Design canvas's
+      // .dc.html artboard, published with `root` and no `files`). Without a
+      // file the card's edit carries no copy, so it drops the stale one.
+      const file = typeof input.file_path === 'string' && /\.html?$/i.test(input.file_path) && !/\.dc\.html$/i.test(input.file_path)
+        && !input.files && !input.type_url && !input.root
         ? (path.isAbsolute(input.file_path) ? input.file_path : path.join(cwd || '', input.file_path))
         : undefined
       try { onArtifact?.({ url, title: oneLine(title), description, version, ...(file ? { file } : {}) }) } catch {}

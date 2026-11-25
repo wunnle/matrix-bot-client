@@ -8,6 +8,7 @@ import { resolveMediaUrl } from '../lib/mediaUrl'
 import { toggleDebug } from '../lib/debug'
 import { apiUrl } from '../lib/apiUrl'
 import { getConnectionLog } from '../lib/connectionLog'
+import { getHangReport } from '../lib/hangRecorder'
 import { copyTextToClipboard } from '../lib/clipboard'
 
 interface Props {
@@ -75,8 +76,9 @@ async function debugNotifications() {
 // Pasted into an agent room to diagnose drops; see lib/connectionLog.ts.
 async function copyConnectionLog() {
   const log = getConnectionLog()
-  await copyTextToClipboard(log || 'Connection log is empty.')
-  alert(log ? `Copied ${log.split('\n').length} lines.` : 'Connection log is empty.')
+  const text = `${log || 'Connection log is empty.'}\n\n--- hang recorder ---\n${getHangReport()}`
+  await copyTextToClipboard(text)
+  alert(`Copied ${text.split('\n').length} lines.`)
 }
 
 // The web app is served over the network (see capacitor.config.ts), so this

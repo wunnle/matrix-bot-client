@@ -5,6 +5,7 @@ import { deviceToken } from './deviceToken'
 import { AGENT_ROOM_TYPE, ARCHIVED_EVENT, isHiddenRoom, seedAgentPills } from './roomMeta'
 import { isBotAgentInvite } from './agentInvite'
 import { loggingFetch, startConnectionLog } from './connectionLog'
+import { startHangRecorder } from './hangRecorder'
 
 // The Claude Code bot, whose agent-room invites are accepted without asking.
 // Pinned rather than inferred from rooms already joined: one manual Accept of a
@@ -408,6 +409,7 @@ async function doInit(auth: AuthState): Promise<RoomSummary[]> {
   })
   const c = client
   startConnectionLog(c)
+  startHangRecorder(c)
 
   const storageKey = getCryptoStorageKey(auth.userId, auth.deviceId)
 

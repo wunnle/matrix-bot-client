@@ -3,7 +3,8 @@ import * as sdk from 'matrix-js-sdk'
 import type { AuthState } from '../types'
 import { getCachedRooms, getClient, intentCredential, isInvite } from '../lib/matrix'
 import { getDisabledShareRooms, setDisabledShareRooms, isShareableRoom } from '../lib/shareRooms'
-import { donateShareTargets, getAppIcon, setAppIcon } from '../lib/liveActivity'
+import { donateShareTargets, getAppIcon, getLobbyVoices, previewLobbyVoice, setAppIcon, setLobbyVoice } from '../lib/liveActivity'
+import type { LobbyVoice, LobbyVoiceLanguage } from '../lib/liveActivity'
 import { resolveMediaUrl } from '../lib/mediaUrl'
 import { toggleDebug } from '../lib/debug'
 import { apiUrl } from '../lib/apiUrl'
@@ -18,6 +19,10 @@ interface Props {
   onDictationAutoSendChange: (value: boolean) => void
   onSignOut: () => void
 }
+
+const LANGUAGE_NAMES: Record<string, string> = { en: 'English', tr: 'Turkish' }
+const QUALITY_NAMES: Record<string, string> = { premium: 'Premium', enhanced: 'Enhanced', default: 'Basic' }
+const voiceLabel = (v: LobbyVoice) => `${v.name} · ${QUALITY_NAMES[v.quality] ?? v.quality}`
 
 // Each probe reports on its own: this runs in two very different environments
 // (Safari/PWA and WKWebView, which has no Web Push and no Matrix client until
@@ -128,6 +133,26 @@ export default function Settings({ auth, clientReady, dictationAutoSend, onDicta
     return () => { cancelled = true }
   }, [])
 
+  // Null until known, and stays null on builds without the Lobby overlay.
+  const [lobbyVoices, setLobbyVoices] = useState<LobbyVoiceLanguage[] | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    const load = () => void getLobbyVoices().then((v) => { if (!cancelled) setLobbyVoices(v) })
+    load()
+    // A voice downloaded in iOS Settings shows up on the way back.
+    const onVisible = () => { if (document.visibilityState === 'visible') load() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => { cancelled = true; document.removeEventListener('visibilitychange', onVisible) }
+  }, [])
+
+  async function chooseLobbyVoice(language: string, id: string | null) {
+    try {
+      await setLobbyVoice(language, id)
+      setLobbyVoices((await getLobbyVoices()) ?? lobbyVoices)
+      void previewLobbyVoice(language, id)
+    } catch { /* stays as it was */ }
+  }
+
   async function chooseAppIcon(name: string | null) {
     if (appIcon?.name === name) return
     try {
@@ -235,6 +260,42 @@ export default function Settings({ auth, clientReady, dictationAutoSend, onDicta
               </button>
             ))}
           </div>
+        </section>
+      )}
+
+      {lobbyVoices && (
+        <section className="settings-section">
+          <h2 className="settings-section-title">Lobby voice</h2>
+          <p className="settings-section-hint">
+            Reads answers aloud in Listen in Lobby. More voices: iOS Settings → Accessibility → Read &amp; Speak → Voices.
+          </p>
+          {lobbyVoices.map((lang) => {
+            const best = lang.voices[0]
+            return (
+              <div key={lang.language} className="settings-row settings-voice-row">
+                <span className="settings-row-label">{LANGUAGE_NAMES[lang.language] ?? lang.language}</span>
+                <select
+                  className="settings-voice-select"
+                  value={lang.chosen ?? ''}
+                  onChange={(e) => void chooseLobbyVoice(lang.language, e.target.value || null)}
+                  aria-label={`${LANGUAGE_NAMES[lang.language] ?? lang.language} voice`}
+                >
+                  <option value="">{best ? `Automatic (${voiceLabel(best)})` : 'Automatic'}</option>
+                  {lang.voices.map((v) => <option key={v.id} value={v.id}>{voiceLabel(v)}</option>)}
+                </select>
+                <button
+                  type="button"
+                  className="settings-voice-play"
+                  onClick={() => void previewLobbyVoice(lang.language, lang.chosen)}
+                  aria-label="Play a sample"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                    <path fill="currentColor" d="M8 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 8 5.5Z" />
+                  </svg>
+                </button>
+              </div>
+            )
+          })}
         </section>
       )}
 

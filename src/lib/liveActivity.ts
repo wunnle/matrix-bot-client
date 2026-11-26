@@ -62,6 +62,27 @@ interface LiveActivityPlugin {
   appIcon(): Promise<{ supported: boolean; name: string | null }>
   setAppIcon(options: { name: string | null }): Promise<void>
   copyText(options: { text: string }): Promise<void>
+  // Native builds before the Lobby voice overlay don't have these.
+  lobbyVoices(): Promise<{ languages: LobbyVoiceLanguage[] }>
+  setLobbyVoice(options: { language: string; id: string | null }): Promise<void>
+  previewLobbyVoice(options: { language: string; id?: string | null }): Promise<void>
+}
+
+export interface LobbyVoice {
+  id: string
+  name: string
+  quality: 'premium' | 'enhanced' | 'default'
+}
+
+/** One language the Lobby overlay reads answers in (LobbyVoice.swift). */
+export interface LobbyVoiceLanguage {
+  language: 'en' | 'tr'
+  /** The saved pick; null = automatic (the best installed). */
+  chosen: string | null
+  /** The voice it reads with right now. */
+  using: string | null
+  /** Installed voices, best first. */
+  voices: LobbyVoice[]
 }
 
 // The installed app loads the deployed site, so this web code can be newer than
@@ -197,6 +218,27 @@ export async function getAppIcon(): Promise<{ name: string | null } | null> {
  *  with its own alert. */
 export async function setAppIcon(name: string | null): Promise<void> {
   await plugin.setAppIcon({ name })
+}
+
+/** The Lobby overlay's voices, or null where the native build has no overlay. */
+export async function getLobbyVoices(): Promise<LobbyVoiceLanguage[] | null> {
+  if (!Capacitor.isNativePlatform()) return null
+  try {
+    const { languages } = await plugin.lobbyVoices()
+    return Array.isArray(languages) ? languages : null
+  } catch {
+    return null
+  }
+}
+
+/** id null goes back to automatic. */
+export async function setLobbyVoice(language: string, id: string | null): Promise<void> {
+  await plugin.setLobbyVoice({ language, id })
+}
+
+/** Says a sample line in that voice; quiet where the build can't. */
+export async function previewLobbyVoice(language: string, id: string | null): Promise<void> {
+  try { await plugin.previewLobbyVoice({ language, id }) } catch { /* older build */ }
 }
 
 /** Write to the system pasteboard natively. See lib/clipboard.ts for why. */

@@ -816,8 +816,11 @@ private func matrixServerName(_ id: String) -> String? {
 /// the one api/send-message.js builds, including its transaction id, so a
 /// repeated button tap is still dropped by the homeserver. Any other room
 /// goes through Vercel's send-message as before.
-private func sendRoomText(room rawRoom: String, text: String, source: String,
-                          activityId: String? = nil, secret: String) async {
+/// Returns the new event's id when it went straight to the homeserver (the
+/// Lobby voice overlay waits for replies after it), nil otherwise.
+@discardableResult
+func sendRoomText(room rawRoom: String, text: String, source: String,
+                  activityId: String? = nil, secret: String) async -> String? {
     let d = IntentConfig.defaults
     let room = rawRoom.removingPercentEncoding ?? rawRoom
     let activity = activityId.flatMap { !$0.isEmpty && $0.count <= 64 ? $0 : nil }
@@ -843,7 +846,7 @@ private func sendRoomText(room rawRoom: String, text: String, source: String,
         let base = homeserver.hasSuffix("/") ? String(homeserver.dropLast()) : homeserver
         guard let encRoom = room.addingPercentEncoding(withAllowedCharacters: unreserved),
               let url = URL(string: "\(base)/_matrix/client/v3/rooms/\(encRoom)/send/m.room.message/\(txnId)"),
-              let body = try? JSONSerialization.data(withJSONObject: event) else { return }
+              let body = try? JSONSerialization.data(withJSONObject: event) else { return nil }
         var req = URLRequest(url: url)
         req.httpMethod = "PUT"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -852,13 +855,15 @@ private func sendRoomText(room rawRoom: String, text: String, source: String,
         req.setValue("Bearer \(matrixToken)", forHTTPHeaderField: "Authorization")
         req.httpBody = body
         req.timeoutInterval = 12
-        _ = try? await URLSession.shared.data(for: req)
-        return
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return json["event_id"] as? String
     }
     let apiBase = d.string(forKey: IntentConfig.apiBase) ?? "https://construct.kafagoz.com"
     var body: [String: Any] = ["room": room, "text": text, "source": source]
     if let activity { body["activityId"] = activity }
     _ = await intentPost("\(apiBase)/api/send-message", secret: secret, body: body)
+    return nil
 }
 
 private func intentPostResponse(_ urlString: String, secret: String,
@@ -1056,10 +1061,11 @@ struct SendToLobbyIntent: AppIntent {
     }
 }
 
-/// Opens Construct in the Lobby and starts the in-app dictation (the same
-/// construct://listen path as the Control Center "Listen" control). Use this
-/// on the Action Button for one press → talking, with the transcript visible
-/// before it's sent.
+/// Opens Construct over a Siri-style listening overlay (LobbyVoice.swift):
+/// talk, it sends to the Lobby on a pause, then shows and reads the expert's
+/// answer. Use this on the Action Button for one press → talking. Before the
+/// app has a homeserver session saved it falls back to the in-chat dictation
+/// (the same construct://listen path as the Control Center "Listen" control).
 @available(iOS 17.0, *)
 struct ListenInLobbyIntent: AppIntent {
     static let title: LocalizedStringResource = "Listen in Lobby"
@@ -1070,9 +1076,9 @@ struct ListenInLobbyIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
-        if let room = LobbyRoom.id.addingPercentEncoding(withAllowedCharacters: unreserved),
-           let url = URL(string: "construct://listen?room=\(room)") {
+        if LobbyVoice.canRun {
+            LobbyVoice.present()
+        } else if let url = LobbyVoice.lobbyURL("listen") {
             await UIApplication.shared.open(url)
         }
         return .result()
@@ -1388,7 +1394,10 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "macZoom", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "appIcon", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setAppIcon", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "copyText", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "copyText", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "lobbyVoices", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setLobbyVoice", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "previewLobbyVoice", returnType: CAPPluginReturnPromise)
     ]
 
     /// True when this iPad app is running on a Mac (Designed for iPad). The web
@@ -1431,6 +1440,41 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         let text = call.getString("text") ?? ""
         DispatchQueue.main.async {
             UIPasteboard.general.string = text
+            call.resolve()
+        }
+    }
+
+    /// The voices the Lobby overlay can read answers in (LobbyVoice.swift):
+    /// { languages: [{ language, chosen, using, voices: [{ id, name, quality }] }] }.
+    /// `chosen` is the saved pick (null = automatic), `using` what it reads with now.
+    @objc func lobbyVoices(_ call: CAPPluginCall) {
+        call.resolve(["languages": LobbyVoiceChoice.languages.map { lang -> [String: Any] in
+            [
+                "language": lang,
+                "chosen": LobbyVoiceChoice.saved(lang) as Any,
+                "using": LobbyVoiceChoice.voice(lang).voice?.identifier as Any,
+                "voices": LobbyVoiceChoice.installed(lang).map {
+                    ["id": $0.identifier, "name": $0.name, "quality": LobbyVoiceChoice.quality($0)]
+                },
+            ]
+        }])
+    }
+
+    /// { language: "en" | "tr", id }: id null goes back to automatic.
+    @objc func setLobbyVoice(_ call: CAPPluginCall) {
+        guard let lang = call.getString("language"), LobbyVoiceChoice.languages.contains(lang) else {
+            return call.reject("language must be en or tr")
+        }
+        LobbyVoiceChoice.save(lang, id: call.getString("id"))
+        call.resolve()
+    }
+
+    /// { language, id? }: says a sample line in that voice (or the automatic one).
+    @objc func previewLobbyVoice(_ call: CAPPluginCall) {
+        let lang = call.getString("language") ?? "en"
+        let id = call.getString("id")
+        DispatchQueue.main.async {
+            LobbyVoiceChoice.preview(lang, id: id)
             call.resolve()
         }
     }

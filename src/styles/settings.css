@@ -240,3 +240,33 @@
 .settings-row-toggle:checked { background: #34c759; }
 .settings-row-toggle:checked::after { transform: translateX(20px); }
 .settings-row-toggle:disabled { opacity: 0.5; }
+
+/* Lobby voice: language, then the picked voice as muted text, then a play button. */
+.settings-voice-row { cursor: default; }
+.settings-voice-select {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 15px;
+  text-align: right;
+  text-align-last: right;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.settings-voice-play {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg-active);
+  color: var(--text);
+  cursor: pointer;
+}

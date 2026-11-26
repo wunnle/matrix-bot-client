@@ -1047,7 +1047,11 @@ struct SendToLobbyIntent: AppIntent {
         guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else {
             throw $message.needsValueError("Open Construct once to enable sending.")
         }
-        await sendRoomText(room: LobbyRoom.id, text: text, source: "siri", secret: secret)
+        // One 🎙️ tells the experts it was spoken, so they answer short and
+        // speakable. Routing is unchanged: Overwatch keys ring notes on the
+        // com.construct.index tag (not sent here), and the fast-command clock
+        // flash needs 🎙️🎙️.
+        await sendRoomText(room: LobbyRoom.id, text: "🎙️ \(text)", source: "siri", secret: secret)
         return .result(dialog: "Sent to the Lobby.")
     }
 }

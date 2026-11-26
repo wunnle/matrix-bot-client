@@ -1018,6 +1018,90 @@ struct WatchConstructReplyIntent: AppIntent {
     func perform() async throws -> some IntentResult { .result() }
 }
 
+/// The Lobby on kafagoz.com, where Overwatch routes each message to an expert.
+enum LobbyRoom {
+    static let id = "!CItYjxWanU1xHvUQ1t:kafagoz.com"
+}
+
+/// Voice → Lobby with no app launch. Siri ("Send to Lobby in Construct") asks
+/// for the message out loud and transcribes it; from the Action Button or a
+/// Shortcut the system shows a text prompt with the dictation mic. The text is
+/// sent as Sinan straight to the homeserver (sendRoomText's own-server path),
+/// so Overwatch routes it like a typed message.
+@available(iOS 17.0, *)
+struct SendToLobbyIntent: AppIntent {
+    static let title: LocalizedStringResource = "Send to Lobby"
+    static let description = IntentDescription("Dictate a message and send it to the Lobby.")
+
+    @Parameter(title: "Message", requestValueDialog: "What should I send to the Lobby?")
+    var message: String
+
+    init() {}
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            throw $message.needsValueError("What should I send to the Lobby?")
+        }
+        let d = IntentConfig.defaults
+        guard let secret = d.string(forKey: IntentConfig.secret), !secret.isEmpty else {
+            throw $message.needsValueError("Open Construct once to enable sending.")
+        }
+        await sendRoomText(room: LobbyRoom.id, text: text, source: "siri", secret: secret)
+        return .result(dialog: "Sent to the Lobby.")
+    }
+}
+
+/// Opens Construct in the Lobby and starts the in-app dictation (the same
+/// construct://listen path as the Control Center "Listen" control). Use this
+/// on the Action Button for one press → talking, with the transcript visible
+/// before it's sent.
+@available(iOS 17.0, *)
+struct ListenInLobbyIntent: AppIntent {
+    static let title: LocalizedStringResource = "Listen in Lobby"
+    static let description = IntentDescription("Open the Lobby and start dictating a message.")
+    static let openAppWhenRun = true
+
+    init() {}
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        if let room = LobbyRoom.id.addingPercentEncoding(withAllowedCharacters: unreserved),
+           let url = URL(string: "construct://listen?room=\(room)") {
+            await UIApplication.shared.open(url)
+        }
+        return .result()
+    }
+}
+
+/// Registers Siri phrases and lists the Lobby actions under Construct in the
+/// Shortcuts app and the Action Button picker, with no shortcut to build.
+@available(iOS 17.0, *)
+struct ConstructShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: SendToLobbyIntent(),
+            phrases: [
+                "Send to Lobby in \(.applicationName)",
+                "Tell the Lobby in \(.applicationName)",
+                "\(.applicationName) Lobby",
+            ],
+            shortTitle: "Send to Lobby",
+            systemImageName: "mic.fill"
+        )
+        AppShortcut(
+            intent: ListenInLobbyIntent(),
+            phrases: [
+                "Listen in Lobby with \(.applicationName)",
+                "Open the Lobby in \(.applicationName)",
+            ],
+            shortTitle: "Listen in Lobby",
+            systemImageName: "waveform"
+        )
+    }
+}
+
 // MARK: - Live Activities
 
 /// Storyboard entry point (Main.storyboard) — registers in-app plugins.
